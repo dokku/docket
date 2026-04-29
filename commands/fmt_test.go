@@ -61,6 +61,68 @@ func TestFmtCommandHelpDoesNotPanic(t *testing.T) {
 	_ = c.FlagSet()
 }
 
+// JSON5 fixtures parallel to the YAML ones. Used to assert fmt picks
+// the right formatter based on extension and that the canonical JSON5
+// shape matches what FormatJSON5 produces directly.
+const messyTasksJSON5 = `[
+  // a comment
+  {
+    tasks: [
+      {
+        dokku_app: { app: "web" },
+        name: "configure web",
+      },
+    ],
+  },
+]
+`
+
+const canonicalTasksJSON5 = `[
+  // a comment
+  {
+    tasks: [
+      {
+        name: "configure web",
+        dokku_app: {
+          app: "web",
+        },
+      },
+    ],
+  },
+]
+`
+
+func TestFmtRewritesJSON5InPlace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.json")
+	if err := os.WriteFile(path, []byte(messyTasksJSON5), 0o644); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{path}); exit != 0 {
+		t.Errorf("exit = %d, want 0", exit)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != canonicalTasksJSON5 {
+		t.Errorf("file not canonicalised:\nwant:\n%s\ngot:\n%s", canonicalTasksJSON5, got)
+	}
+}
+
+func TestFmtJSON5IdempotentOnCanonical(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.json")
+	if err := os.WriteFile(path, []byte(canonicalTasksJSON5), 0o644); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--check", path}); exit != 0 {
+		t.Errorf("--check on canonical JSON5 exit = %d, want 0", exit)
+	}
+}
+
 func TestFmtRewritesNonCanonicalInPlace(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")

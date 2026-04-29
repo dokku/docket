@@ -20,6 +20,7 @@ type ValidateCommand struct {
 	command.Meta
 
 	tasksFile   string
+	tasksFormat string
 	json        bool
 	strict      bool
 	varsFiles   []string
@@ -44,7 +45,8 @@ func (c *ValidateCommand) Examples() map[string]string {
 	appName := os.Getenv("CLI_APP_NAME")
 	return map[string]string{
 		"Validate the default tasks.yml":           fmt.Sprintf("%s %s", appName, c.Name()),
-		"Validate a specific file":                 fmt.Sprintf("%s %s --tasks path/to/task.yml", appName, c.Name()),
+		"Validate a specific YAML file":            fmt.Sprintf("%s %s --tasks path/to/task.yml", appName, c.Name()),
+		"Validate a JSON5 file":                    fmt.Sprintf("%s %s --tasks path/to/tasks.json", appName, c.Name()),
 		"Emit JSON-lines problem events":           fmt.Sprintf("%s %s --json", appName, c.Name()),
 		"Flag required inputs without an override": fmt.Sprintf("%s %s --strict", appName, c.Name()),
 	}
@@ -64,20 +66,20 @@ func (c *ValidateCommand) ParsedArguments(args []string) (map[string]command.Arg
 
 func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
-	f.StringVar(&c.tasksFile, "tasks", "tasks.yml", "a yaml file containing a task list")
+	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines problem event per finding")
 	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override, and check that --play / --start-at-task references resolve to real names in the file")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
 	f.StringVar(&c.play, "play", "", "(strict) verify the named play exists in the recipe (matches the play's `name:` field; auto-named plays use `play #N`)")
 	f.StringVar(&c.startAtTask, "start-at-task", "", "(strict) verify a task with this name exists in the recipe; narrowed by --play when set")
 
-	taskFile := getTaskYamlFilename(os.Args)
+	taskFile, format := resolveTaskFileFromArgs(os.Args)
 	data, err := os.ReadFile(taskFile)
 	if err != nil {
 		return f
 	}
 
-	arguments, err := registerInputFlags(f, data)
+	arguments, err := registerInputFlags(f, data, format)
 	if err != nil {
 		return f
 	}
@@ -90,7 +92,7 @@ func (c *ValidateCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--tasks":         complete.PredictFiles("*.yml"),
+			"--tasks":         complete.PredictFiles(taskFileAutocompleteGlob),
 			"--json":          complete.PredictNothing,
 			"--strict":        complete.PredictNothing,
 			"--vars-file":     complete.PredictFiles("*"),
@@ -127,6 +129,21 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
+	resolvedPath, resolvedFormat, err := resolveTaskFilePath(c.tasksFile)
+	if err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "read_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(fmt.Sprintf("read error: %v", err))
+		}
+		return 1
+	}
+	c.tasksFile = resolvedPath
+	c.tasksFormat = resolvedFormat
+
 	data, err := os.ReadFile(c.tasksFile)
 	if err != nil {
 		if c.json {
@@ -152,6 +169,7 @@ func (c *ValidateCommand) Run(args []string) int {
 		InputOverrides: overrides,
 		PlayName:       c.play,
 		StartAtTask:    c.startAtTask,
+		Format:         c.tasksFormat,
 	})
 
 	if c.json {

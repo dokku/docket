@@ -1,0 +1,53 @@
+[
+  {
+    inputs: [
+      {
+        name: "app",
+        default: "<<.Name>>",
+        description: "Application name",
+      },
+      {
+        name: "repo",
+        <<if .Repo>>default: "<<.Repo>>",<<else>>required: true,<<end>>
+        description: "Git repository URL",
+      },
+    ],
+    tasks: [
+      {
+        name: "create app",
+        dokku_app: {
+          app: "{{ .app }}",
+          state: "present",
+        },
+      },
+
+      {
+        name: "configure env vars",
+        dokku_config: {
+          app: "{{ .app }}",
+          config: {
+            APP_ENV: "production",
+            LOG_LEVEL: "info",
+          },
+        },
+      },
+
+      {
+        name: "configure domains",
+        dokku_domains: {
+          app: "{{ .app }}",
+          domains: ["{{ .app }}.example.com"],
+          state: "set",
+        },
+      },
+
+      {
+        name: "sync git repository",
+        dokku_git_sync: {
+          app: "{{ .app }}",
+          remote: "{{ .repo }}",
+        },
+      },
+    ],
+  },
+]

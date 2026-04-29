@@ -117,20 +117,38 @@ func isFalseString(s string) bool {
 }
 
 func getTaskYamlFilename(s []string) string {
+	path, _ := resolveTaskFileFromArgs(s)
+	return path
+}
+
+// resolveTaskFileFromArgs walks os.Args-style argv, finds a --tasks
+// value, and returns it together with its detected format. When --tasks
+// is not present the function probes defaultTaskFileCandidates in order
+// and returns the first one that exists; if none exist the legacy
+// default ("tasks.yml") is returned so the downstream os.ReadFile error
+// path still fires with the familiar message. Format is keyed by file
+// extension; see detectTaskFileFormat.
+func resolveTaskFileFromArgs(s []string) (string, string) {
 	for i, arg := range s {
 		if arg == "--tasks" {
 			if len(s) > i+1 {
-				return s[i+1]
+				path := s[i+1]
+				return path, detectTaskFileFormat(path)
 			}
 		}
 		if taskFile, found := strings.CutPrefix(arg, "--tasks="); found {
-			return taskFile
+			return taskFile, detectTaskFileFormat(taskFile)
 		}
 	}
-	return "tasks.yml"
+	for _, candidate := range defaultTaskFileCandidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, detectTaskFileFormat(candidate)
+		}
+	}
+	return defaultTaskFileCandidates[0], detectTaskFileFormat(defaultTaskFileCandidates[0])
 }
 
-func getInputVariables(data []byte) (map[string]*tasks.Input, error) {
+func getInputVariables(data []byte, format string) (map[string]*tasks.Input, error) {
 	vars := make(map[string]interface{})
 	render, err := sigil.Execute(data, vars, "tasks")
 	if err != nil {
@@ -142,15 +160,16 @@ func getInputVariables(data []byte) (map[string]*tasks.Input, error) {
 		return map[string]*tasks.Input{}, fmt.Errorf("render error: %v", err.Error())
 	}
 
-	return parseInputYaml(out)
+	return parseInputDocument(out, format)
 }
 
 // registerInputFlags reads the task file inputs and registers a flag for each
 // dynamic input on the given FlagSet. It returns the Argument map keyed by
-// input name so the caller can collect values after flags.Parse.
-func registerInputFlags(f *flag.FlagSet, data []byte) (map[string]*Argument, error) {
+// input name so the caller can collect values after flags.Parse. format is
+// "yaml" or "json5"; the empty string is treated as YAML.
+func registerInputFlags(f *flag.FlagSet, data []byte, format string) (map[string]*Argument, error) {
 	arguments := make(map[string]*Argument)
-	inputs, err := getInputVariables(data)
+	inputs, err := getInputVariables(data, format)
 	if err != nil {
 		return arguments, err
 	}
@@ -196,10 +215,13 @@ func registerInputFlags(f *flag.FlagSet, data []byte) (map[string]*Argument, err
 	return arguments, nil
 }
 
-func parseInputYaml(data []byte) (map[string]*tasks.Input, error) {
+// parseInputDocument decodes data as a Recipe in the given on-disk
+// format and returns the merged input map keyed by input name. format
+// is "yaml" or "json5"; empty / unknown values default to YAML.
+func parseInputDocument(data []byte, format string) (map[string]*tasks.Input, error) {
 	inputs := make(map[string]*tasks.Input)
-	t := tasks.Recipe{}
-	if err := yaml.Unmarshal(data, &t); err != nil {
+	t, err := tasks.UnmarshalRecipe(data, format)
+	if err != nil {
 		return inputs, err
 	}
 
@@ -215,6 +237,13 @@ func parseInputYaml(data []byte) (map[string]*tasks.Input, error) {
 	}
 
 	return inputs, nil
+}
+
+// parseInputYaml is the YAML-only back-compat wrapper kept so existing
+// callers (and the unit tests under apply_args_test.go) do not need to
+// learn the format dispatch.
+func parseInputYaml(data []byte) (map[string]*tasks.Input, error) {
+	return parseInputDocument(data, tasks.FormatYAML)
 }
 
 // SetFromVarsFile coerces value to the Argument's declared Type and writes

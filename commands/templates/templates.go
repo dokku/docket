@@ -7,5 +7,5 @@ package templates
 
 import "embed"
 
-//go:embed *.yml.tmpl
+//go:embed *.yml.tmpl *.json5.tmpl
 var FS embed.FS

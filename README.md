@@ -30,18 +30,35 @@ Create a `tasks.yml` file:
         repository: http://github.com/cakephp/inflector.cakephp.org
 ```
 
+JSON5 is also supported: write the same recipe as `tasks.json` and pass `--tasks tasks.json`, or just drop the file in the working directory and docket will pick it up automatically when `tasks.yml` / `tasks.yaml` are absent. See "Task file formats" below for the dispatch rules.
+
 Run it:
 
 ```shell
-# from the same directory as the tasks.yml
+# from the same directory as the tasks.yml (or tasks.json)
 docket apply
 ```
 
-Running `docket` with no subcommand prints the available commands. Use `docket init` to scaffold a starter `tasks.yml`, `docket apply` to execute a task file, `docket fmt` to canonically format a task file, `docket plan` to preview the changes a task file would make without mutating any state, `docket validate` to check a task file's schema and templates without contacting the server, or `docket version` to print the binary's version.
+Running `docket` with no subcommand prints the available commands. Use `docket init` to scaffold a starter task file, `docket apply` to execute a task file, `docket fmt` to canonically format a task file, `docket plan` to preview the changes a task file would make without mutating any state, `docket validate` to check a task file's schema and templates without contacting the server, or `docket version` to print the binary's version. All five commands accept either YAML or JSON5 surface syntax.
+
+### Task file formats
+
+Docket reads task files in either YAML or JSON5. Format is selected by file extension:
+
+| Extension | Parser |
+|-----------|--------|
+| `.yml`, `.yaml` | `gopkg.in/yaml.v3` |
+| `.json`, `.json5` | titanous JSON5 (a strict superset of JSON) |
+
+JSON5 adds three things over plain JSON that are useful in a recipe: `// line` and `/* block */` comments, trailing commas in arrays and objects, and unquoted keys when they are valid identifiers. Existing JSON files parse unchanged.
+
+When `--tasks` is omitted, docket probes the working directory in this order: `tasks.yml`, `tasks.yaml`, `tasks.json`. The first one that exists wins. If none are present the run errors with the candidate list so the typo is obvious. With `--tasks <path>`, format is detected from the path's extension; unknown extensions default to YAML so a path like `recipe.txt` keeps its pre-#218 behaviour.
+
+The same JSON5 recipe in YAML and in JSON5 produces an identical play / task structure - sigil `{{ .var }}` templates, expr predicates, every envelope key, and every task type behave the same way. `docket fmt` round-trips comments in both formats.
 
 ### Multi-play recipes
 
-`tasks.yml` is a YAML list of plays. Each play has its own `name`, optional `tags`, optional `when:`, optional `inputs:`, and a `tasks:` list. The executor walks every play in source order, so a single recipe can describe multiple coordinated apps or services in one file.
+A docket recipe is a list of plays. Each play has its own `name`, optional `tags`, optional `when:`, optional `inputs:`, and a `tasks:` list. The executor walks every play in source order, so a single recipe can describe multiple coordinated apps or services in one file. The examples below use YAML; JSON5 recipes have the same shape (a top-level array of objects) - see "Task file formats" above.
 
 ```yaml
 ---
@@ -345,13 +362,18 @@ Execution rules:
 
 ### Scaffolding with `init`
 
-`docket init` writes a starter `tasks.yml` from an embedded template. It is offline only: no Dokku server contact, no `git` subprocess. The default scaffold ships four tasks (`dokku_app`, `dokku_config`, `dokku_domains`, `dokku_git_sync`) wrapped in a single play with `app` and `repo` inputs, and round-trips cleanly through `docket validate`.
+`docket init` writes a starter task file from an embedded template. It is offline only: no Dokku server contact, no `git` subprocess. The default scaffold ships four tasks (`dokku_app`, `dokku_config`, `dokku_domains`, `dokku_git_sync`) wrapped in a single play with `app` and `repo` inputs, and round-trips cleanly through `docket validate`.
+
+The output format is inferred from the `--output` extension: `tasks.json` / `tasks.json5` writes a JSON5 scaffold (with `// ...` comments demonstrating the comment syntax), anything else writes the YAML scaffold. Stdout (`--output -`) defaults to YAML.
 
 ```shell
 # Use cwd basename as the app and remote.origin.url from ./.git/config as the repo
 docket init
 
-# Stream the rendered YAML to stdout for piping
+# Same scaffold, JSON5 surface syntax
+docket init --output tasks.json
+
+# Stream the rendered scaffold to stdout for piping
 docket init --output -
 ```
 
@@ -360,7 +382,7 @@ The flags are:
 | Flag | Effect |
 |------|--------|
 | (default) | Write `./tasks.yml`; refuse if the file exists |
-| `--output <path>` | Write to a specific path; `-` writes to stdout |
+| `--output <path>` | Write to a specific path; `-` writes to stdout. Format is inferred from the extension (`.json` / `.json5` -> JSON5, otherwise YAML). |
 | `--force` | Overwrite an existing file |
 | `--name <name>` | Override the play and `app` input default (defaults to the cwd basename) |
 | `--repo <url>` | Override the `repo` input default (defaults to `remote.origin.url` in `./.git/config`, if present) |
@@ -368,16 +390,25 @@ The flags are:
 
 ### Formatting recipes with `fmt`
 
-`docket fmt` is a canonical formatter for `tasks.yml`, in the spirit of `gofmt`. It parses with `gopkg.in/yaml.v3`'s `Node` API so head, line, and foot comments round-trip; reorders task envelope and play keys into a stable order; normalises indentation to a 2-space step; and inserts blank lines between top-level plays and between top-level task entries. The default rewrites `./tasks.yml` in place; `--check` and `--diff` are read-only modes. The CLI flags compose, modeled after `black` / `ruff format`.
+`docket fmt` is a canonical formatter for task files, in the spirit of `gofmt`. It works for both YAML and JSON5: format is detected per file from the path's extension (`.yml` / `.yaml` use the `gopkg.in/yaml.v3` Node API, `.json` / `.json5` use docket's in-tree JSON5 formatter). Both formatters share the same canonical key order so a YAML recipe and its JSON5 twin lay out identically.
+
+For YAML, head / line / foot comments survive via yaml.v3's Node API. For JSON5, comments survive via a comment-aware in-tree AST + emitter (line `// ...` comments above a member, beside a member on the same line, or as foot comments inside a container before its closing brace; block `/* ... */` comments are preserved at the same anchors). Both surfaces reorder task envelope and play keys into a stable order, normalise indentation to a 2-space step, and insert blank lines between top-level plays and between top-level task entries. The default rewrites the named file in place; `--check` and `--diff` are read-only modes. The CLI flags compose, modeled after `black` / `ruff format`.
 
 ```shell
-# Rewrite ./tasks.yml in place.
+# Rewrite ./tasks.yml in place. With no positional argument, fmt
+# probes tasks.yml -> tasks.yaml -> tasks.json (same default-lookup
+# rule as apply / plan / validate).
 docket fmt
+
+# Format a JSON5 recipe in place
+docket fmt tasks.json
 
 # CI gate: print the diff and exit 1 if anything is not canonical.
 docket fmt --check --diff
 
-# Read from stdin, write canonical to stdout.
+# Read from stdin, write canonical to stdout. Stdin format is sniffed
+# from the first non-trivia byte: a leading [ or { signals JSON5,
+# anything else parses as YAML.
 cat tasks.yml | docket fmt -
 ```
 
@@ -423,7 +454,7 @@ The flags are:
 
 | Flag | Effect |
 |------|--------|
-| `--tasks <path>` | Use a specific task file (default `./tasks.yml`) |
+| `--tasks <path>` | Use a specific task file (YAML or JSON5). When omitted, docket probes `tasks.yml` -> `tasks.yaml` -> `tasks.json`. |
 | `--verbose` | After each task line, echo every resolved Dokku command the task ran on a `→`-prefixed continuation line, in invocation order. Tasks that loop over inputs (e.g. `dokku_buildpacks` adding several URLs) emit one continuation per call. Commands are masked against the global sensitive value set. Ignored when `--json` is set; the JSON output already includes the resolved commands. |
 | `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
 | `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
@@ -543,7 +574,7 @@ The flags are:
 
 | Flag | Effect |
 |------|--------|
-| `--tasks <path>` | Use a specific task file (default `./tasks.yml`) |
+| `--tasks <path>` | Use a specific task file (YAML or JSON5). When omitted, docket probes `tasks.yml` -> `tasks.yaml` -> `tasks.json`. |
 | `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
 | `--detailed-exitcode` | Exit `0` when no drift is detected, `2` when at least one task reports drift, `1` on read or probe error. Errors win over drift. Without this flag, plan exits `0` regardless of drift. Mirrors the `git diff --exit-code` / `terraform plan -detailed-exitcode` convention. |
 | `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
@@ -599,8 +630,11 @@ Exit codes are `0` when no problems are found and `1` otherwise. Five flags are 
 A task file can also be specified via flag, and may be a file retrieved via http:
 
 ```shell
-# alternate path
+# alternate path (YAML)
 docket apply --tasks path/to/task.yml
+
+# JSON5 task file
+docket apply --tasks path/to/tasks.json
 
 # html file
 docket apply --tasks http://dokku.com/docket/example.yml
