@@ -121,11 +121,13 @@ func planDomainsPresent(t DomainsTask) PlanResult {
 		subcommand = "domains:add-global"
 		appName = "--global"
 	}
+	inputs := dokkuArgsInputs(subcommand, appName, toAdd)
 	return PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d domain(s) to add", len(toAdd)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply:     applyDokkuArgs(subcommand, appName, toAdd, StatePresent, StateAbsent),
 	}
 }
@@ -156,11 +158,13 @@ func planDomainsAbsent(t DomainsTask) PlanResult {
 		subcommand = "domains:remove-global"
 		appName = "--global"
 	}
+	inputs := dokkuArgsInputs(subcommand, appName, toRemove)
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d domain(s) to remove", len(toRemove)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply:     applyDokkuArgs(subcommand, appName, toRemove, StateAbsent, StatePresent),
 	}
 }
@@ -198,11 +202,13 @@ func planDomainsSet(t DomainsTask) PlanResult {
 		subcommand = "domains:set-global"
 		appName = "--global"
 	}
+	inputs := dokkuArgsInputs(subcommand, appName, t.Domains)
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply:     applyDokkuArgs(subcommand, appName, t.Domains, StateSet, StateAbsent),
 	}
 }
@@ -229,34 +235,32 @@ func planDomainsClear(t DomainsTask) PlanResult {
 		subcommand = "domains:clear-global"
 		appName = "--global"
 	}
+	inputs := dokkuArgsInputs(subcommand, appName, nil)
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d domain(s)", len(currentDomains)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply:     applyDokkuArgs(subcommand, appName, nil, StateClear, StatePresent),
 	}
+}
+
+// dokkuArgsInputs returns the subprocess inputs that run `dokku --quiet
+// <subcommand> <target> <extra...>`.
+func dokkuArgsInputs(subcommand, target string, extra []string) []subprocess.ExecCommandInput {
+	args := []string{"--quiet", subcommand, target}
+	args = append(args, extra...)
+	return []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 }
 
 // applyDokkuArgs returns a closure that runs `dokku --quiet <subcommand>
 // <target> <extra...>`. It is used by domains plan paths to share the
 // boilerplate around constructing the subprocess call.
 func applyDokkuArgs(subcommand, target string, extra []string, finalState State, errState State) func() TaskOutputState {
+	inputs := dokkuArgsInputs(subcommand, target, extra)
 	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: errState}
-		args := []string{"--quiet", subcommand, target}
-		args = append(args, extra...)
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    args,
-		})
-		state.Commands = append(state.Commands, result.Command)
-		if err != nil {
-			return TaskOutputErrorFromExec(state, err, result)
-		}
-		state.Changed = true
-		state.State = finalState
-		return state
+		return runExecInputs(TaskOutputState{State: errState}, finalState, inputs)
 	}
 }
 

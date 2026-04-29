@@ -92,38 +92,29 @@ func (t GitSyncTask) Plan() PlanResult {
 			if ref == "" {
 				ref = "(default branch)"
 			}
+			args := []string{"git:sync"}
+			if t.Build {
+				args = append(args, "--build")
+			}
+			if t.BuildIfChanges {
+				args = append(args, "--build-if-changes")
+			}
+			if t.SkipDeployBranch {
+				args = append(args, "--skip-deploy-branch")
+			}
+			args = append(args, t.App, t.Remote)
+			if t.GitRef != "" {
+				args = append(args, t.GitRef)
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "remote/ref drift",
 				Mutations: []string{fmt.Sprintf("git:sync %s %s %s", t.App, t.Remote, ref)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					args := []string{"git:sync"}
-					if t.Build {
-						args = append(args, "--build")
-					}
-					if t.BuildIfChanges {
-						args = append(args, "--build-if-changes")
-					}
-					if t.SkipDeployBranch {
-						args = append(args, "--skip-deploy-branch")
-					}
-					args = append(args, t.App, t.Remote)
-					if t.GitRef != "" {
-						args = append(args, t.GitRef)
-					}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},

@@ -103,6 +103,51 @@ func (ecr ExecCommandResponse) StdoutBytes() []byte {
 	return []byte(ecr.StdoutContents())
 }
 
+// ResolveCommandString returns the masked command line ExecCommandResponse.Command
+// would carry if input were executed now. Used by tasks' Plan() methods so
+// PlanResult.Commands renders byte-identical to the strings apply emits via
+// state.Commands; sharing the rendering logic keeps the two views from drifting.
+//
+// The function mirrors the dispatch in CallExecCommandWithContext and
+// CallSshCommandWithContext: when the (possibly defaulted) Host is set and the
+// command is `dokku`, the SSH transport's bare `cmd args` form is returned
+// because remote sudo is wrapped server-side via DOKKU_SUDO and never appears
+// in the displayed command. Otherwise the local path's sudo-wrap-when-true
+// form is returned.
+func ResolveCommandString(input ExecCommandInput) string {
+	if input.Host == "" {
+		input.Host = GetDefaultHost()
+	}
+	if input.Host != "" && input.Command == "dokku" {
+		return resolveSshCommandString(input.Command, input.Args)
+	}
+	cmd := input.Command
+	args := input.Args
+	if input.Sudo {
+		args = append([]string{"-n", "-u", "root", cmd}, args...)
+		cmd = "sudo"
+	}
+	return resolveLocalCommandString(cmd, args)
+}
+
+// resolveLocalCommandString joins a local command and args into the masked
+// form CallExecCommandWithContext records on the response.
+func resolveLocalCommandString(command string, args []string) string {
+	if len(args) == 0 {
+		return MaskString(command)
+	}
+	return MaskString(command + " " + strings.Join(args, " "))
+}
+
+// resolveSshCommandString renders the bare `cmd arg1 arg2 ...` form the SSH
+// transport reports (sudo wrapping happens remotely and is not displayed).
+func resolveSshCommandString(command string, args []string) string {
+	if len(args) == 0 {
+		return MaskString(command)
+	}
+	return MaskString(command + " " + strings.Join(args, " "))
+}
+
 // CallExecCommand executes a command on the local host
 func CallExecCommand(input ExecCommandInput) (ExecCommandResponse, error) {
 	ctx := context.Background()
@@ -198,11 +243,7 @@ func CallExecCommandWithContext(ctx context.Context, input ExecCommandInput) (Ex
 		cmd.StdErrWriter = input.StderrWriter
 	}
 
-	resolved := command
-	if len(commandArgs) > 0 {
-		resolved = command + " " + strings.Join(commandArgs, " ")
-	}
-	resolved = MaskString(resolved)
+	resolved := resolveLocalCommandString(command, commandArgs)
 
 	res, err := cmd.Execute(ctx)
 	if err != nil {

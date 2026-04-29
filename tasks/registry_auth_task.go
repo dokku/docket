@@ -109,61 +109,46 @@ func (t RegistryAuthTask) Plan() PlanResult {
 			if t.Username == "" || t.Password == "" {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'username' and 'password' are required when state is 'present'")}
 			}
+			args := []string{"--quiet", "registry:login", "--password-stdin"}
+			if t.Global {
+				args = append(args, "--global")
+			} else {
+				args = append(args, t.App)
+			}
+			args = append(args, t.Server, t.Username)
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    args,
+				Stdin:   strings.NewReader(t.Password),
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "registry login state not probed",
 				Mutations: []string{fmt.Sprintf("registry:login %s %s as %s", target, t.Server, t.Username)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					args := []string{"--quiet", "registry:login", "--password-stdin"}
-					if t.Global {
-						args = append(args, "--global")
-					} else {
-						args = append(args, t.App)
-					}
-					args = append(args, t.Server, t.Username)
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-						Stdin:   strings.NewReader(t.Password),
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
+			args := []string{"--quiet", "registry:logout"}
+			if t.Global {
+				args = append(args, "--global")
+			} else {
+				args = append(args, t.App)
+			}
+			args = append(args, t.Server)
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "registry login state not probed",
 				Mutations: []string{fmt.Sprintf("registry:logout %s %s", target, t.Server)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					args := []string{"--quiet", "registry:logout"}
-					if t.Global {
-						args = append(args, "--global")
-					} else {
-						args = append(args, t.App)
-					}
-					args = append(args, t.Server)
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

@@ -100,30 +100,21 @@ func (t PsScaleTask) Plan() PlanResult {
 			if len(toScale) == 0 {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			args := []string{"ps:scale"}
+			if t.SkipDeploy {
+				args = append(args, "--skip-deploy")
+			}
+			args = append(args, t.App)
+			args = append(args, toScale...)
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("%d process scale change(s)", len(mutations)),
 				Mutations: mutations,
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					args := []string{"ps:scale"}
-					if t.SkipDeploy {
-						args = append(args, "--skip-deploy")
-					}
-					args = append(args, t.App)
-					args = append(args, toScale...)
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},

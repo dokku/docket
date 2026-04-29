@@ -144,32 +144,23 @@ func planConfigSet(t ConfigTask) PlanResult {
 	if allNew {
 		status = PlanStatusCreate
 	}
+	args := []string{"--quiet", "config:set", "--encoded"}
+	if !t.Restart {
+		args = append(args, "--no-restart")
+	}
+	args = append(args, t.App)
+	for _, k := range keys {
+		args = append(args, fmt.Sprintf("%s=%s", k, base64.StdEncoding.EncodeToString([]byte(t.Config[k]))))
+	}
+	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 	return PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d key(s) to set", len(keys)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply: func() TaskOutputState {
-			state := TaskOutputState{Changed: false, State: StateAbsent}
-			args := []string{"--quiet", "config:set", "--encoded"}
-			if !t.Restart {
-				args = append(args, "--no-restart")
-			}
-			args = append(args, t.App)
-			for _, k := range keys {
-				args = append(args, fmt.Sprintf("%s=%s", k, base64.StdEncoding.EncodeToString([]byte(t.Config[k]))))
-			}
-			result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-				Command: "dokku",
-				Args:    args,
-			})
-			state.Commands = append(state.Commands, result.Command)
-			if err != nil {
-				return TaskOutputErrorFromExec(state, err, result)
-			}
-			state.Changed = true
-			state.State = StatePresent
-			return state
+			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
@@ -189,30 +180,21 @@ func planConfigUnset(t ConfigTask) PlanResult {
 	for _, k := range keys {
 		mutations = append(mutations, fmt.Sprintf("unset %s", k))
 	}
+	args := []string{"--quiet", "config:unset"}
+	if !t.Restart {
+		args = append(args, "--no-restart")
+	}
+	args = append(args, t.App)
+	args = append(args, keys...)
+	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d key(s) to unset", len(keys)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply: func() TaskOutputState {
-			state := TaskOutputState{Changed: false, State: StatePresent}
-			args := []string{"--quiet", "config:unset"}
-			if !t.Restart {
-				args = append(args, "--no-restart")
-			}
-			args = append(args, t.App)
-			args = append(args, keys...)
-			result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-				Command: "dokku",
-				Args:    args,
-			})
-			state.Commands = append(state.Commands, result.Command)
-			if err != nil {
-				return TaskOutputErrorFromExec(state, err, result)
-			}
-			state.Changed = true
-			state.State = StateAbsent
-			return state
+			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }

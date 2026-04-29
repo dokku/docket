@@ -73,24 +73,18 @@ func (t LetsencryptTask) Plan() PlanResult {
 			if active {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "letsencrypt:enable", t.App},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "letsencrypt not active",
 				Mutations: []string{"letsencrypt:enable " + t.App},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "letsencrypt:enable", t.App},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -102,24 +96,18 @@ func (t LetsencryptTask) Plan() PlanResult {
 			if !active {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "letsencrypt:disable", t.App},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "letsencrypt active",
 				Mutations: []string{"letsencrypt:disable " + t.App},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "letsencrypt:disable", t.App},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

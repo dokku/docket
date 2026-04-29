@@ -72,24 +72,18 @@ func (t AppLockTask) Plan() PlanResult {
 			if locked {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "apps:lock", t.App},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "app unlocked",
 				Mutations: []string{"lock " + t.App},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "apps:lock", t.App},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -101,24 +95,18 @@ func (t AppLockTask) Plan() PlanResult {
 			if !locked {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "apps:unlock", t.App},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "app locked",
 				Mutations: []string{"unlock " + t.App},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "apps:unlock", t.App},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

@@ -204,7 +204,8 @@ The flags are:
 | Flag | Effect |
 |------|--------|
 | `--tasks <path>` | Use a specific task file (default `./tasks.yml`) |
-| `--verbose` | After each task line, echo every resolved Dokku command the task ran on a `→`-prefixed continuation line, in invocation order. Tasks that loop over inputs (e.g. `dokku_buildpacks` adding several URLs) emit one continuation per call. Commands are not masked - avoid on recipes that pass secrets via task arguments. |
+| `--verbose` | After each task line, echo every resolved Dokku command the task ran on a `→`-prefixed continuation line, in invocation order. Tasks that loop over inputs (e.g. `dokku_buildpacks` adding several URLs) emit one continuation per call. Commands are masked against the global sensitive value set. Ignored when `--json` is set; the JSON output already includes the resolved commands. |
+| `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
 
 For example, a multi-command task renders one continuation per invocation:
 
@@ -278,6 +279,41 @@ Plan: 1 task(s); 1 would change, 0 in sync, 0 error(s).
 `Plan()` results drive `apply`: every task probes the server once, and `apply` reuses that probe to decide whether to mutate. `apply` on an already-converged server reports `Changed=false` for every task; back-to-back applies are no-ops by design.
 
 A handful of tasks (notably `dokku_git_auth`, `dokku_registry_auth`, and `dokku_storage_ensure`) cannot probe their current state without invoking the corresponding dokku command, so their plan output reports drift unconditionally with `(... not probed)` in the reason.
+
+The flags are:
+
+| Flag | Effect |
+|------|--------|
+| `--tasks <path>` | Use a specific task file (default `./tasks.yml`) |
+| `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
+| `--detailed-exitcode` | Exit `0` when no drift is detected, `2` when at least one task reports drift, `1` on read or probe error. Errors win over drift. Without this flag, plan exits `0` regardless of drift. Mirrors the `git diff --exit-code` / `terraform plan -detailed-exitcode` convention. |
+
+```shell
+# CI gate: fail the job if any task would change the server.
+docket plan --detailed-exitcode || exit $?
+```
+
+### JSON output
+
+`docket apply --json` and `docket plan --json` emit one JSON-lines event per line on stdout. Every event carries a `version` integer pinned at `1`; consumers branch on `version` for forward compatibility. Sensitive values registered via inputs declared `sensitive: true` or task struct fields tagged `sensitive:"true"` are masked as `***`.
+
+| Event | Required fields | Optional fields |
+|-------|-----------------|-----------------|
+| `play_start` | `version`, `type`, `name`, `ts` | `host` |
+| `task` (apply) | `version`, `type`, `play`, `name`, `status` (`ok`/`changed`/`skipped`/`error`), `changed`, `state`, `desired_state`, `duration_ms`, `ts` | `error`, `commands` |
+| `task` (plan) | `version`, `type`, `play`, `name`, `status` (`ok`/`+`/`~`/`-`/`skipped`/`error`), `would_change`, `state`, `desired_state`, `duration_ms`, `ts` | `reason`, `mutations`, `commands`, `error` |
+| `summary` (apply) | `version`, `type`, `tasks`, `changed`, `ok`, `skipped`, `errors`, `duration_ms` | - |
+| `summary` (plan) | `version`, `type`, `tasks`, `would_change`, `in_sync`, `skipped`, `errors`, `duration_ms` | - |
+
+Both `task` event flavors include `commands` as an array of resolved, masked dokku command strings (singular `command` was considered but tasks like `dokku_buildpacks` legitimately invoke N subprocess calls, so an array preserves structure for `jq '.commands[]'`). The plan `commands` array reports the dokku invocations `apply` *would* run; the apply `commands` array reports what was actually executed. Both arrays use the same rendering rules, so plan output and apply output stay byte-identical for the same logical operation.
+
+Sample `plan --json` line for a config task with two new keys:
+
+```jsonl
+{"version":1,"type":"task","play":"tasks","name":"configure","status":"~","would_change":true,"state":"present","desired_state":"present","reason":"2 key(s) to set","mutations":["set KEY (new)","set SECRET (new)"],"commands":["dokku --quiet config:set --encoded api KEY=*** SECRET=***"],"duration_ms":58,"ts":"2026-04-26T11:30:00Z"}
+```
+
+`--json` and `--detailed-exitcode` compose; CI pipelines can stream JSON to a dashboard while still branching on the exit code.
 
 ### Validating recipes with `validate`
 

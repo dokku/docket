@@ -114,11 +114,13 @@ func planSetResource(subcommand string, rctx ResourceContext) PlanResult {
 	if len(mutations) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
+	inputs := resourceSetInputs(subcommand, rctx)
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d resource(s) to set", len(mutations)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply:     applyResourceSet(subcommand, rctx),
 	}
 }
@@ -141,89 +143,63 @@ func planClearResource(subcommand string, rctx ResourceContext) PlanResult {
 	if !hasResources {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
+	inputs := []subprocess.ExecCommandInput{resourceClearInput(subcommand, rctx)}
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    "would clear all resources",
 		Mutations: []string{fmt.Sprintf("clear resources via %s-clear", subcommand)},
+		Commands:  resolveCommands(inputs),
 		apply:     applyResourceClear(subcommand, rctx),
 	}
+}
+
+// resourceClearInput returns the subprocess input that runs the resource
+// clear command (`<subcommand>-clear`).
+func resourceClearInput(subcommand string, rctx ResourceContext) subprocess.ExecCommandInput {
+	args := []string{subcommand + "-clear"}
+	if rctx.ProcessType != "" {
+		args = append(args, "--process-type", rctx.ProcessType)
+	}
+	args = append(args, rctx.App)
+	return subprocess.ExecCommandInput{Command: "dokku", Args: args}
+}
+
+// resourceSetInputs returns the subprocess inputs that set resource limits.
+// When ClearBefore is true, the first input clears before the set runs.
+func resourceSetInputs(subcommand string, rctx ResourceContext) []subprocess.ExecCommandInput {
+	inputs := []subprocess.ExecCommandInput{}
+	if rctx.ClearBefore {
+		inputs = append(inputs, resourceClearInput(subcommand, rctx))
+	}
+	args := []string{subcommand}
+	for key, value := range rctx.Resources {
+		args = append(args, fmt.Sprintf("--%s", key), value)
+	}
+	if rctx.ProcessType != "" {
+		args = append(args, "--process-type", rctx.ProcessType)
+	}
+	args = append(args, rctx.App)
+	inputs = append(inputs, subprocess.ExecCommandInput{Command: "dokku", Args: args})
+	return inputs
 }
 
 // applyResourceSet returns a closure that runs the underlying resource
 // set command. ClearBefore is honored by clearing before setting.
 func applyResourceSet(subcommand string, rctx ResourceContext) func() TaskOutputState {
+	inputs := resourceSetInputs(subcommand, rctx)
 	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: StateAbsent}
-		if rctx.ClearBefore {
-			if err := execResourceClear(subcommand, rctx); err != nil {
-				state.Error = err
-				state.Message = err.Error()
-				return state
-			}
-			state.Changed = true
-		}
-
-		args := []string{subcommand}
-		for key, value := range rctx.Resources {
-			args = append(args, fmt.Sprintf("--%s", key), value)
-		}
-		if rctx.ProcessType != "" {
-			args = append(args, "--process-type", rctx.ProcessType)
-		}
-		args = append(args, rctx.App)
-
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    args,
-		})
-		state.Commands = append(state.Commands, result.Command)
-		if err != nil {
-			return TaskOutputErrorFromExec(state, err, result)
-		}
-		state.Changed = true
-		state.State = StatePresent
-		return state
+		return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 	}
 }
 
 // applyResourceClear returns a closure that runs the underlying resource
 // clear command (subcommand + "-clear").
 func applyResourceClear(subcommand string, rctx ResourceContext) func() TaskOutputState {
+	inputs := []subprocess.ExecCommandInput{resourceClearInput(subcommand, rctx)}
 	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: StatePresent}
-		if err := execResourceClear(subcommand, rctx); err != nil {
-			state.Error = err
-			state.Message = err.Error()
-			return state
-		}
-		state.Changed = true
-		state.State = StateAbsent
-		return state
+		return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 	}
-}
-
-// execResourceClear executes the dokku resource clear command
-func execResourceClear(subcommand string, rctx ResourceContext) error {
-	args := []string{
-		subcommand + "-clear",
-	}
-
-	if rctx.ProcessType != "" {
-		args = append(args, "--process-type", rctx.ProcessType)
-	}
-
-	args = append(args, rctx.App)
-
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    args,
-	})
-	if err != nil {
-		return fmt.Errorf("%s", result.StderrContents())
-	}
-
-	return nil
 }
 
 // mapKeys returns the keys of a map as a slice

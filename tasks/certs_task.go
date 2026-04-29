@@ -110,28 +110,19 @@ func (t CertsTask) Plan() PlanResult {
 			if t.Global {
 				target = "(global)"
 			}
+			args := []string{"--quiet", "certs:add", t.App, t.Cert, t.Key}
+			if t.Global {
+				args = []string{"--quiet", "global-cert:set", t.Cert, t.Key}
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "certificate not installed",
 				Mutations: []string{fmt.Sprintf("install certificate for %s", target)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					args := []string{"--quiet", "certs:add", t.App, t.Cert, t.Key}
-					if t.Global {
-						args = []string{"--quiet", "global-cert:set", t.Cert, t.Key}
-					}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -150,28 +141,19 @@ func (t CertsTask) Plan() PlanResult {
 			if t.Global {
 				target = "(global)"
 			}
+			args := []string{"--quiet", "certs:remove", t.App}
+			if t.Global {
+				args = []string{"--quiet", "global-cert:remove"}
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "certificate present",
 				Mutations: []string{fmt.Sprintf("remove certificate for %s", target)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					args := []string{"--quiet", "certs:remove", t.App}
-					if t.Global {
-						args = []string{"--quiet", "global-cert:remove"}
-					}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

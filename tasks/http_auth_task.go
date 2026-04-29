@@ -85,24 +85,18 @@ func (t HttpAuthTask) Plan() PlanResult {
 			if enabled {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "http-auth:on", t.App, t.Username, t.Password},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "http-auth disabled",
 				Mutations: []string{"http-auth:on " + t.App},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "http-auth:on", t.App, t.Username, t.Password},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -114,24 +108,18 @@ func (t HttpAuthTask) Plan() PlanResult {
 			if !enabled {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "http-auth:off", t.App},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "http-auth enabled",
 				Mutations: []string{"http-auth:off " + t.App},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "http-auth:off", t.App},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

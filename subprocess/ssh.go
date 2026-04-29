@@ -339,7 +339,7 @@ func CallSshCommandWithContext(ctx context.Context, host string, input ExecComma
 		cmd.StdErrWriter = input.StderrWriter
 	}
 
-	resolved := MaskString(input.Command + " " + strings.Join(input.Args, " "))
+	resolved := resolveSshCommandString(input.Command, input.Args)
 
 	res, runErr := cmd.Execute(ctx)
 	resp := ExecCommandResponse{

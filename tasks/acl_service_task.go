@@ -102,26 +102,21 @@ func (t AclServiceTask) Plan() PlanResult {
 			if len(toAdd) == 0 {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := make([]subprocess.ExecCommandInput, 0, len(toAdd))
+			for _, u := range toAdd {
+				inputs = append(inputs, subprocess.ExecCommandInput{
+					Command: "dokku",
+					Args:    []string{"--quiet", "acl:add-service", t.Type, t.Service, u},
+				})
+			}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("%d user(s) to add", len(toAdd)),
 				Mutations: mutations,
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					for _, u := range toAdd {
-						result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-							Command: "dokku",
-							Args:    []string{"--quiet", "acl:add-service", t.Type, t.Service, u},
-						})
-						state.Commands = append(state.Commands, result.Command)
-						if err != nil {
-							return TaskOutputErrorFromExec(state, err, result)
-						}
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -148,26 +143,21 @@ func (t AclServiceTask) Plan() PlanResult {
 			if len(toRemove) == 0 {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
+			for _, u := range toRemove {
+				inputs = append(inputs, subprocess.ExecCommandInput{
+					Command: "dokku",
+					Args:    []string{"--quiet", "acl:remove-service", t.Type, t.Service, u},
+				})
+			}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
 				Mutations: mutations,
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					for _, u := range toRemove {
-						result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-							Command: "dokku",
-							Args:    []string{"--quiet", "acl:remove-service", t.Type, t.Service, u},
-						})
-						state.Commands = append(state.Commands, result.Command)
-						if err != nil {
-							return TaskOutputErrorFromExec(state, err, result)
-						}
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

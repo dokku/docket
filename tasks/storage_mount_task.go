@@ -64,24 +64,18 @@ func (t StorageMountTask) Plan() PlanResult {
 			if exists {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "storage:mount", t.App, mountSpec},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "mount missing",
 				Mutations: []string{fmt.Sprintf("mount %s on %s", mountSpec, t.App)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "storage:mount", t.App, mountSpec},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -93,24 +87,18 @@ func (t StorageMountTask) Plan() PlanResult {
 			if !exists {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "storage:unmount", t.App, mountSpec},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "mount present",
 				Mutations: []string{fmt.Sprintf("unmount %s on %s", mountSpec, t.App)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "storage:unmount", t.App, mountSpec},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

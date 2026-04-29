@@ -118,11 +118,13 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 				reason = fmt.Sprintf("%s drift on %s (was %q)", property, target, current)
 			}
 
+			inputs := propertySetInputs(subcommand, target, property, value)
 			return PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("set %s=%s", property, value)},
+				Commands:  resolveCommands(inputs),
 				apply:     applyPropertySet(subcommand, target, property, value),
 			}
 		},
@@ -152,33 +154,39 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 				reason = fmt.Sprintf("would unset %s on %s (was %q)", property, target, current)
 			}
 
+			inputs := propertyUnsetInputs(subcommand, target, property)
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("unset %s", property)},
+				Commands:  resolveCommands(inputs),
 				apply:     applyPropertyUnset(subcommand, target, property),
 			}
 		},
 	})
 }
 
+// propertySetInputs returns the subprocess inputs that set a property.
+func propertySetInputs(subcommand, target, property, value string) []subprocess.ExecCommandInput {
+	return []subprocess.ExecCommandInput{
+		{Command: "dokku", Args: []string{"--quiet", subcommand, target, property, value}},
+	}
+}
+
+// propertyUnsetInputs returns the subprocess inputs that unset a property.
+func propertyUnsetInputs(subcommand, target, property string) []subprocess.ExecCommandInput {
+	return []subprocess.ExecCommandInput{
+		{Command: "dokku", Args: []string{"--quiet", subcommand, target, property}},
+	}
+}
+
 // applyPropertySet returns a closure that runs `dokku <subcommand> <target>
 // <property> <value>` and converts the result into a TaskOutputState.
 func applyPropertySet(subcommand, target, property, value string) func() TaskOutputState {
+	inputs := propertySetInputs(subcommand, target, property, value)
 	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: StateAbsent}
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    []string{"--quiet", subcommand, target, property, value},
-		})
-		state.Commands = append(state.Commands, result.Command)
-		if err != nil {
-			return TaskOutputErrorFromExec(state, err, result)
-		}
-		state.Changed = true
-		state.State = StatePresent
-		return state
+		return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 	}
 }
 
@@ -186,18 +194,8 @@ func applyPropertySet(subcommand, target, property, value string) func() TaskOut
 // <property>` (no value, which dokku interprets as unset) and converts the
 // result into a TaskOutputState.
 func applyPropertyUnset(subcommand, target, property string) func() TaskOutputState {
+	inputs := propertyUnsetInputs(subcommand, target, property)
 	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: StatePresent}
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    []string{"--quiet", subcommand, target, property},
-		})
-		state.Commands = append(state.Commands, result.Command)
-		if err != nil {
-			return TaskOutputErrorFromExec(state, err, result)
-		}
-		state.Changed = true
-		state.State = StateAbsent
-		return state
+		return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 	}
 }

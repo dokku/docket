@@ -135,6 +135,18 @@ type PlanResult struct {
 	// individual keys). One entry per atomic change.
 	Mutations []string
 
+	// Commands is the resolved dokku command line(s) that ExecutePlan
+	// would invoke if Plan reported drift, in invocation order. Tasks
+	// populate it via subprocess.ResolveCommandString from the same
+	// ExecCommandInput values the apply closure executes, so plan and
+	// apply render byte-identical strings for the same operation.
+	//
+	// Contract: non-empty whenever Status is "+", "~", or "-" (drift);
+	// empty when InSync is true or when Status is "!" (probe error).
+	// Sensitive values are already masked because ResolveCommandString
+	// runs MaskString on the rendered form.
+	Commands []string
+
 	// DesiredState mirrors TaskOutputState.DesiredState so plan output can
 	// render the same context as apply output.
 	DesiredState State

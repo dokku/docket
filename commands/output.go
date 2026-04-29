@@ -7,9 +7,70 @@ import (
 	"time"
 
 	"github.com/dokku/docket/subprocess"
+	"github.com/dokku/docket/tasks"
 	"github.com/fatih/color"
 	"github.com/mitchellh/cli"
 )
+
+// EventEmitter is the structured event sink consumed by `apply` and `plan`.
+// Both the human Formatter and the JSONEmitter implement it. The executor
+// in apply.go / plan.go constructs the right emitter at the top of Run()
+// based on the --json flag and funnels each per-task branch through the
+// interface so the two output modes stay in lock-step.
+type EventEmitter interface {
+	// PlayStart announces the beginning of a play. host is the optional
+	// remote host annotation, "" for local execution.
+	PlayStart(name, host string)
+	// ApplyTask emits one event per task in an `apply` run.
+	ApplyTask(ev ApplyTaskEvent)
+	// PlanTask emits one event per task in a `plan` run.
+	PlanTask(ev PlanTaskEvent)
+	// ApplySummary emits the end-of-run footer for `apply`.
+	ApplySummary(c ApplyCounts, d time.Duration)
+	// PlanSummary emits the end-of-run footer for `plan`.
+	PlanSummary(c PlanCounts, d time.Duration)
+}
+
+// ApplyTaskEvent describes a single task outcome from an apply run. The
+// run-loop in commands/apply.go populates this once per task and hands it
+// to the active emitter; the emitter decides how to render it.
+type ApplyTaskEvent struct {
+	// Play is the name of the enclosing play (today always "tasks").
+	Play string
+	// Name is the task's envelope name.
+	Name string
+	// State is the post-execute state returned by Task.Execute.
+	// Zero-value State is acceptable for the WhenError / Skipped branches.
+	State tasks.TaskOutputState
+	// WhenError, when non-nil, indicates the `when:` predicate raised an
+	// expr error and the task did not run. Mutually exclusive with the
+	// other branches.
+	WhenError error
+	// Skipped indicates the `when:` predicate evaluated to false and the
+	// task was filtered out. Mutually exclusive with the other branches.
+	Skipped bool
+	// InvalidState, when true, indicates Execute reported success but the
+	// final State did not match DesiredState; treated as an error in
+	// counts and exit logic.
+	InvalidState bool
+	// Duration is the wall-clock time Execute took (or zero for the
+	// when-skipped / when-error branches).
+	Duration time.Duration
+	// Timestamp is when the event was produced (UTC). The JSON emitter
+	// serialises this as the `ts` field; the human emitter ignores it.
+	Timestamp time.Time
+}
+
+// PlanTaskEvent describes a single task outcome from a plan run.
+type PlanTaskEvent struct {
+	Play      string
+	Name      string
+	Result    tasks.PlanResult
+	WhenError error
+	Skipped   bool
+	Duration  time.Duration
+	Timestamp time.Time
+}
 
 // Marker is the bracketed status marker that prefixes a task line. The
 // concrete strings (without brackets) match the conventions documented
@@ -118,6 +179,76 @@ func (f *Formatter) PlayHeaderWithHost(name, host string) {
 	f.ui.Output(fmt.Sprintf("==> Play: %s  (host: %s)", name, host))
 }
 
+// PlayStart satisfies EventEmitter; delegates to PlayHeaderWithHost.
+func (f *Formatter) PlayStart(name, host string) {
+	f.PlayHeaderWithHost(name, host)
+}
+
+// ApplyTask renders one apply task line plus optional continuations,
+// matching the legacy formatter dispatch in commands/apply.go.
+func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
+	switch {
+	case ev.WhenError != nil:
+		f.TaskLine(MarkerError, ev.Name, "")
+		f.Continuation('!', fmt.Sprintf("when expression error: %v", ev.WhenError))
+	case ev.Skipped:
+		f.TaskLine(MarkerSkipped, ev.Name, "")
+	case ev.State.Error != nil:
+		f.TaskLine(MarkerError, ev.Name, "")
+		f.ErrorContinuation(ev.State.Error)
+		if f.verbose {
+			for _, cmd := range ev.State.Commands {
+				f.Continuation('\u2192', cmd)
+			}
+		}
+	case ev.InvalidState:
+		f.TaskLine(MarkerError, ev.Name, "")
+		f.Continuation('!', fmt.Sprintf("invalid state: expected=%v actual=%v", ev.State.DesiredState, ev.State.State))
+	case ev.State.Changed:
+		f.TaskLine(MarkerChanged, ev.Name, "")
+		if f.verbose {
+			for _, cmd := range ev.State.Commands {
+				f.Continuation('\u2192', cmd)
+			}
+		}
+	default:
+		f.TaskLine(MarkerOK, ev.Name, "")
+		if f.verbose {
+			for _, cmd := range ev.State.Commands {
+				f.Continuation('\u2192', cmd)
+			}
+		}
+	}
+}
+
+// PlanTask renders one plan task line plus optional continuations,
+// matching the legacy formatter dispatch in commands/plan.go.
+func (f *Formatter) PlanTask(ev PlanTaskEvent) {
+	switch {
+	case ev.WhenError != nil:
+		f.TaskLine(MarkerProbeError, ev.Name, fmt.Sprintf("(when expression error: %v)", ev.WhenError))
+	case ev.Skipped:
+		f.TaskLine(MarkerSkipped, ev.Name, "(when: false)")
+	case ev.Result.Error != nil:
+		f.TaskLine(MarkerProbeError, ev.Name, fmt.Sprintf("(%s)", PrefixErrorMessage(ev.Result.Error)))
+	case ev.Result.InSync:
+		f.TaskLine(MarkerOK, ev.Name, "(in sync)")
+	default:
+		marker := Marker(ev.Result.Status)
+		if marker == "" {
+			marker = Marker(tasks.PlanStatusModify)
+		}
+		suffix := ""
+		if ev.Result.Reason != "" {
+			suffix = "(" + ev.Result.Reason + ")"
+		}
+		f.TaskLine(marker, ev.Name, suffix)
+		for _, m := range ev.Result.Mutations {
+			f.Continuation('-', m)
+		}
+	}
+}
+
 // ErrorContinuation emits an `! <prefix>: <body>` continuation line
 // under an errored task. The prefix is `ssh` when err unwraps to a
 // *subprocess.SSHError (transport-level failure: connect, auth,
@@ -207,7 +338,11 @@ func (f *Formatter) ApplySummary(c ApplyCounts, elapsed time.Duration) {
 // count is appended only when at least one task was filtered out by
 // `when:`, so recipes that do not exercise envelope predicates still
 // produce the legacy summary.
-func (f *Formatter) PlanSummary(c PlanCounts) {
+//
+// The elapsed duration is accepted for parity with ApplySummary and
+// EventEmitter, but the human plan summary line does not render it
+// (the legacy format omits timing). The JSON emitter consumes it.
+func (f *Formatter) PlanSummary(c PlanCounts, _ time.Duration) {
 	f.ui.Output("")
 	if c.Skipped > 0 {
 		f.ui.Output(fmt.Sprintf(

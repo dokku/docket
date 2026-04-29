@@ -9,6 +9,69 @@ import (
 	"time"
 )
 
+func TestResolveCommandString(t *testing.T) {
+	t.Cleanup(func() { SetGlobalSensitive(nil) })
+	t.Cleanup(func() { SetDefaultHost("") })
+
+	tests := []struct {
+		name      string
+		input     ExecCommandInput
+		sensitive []string
+		want      string
+	}{
+		{
+			name:  "bare command, no args",
+			input: ExecCommandInput{Command: "dokku"},
+			want:  "dokku",
+		},
+		{
+			name:  "command with args",
+			input: ExecCommandInput{Command: "dokku", Args: []string{"--quiet", "apps:create", "api"}},
+			want:  "dokku --quiet apps:create api",
+		},
+		{
+			name:  "sudo wraps the command and args",
+			input: ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Sudo: true},
+			want:  "sudo -n -u root dokku apps:create api",
+		},
+		{
+			name:      "sensitive values are masked",
+			input:     ExecCommandInput{Command: "dokku", Args: []string{"config:set", "api", "KEY=topsecret"}},
+			sensitive: []string{"topsecret"},
+			want:      "dokku config:set api KEY=***",
+		},
+		{
+			name:  "ssh transport returns the bare form even with Sudo set",
+			input: ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Host: "alice@host", Sudo: true},
+			want:  "dokku apps:create api",
+		},
+		{
+			name:  "non-dokku command runs locally even with Host set",
+			input: ExecCommandInput{Command: "echo", Args: []string{"hi"}, Host: "alice@host"},
+			want:  "echo hi",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			SetGlobalSensitive(tc.sensitive)
+			t.Cleanup(func() { SetGlobalSensitive(nil) })
+			if got := ResolveCommandString(tc.input); got != tc.want {
+				t.Errorf("ResolveCommandString = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveCommandStringHonorsDefaultHost(t *testing.T) {
+	t.Cleanup(func() { SetDefaultHost("") })
+	SetDefaultHost("alice@host")
+	got := ResolveCommandString(ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Sudo: true})
+	want := "dokku apps:create api"
+	if got != want {
+		t.Errorf("ResolveCommandString with default host = %q, want %q", got, want)
+	}
+}
+
 func TestExecCommandResponseStdoutContents(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -207,4 +270,3 @@ func TestCallExecCommandResponseCommandUnmaskedWhenNoSecrets(t *testing.T) {
 		t.Errorf("response.Command unexpectedly altered: %q", resp.Command)
 	}
 }
-

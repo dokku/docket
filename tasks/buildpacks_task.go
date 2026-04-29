@@ -110,26 +110,21 @@ func planBuildpacksAdd(t BuildpacksTask) PlanResult {
 	if len(current) == 0 {
 		status = PlanStatusCreate
 	}
+	inputs := make([]subprocess.ExecCommandInput, 0, len(toAdd))
+	for _, bp := range toAdd {
+		inputs = append(inputs, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", "buildpacks:add", t.App, bp},
+		})
+	}
 	return PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d buildpack(s) to add", len(toAdd)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply: func() TaskOutputState {
-			state := TaskOutputState{Changed: false, State: StateAbsent}
-			for _, bp := range toAdd {
-				result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-					Command: "dokku",
-					Args:    []string{"--quiet", "buildpacks:add", t.App, bp},
-				})
-				state.Commands = append(state.Commands, result.Command)
-				if err != nil {
-					return TaskOutputErrorFromExec(state, err, result)
-				}
-			}
-			state.Changed = true
-			state.State = StatePresent
-			return state
+			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
@@ -150,25 +145,18 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 		for bp := range current {
 			mutations = append(mutations, "remove "+bp)
 		}
-		app := t.App
+		inputs := []subprocess.ExecCommandInput{{
+			Command: "dokku",
+			Args:    []string{"--quiet", "buildpacks:clear", t.App},
+		}}
 		return PlanResult{
 			InSync:    false,
 			Status:    PlanStatusDestroy,
 			Reason:    fmt.Sprintf("clear %d buildpack(s)", len(current)),
 			Mutations: mutations,
+			Commands:  resolveCommands(inputs),
 			apply: func() TaskOutputState {
-				state := TaskOutputState{Changed: false, State: StatePresent}
-				result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-					Command: "dokku",
-					Args:    []string{"--quiet", "buildpacks:clear", app},
-				})
-				state.Commands = append(state.Commands, result.Command)
-				if err != nil {
-					return TaskOutputErrorFromExec(state, err, result)
-				}
-				state.Changed = true
-				state.State = StateAbsent
-				return state
+				return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 			},
 		}
 	}
@@ -183,26 +171,21 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 	if len(toRemove) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
+	inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
+	for _, bp := range toRemove {
+		inputs = append(inputs, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", "buildpacks:remove", t.App, bp},
+		})
+	}
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d buildpack(s) to remove", len(toRemove)),
 		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
 		apply: func() TaskOutputState {
-			state := TaskOutputState{Changed: false, State: StatePresent}
-			for _, bp := range toRemove {
-				result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-					Command: "dokku",
-					Args:    []string{"--quiet", "buildpacks:remove", t.App, bp},
-				})
-				state.Commands = append(state.Commands, result.Command)
-				if err != nil {
-					return TaskOutputErrorFromExec(state, err, result)
-				}
-			}
-			state.Changed = true
-			state.State = StateAbsent
-			return state
+			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }

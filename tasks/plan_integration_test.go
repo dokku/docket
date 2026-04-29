@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -98,6 +99,35 @@ func TestIntegrationPlanConfigItemizes(t *testing.T) {
 	}
 	if len(plan.Mutations) != 2 {
 		t.Errorf("expected 2 mutations (one per key), got %d: %v", len(plan.Mutations), plan.Mutations)
+	}
+	if len(plan.Commands) == 0 {
+		t.Error("expected Commands to be populated for drift; got empty slice")
+	}
+}
+
+// TestIntegrationPlanCommandsPopulatedOnDrift asserts the per-task contract
+// that whenever Plan() reports drift (Status `+`/`~`/`-`), Commands carries
+// at least one resolved dokku command line. The matching strings are what
+// `docket plan --json` emits in the `commands` array.
+func TestIntegrationPlanCommandsPopulatedOnDrift(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-plan-commands"
+	destroyApp(appName)
+	defer destroyApp(appName)
+
+	plan := (AppTask{App: appName, State: StatePresent}).Plan()
+	if plan.Error != nil {
+		t.Fatalf("plan errored: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift on missing app")
+	}
+	if len(plan.Commands) == 0 {
+		t.Fatal("expected Commands to be populated for drift")
+	}
+	if !strings.Contains(plan.Commands[0], "apps:create") {
+		t.Errorf("expected first command to mention apps:create, got %q", plan.Commands[0])
 	}
 }
 

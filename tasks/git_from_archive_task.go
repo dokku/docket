@@ -105,28 +105,19 @@ func (t GitFromArchiveTask) Plan() PlanResult {
 			if match {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			args := []string{"git:from-archive", "--archive-type", archiveType, t.App, t.ArchiveURL}
+			if t.GitUsername != "" {
+				args = append(args, t.GitUsername, t.GitEmail)
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "archive source drift",
 				Mutations: []string{fmt.Sprintf("git:from-archive %s %s (%s)", t.App, t.ArchiveURL, archiveType)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: "undeployed"}
-					args := []string{"git:from-archive", "--archive-type", archiveType, t.App, t.ArchiveURL}
-					if t.GitUsername != "" {
-						args = append(args, t.GitUsername, t.GitEmail)
-					}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateDeployed
-					return state
+					return runExecInputs(TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
 				},
 			}
 		},

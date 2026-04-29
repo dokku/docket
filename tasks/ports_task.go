@@ -92,28 +92,19 @@ func (t PortsTask) Plan() PlanResult {
 			if len(currentPorts) == 0 {
 				status = PlanStatusCreate
 			}
+			args := []string{"--quiet", "ports:add", t.App}
+			for _, pm := range toAdd {
+				args = append(args, pm.String())
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    fmt.Sprintf("%d port mapping(s) to add", len(toAdd)),
 				Mutations: mutations,
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					args := []string{"--quiet", "ports:add", t.App}
-					for _, pm := range toAdd {
-						args = append(args, pm.String())
-					}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -133,28 +124,19 @@ func (t PortsTask) Plan() PlanResult {
 			if len(toRemove) == 0 {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			args := []string{"--quiet", "ports:remove", t.App}
+			for _, pm := range toRemove {
+				args = append(args, pm.String())
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%d port mapping(s) to remove", len(toRemove)),
 				Mutations: mutations,
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					args := []string{"--quiet", "ports:remove", t.App}
-					for _, pm := range toRemove {
-						args = append(args, pm.String())
-					}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

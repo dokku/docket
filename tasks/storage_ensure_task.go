@@ -58,24 +58,18 @@ func (t StorageEnsureTask) Plan() PlanResult {
 			if !chownValues[t.Chown] {
 				return PlanResult{Status: PlanStatusError, Error: errors.New("invalid chown value specified")}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "storage:ensure-directory", "--chown", t.Chown, t.App},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "directory presence not probed",
 				Mutations: []string{"storage:ensure-directory --chown " + t.Chown + " " + t.App},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "storage:ensure-directory", "--chown", t.Chown, t.App},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},

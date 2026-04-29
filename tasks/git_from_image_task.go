@@ -71,35 +71,26 @@ func (t GitFromImageTask) Plan() PlanResult {
 			if match {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			args := []string{"git:from-image"}
+			if t.BuildDir != "" {
+				args = append(args, "--build-dir", t.BuildDir)
+			}
+			args = append(args, t.App, t.Image)
+			if t.GitUsername != "" {
+				args = append(args, t.GitUsername)
+			}
+			if t.GitEmail != "" {
+				args = append(args, t.GitEmail)
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "image source drift",
 				Mutations: []string{fmt.Sprintf("git:from-image %s %s", t.App, t.Image)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: "undeployed"}
-					args := []string{"git:from-image"}
-					if t.BuildDir != "" {
-						args = append(args, "--build-dir", t.BuildDir)
-					}
-					args = append(args, t.App, t.Image)
-					if t.GitUsername != "" {
-						args = append(args, t.GitUsername)
-					}
-					if t.GitEmail != "" {
-						args = append(args, t.GitEmail)
-					}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateDeployed
-					return state
+					return runExecInputs(TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
 				},
 			}
 		},

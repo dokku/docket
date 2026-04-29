@@ -18,6 +18,7 @@ type ApplyCommand struct {
 
 	tasksFile         string
 	verbose           bool
+	json              bool
 	host              string
 	sudo              bool
 	acceptNewHostKeys bool
@@ -63,7 +64,8 @@ func (c *ApplyCommand) ParsedArguments(args []string) (map[string]command.Argume
 func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.tasksFile, "tasks", "tasks.yml", "a yaml file containing a task list")
-	f.BoolVar(&c.verbose, "verbose", false, "echo the resolved dokku command for each task as a continuation line. Values from inputs declared `sensitive: true` and from task struct fields tagged `sensitive:\"true\"` are masked as `***`")
+	f.BoolVar(&c.verbose, "verbose", false, "echo the resolved dokku command for each task as a continuation line. Values from inputs declared `sensitive: true` and from task struct fields tagged `sensitive:\"true\"` are masked as `***`. Ignored when --json is set; the JSON output already includes the resolved commands.")
+	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
 	f.BoolVar(&c.sudo, "sudo", false, "wrap remote dokku invocations with `sudo -n`; equivalent to DOKKU_SUDO=1")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
@@ -91,6 +93,7 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 		complete.Flags{
 			"--tasks":                complete.PredictFiles("*.yml"),
 			"--verbose":              complete.PredictNothing,
+			"--json":                 complete.PredictNothing,
 			"--host":                 complete.PredictAnything,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
@@ -146,32 +149,45 @@ func (c *ApplyCommand) Run(args []string) int {
 		defer subprocess.CloseSshControlMaster(resolvedHost)
 	}
 
-	formatter := NewFormatter(c.Ui, c.verbose)
-	formatter.PlayHeaderWithHost("tasks", resolvedHost)
+	emitter := c.newEmitter()
+	emitter.PlayStart("tasks", resolvedHost)
 
 	start := time.Now()
 	counts := ApplyCounts{}
+	playName := "tasks"
 
 	keys := tasks.FilterByTags(taskList, c.tags, c.skipTags)
 	exprBaseCtx := buildEnvelopeExprContext(context)
 
 	for _, name := range keys {
 		env := taskList.GetEnvelope(name)
+		taskStart := time.Now()
 
 		if env.HasWhen() {
 			ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(exprBaseCtx, env))
 			if err != nil {
 				counts.Tasks++
 				counts.Errors++
-				formatter.TaskLine(MarkerError, name, "")
-				formatter.Continuation('!', fmt.Sprintf("when expression error: %v", err))
-				formatter.ApplySummary(counts, time.Since(start))
+				emitter.ApplyTask(ApplyTaskEvent{
+					Play:      playName,
+					Name:      name,
+					WhenError: err,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
+				emitter.ApplySummary(counts, time.Since(start))
 				return 1
 			}
 			if !ok {
 				counts.Tasks++
 				counts.Skipped++
-				formatter.TaskLine(MarkerSkipped, name, "")
+				emitter.ApplyTask(ApplyTaskEvent{
+					Play:      playName,
+					Name:      name,
+					Skipped:   true,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
 				continue
 			}
 		}
@@ -182,38 +198,59 @@ func (c *ApplyCommand) Run(args []string) int {
 		switch {
 		case state.Error != nil:
 			counts.Errors++
-			formatter.TaskLine(MarkerError, name, "")
-			formatter.ErrorContinuation(state.Error)
-			if c.verbose {
-				for _, cmd := range state.Commands {
-					formatter.Continuation('\u2192', cmd)
-				}
-			}
-			formatter.ApplySummary(counts, time.Since(start))
+			emitter.ApplyTask(ApplyTaskEvent{
+				Play:      playName,
+				Name:      name,
+				State:     state,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			emitter.ApplySummary(counts, time.Since(start))
+			return 1
+		case state.State != state.DesiredState:
+			counts.Errors++
+			emitter.ApplyTask(ApplyTaskEvent{
+				Play:         playName,
+				Name:         name,
+				State:        state,
+				InvalidState: true,
+				Duration:     time.Since(taskStart),
+				Timestamp:    time.Now().UTC(),
+			})
+			emitter.ApplySummary(counts, time.Since(start))
 			return 1
 		case state.Changed:
 			counts.Changed++
-			formatter.TaskLine(MarkerChanged, name, "")
+			emitter.ApplyTask(ApplyTaskEvent{
+				Play:      playName,
+				Name:      name,
+				State:     state,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
 		default:
 			counts.OK++
-			formatter.TaskLine(MarkerOK, name, "")
-		}
-
-		if c.verbose {
-			for _, cmd := range state.Commands {
-				formatter.Continuation('\u2192', cmd)
-			}
-		}
-
-		if state.State != state.DesiredState {
-			counts.Errors++
-			formatter.TaskLine(MarkerError, name, "")
-			formatter.Continuation('!', fmt.Sprintf("invalid state: expected=%v actual=%v", state.DesiredState, state.State))
-			formatter.ApplySummary(counts, time.Since(start))
-			return 1
+			emitter.ApplyTask(ApplyTaskEvent{
+				Play:      playName,
+				Name:      name,
+				State:     state,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
 		}
 	}
 
-	formatter.ApplySummary(counts, time.Since(start))
+	emitter.ApplySummary(counts, time.Since(start))
 	return 0
+}
+
+// newEmitter constructs the EventEmitter for this run. --json builds a
+// JSONEmitter; otherwise the human Formatter is used. The verbose flag is
+// only meaningful for the human path - JSON output already includes the
+// resolved commands in each task event's `commands` array.
+func (c *ApplyCommand) newEmitter() EventEmitter {
+	if c.json {
+		return NewJSONEmitter(c.Ui)
+	}
+	return NewFormatter(c.Ui, c.verbose)
 }

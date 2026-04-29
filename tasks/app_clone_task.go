@@ -83,29 +83,20 @@ func (t AppCloneTask) Plan() PlanResult {
 			if exists {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			args := []string{"--quiet", "apps:clone"}
+			if t.SkipDeploy {
+				args = append(args, "--skip-deploy")
+			}
+			args = append(args, t.SourceApp, t.App)
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("target app %s missing", t.App),
 				Mutations: []string{fmt.Sprintf("clone %s -> %s", t.SourceApp, t.App)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					args := []string{"--quiet", "apps:clone"}
-					if t.SkipDeploy {
-						args = append(args, "--skip-deploy")
-					}
-					args = append(args, t.SourceApp, t.App)
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    args,
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},

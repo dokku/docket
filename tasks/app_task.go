@@ -67,12 +67,16 @@ func (t AppTask) Plan() PlanResult {
 			if exists {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := createAppInputs(t.App)
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "app missing",
 				Mutations: []string{"create app " + t.App},
-				apply:     applyCreateApp(t.App),
+				Commands:  resolveCommands(inputs),
+				apply: func() TaskOutputState {
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				},
 			}
 		},
 		StateAbsent: func() PlanResult {
@@ -83,12 +87,16 @@ func (t AppTask) Plan() PlanResult {
 			if !exists {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := destroyAppInputs(t.App)
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "app present",
 				Mutations: []string{"destroy app " + t.App},
-				apply:     applyDestroyApp(t.App),
+				Commands:  resolveCommands(inputs),
+				apply: func() TaskOutputState {
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				},
 			}
 		},
 	})
@@ -105,39 +113,17 @@ func appExists(appName string) (bool, error) {
 	})
 }
 
-// applyCreateApp returns a closure that runs `dokku apps:create <app>`.
-func applyCreateApp(app string) func() TaskOutputState {
-	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: StateAbsent}
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    []string{"--quiet", "apps:create", app},
-		})
-		state.Commands = append(state.Commands, result.Command)
-		if err != nil {
-			return TaskOutputErrorFromExec(state, err, result)
-		}
-		state.Changed = true
-		state.State = StatePresent
-		return state
+// createAppInputs returns the subprocess inputs that create app.
+func createAppInputs(app string) []subprocess.ExecCommandInput {
+	return []subprocess.ExecCommandInput{
+		{Command: "dokku", Args: []string{"--quiet", "apps:create", app}},
 	}
 }
 
-// applyDestroyApp returns a closure that runs `dokku --force apps:destroy <app>`.
-func applyDestroyApp(app string) func() TaskOutputState {
-	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: StatePresent}
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    []string{"--quiet", "--force", "apps:destroy", app},
-		})
-		state.Commands = append(state.Commands, result.Command)
-		if err != nil {
-			return TaskOutputErrorFromExec(state, err, result)
-		}
-		state.Changed = true
-		state.State = StateAbsent
-		return state
+// destroyAppInputs returns the subprocess inputs that destroy app.
+func destroyAppInputs(app string) []subprocess.ExecCommandInput {
+	return []subprocess.ExecCommandInput{
+		{Command: "dokku", Args: []string{"--quiet", "--force", "apps:destroy", app}},
 	}
 }
 
@@ -148,7 +134,7 @@ func destroyApp(app string) TaskOutputState {
 	if !exists {
 		return TaskOutputState{Changed: false, State: StateAbsent}
 	}
-	return applyDestroyApp(app)()
+	return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, destroyAppInputs(app))
 }
 
 // createApp is retained as an integration-test helper. It runs the
@@ -158,7 +144,7 @@ func createApp(app string) TaskOutputState {
 	if exists {
 		return TaskOutputState{Changed: false, State: StatePresent}
 	}
-	return applyCreateApp(app)()
+	return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, createAppInputs(app))
 }
 
 // init registers the AppTask with the task registry

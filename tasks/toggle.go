@@ -53,11 +53,13 @@ func planToggle(state State, app string, global bool, allowGlobal bool, enableCm
 					return PlanResult{InSync: true, Status: PlanStatusOK}
 				}
 			}
+			inputs := toggleInputs(enableCmd, target)
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("would run %s on %s", enableCmd, target),
 				Mutations: []string{fmt.Sprintf("%s %s", enableCmd, target)},
+				Commands:  resolveCommands(inputs),
 				apply:     applyToggle(enableCmd, target, StatePresent),
 			}
 		},
@@ -67,32 +69,33 @@ func planToggle(state State, app string, global bool, allowGlobal bool, enableCm
 					return PlanResult{InSync: true, Status: PlanStatusOK}
 				}
 			}
+			inputs := toggleInputs(disableCmd, target)
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("would run %s on %s", disableCmd, target),
 				Mutations: []string{fmt.Sprintf("%s %s", disableCmd, target)},
+				Commands:  resolveCommands(inputs),
 				apply:     applyToggle(disableCmd, target, StateAbsent),
 			}
 		},
 	})
 }
 
+// toggleInputs returns the subprocess inputs that run a toggle command.
+func toggleInputs(subcommand, target string) []subprocess.ExecCommandInput {
+	return []subprocess.ExecCommandInput{
+		{Command: "dokku", Args: []string{"--quiet", subcommand, target}},
+	}
+}
+
 // applyToggle returns a closure that runs `dokku <subcommand> <target>` and
-// reports the resulting state.
+// reports the resulting state. The original initial state matches finalState
+// (preserved from the pre-refactor behavior), so on error the reported State
+// remains finalState.
 func applyToggle(subcommand, target string, finalState State) func() TaskOutputState {
+	inputs := toggleInputs(subcommand, target)
 	return func() TaskOutputState {
-		state := TaskOutputState{Changed: false, State: finalState}
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    []string{"--quiet", subcommand, target},
-		})
-		state.Commands = append(state.Commands, result.Command)
-		if err != nil {
-			return TaskOutputErrorFromExec(state, err, result)
-		}
-		state.Changed = true
-		state.State = finalState
-		return state
+		return runExecInputs(TaskOutputState{State: finalState}, finalState, inputs)
 	}
 }

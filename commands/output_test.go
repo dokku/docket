@@ -234,7 +234,7 @@ func TestFormatterApplySummaryErrorWord(t *testing.T) {
 
 func TestFormatterPlanSummary(t *testing.T) {
 	f, ui := newTestFormatter(false)
-	f.PlanSummary(PlanCounts{Tasks: 3, WouldChange: 2, InSync: 1, Errors: 0})
+	f.PlanSummary(PlanCounts{Tasks: 3, WouldChange: 2, InSync: 1, Errors: 0}, 0)
 	got := ui.OutputWriter.String()
 	want := "Plan: 3 task(s); 2 would change, 1 in sync, 0 error(s)."
 	if !strings.Contains(got, want) {
@@ -247,7 +247,7 @@ func TestFormatterPlanSummaryWithSkipped(t *testing.T) {
 	// skipped by `when:` so recipes that do not exercise envelope
 	// predicates keep the legacy summary shape (covered above).
 	f, ui := newTestFormatter(false)
-	f.PlanSummary(PlanCounts{Tasks: 3, WouldChange: 1, InSync: 1, Skipped: 1, Errors: 0})
+	f.PlanSummary(PlanCounts{Tasks: 3, WouldChange: 1, InSync: 1, Skipped: 1, Errors: 0}, 0)
 	got := ui.OutputWriter.String()
 	want := "Plan: 3 task(s); 1 would change, 1 in sync, 1 skipped, 0 error(s)."
 	if !strings.Contains(got, want) {

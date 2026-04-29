@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
@@ -19,6 +20,8 @@ type PlanCommand struct {
 	command.Meta
 
 	tasksFile         string
+	json              bool
+	detailedExitCode  bool
 	host              string
 	sudo              bool
 	acceptNewHostKeys bool
@@ -64,6 +67,8 @@ func (c *PlanCommand) ParsedArguments(args []string) (map[string]command.Argumen
 func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.tasksFile, "tasks", "tasks.yml", "a yaml file containing a task list")
+	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
+	f.BoolVar(&c.detailedExitCode, "detailed-exitcode", false, "exit 0 when no drift is detected, 2 when drift is detected, 1 on error. Without this flag plan exits 0 regardless of drift.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
 	f.BoolVar(&c.sudo, "sudo", false, "wrap remote dokku invocations with `sudo -n`; equivalent to DOKKU_SUDO=1")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
@@ -90,6 +95,8 @@ func (c *PlanCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--tasks":                complete.PredictFiles("*.yml"),
+			"--json":                 complete.PredictNothing,
+			"--detailed-exitcode":    complete.PredictNothing,
 			"--host":                 complete.PredictAnything,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
@@ -103,10 +110,16 @@ func (c *PlanCommand) AutocompleteFlags() complete.Flags {
 // by contract), and prints a one-line summary per task plus a final
 // summary line.
 //
-// Exit codes:
+// Exit codes (default):
 //
 //	0 - plan completed successfully (regardless of drift)
 //	1 - read error, parse error, or read-state probe error
+//
+// Exit codes (--detailed-exitcode):
+//
+//	0 - plan completed cleanly; no drift detected
+//	1 - read error, parse error, or read-state probe error (errors win)
+//	2 - plan completed; at least one task reported drift
 func (c *PlanCommand) Run(args []string) int {
 	flags := c.FlagSet()
 	flags.Usage = func() { c.Ui.Output(c.Help()) }
@@ -153,17 +166,21 @@ func (c *PlanCommand) Run(args []string) int {
 		defer subprocess.CloseSshControlMaster(resolvedHost)
 	}
 
-	formatter := NewFormatter(c.Ui, false)
-	formatter.PlayHeaderWithHost("tasks", resolvedHost)
+	emitter := c.newEmitter()
+	emitter.PlayStart("tasks", resolvedHost)
 
+	start := time.Now()
 	counts := PlanCounts{}
 	hasError := false
+	hasDrift := false
+	playName := "tasks"
 
 	keys := tasks.FilterByTags(taskList, c.tags, c.skipTags)
 	exprBaseCtx := buildEnvelopeExprContext(context)
 
 	for _, name := range keys {
 		env := taskList.GetEnvelope(name)
+		taskStart := time.Now()
 
 		if env.HasWhen() {
 			ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(exprBaseCtx, env))
@@ -171,13 +188,25 @@ func (c *PlanCommand) Run(args []string) int {
 				counts.Tasks++
 				counts.Errors++
 				hasError = true
-				formatter.TaskLine(MarkerProbeError, name, fmt.Sprintf("(when expression error: %v)", err))
+				emitter.PlanTask(PlanTaskEvent{
+					Play:      playName,
+					Name:      name,
+					WhenError: err,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
 				continue
 			}
 			if !ok {
 				counts.Tasks++
 				counts.Skipped++
-				formatter.TaskLine(MarkerSkipped, name, "(when: false)")
+				emitter.PlanTask(PlanTaskEvent{
+					Play:      playName,
+					Name:      name,
+					Skipped:   true,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
 				continue
 			}
 		}
@@ -189,31 +218,38 @@ func (c *PlanCommand) Run(args []string) int {
 		case result.Error != nil:
 			counts.Errors++
 			hasError = true
-			formatter.TaskLine(MarkerProbeError, name, fmt.Sprintf("(%s)", PrefixErrorMessage(result.Error)))
 		case result.InSync:
 			counts.InSync++
-			formatter.TaskLine(MarkerOK, name, "(in sync)")
 		default:
 			counts.WouldChange++
-			marker := Marker(result.Status)
-			if marker == "" {
-				marker = Marker(tasks.PlanStatusModify)
-			}
-			suffix := ""
-			if result.Reason != "" {
-				suffix = "(" + result.Reason + ")"
-			}
-			formatter.TaskLine(marker, name, suffix)
-			for _, m := range result.Mutations {
-				formatter.Continuation('-', m)
-			}
+			hasDrift = true
 		}
+
+		emitter.PlanTask(PlanTaskEvent{
+			Play:      playName,
+			Name:      name,
+			Result:    result,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
 	}
 
-	formatter.PlanSummary(counts)
+	emitter.PlanSummary(counts, time.Since(start))
 
 	if hasError {
 		return 1
 	}
+	if c.detailedExitCode && hasDrift {
+		return 2
+	}
 	return 0
+}
+
+// newEmitter constructs the EventEmitter for this run. --json builds a
+// JSONEmitter; otherwise the human Formatter is used.
+func (c *PlanCommand) newEmitter() EventEmitter {
+	if c.json {
+		return NewJSONEmitter(c.Ui)
+	}
+	return NewFormatter(c.Ui, false)
 }

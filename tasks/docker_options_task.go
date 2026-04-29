@@ -84,24 +84,18 @@ func (t DockerOptionsTask) Plan() PlanResult {
 			if optionPresent(current[t.Phase], t.Option) {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "docker-options:add", t.App, t.Phase, t.Option},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("missing on %s phase", t.Phase),
 				Mutations: []string{fmt.Sprintf("add %s option %q", t.Phase, t.Option)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StateAbsent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "docker-options:add", t.App, t.Phase, t.Option},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StatePresent
-					return state
+					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -116,24 +110,18 @@ func (t DockerOptionsTask) Plan() PlanResult {
 			if !optionPresent(current[t.Phase], t.Option) {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
+			inputs := []subprocess.ExecCommandInput{{
+				Command: "dokku",
+				Args:    []string{"--quiet", "docker-options:remove", t.App, t.Phase, t.Option},
+			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("present on %s phase", t.Phase),
 				Mutations: []string{fmt.Sprintf("remove %s option %q", t.Phase, t.Option)},
+				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
-					state := TaskOutputState{Changed: false, State: StatePresent}
-					result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-						Command: "dokku",
-						Args:    []string{"--quiet", "docker-options:remove", t.App, t.Phase, t.Option},
-					})
-					state.Commands = append(state.Commands, result.Command)
-					if err != nil {
-						return TaskOutputErrorFromExec(state, err, result)
-					}
-					state.Changed = true
-					state.State = StateAbsent
-					return state
+					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
