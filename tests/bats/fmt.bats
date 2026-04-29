@@ -103,11 +103,11 @@ EOF
 @test "docket fmt is a no-op on already-canonical input (mtime preserved)" {
   cd "$BATS_TEST_TMPDIR"
   "$(docket_bin)" init
-  before_mtime=$(stat -f "%m" tasks.yml 2>/dev/null || stat -c "%Y" tasks.yml)
+  before_mtime=$(stat -c "%Y" tasks.yml 2>/dev/null || stat -f "%m" tasks.yml)
   sleep 1
   run "$(docket_bin)" fmt
   assert_success
-  after_mtime=$(stat -f "%m" tasks.yml 2>/dev/null || stat -c "%Y" tasks.yml)
+  after_mtime=$(stat -c "%Y" tasks.yml 2>/dev/null || stat -f "%m" tasks.yml)
   assert [ "$before_mtime" = "$after_mtime" ]
 }
 
