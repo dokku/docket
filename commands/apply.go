@@ -24,6 +24,7 @@ type ApplyCommand struct {
 	acceptNewHostKeys bool
 	tags              []string
 	skipTags          []string
+	varsFiles         []string
 	arguments         map[string]*Argument
 }
 
@@ -71,6 +72,7 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list run")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
+	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
 
 	taskFile := getTaskYamlFilename(os.Args)
 	data, err := os.ReadFile(taskFile)
@@ -99,6 +101,7 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 			"--accept-new-host-keys": complete.PredictNothing,
 			"--tags":                 complete.PredictAnything,
 			"--skip-tags":            complete.PredictAnything,
+			"--vars-file":            complete.PredictFiles("*"),
 		},
 	)
 }
@@ -109,6 +112,11 @@ func (c *ApplyCommand) Run(args []string) int {
 	if err := flags.Parse(args); err != nil {
 		c.Ui.Error(err.Error())
 		c.Ui.Error(command.CommandErrorText(c))
+		return 1
+	}
+
+	if err := applyVarsFiles(c.arguments, flags, c.varsFiles); err != nil {
+		c.Ui.Error(err.Error())
 		return 1
 	}
 

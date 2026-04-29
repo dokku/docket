@@ -1,10 +1,13 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dokku/docket/tasks"
+	flag "github.com/spf13/pflag"
 )
 
 func TestIsTrueString(t *testing.T) {
@@ -377,5 +380,416 @@ func TestInputSetValueOverwrite(t *testing.T) {
 	input.SetValue("second")
 	if input.GetValue() != "second" {
 		t.Errorf("GetValue() = %q after overwrite, want %q", input.GetValue(), "second")
+	}
+}
+
+// writeTempFile is a small helper for the vars-file tests so each test reads
+// like a single declarative block instead of three lines of plumbing.
+func writeTempFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	return path
+}
+
+func TestLoadVarsFilesYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.yml", "app: api\nreplicas: 3\ndebug: true\n")
+
+	merged, sources, err := loadVarsFiles([]string{path})
+	if err != nil {
+		t.Fatalf("loadVarsFiles failed: %v", err)
+	}
+	if merged["app"] != "api" {
+		t.Errorf("merged[app] = %v, want %q", merged["app"], "api")
+	}
+	if merged["replicas"] != 3 {
+		t.Errorf("merged[replicas] = %v (%T), want int 3", merged["replicas"], merged["replicas"])
+	}
+	if merged["debug"] != true {
+		t.Errorf("merged[debug] = %v, want true", merged["debug"])
+	}
+	if sources["app"] != path {
+		t.Errorf("sources[app] = %q, want %q", sources["app"], path)
+	}
+}
+
+func TestLoadVarsFilesJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.json", `{"app":"api","replicas":3,"debug":false}`)
+
+	merged, _, err := loadVarsFiles([]string{path})
+	if err != nil {
+		t.Fatalf("loadVarsFiles failed: %v", err)
+	}
+	if merged["app"] != "api" {
+		t.Errorf("merged[app] = %v, want %q", merged["app"], "api")
+	}
+	// JSON numbers always decode as float64; coercion to int happens later
+	// inside SetFromVarsFile when the input declares type: int.
+	if merged["replicas"] != float64(3) {
+		t.Errorf("merged[replicas] = %v (%T), want float64 3", merged["replicas"], merged["replicas"])
+	}
+	if merged["debug"] != false {
+		t.Errorf("merged[debug] = %v, want false", merged["debug"])
+	}
+}
+
+func TestLoadVarsFilesMissingFile(t *testing.T) {
+	_, _, err := loadVarsFiles([]string{"/nonexistent/path/vars.yml"})
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent/path/vars.yml") {
+		t.Errorf("error should mention path, got: %v", err)
+	}
+}
+
+func TestLoadVarsFilesNonMappingError(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "list.yml", "- one\n- two\n")
+
+	_, _, err := loadVarsFiles([]string{path})
+	if err == nil {
+		t.Fatal("expected error for top-level list")
+	}
+	if !strings.Contains(err.Error(), "mapping") {
+		t.Errorf("error should mention mapping, got: %v", err)
+	}
+}
+
+func TestLoadVarsFilesMultiFileLastWins(t *testing.T) {
+	dir := t.TempDir()
+	a := writeTempFile(t, dir, "a.yml", "app: from-a\nshared: from-a\n")
+	b := writeTempFile(t, dir, "b.yml", "shared: from-b\nextra: only-b\n")
+
+	merged, sources, err := loadVarsFiles([]string{a, b})
+	if err != nil {
+		t.Fatalf("loadVarsFiles failed: %v", err)
+	}
+	if merged["shared"] != "from-b" {
+		t.Errorf("merged[shared] = %v, want %q (later file wins)", merged["shared"], "from-b")
+	}
+	if merged["app"] != "from-a" {
+		t.Errorf("merged[app] = %v, want %q (only in a)", merged["app"], "from-a")
+	}
+	if merged["extra"] != "only-b" {
+		t.Errorf("merged[extra] = %v, want %q (only in b)", merged["extra"], "only-b")
+	}
+	if sources["shared"] != b {
+		t.Errorf("sources[shared] = %q, want %q (last writer)", sources["shared"], b)
+	}
+	if sources["app"] != a {
+		t.Errorf("sources[app] = %q, want %q (originating file)", sources["app"], a)
+	}
+}
+
+func TestLoadVarsFilesEmptyYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "empty.yml", "")
+
+	merged, _, err := loadVarsFiles([]string{path})
+	if err != nil {
+		t.Fatalf("loadVarsFiles on empty file failed: %v", err)
+	}
+	if len(merged) != 0 {
+		t.Errorf("expected empty map, got %v", merged)
+	}
+}
+
+// argFor builds an Argument with a typed pointer wired up the same way
+// registerInputFlags would. The default value is what the equivalent CLI
+// flag would have absent any user input. Tests use this to exercise
+// SetFromVarsFile and applyVarsFiles without rebuilding a FlagSet.
+func argFor(t *testing.T, declared string, def interface{}) *Argument {
+	t.Helper()
+	arg := &Argument{Type: declared}
+	switch declared {
+	case "string":
+		s, _ := def.(string)
+		arg.SetStringValue(&s)
+	case "int":
+		i, _ := def.(int)
+		arg.SetIntValue(&i)
+	case "float":
+		f, _ := def.(float64)
+		arg.SetFloatValue(&f)
+	case "bool":
+		b, _ := def.(bool)
+		arg.SetBoolValue(&b)
+	default:
+		t.Fatalf("argFor: unknown type %q", declared)
+	}
+	return arg
+}
+
+func TestSetFromVarsFileString(t *testing.T) {
+	tests := []struct {
+		name  string
+		value interface{}
+		want  string
+	}{
+		{"plain string", "hello", "hello"},
+		{"int coerces to numeric string", 42, "42"},
+		{"float coerces to numeric string", 3.14, "3.14"},
+		{"bool coerces to literal", true, "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arg := argFor(t, "string", "")
+			if err := arg.SetFromVarsFile("k", tt.value); err != nil {
+				t.Fatalf("SetFromVarsFile failed: %v", err)
+			}
+			if got := *arg.stringValue; got != tt.want {
+				t.Errorf("stringValue = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSetFromVarsFileInt(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   interface{}
+		want    int
+		wantErr bool
+	}{
+		{"native int", 7, 7, false},
+		{"int64", int64(9), 9, false},
+		{"whole float", float64(11), 11, false},
+		{"non-whole float rejected", 1.5, 0, true},
+		{"numeric string", "42", 42, false},
+		{"non-numeric string rejected", "abc", 0, true},
+		{"bool rejected", true, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arg := argFor(t, "int", 0)
+			err := arg.SetFromVarsFile("k", tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %v", tt.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("SetFromVarsFile failed: %v", err)
+			}
+			if got := *arg.intValue; got != tt.want {
+				t.Errorf("intValue = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSetFromVarsFileFloat(t *testing.T) {
+	arg := argFor(t, "float", 0.0)
+	if err := arg.SetFromVarsFile("k", "2.5"); err != nil {
+		t.Fatalf("string coerce failed: %v", err)
+	}
+	if *arg.floatValue != 2.5 {
+		t.Errorf("floatValue = %v, want 2.5", *arg.floatValue)
+	}
+
+	arg = argFor(t, "float", 0.0)
+	if err := arg.SetFromVarsFile("k", 7); err != nil {
+		t.Fatalf("int coerce failed: %v", err)
+	}
+	if *arg.floatValue != 7.0 {
+		t.Errorf("floatValue = %v, want 7.0", *arg.floatValue)
+	}
+
+	arg = argFor(t, "float", 0.0)
+	if err := arg.SetFromVarsFile("k", "not-a-number"); err == nil {
+		t.Fatal("expected error for non-numeric string")
+	}
+}
+
+func TestSetFromVarsFileBool(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   interface{}
+		want    bool
+		wantErr bool
+	}{
+		{"native true", true, true, false},
+		{"native false", false, false, false},
+		{"string true", "true", true, false},
+		{"string yes", "yes", true, false},
+		{"string on", "on", true, false},
+		{"string false", "false", false, false},
+		{"string no", "no", false, false},
+		{"int rejected", 1, false, true},
+		{"unrelated string rejected", "banana", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arg := argFor(t, "bool", false)
+			err := arg.SetFromVarsFile("k", tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %v", tt.value)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("SetFromVarsFile failed: %v", err)
+			}
+			if got := *arg.boolValue; got != tt.want {
+				t.Errorf("boolValue = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyVarsFilesEmptyPathsNoOp(t *testing.T) {
+	args := map[string]*Argument{"app": argFor(t, "string", "default")}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+	if err := applyVarsFiles(args, flags, nil); err != nil {
+		t.Fatalf("expected nil error for empty paths, got %v", err)
+	}
+	if *args["app"].stringValue != "default" {
+		t.Errorf("stringValue mutated to %q despite no vars files", *args["app"].stringValue)
+	}
+}
+
+func TestApplyVarsFilesUpdatesUnsetArgument(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.yml", "app: from-vars\n")
+
+	args := map[string]*Argument{"app": argFor(t, "string", "default")}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+	flags.String("app", "default", "")
+
+	if err := applyVarsFiles(args, flags, []string{path}); err != nil {
+		t.Fatalf("applyVarsFiles failed: %v", err)
+	}
+	if got := *args["app"].stringValue; got != "from-vars" {
+		t.Errorf("stringValue = %q, want %q", got, "from-vars")
+	}
+}
+
+func TestApplyVarsFilesCLIOverridesVarsFile(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.yml", "app: from-vars\n")
+
+	args := map[string]*Argument{"app": argFor(t, "string", "from-cli")}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+	flags.String("app", "default", "")
+	// Simulate "user typed --app=from-cli" by parsing it; pflag.Visit will
+	// then report `app` as Changed and applyVarsFiles must respect that.
+	if err := flags.Parse([]string{"--app", "from-cli"}); err != nil {
+		t.Fatalf("flags.Parse failed: %v", err)
+	}
+
+	if err := applyVarsFiles(args, flags, []string{path}); err != nil {
+		t.Fatalf("applyVarsFiles failed: %v", err)
+	}
+	if got := *args["app"].stringValue; got != "from-cli" {
+		t.Errorf("stringValue = %q, want %q (CLI must win)", got, "from-cli")
+	}
+}
+
+func TestApplyVarsFilesUnknownKey(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.yml", "appp: typo\n")
+
+	args := map[string]*Argument{"app": argFor(t, "string", "")}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+
+	err := applyVarsFiles(args, flags, []string{path})
+	if err == nil {
+		t.Fatal("expected error for unknown key")
+	}
+	for _, want := range []string{`unknown input "appp"`, path, `did you mean "app"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q\nfull: %v", want, err)
+		}
+	}
+}
+
+func TestApplyVarsFilesUnknownKeyNoSuggestionWhenFar(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.yml", "totallyunrelated: x\n")
+
+	args := map[string]*Argument{"app": argFor(t, "string", "")}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+
+	err := applyVarsFiles(args, flags, []string{path})
+	if err == nil {
+		t.Fatal("expected error for unknown key")
+	}
+	if strings.Contains(err.Error(), "did you mean") {
+		t.Errorf("did-you-mean should suppress for far edit distance, got: %v", err)
+	}
+}
+
+func TestApplyVarsFilesMultiFileLastWins(t *testing.T) {
+	dir := t.TempDir()
+	a := writeTempFile(t, dir, "a.yml", "app: from-a\n")
+	b := writeTempFile(t, dir, "b.yml", "app: from-b\n")
+
+	args := map[string]*Argument{"app": argFor(t, "string", "")}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+
+	if err := applyVarsFiles(args, flags, []string{a, b}); err != nil {
+		t.Fatalf("applyVarsFiles failed: %v", err)
+	}
+	if got := *args["app"].stringValue; got != "from-b" {
+		t.Errorf("stringValue = %q, want %q (last file wins)", got, "from-b")
+	}
+}
+
+func TestApplyVarsFilesCoercionFailureNamesInput(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.yml", "replicas: not-a-number\n")
+
+	args := map[string]*Argument{"replicas": argFor(t, "int", 0)}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+
+	err := applyVarsFiles(args, flags, []string{path})
+	if err == nil {
+		t.Fatal("expected coercion error")
+	}
+	for _, want := range []string{`replicas`, path} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q\nfull: %v", want, err)
+		}
+	}
+}
+
+func TestApplyVarsFilesJSONFloatCoercesToInt(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.json", `{"replicas": 5}`)
+
+	args := map[string]*Argument{"replicas": argFor(t, "int", 0)}
+	flags := flag.NewFlagSet("t", flag.ContinueOnError)
+
+	if err := applyVarsFiles(args, flags, []string{path}); err != nil {
+		t.Fatalf("applyVarsFiles failed: %v", err)
+	}
+	if got := *args["replicas"].intValue; got != 5 {
+		t.Errorf("intValue = %d, want 5 (JSON float64 5.0 → int)", got)
+	}
+}
+
+func TestNearestInputNameSuggestion(t *testing.T) {
+	names := []string{"app", "repo", "replicas"}
+	tests := []struct {
+		candidate string
+		want      string
+	}{
+		{"appp", "app"},
+		{"replics", "replicas"},
+		{"banana", ""}, // distance > 2 → no suggestion
+	}
+	for _, tt := range tests {
+		t.Run(tt.candidate, func(t *testing.T) {
+			if got := nearestInputName(tt.candidate, names); got != tt.want {
+				t.Errorf("nearestInputName(%q) = %q, want %q", tt.candidate, got, tt.want)
+			}
+		})
 	}
 }
