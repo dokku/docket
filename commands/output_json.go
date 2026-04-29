@@ -88,9 +88,15 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 			out["stdout"] = subprocess.MaskString(ev.State.Stdout)
 		}
 		out["exit_code"] = ev.State.ExitCode
+		if ev.Ignored {
+			out["ignored"] = true
+		}
 	case ev.InvalidState:
 		out["status"] = "error"
 		out["error"] = subprocess.MaskString(invalidStateMessage(ev.State))
+		if ev.Ignored {
+			out["ignored"] = true
+		}
 	case ev.State.Changed:
 		out["status"] = "changed"
 	default:

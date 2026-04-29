@@ -68,6 +68,12 @@ type TaskEnvelope struct {
 	// whenProgram is the pre-compiled expr program for When. Set by the
 	// loader so loop iterations re-use the same compiled bytecode.
 	whenProgram *vm.Program
+
+	// changedWhenProgram / failedWhenProgram are the pre-compiled expr
+	// programs for ChangedWhen and FailedWhen. Set by the loader so the
+	// apply / plan executor does not re-compile per task.
+	changedWhenProgram *vm.Program
+	failedWhenProgram  *vm.Program
 }
 
 // HasWhen reports whether the envelope carries a non-empty `when:`
@@ -83,6 +89,36 @@ func (e *TaskEnvelope) WhenProgram() *vm.Program {
 		return nil
 	}
 	return e.whenProgram
+}
+
+// HasChangedWhen reports whether the envelope carries a non-empty
+// `changed_when:` predicate.
+func (e *TaskEnvelope) HasChangedWhen() bool {
+	return e != nil && e.ChangedWhen != ""
+}
+
+// ChangedWhenProgram returns the pre-compiled expr program for
+// ChangedWhen, or nil when no `changed_when:` predicate is present.
+func (e *TaskEnvelope) ChangedWhenProgram() *vm.Program {
+	if e == nil {
+		return nil
+	}
+	return e.changedWhenProgram
+}
+
+// HasFailedWhen reports whether the envelope carries a non-empty
+// `failed_when:` predicate.
+func (e *TaskEnvelope) HasFailedWhen() bool {
+	return e != nil && e.FailedWhen != ""
+}
+
+// FailedWhenProgram returns the pre-compiled expr program for
+// FailedWhen, or nil when no `failed_when:` predicate is present.
+func (e *TaskEnvelope) FailedWhenProgram() *vm.Program {
+	if e == nil {
+		return nil
+	}
+	return e.failedWhenProgram
 }
 
 // HasTag reports whether the envelope's tag set contains tag.

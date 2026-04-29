@@ -182,6 +182,14 @@ func (c *ApplyCommand) Run(args []string) int {
 	counts := ApplyCounts{}
 	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(context, fileLevelKeys, userSet))
 	hasError := false
+	// registered is the run-wide map predicates reach via
+	// `.registered.<name>`. loopAccum buffers per-iteration states for
+	// loop+register expansions so the running aggregate is exposed to
+	// predicates in subsequent iterations and finalized once the loop
+	// finishes. Both maps are scoped to a single docket apply
+	// invocation.
+	registered := map[string]tasks.RegisteredValue{}
+	loopAccum := loopRegisterAccumulator{}
 
 playLoop:
 	for _, play := range plays {
@@ -219,7 +227,7 @@ playLoop:
 			taskStart := time.Now()
 
 			if env.HasWhen() {
-				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env))
+				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env, nil, registered))
 				if err != nil {
 					counts.Tasks++
 					counts.Errors++
@@ -255,15 +263,15 @@ playLoop:
 			state := env.Task.Execute()
 			counts.Tasks++
 
-			switch {
-			case state.Error != nil:
+			postState, overrideErr := applyEnvelopeOverrides(env, state, playExprCtx, registered)
+			if overrideErr != nil {
 				counts.Errors++
 				failed = true
 				hasError = true
 				emitter.ApplyTask(ApplyTaskEvent{
 					Play:      play.Name,
 					Name:      name,
-					State:     state,
+					WhenError: overrideErr,
 					Duration:  time.Since(taskStart),
 					Timestamp: time.Now().UTC(),
 				})
@@ -271,19 +279,49 @@ playLoop:
 					emitter.ApplySummary(counts, time.Since(start))
 					return 1
 				}
+				break
+			}
+			state = postState
+
+			recordRegister(env, state, loopAccum, registered)
+
+			switch {
+			case state.Error != nil:
+				ignored := env.IgnoreErrors
+				if !ignored {
+					counts.Errors++
+					failed = true
+					hasError = true
+				}
+				emitter.ApplyTask(ApplyTaskEvent{
+					Play:      play.Name,
+					Name:      name,
+					State:     state,
+					Ignored:   ignored,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
+				if c.failFast && !ignored {
+					emitter.ApplySummary(counts, time.Since(start))
+					return 1
+				}
 			case state.State != state.DesiredState:
-				counts.Errors++
-				failed = true
-				hasError = true
+				ignored := env.IgnoreErrors
+				if !ignored {
+					counts.Errors++
+					failed = true
+					hasError = true
+				}
 				emitter.ApplyTask(ApplyTaskEvent{
 					Play:         play.Name,
 					Name:         name,
 					State:        state,
 					InvalidState: true,
+					Ignored:      ignored,
 					Duration:     time.Since(taskStart),
 					Timestamp:    time.Now().UTC(),
 				})
-				if c.failFast {
+				if c.failFast && !ignored {
 					emitter.ApplySummary(counts, time.Since(start))
 					return 1
 				}

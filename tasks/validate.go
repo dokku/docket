@@ -49,23 +49,24 @@ const validatePlaceholder = "__docket_validate_placeholder__"
 // task-type name (e.g. dokku_appp) is reported as "unknown task type" rather
 // than getting silently swallowed by an envelope allowlist.
 var reservedEnvelopeKeys = map[string]string{
-	"block":         "#211",
-	"rescue":        "#211",
-	"always":        "#211",
-	"register":      "#210",
-	"changed_when":  "#210",
-	"failed_when":   "#210",
-	"ignore_errors": "#210",
+	"block":  "#211",
+	"rescue": "#211",
+	"always": "#211",
 }
 
-// activeEnvelopeKeys are the envelope keys this PR (#205) activates. They
-// are recognised by the validator and pass through to the loader without
-// generating an "envelope key reserved" diagnostic.
+// activeEnvelopeKeys are the envelope keys the validator recognises and
+// passes through to the loader without generating an "envelope key
+// reserved" diagnostic. Keep in sync with envelopeAllowlistKeys in
+// tasks/main.go.
 var activeEnvelopeKeys = map[string]bool{
-	"name": true,
-	"tags": true,
-	"when": true,
-	"loop": true,
+	"name":          true,
+	"tags":          true,
+	"when":          true,
+	"loop":          true,
+	"register":      true,
+	"changed_when":  true,
+	"failed_when":   true,
+	"ignore_errors": true,
 }
 
 // allowedPlayKeys is the set of play-level mapping keys the validator
@@ -175,20 +176,34 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 	}
 
 	var problems []Problem
+	// registerSeen tracks register names across the whole recipe so a
+	// duplicate `register: foo` in two different plays surfaces as a
+	// single register_duplicate problem. The registered map is run-wide
+	// at apply / plan time, so the validator's uniqueness check is
+	// recipe-wide too.
+	registerSeen := map[string]registerHit{}
 	for i, play := range doc.Content {
 		label := fmt.Sprintf("play #%d", i+1)
 		var inputs []inputWithNode
 		if i < len(playsInputs) {
 			inputs = playsInputs[i]
 		}
-		problems = append(problems, validatePlay(play, label, inputs, opts)...)
+		problems = append(problems, validatePlay(play, label, inputs, opts, registerSeen)...)
 	}
 
 	return problems
 }
 
+// registerHit records the first occurrence of a `register: <name>` so
+// later occurrences can quote the prior site in their diagnostic.
+type registerHit struct {
+	Play string
+	Task string
+	Line int
+}
+
 // validatePlay walks one play (one MappingNode within the recipe sequence).
-func validatePlay(play *yaml.Node, label string, inputs []inputWithNode, opts ValidateOptions) []Problem {
+func validatePlay(play *yaml.Node, label string, inputs []inputWithNode, opts ValidateOptions, registerSeen map[string]registerHit) []Problem {
 	var problems []Problem
 
 	if play.Kind != yaml.MappingNode {
@@ -236,11 +251,11 @@ func validatePlay(play *yaml.Node, label string, inputs []inputWithNode, opts Va
 		problems = append(problems, validateStrictInputs(inputs, opts.InputOverrides, label)...)
 	}
 
-	// Stub checks: present so future PRs (#205/#208/#210/#211/#212) can wire
+	// Stub checks: present so future PRs (#205/#208/#211/#212) can wire
 	// real bodies without touching the call site.
 	problems = append(problems, validateBlockStructure(tasksNode, label)...)
 	problems = append(problems, validateExprPredicates(tasksNode, label)...)
-	problems = append(problems, validateRegisterReferences(tasksNode, label)...)
+	problems = append(problems, validateRegisterReferences(tasksNode, label, registerSeen)...)
 	problems = append(problems, validateTargetReferences(tasksNode, label)...)
 
 	if tasksNode == nil {
@@ -556,11 +571,56 @@ func compileExprNode(node *yaml.Node, key, playLabel, taskLabel string) []Proble
 	return nil
 }
 
-// validateRegisterReferences is a stub. #210 will populate it with checks
-// that anything referencing .registered.foo has a prior register: foo.
-func validateRegisterReferences(_ *yaml.Node, _ string) []Problem {
-	// TODO(#210): resolve register references once the registry is wired.
-	return nil
+// validateRegisterReferences enforces uniqueness of `register: <name>`
+// across the whole recipe. registerSeen is the recipe-wide map of names
+// that have already been claimed; each call updates it with the names
+// declared in this play. Re-using a name (within the same play, or
+// across plays) is reported as `register_duplicate`.
+//
+// Cross-reference checking (every `.registered.foo` reference must have
+// a prior `register: foo`) is intentionally out of scope: predicates
+// reference dotted paths like `.registered.foo.Results[0].Stderr`,
+// which would require a tiny expr AST walker per envelope, and the
+// AllowUndefinedVariables compile mode means an unknown reference
+// degrades to nil at runtime rather than blowing up.
+func validateRegisterReferences(tasksNode *yaml.Node, playLabel string, registerSeen map[string]registerHit) []Problem {
+	if tasksNode == nil || tasksNode.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var problems []Problem
+	for i, task := range tasksNode.Content {
+		if task.Kind != yaml.MappingNode {
+			continue
+		}
+		regNode := mappingValue(task, "register")
+		if regNode == nil || regNode.Kind != yaml.ScalarNode || regNode.Value == "" {
+			continue
+		}
+		name := regNode.Value
+		taskLabel := taskLabelForNode(task, i+1)
+		if prior, ok := registerSeen[name]; ok {
+			hint := fmt.Sprintf("first declared in %s at line %d", prior.Play, prior.Line)
+			if prior.Task != "" {
+				hint = fmt.Sprintf("first declared in %s on %s (line %d)", prior.Play, prior.Task, prior.Line)
+			}
+			problems = append(problems, Problem{
+				Code:    "register_duplicate",
+				Play:    playLabel,
+				Task:    taskLabel,
+				Line:    regNode.Line,
+				Column:  regNode.Column,
+				Message: fmt.Sprintf("register name %q is already declared", name),
+				Hint:    hint,
+			})
+			continue
+		}
+		registerSeen[name] = registerHit{
+			Play: playLabel,
+			Task: taskLabel,
+			Line: regNode.Line,
+		}
+	}
+	return problems
 }
 
 // validateTargetReferences guards `.item` / `.index` references. They

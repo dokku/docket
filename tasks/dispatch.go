@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/dokku/docket/subprocess"
@@ -92,11 +93,28 @@ func DispatchPlan(state State, funcMap map[State]func() PlanResult) PlanResult {
 //     and a final State that matches DesiredState on success.
 func ExecutePlan(p PlanResult) TaskOutputState {
 	if p.Error != nil {
+		stdout, stderr, exitCode := p.Stdout, p.Stderr, p.ExitCode
+		// Recover the underlying ExecCommandResponse if a probe helper
+		// surfaced its CallExecCommand failure as a *subprocess.ExecError.
+		// This lets `failed_when: 'result.Stderr contains ...'` predicates
+		// match against probe-side stderr without each probe helper having
+		// to thread the response through its return signature.
+		if stdout == "" && stderr == "" && exitCode == 0 {
+			var execErr *subprocess.ExecError
+			if errors.As(p.Error, &execErr) {
+				stdout = execErr.Response.Stdout
+				stderr = execErr.Response.Stderr
+				exitCode = execErr.Response.ExitCode
+			}
+		}
 		return TaskOutputState{
 			Error:        p.Error,
 			Message:      p.Error.Error(),
 			DesiredState: p.DesiredState,
 			State:        p.DesiredState,
+			Stdout:       stdout,
+			Stderr:       stderr,
+			ExitCode:     exitCode,
 		}
 	}
 	if p.InSync {
@@ -118,4 +136,22 @@ func ExecutePlan(p PlanResult) TaskOutputState {
 		out.DesiredState = p.DesiredState
 	}
 	return out
+}
+
+// PlanErrorFromExec wraps a probe-side CallExecCommand failure into a
+// PlanResult that also carries the response's Stdout/Stderr/ExitCode.
+// Probe helpers use it from their `if err != nil` branch so a later
+// failed_when predicate can match `result.Stderr` in plan mode the
+// same way it can in apply mode. desiredState is the state value the
+// caller would have stored in PlanResult.DesiredState; pass the State
+// argument the probe is processing.
+func PlanErrorFromExec(desiredState State, err error, r subprocess.ExecCommandResponse) PlanResult {
+	return PlanResult{
+		Status:       PlanStatusError,
+		Error:        err,
+		DesiredState: desiredState,
+		Stdout:       r.Stdout,
+		Stderr:       r.Stderr,
+		ExitCode:     r.ExitCode,
+	}
 }

@@ -297,15 +297,15 @@ func TestValidateLevenshtein(t *testing.T) {
 }
 
 func TestValidateReservedEnvelopeKeyFlagged(t *testing.T) {
-	// register / changed_when / failed_when / ignore_errors stay reserved
-	// for #210; the rest of the envelope keys (name, tags, when, loop)
-	// are activated by #205. Using `register:` here pins the assertion to
-	// a key whose semantics have not landed yet.
+	// register / changed_when / failed_when / ignore_errors are now
+	// activated by #210; block / rescue / always remain reserved for
+	// #211, so use `block:` to pin the diagnostic to a key whose
+	// semantics have not landed yet.
 	data := []byte(`---
 - tasks:
     - dokku_app:
         app: my-app
-      register: app_result
+      block: []
 `)
 	problems := Validate(data, ValidateOptions{})
 	if p := findProblem(problems, "envelope_key_unsupported"); p == nil {
@@ -449,5 +449,81 @@ func TestValidateActiveEnvelopeKeysNotReserved(t *testing.T) {
 	problems := Validate(data, ValidateOptions{})
 	if p := findProblem(problems, "envelope_key_unsupported"); p != nil {
 		t.Fatalf("did not expect envelope_key_unsupported, got: %+v", p)
+	}
+}
+
+// TestValidateRegisterUniqueWithinPlay reports a duplicate register
+// name declared twice in the same play.
+func TestValidateRegisterUniqueWithinPlay(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: first
+      register: foo
+      dokku_app:
+        app: app-a
+    - name: second
+      register: foo
+      dokku_app:
+        app: app-b
+`)
+	problems := Validate(data, ValidateOptions{})
+	if got := countProblems(problems, "register_duplicate"); got != 1 {
+		t.Fatalf("expected exactly one register_duplicate, got %d: %+v", got, problems)
+	}
+}
+
+// TestValidateRegisterUniqueAcrossPlays reports a duplicate register
+// name declared in two different plays. The registered map is
+// recipe-wide at apply / plan time, so the validator's check is too.
+func TestValidateRegisterUniqueAcrossPlays(t *testing.T) {
+	data := []byte(`---
+- name: api
+  tasks:
+    - register: foo
+      dokku_app:
+        app: api
+- name: worker
+  tasks:
+    - register: foo
+      dokku_app:
+        app: worker
+`)
+	problems := Validate(data, ValidateOptions{})
+	if got := countProblems(problems, "register_duplicate"); got != 1 {
+		t.Fatalf("expected exactly one register_duplicate, got %d: %+v", got, problems)
+	}
+}
+
+// TestValidateRegisterUniqueAcceptsDistinctNames passes when each
+// register declaration uses a different name.
+func TestValidateRegisterUniqueAcceptsDistinctNames(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - register: alpha
+      dokku_app:
+        app: a
+    - register: beta
+      dokku_app:
+        app: b
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "register_duplicate"); p != nil {
+		t.Fatalf("did not expect register_duplicate, got: %+v", p)
+	}
+}
+
+// TestValidateChangedWhenCompileError pins that compile errors in
+// changed_when are surfaced via the existing expr_compile diagnostic
+// shape (the validator pre-compiles changed_when / failed_when).
+func TestValidateChangedWhenCompileError(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - changed_when: 'env =='
+      dokku_app:
+        app: x
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "expr_compile"); p == nil {
+		t.Fatalf("expected expr_compile problem, got: %+v", problems)
 	}
 }
