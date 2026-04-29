@@ -136,7 +136,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "block_empty"
+  assert_output --partial "block: must contain at least one child task"
 }
 
 @test "validate flags rescue without block" {
@@ -149,5 +149,5 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "block_orphan_clause"
+  assert_output --partial "rescue: requires a block: in the same task entry"
 }
