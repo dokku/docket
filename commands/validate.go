@@ -19,11 +19,13 @@ import (
 type ValidateCommand struct {
 	command.Meta
 
-	tasksFile string
-	json      bool
-	strict    bool
-	varsFiles []string
-	arguments map[string]*Argument
+	tasksFile   string
+	json        bool
+	strict      bool
+	varsFiles   []string
+	play        string
+	startAtTask string
+	arguments   map[string]*Argument
 }
 
 func (c *ValidateCommand) Name() string {
@@ -64,8 +66,10 @@ func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.tasksFile, "tasks", "tasks.yml", "a yaml file containing a task list")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines problem event per finding")
-	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override")
+	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override, and check that --play / --start-at-task references resolve to real names in the file")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
+	f.StringVar(&c.play, "play", "", "(strict) verify the named play exists in the recipe (matches the play's `name:` field; auto-named plays use `play #N`)")
+	f.StringVar(&c.startAtTask, "start-at-task", "", "(strict) verify a task with this name exists in the recipe; narrowed by --play when set")
 
 	taskFile := getTaskYamlFilename(os.Args)
 	data, err := os.ReadFile(taskFile)
@@ -86,10 +90,12 @@ func (c *ValidateCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--tasks":     complete.PredictFiles("*.yml"),
-			"--json":      complete.PredictNothing,
-			"--strict":    complete.PredictNothing,
-			"--vars-file": complete.PredictFiles("*"),
+			"--tasks":         complete.PredictFiles("*.yml"),
+			"--json":          complete.PredictNothing,
+			"--strict":        complete.PredictNothing,
+			"--vars-file":     complete.PredictFiles("*"),
+			"--play":          complete.PredictAnything,
+			"--start-at-task": complete.PredictAnything,
 		},
 	)
 }
@@ -144,6 +150,8 @@ func (c *ValidateCommand) Run(args []string) int {
 	problems := tasks.Validate(data, tasks.ValidateOptions{
 		Strict:         c.strict,
 		InputOverrides: overrides,
+		PlayName:       c.play,
+		StartAtTask:    c.startAtTask,
 	})
 
 	if c.json {

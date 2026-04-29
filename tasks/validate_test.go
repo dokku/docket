@@ -610,3 +610,137 @@ func TestValidateLoopVarInsideGroupIsAllowed(t *testing.T) {
 		t.Fatalf("did not expect loop_var_outside_loop, got: %+v", *p)
 	}
 }
+
+// TestValidateUnknownPlayReferenceUnderStrict pins the
+// unknown_play_reference check: a --strict run with --play that does
+// not match any play in the recipe surfaces a problem with the
+// available plays in the hint.
+func TestValidateUnknownPlayReferenceUnderStrict(t *testing.T) {
+	data := []byte(`---
+- name: api
+  tasks:
+    - dokku_app: { app: a }
+- name: worker
+  tasks:
+    - dokku_app: { app: b }
+`)
+	problems := Validate(data, ValidateOptions{Strict: true, PlayName: "missing"})
+	p := findProblem(problems, "unknown_play_reference")
+	if p == nil {
+		t.Fatalf("expected unknown_play_reference; got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"missing"`) {
+		t.Errorf("message should quote the bad reference; got %q", p.Message)
+	}
+	for _, want := range []string{`"api"`, `"worker"`} {
+		if !strings.Contains(p.Hint, want) {
+			t.Errorf("hint missing %q; got %q", want, p.Hint)
+		}
+	}
+}
+
+// TestValidatePlayReferenceMatch confirms a valid --play under
+// --strict produces no unknown_play_reference problem.
+func TestValidatePlayReferenceMatch(t *testing.T) {
+	data := []byte(`---
+- name: api
+  tasks:
+    - dokku_app: { app: a }
+`)
+	problems := Validate(data, ValidateOptions{Strict: true, PlayName: "api"})
+	if p := findProblem(problems, "unknown_play_reference"); p != nil {
+		t.Fatalf("expected no unknown_play_reference; got: %+v", *p)
+	}
+}
+
+// TestValidateUnknownStartAtTaskUnderStrict pins the
+// unknown_start_at_task check across plays.
+func TestValidateUnknownStartAtTaskUnderStrict(t *testing.T) {
+	data := []byte(`---
+- name: api
+  tasks:
+    - name: deploy api
+      dokku_app: { app: a }
+    - name: configure api
+      dokku_app: { app: a }
+`)
+	problems := Validate(data, ValidateOptions{Strict: true, StartAtTask: "missing-task"})
+	p := findProblem(problems, "unknown_start_at_task")
+	if p == nil {
+		t.Fatalf("expected unknown_start_at_task; got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"missing-task"`) {
+		t.Errorf("message should quote the bad reference; got %q", p.Message)
+	}
+	for _, want := range []string{`"deploy api"`, `"configure api"`} {
+		if !strings.Contains(p.Hint, want) {
+			t.Errorf("hint missing %q; got %q", want, p.Hint)
+		}
+	}
+}
+
+// TestValidateStartAtTaskNarrowedByPlay confirms that when --play and
+// --start-at-task are both set, the task search is narrowed to the
+// named play. A task name that exists only in another play is treated
+// as missing.
+func TestValidateStartAtTaskNarrowedByPlay(t *testing.T) {
+	data := []byte(`---
+- name: api
+  tasks:
+    - name: deploy api
+      dokku_app: { app: a }
+- name: worker
+  tasks:
+    - name: deploy worker
+      dokku_app: { app: b }
+`)
+	problems := Validate(data, ValidateOptions{
+		Strict:      true,
+		PlayName:    "api",
+		StartAtTask: "deploy worker",
+	})
+	if p := findProblem(problems, "unknown_start_at_task"); p == nil {
+		t.Fatalf("expected unknown_start_at_task when --play narrows the search; got: %+v", problems)
+	}
+}
+
+// TestValidateStartAtTaskMatchesGroupChild confirms the audit
+// recurses into block / rescue / always children so a child name in a
+// group is recognised.
+func TestValidateStartAtTaskMatchesGroupChild(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: group-1
+      block:
+        - name: child-a
+          dokku_app: { app: a }
+        - name: child-b
+          dokku_app: { app: b }
+`)
+	problems := Validate(data, ValidateOptions{Strict: true, StartAtTask: "child-b"})
+	if p := findProblem(problems, "unknown_start_at_task"); p != nil {
+		t.Fatalf("did not expect unknown_start_at_task for a real group child; got: %+v", *p)
+	}
+}
+
+// TestValidateCLIReferencesSkippedWithoutStrict pins the gating
+// behaviour: passing --play/--start-at-task without --strict does not
+// trigger the cross-reference audit, matching the issue's contract
+// that the check is strict-mode-only.
+func TestValidateCLIReferencesSkippedWithoutStrict(t *testing.T) {
+	data := []byte(`---
+- name: api
+  tasks:
+    - dokku_app: { app: a }
+`)
+	problems := Validate(data, ValidateOptions{
+		PlayName:    "missing",
+		StartAtTask: "also-missing",
+	})
+	if p := findProblem(problems, "unknown_play_reference"); p != nil {
+		t.Errorf("non-strict should not surface unknown_play_reference; got: %+v", *p)
+	}
+	if p := findProblem(problems, "unknown_start_at_task"); p != nil {
+		t.Errorf("non-strict should not surface unknown_start_at_task; got: %+v", *p)
+	}
+}

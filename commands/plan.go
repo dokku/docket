@@ -29,6 +29,7 @@ type PlanCommand struct {
 	skipTags          []string
 	varsFiles         []string
 	play              string
+	listTasks         bool
 	arguments         map[string]*Argument
 }
 
@@ -78,6 +79,7 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
 	f.StringVar(&c.play, "play", "", "plan only the play with this name (matches the play's `name:` field; auto-named plays use `play #N`)")
+	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without contacting the server. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
 
 	taskFile := getTaskYamlFilename(os.Args)
 	data, err := os.ReadFile(taskFile)
@@ -108,6 +110,7 @@ func (c *PlanCommand) AutocompleteFlags() complete.Flags {
 			"--skip-tags":            complete.PredictAnything,
 			"--vars-file":            complete.PredictFiles("*"),
 			"--play":                 complete.PredictAnything,
+			"--list-tasks":           complete.PredictNothing,
 		},
 	)
 }
@@ -181,6 +184,18 @@ func (c *PlanCommand) Run(args []string) int {
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
+	}
+
+	if c.listTasks {
+		return renderListTasks(c.Ui, listTasksOptions{
+			plays:         plays,
+			includes:      c.tags,
+			skips:         c.skipTags,
+			fileLevelKeys: fileLevelKeys,
+			userSet:       userSet,
+			context:       context,
+			jsonOut:       c.json,
+		})
 	}
 
 	sensitiveValues = append(sensitiveValues, tasks.CollectPlaySensitiveValues(plays)...)

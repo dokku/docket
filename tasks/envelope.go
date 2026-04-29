@@ -201,3 +201,65 @@ func FilterByTags(m OrderedStringEnvelopeMap, includes, skips []string) []string
 	}
 	return out
 }
+
+// EnvelopeContainsName reports whether env or any of its block / rescue
+// / always descendants has Name == target. Used by --start-at-task
+// gating so the executor enters a group whose child matches the target
+// rather than skipping the entire group.
+func EnvelopeContainsName(env *TaskEnvelope, target string) bool {
+	if env == nil {
+		return false
+	}
+	if env.Name == target {
+		return true
+	}
+	for _, child := range env.Block {
+		if EnvelopeContainsName(child, target) {
+			return true
+		}
+	}
+	for _, child := range env.Rescue {
+		if EnvelopeContainsName(child, target) {
+			return true
+		}
+	}
+	for _, child := range env.Always {
+		if EnvelopeContainsName(child, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// CollectEnvelopeNames returns every leaf and group envelope name
+// reachable from envs, walking block / rescue / always recursively.
+// Names appear in source order and are de-duplicated. Used by the
+// --start-at-task validators (apply.go and tasks/validate.go) to build
+// the "available names" hint shown when no task matched.
+func CollectEnvelopeNames(envs []*TaskEnvelope) []string {
+	seen := map[string]bool{}
+	var out []string
+	var walk func(env *TaskEnvelope)
+	walk = func(env *TaskEnvelope) {
+		if env == nil {
+			return
+		}
+		if env.Name != "" && !seen[env.Name] {
+			seen[env.Name] = true
+			out = append(out, env.Name)
+		}
+		for _, child := range env.Block {
+			walk(child)
+		}
+		for _, child := range env.Rescue {
+			walk(child)
+		}
+		for _, child := range env.Always {
+			walk(child)
+		}
+	}
+	for _, env := range envs {
+		walk(env)
+	}
+	return out
+}

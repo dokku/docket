@@ -98,6 +98,55 @@ func TestFilterByTagsCombinedNarrowsThenDrops(t *testing.T) {
 	}
 }
 
+// TestEnvelopeContainsName covers the helper used by --start-at-task
+// gating: a top-level name match, a recursive match through a block /
+// rescue / always child, and a miss.
+func TestEnvelopeContainsName(t *testing.T) {
+	leaf := &TaskEnvelope{Name: "leaf"}
+	if !EnvelopeContainsName(leaf, "leaf") {
+		t.Errorf("leaf should self-match")
+	}
+	if EnvelopeContainsName(leaf, "other") {
+		t.Errorf("leaf should not match unrelated name")
+	}
+
+	group := &TaskEnvelope{
+		Name: "outer",
+		Block: []*TaskEnvelope{
+			{Name: "inner-a"},
+			{Name: "inner-b", Rescue: []*TaskEnvelope{{Name: "deep"}}},
+		},
+		Always: []*TaskEnvelope{{Name: "always-a"}},
+	}
+	for _, want := range []string{"outer", "inner-a", "inner-b", "deep", "always-a"} {
+		if !EnvelopeContainsName(group, want) {
+			t.Errorf("group should contain %q", want)
+		}
+	}
+	if EnvelopeContainsName(group, "missing") {
+		t.Errorf("group must not contain unrelated name")
+	}
+	if EnvelopeContainsName(nil, "anything") {
+		t.Errorf("nil env should never match")
+	}
+}
+
+// TestCollectEnvelopeNames covers the helper that flattens a slice of
+// envelopes into the source-ordered, de-duplicated name list used in
+// the --start-at-task error hint.
+func TestCollectEnvelopeNames(t *testing.T) {
+	envs := []*TaskEnvelope{
+		{Name: "a"},
+		{Name: "b", Block: []*TaskEnvelope{{Name: "b-child"}, {Name: "a"}}},
+		{Name: "c"},
+	}
+	got := CollectEnvelopeNames(envs)
+	want := []string{"a", "b", "b-child", "c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("CollectEnvelopeNames = %v, want %v", got, want)
+	}
+}
+
 func buildEnvelopeMap(spec map[string][]string) OrderedStringEnvelopeMap {
 	// spec maps key -> tag list. Insertion order follows the alphabetical
 	// order of the keys so test assertions remain stable.
