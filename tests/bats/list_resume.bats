@@ -57,7 +57,7 @@ EOF
   assert_output --partial "docket-test-list-1"
   assert_output --partial "docket-test-list-2"
   run dokku apps:exists docket-test-list-1
-  assert_failure   # never created
+  assert_failure # never created
 }
 
 @test "--list-tasks honors --tags filter" {
@@ -133,7 +133,7 @@ EOF
   assert_output --partial "[skipped] first"
   assert_output --partial "before --start-at-task"
   run dokku apps:exists docket-test-start-at-first
-  assert_failure   # skipped
+  assert_failure # skipped
   run dokku apps:exists docket-test-start-at-second
   assert_success
   run dokku apps:exists docket-test-start-at-third
