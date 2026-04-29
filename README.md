@@ -39,6 +39,102 @@ docket apply
 
 Running `docket` with no subcommand prints the available commands. Use `docket init` to scaffold a starter `tasks.yml`, `docket apply` to execute a task file, `docket fmt` to canonically format a task file, `docket plan` to preview the changes a task file would make without mutating any state, `docket validate` to check a task file's schema and templates without contacting the server, or `docket version` to print the binary's version.
 
+### Multi-play recipes
+
+`tasks.yml` is a YAML list of plays. Each play has its own `name`, optional `tags`, optional `when:`, optional `inputs:`, and a `tasks:` list. The executor walks every play in source order, so a single recipe can describe multiple coordinated apps or services in one file.
+
+```yaml
+---
+- name: api
+  tags: [web]
+  inputs:
+    - { name: app, default: api }
+  tasks:
+    - dokku_app:    { app: "{{ .app }}" }
+    - dokku_config: { app: "{{ .app }}", config: { LOG_LEVEL: info } }
+
+- name: worker
+  when: 'env != "preview"'
+  inputs:
+    - { name: app, default: worker }
+  tasks:
+    - dokku_app: { app: "{{ .app }}" }
+```
+
+Single-play recipes - the legacy shape - keep working unchanged because they are already a one-element list.
+
+| Key | Status | What it does |
+|-----|--------|--------------|
+| `name` | active | Human label for the play. Auto-generated as `play #N` when omitted, except for single-play files which use the legacy `tasks` header. |
+| `tags` | active | Tag list inherited by every task in the play (additive with per-task `tags`). |
+| `when` | active | expr expression. Falsy renders the play as `(skipped: when "...")` and the play's tasks are not executed. |
+| `inputs` | active | Per-play input defaults. Override file-level defaults within their play; CLI `--name=value` and `--vars-file` always win. |
+| `tasks` | active | The play's task list (existing per-task envelope). |
+
+#### Per-play `inputs:` precedence
+
+Per-play inputs slot into layer 2 of the precedence chain from `--vars-file`:
+
+| Layer | Source |
+|-------|--------|
+| 1 | File-level `inputs:` defaults (declared on a play with no tasks). |
+| 2 | Per-play `inputs:` defaults (declared on a play that also has tasks). |
+| 3 | `--vars-file <path>` (repeatable; later files override earlier). |
+| 4 | `--name=value` CLI flags (always win). |
+
+A play-local input default is visible to that play's tasks; it is *not* visible to any play's `when:` predicate (including its own) and *not* visible to other plays' tasks. A file-level input - one declared on an inputs-only play - is visible to every play.
+
+```yaml
+---
+- inputs:
+    - { name: env, default: prod }     # file-level: visible to every play
+- name: api
+  inputs:
+    - { name: app, default: api }       # play-local: visible to api's tasks only
+  tasks:
+    - dokku_app: { app: "{{ .app }}" }
+```
+
+#### `--play <name>` filter
+
+Run only one play from the recipe by name:
+
+```shell
+docket apply --tasks tasks.yml --play api
+docket plan  --tasks tasks.yml --play api --tags deploy
+```
+
+`--play` composes with `--tags` / `--skip-tags`: the play filter narrows to one play, then the tag filter applies to the tasks inside it. An unknown `--play` name produces a clear error listing the available plays.
+
+#### Per-play `when:` scoping
+
+A play-level `when:` is evaluated against the file-level merged context only - file-level input defaults, plus `--vars-file` and CLI overrides. The play's own `inputs:` are intentionally not visible to its own `when:` (the spec calls this circular). Sibling plays' play-local inputs are also not visible. Per-task `when:` inside the play does see the play's own inputs.
+
+#### Error semantics: abort the play, not the run
+
+By default, an error in a task aborts the *current play* and the next play still runs. Use `--fail-fast` to opt back into the legacy "abort the entire run on first error" behaviour:
+
+```shell
+docket apply --tasks tasks.yml             # default: bail current play, continue next
+docket apply --tasks tasks.yml --fail-fast # legacy: abort the entire run
+```
+
+The summary line gains a `· N play skipped` segment when one or more plays were skipped (by `when:` or by a per-task `when:` predicate at the play level):
+
+```text
+==> Play: api
+[ok]      dokku apps:create api
+[changed] dokku git:sync api
+
+==> Play: worker  (skipped: when "env != \"preview\"")
+
+==> Play: web
+[ok]      dokku apps:create web
+[changed] dokku domains:set web
+
+Summary: 4 tasks · 2 changed · 2 ok · 0 skipped · 0 errors · 1 play skipped  (took 5.1s)
+```
+
 ### Task envelope
 
 Each task entry in `tasks.yml` admits a small set of cross-cutting envelope keys alongside the single `dokku_*` task-type key. Body templating uses [sigil](https://github.com/gliderlabs/sigil) (`{{ .input }}` substitutions) and envelope predicates use [expr-lang/expr](https://github.com/expr-lang/expr) so the two languages live in clearly separate positions.
@@ -207,6 +303,8 @@ The flags are:
 | `--verbose` | After each task line, echo every resolved Dokku command the task ran on a `→`-prefixed continuation line, in invocation order. Tasks that loop over inputs (e.g. `dokku_buildpacks` adding several URLs) emit one continuation per call. Commands are masked against the global sensitive value set. Ignored when `--json` is set; the JSON output already includes the resolved commands. |
 | `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
 | `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
+| `--play <name>` | Run only the play with this name. Matches the play's `name:` field; auto-named plays use `play #N`. Composes with `--tags`. |
+| `--fail-fast` | Abort the entire run on the first task error. Without this flag, an error aborts only the current play and the next play still runs. |
 
 For example, a multi-command task renders one continuation per invocation:
 
@@ -289,6 +387,7 @@ The flags are:
 | `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
 | `--detailed-exitcode` | Exit `0` when no drift is detected, `2` when at least one task reports drift, `1` on read or probe error. Errors win over drift. Without this flag, plan exits `0` regardless of drift. Mirrors the `git diff --exit-code` / `terraform plan -detailed-exitcode` convention. |
 | `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
+| `--play <name>` | Plan only the play with this name. Matches the play's `name:` field; auto-named plays use `play #N`. Composes with `--tags`. |
 
 ```shell
 # CI gate: fail the job if any task would change the server.
@@ -302,10 +401,11 @@ docket plan --detailed-exitcode || exit $?
 | Event | Required fields | Optional fields |
 |-------|-----------------|-----------------|
 | `play_start` | `version`, `type`, `name`, `ts` | `host` |
+| `play_skipped` | `version`, `type`, `name`, `ts` | `when`, `reason` |
 | `task` (apply) | `version`, `type`, `play`, `name`, `status` (`ok`/`changed`/`skipped`/`error`), `changed`, `state`, `desired_state`, `duration_ms`, `ts` | `error`, `commands` |
 | `task` (plan) | `version`, `type`, `play`, `name`, `status` (`ok`/`+`/`~`/`-`/`skipped`/`error`), `would_change`, `state`, `desired_state`, `duration_ms`, `ts` | `reason`, `mutations`, `commands`, `error` |
-| `summary` (apply) | `version`, `type`, `tasks`, `changed`, `ok`, `skipped`, `errors`, `duration_ms` | - |
-| `summary` (plan) | `version`, `type`, `tasks`, `would_change`, `in_sync`, `skipped`, `errors`, `duration_ms` | - |
+| `summary` (apply) | `version`, `type`, `tasks`, `changed`, `ok`, `skipped`, `errors`, `plays_skipped`, `duration_ms` | - |
+| `summary` (plan) | `version`, `type`, `tasks`, `would_change`, `in_sync`, `skipped`, `errors`, `plays_skipped`, `duration_ms` | - |
 
 Both `task` event flavors include `commands` as an array of resolved, masked dokku command strings (singular `command` was considered but tasks like `dokku_buildpacks` legitimately invoke N subprocess calls, so an array preserves structure for `jq '.commands[]'`). The plan `commands` array reports the dokku invocations `apply` *would* run; the apply `commands` array reports what was actually executed. Both arrays use the same rendering rules, so plan output and apply output stay byte-identical for the same logical operation.
 
@@ -420,7 +520,7 @@ The full precedence order, lowest to highest:
 | Layer | Source |
 |-------|--------|
 | 1 | File-level `inputs:` defaults declared in `tasks.yml` |
-| 2 | Play-level `inputs:` defaults (per-play; reserved for #208) |
+| 2 | Per-play `inputs:` defaults (active; see "Multi-play recipes" above) |
 | 3 | `--vars-file <path>` (repeatable; later files override earlier) |
 | 4 | `--name=value` CLI flags (always win) |
 

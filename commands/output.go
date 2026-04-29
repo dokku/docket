@@ -21,6 +21,10 @@ type EventEmitter interface {
 	// PlayStart announces the beginning of a play. host is the optional
 	// remote host annotation, "" for local execution.
 	PlayStart(name, host string)
+	// PlaySkipped announces a play that was filtered out by its `when:`
+	// predicate. whenSrc is the raw expr source so the human formatter
+	// can quote it back at the user.
+	PlaySkipped(name, whenSrc string)
 	// ApplyTask emits one event per task in an `apply` run.
 	ApplyTask(ev ApplyTaskEvent)
 	// PlanTask emits one event per task in a `plan` run.
@@ -104,20 +108,22 @@ var continuationIndent = strings.Repeat(" ", markerWidth)
 // ApplyCounts holds the running totals printed by the apply summary
 // line.
 type ApplyCounts struct {
-	Tasks   int
-	Changed int
-	OK      int
-	Skipped int
-	Errors  int
+	Tasks        int
+	Changed      int
+	OK           int
+	Skipped      int
+	Errors       int
+	PlaysSkipped int
 }
 
 // PlanCounts holds the running totals printed by the plan summary line.
 type PlanCounts struct {
-	Tasks       int
-	WouldChange int
-	InSync      int
-	Skipped     int
-	Errors      int
+	Tasks        int
+	WouldChange  int
+	InSync       int
+	Skipped      int
+	Errors       int
+	PlaysSkipped int
 }
 
 // Formatter renders the structured per-task output for `apply` and
@@ -182,6 +188,18 @@ func (f *Formatter) PlayHeaderWithHost(name, host string) {
 // PlayStart satisfies EventEmitter; delegates to PlayHeaderWithHost.
 func (f *Formatter) PlayStart(name, host string) {
 	f.PlayHeaderWithHost(name, host)
+}
+
+// PlaySkipped renders a `==> Play: <name>  (skipped: when "<src>")`
+// line for a play whose `when:` predicate evaluated to false. whenSrc
+// is the raw expr source; the formatter quotes it back so the user can
+// see which predicate caused the skip.
+func (f *Formatter) PlaySkipped(name, whenSrc string) {
+	if whenSrc == "" {
+		f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped)", name))
+		return
+	}
+	f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped: when %q)", name, whenSrc))
 }
 
 // ApplyTask renders one apply task line plus optional continuations,
@@ -319,15 +337,28 @@ func (f *Formatter) Continuation(prefix rune, body string) {
 // ApplySummary emits the blank line and `Summary: ...` footer that
 // follows an apply run. elapsed is rendered with one decimal of
 // seconds, matching the spec in issue #202.
+//
+// When one or more plays were filtered out by their `when:` predicate
+// (#208), an extra `· N play(s) skipped` segment is appended before the
+// duration so the user sees both the per-task skip count and the
+// per-play skip count.
 func (f *Formatter) ApplySummary(c ApplyCounts, elapsed time.Duration) {
 	errWord := "errors"
 	if c.Errors == 1 {
 		errWord = "error"
 	}
+	playSegment := ""
+	if c.PlaysSkipped > 0 {
+		playWord := "plays"
+		if c.PlaysSkipped == 1 {
+			playWord = "play"
+		}
+		playSegment = fmt.Sprintf(" · %d %s skipped", c.PlaysSkipped, playWord)
+	}
 	f.ui.Output("")
 	f.ui.Output(fmt.Sprintf(
-		"Summary: %d tasks · %d changed · %d ok · %d skipped · %d %s  (took %.1fs)",
-		c.Tasks, c.Changed, c.OK, c.Skipped, c.Errors, errWord, elapsed.Seconds(),
+		"Summary: %d tasks · %d changed · %d ok · %d skipped · %d %s%s  (took %.1fs)",
+		c.Tasks, c.Changed, c.OK, c.Skipped, c.Errors, errWord, playSegment, elapsed.Seconds(),
 	))
 }
 
@@ -344,16 +375,24 @@ func (f *Formatter) ApplySummary(c ApplyCounts, elapsed time.Duration) {
 // (the legacy format omits timing). The JSON emitter consumes it.
 func (f *Formatter) PlanSummary(c PlanCounts, _ time.Duration) {
 	f.ui.Output("")
+	playSegment := ""
+	if c.PlaysSkipped > 0 {
+		playWord := "plays"
+		if c.PlaysSkipped == 1 {
+			playWord = "play"
+		}
+		playSegment = fmt.Sprintf(", %d %s skipped", c.PlaysSkipped, playWord)
+	}
 	if c.Skipped > 0 {
 		f.ui.Output(fmt.Sprintf(
-			"Plan: %d task(s); %d would change, %d in sync, %d skipped, %d error(s).",
-			c.Tasks, c.WouldChange, c.InSync, c.Skipped, c.Errors,
+			"Plan: %d task(s); %d would change, %d in sync, %d skipped, %d error(s)%s.",
+			c.Tasks, c.WouldChange, c.InSync, c.Skipped, c.Errors, playSegment,
 		))
 		return
 	}
 	f.ui.Output(fmt.Sprintf(
-		"Plan: %d task(s); %d would change, %d in sync, %d error(s).",
-		c.Tasks, c.WouldChange, c.InSync, c.Errors,
+		"Plan: %d task(s); %d would change, %d in sync, %d error(s)%s.",
+		c.Tasks, c.WouldChange, c.InSync, c.Errors, playSegment,
 	))
 }
 

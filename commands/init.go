@@ -146,13 +146,13 @@ func (c *InitCommand) Run(args []string) int {
 		return 1
 	}
 
-	taskCount, err := countTasks(rendered)
+	taskCount, playCount, err := countTasks(rendered)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("internal error: rendered scaffold did not parse: %v", err))
 		return 1
 	}
 
-	c.Ui.Output(fmt.Sprintf("==> Created %s (%s, 1 play)", c.output, pluralize(taskCount, "task")))
+	c.Ui.Output(fmt.Sprintf("==> Created %s (%s, %s)", c.output, pluralize(taskCount, "task"), pluralize(playCount, "play")))
 	c.Ui.Output("")
 	c.Ui.Output("Next steps:")
 	c.Ui.Output(fmt.Sprintf("  $ %s validate          # offline check", appName()))
@@ -256,18 +256,18 @@ func defaultRepo() string {
 }
 
 // countTasks parses rendered YAML and returns the total number of tasks
-// across all plays. Used for the "==> Created tasks.yml (N tasks, 1 play)"
-// summary line.
-func countTasks(data []byte) (int, error) {
+// across all plays plus the play count. Used for the "==> Created
+// tasks.yml (N tasks, M plays)" summary line.
+func countTasks(data []byte) (int, int, error) {
 	var recipe tasks.Recipe
 	if err := yaml.Unmarshal(data, &recipe); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	total := 0
 	for _, play := range recipe {
 		total += len(play.Tasks)
 	}
-	return total, nil
+	return total, len(recipe), nil
 }
 
 func pluralize(n int, word string) string {

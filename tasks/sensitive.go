@@ -38,6 +38,20 @@ func CollectSensitiveValues(tasks OrderedStringEnvelopeMap) []string {
 	return out
 }
 
+// CollectPlaySensitiveValues is the multi-play sibling of
+// CollectSensitiveValues. It walks every task across every play and
+// returns the union of sensitive values, in play-then-task order.
+func CollectPlaySensitiveValues(plays []*Play) []string {
+	var out []string
+	for _, play := range plays {
+		if play == nil {
+			continue
+		}
+		out = append(out, CollectSensitiveValues(play.Tasks)...)
+	}
+	return out
+}
+
 // sensitiveValuesFromTask returns the masked-value set for a single task.
 func sensitiveValuesFromTask(t Task) []string {
 	var out []string

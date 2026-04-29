@@ -2,9 +2,11 @@ package commands
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dokku/docket/tasks"
+	pflag "github.com/spf13/pflag"
 )
 
 func TestApplyCommandMetadata(t *testing.T) {
@@ -75,5 +77,81 @@ func TestFilterByTagsThroughCommandsLayer(t *testing.T) {
 	}
 	if got := tasks.FilterByTags(m, nil, nil); len(got) != 3 {
 		t.Errorf("no flags: got %v, want all 3", got)
+	}
+}
+
+// TestFilterPlaysByName covers the --play filter helper used by both
+// apply and plan. An empty target returns the slice unchanged; a hit
+// returns just the matched play; a miss returns an error that names the
+// available plays.
+func TestFilterPlaysByName(t *testing.T) {
+	plays := []*tasks.Play{
+		{Name: "api"},
+		{Name: "worker"},
+	}
+
+	out, err := filterPlaysByName(plays, "")
+	if err != nil || len(out) != 2 {
+		t.Errorf("empty target should pass through; got len=%d err=%v", len(out), err)
+	}
+
+	out, err = filterPlaysByName(plays, "api")
+	if err != nil || len(out) != 1 || out[0].Name != "api" {
+		t.Errorf(`--play "api" got len=%d names=%v err=%v`, len(out), playNames(out), err)
+	}
+
+	_, err = filterPlaysByName(plays, "missing")
+	if err == nil {
+		t.Fatal("expected error for unknown play")
+	}
+	for _, want := range []string{`--play "missing"`, `"api"`, `"worker"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q\nfull: %v", want, err)
+		}
+	}
+}
+
+func playNames(plays []*tasks.Play) []string {
+	out := make([]string, len(plays))
+	for i, p := range plays {
+		out[i] = p.Name
+	}
+	return out
+}
+
+// TestUserSetKeysMergesCLIAndVarsFile pins the precedence-tracking
+// helper that #208 needs to layer per-play inputs correctly. CLI-set
+// flags and vars-file keys both contribute; non-input flags are filtered
+// out so internal flags (--tasks etc.) do not pollute the per-play
+// override set.
+func TestUserSetKeysMergesCLIAndVarsFile(t *testing.T) {
+	flags := pflag.NewFlagSet("t", pflag.ContinueOnError)
+	flags.String("app", "default", "")
+	flags.String("env", "default", "")
+	flags.String("tasks", "tasks.yml", "")
+	if err := flags.Parse([]string{"--app=cli-app", "--tasks=other.yml"}); err != nil {
+		t.Fatalf("flags.Parse: %v", err)
+	}
+
+	args := map[string]*Argument{
+		"app": argFor(t, "string", ""),
+		"env": argFor(t, "string", ""),
+	}
+	varsFileKeys := map[string]bool{"env": true}
+
+	got := userSetKeys(flags, varsFileKeys, args)
+	want := map[string]bool{"app": true, "env": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("userSetKeys = %v, want %v (tasks should drop because not in arguments)", got, want)
+	}
+}
+
+// TestUserSetKeysWithoutFlagSet covers the nil-flags edge case. Vars-file
+// keys still flow through; no panic when callers haven't registered a
+// FlagSet yet.
+func TestUserSetKeysWithoutFlagSet(t *testing.T) {
+	got := userSetKeys(nil, map[string]bool{"env": true}, nil)
+	if !reflect.DeepEqual(got, map[string]bool{"env": true}) {
+		t.Errorf("userSetKeys(nil, ...) = %v, want only env", got)
 	}
 }

@@ -25,6 +25,8 @@ type ApplyCommand struct {
 	tags              []string
 	skipTags          []string
 	varsFiles         []string
+	play              string
+	failFast          bool
 	arguments         map[string]*Argument
 }
 
@@ -73,6 +75,8 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list run")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
+	f.StringVar(&c.play, "play", "", "run only the play with this name (matches the play's `name:` field; auto-named plays use `play #N`)")
+	f.BoolVar(&c.failFast, "fail-fast", false, "abort the entire run on the first task error. By default, an error aborts only the current play and the next play still runs.")
 
 	taskFile := getTaskYamlFilename(os.Args)
 	data, err := os.ReadFile(taskFile)
@@ -102,6 +106,8 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 			"--tags":                 complete.PredictAnything,
 			"--skip-tags":            complete.PredictAnything,
 			"--vars-file":            complete.PredictFiles("*"),
+			"--play":                 complete.PredictAnything,
+			"--fail-fast":            complete.PredictNothing,
 		},
 	)
 }
@@ -115,7 +121,8 @@ func (c *ApplyCommand) Run(args []string) int {
 		return 1
 	}
 
-	if err := applyVarsFiles(c.arguments, flags, c.varsFiles); err != nil {
+	varsFileKeys, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
 	}
@@ -143,13 +150,26 @@ func (c *ApplyCommand) Run(args []string) int {
 		}
 	}
 
-	taskList, err := tasks.GetTasks(data, context)
+	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
+
+	plays, err := tasks.GetPlays(data, context, userSet)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("task error: %v", err))
 		return 1
 	}
 
-	sensitiveValues = append(sensitiveValues, tasks.CollectSensitiveValues(taskList)...)
+	// Compute file-level input names from the *unfiltered* play list so
+	// --play does not accidentally hide an inputs-only play whose
+	// declared inputs the surviving play's when: depends on.
+	fileLevelKeys := tasks.FileLevelInputNames(plays)
+
+	plays, err = filterPlaysByName(plays, c.play)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	sensitiveValues = append(sensitiveValues, tasks.CollectPlaySensitiveValues(plays)...)
 	subprocess.SetGlobalSensitive(sensitiveValues)
 	defer subprocess.SetGlobalSensitive(nil)
 
@@ -158,98 +178,168 @@ func (c *ApplyCommand) Run(args []string) int {
 	}
 
 	emitter := c.newEmitter()
-	emitter.PlayStart("tasks", resolvedHost)
-
 	start := time.Now()
 	counts := ApplyCounts{}
-	playName := "tasks"
+	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(context, fileLevelKeys, userSet))
+	hasError := false
 
-	keys := tasks.FilterByTags(taskList, c.tags, c.skipTags)
-	exprBaseCtx := buildEnvelopeExprContext(context)
-
-	for _, name := range keys {
-		env := taskList.GetEnvelope(name)
-		taskStart := time.Now()
-
-		if env.HasWhen() {
-			ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(exprBaseCtx, env))
+playLoop:
+	for _, play := range plays {
+		if play.IsFileLevel() {
+			// Inputs-only plays carry no tasks; their inputs are
+			// already folded into fileLevelKeys above. They produce
+			// no output and do not count toward play totals.
+			continue
+		}
+		if play.HasWhen() {
+			ok, err := tasks.EvalBool(play.WhenProgram(), playWhenExprCtx)
 			if err != nil {
-				counts.Tasks++
-				counts.Errors++
-				emitter.ApplyTask(ApplyTaskEvent{
-					Play:      playName,
-					Name:      name,
-					WhenError: err,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
-				emitter.ApplySummary(counts, time.Since(start))
-				return 1
+				counts.PlaysSkipped++
+				hasError = true
+				emitter.PlaySkipped(play.Name, fmt.Sprintf("%s (error: %v)", play.When, err))
+				if c.failFast {
+					break playLoop
+				}
+				continue
 			}
 			if !ok {
-				counts.Tasks++
-				counts.Skipped++
-				emitter.ApplyTask(ApplyTaskEvent{
-					Play:      playName,
-					Name:      name,
-					Skipped:   true,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
+				counts.PlaysSkipped++
+				emitter.PlaySkipped(play.Name, play.When)
 				continue
 			}
 		}
 
-		state := env.Task.Execute()
-		counts.Tasks++
+		emitter.PlayStart(play.Name, resolvedHost)
 
-		switch {
-		case state.Error != nil:
-			counts.Errors++
-			emitter.ApplyTask(ApplyTaskEvent{
-				Play:      playName,
-				Name:      name,
-				State:     state,
-				Duration:  time.Since(taskStart),
-				Timestamp: time.Now().UTC(),
-			})
-			emitter.ApplySummary(counts, time.Since(start))
-			return 1
-		case state.State != state.DesiredState:
-			counts.Errors++
-			emitter.ApplyTask(ApplyTaskEvent{
-				Play:         playName,
-				Name:         name,
-				State:        state,
-				InvalidState: true,
-				Duration:     time.Since(taskStart),
-				Timestamp:    time.Now().UTC(),
-			})
-			emitter.ApplySummary(counts, time.Since(start))
-			return 1
-		case state.Changed:
-			counts.Changed++
-			emitter.ApplyTask(ApplyTaskEvent{
-				Play:      playName,
-				Name:      name,
-				State:     state,
-				Duration:  time.Since(taskStart),
-				Timestamp: time.Now().UTC(),
-			})
-		default:
-			counts.OK++
-			emitter.ApplyTask(ApplyTaskEvent{
-				Play:      playName,
-				Name:      name,
-				State:     state,
-				Duration:  time.Since(taskStart),
-				Timestamp: time.Now().UTC(),
-			})
+		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(context, play.Inputs, userSet))
+
+		failed := false
+		for _, name := range tasks.FilterByTags(play.Tasks, c.tags, c.skipTags) {
+			env := play.Tasks.GetEnvelope(name)
+			taskStart := time.Now()
+
+			if env.HasWhen() {
+				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env))
+				if err != nil {
+					counts.Tasks++
+					counts.Errors++
+					failed = true
+					hasError = true
+					emitter.ApplyTask(ApplyTaskEvent{
+						Play:      play.Name,
+						Name:      name,
+						WhenError: err,
+						Duration:  time.Since(taskStart),
+						Timestamp: time.Now().UTC(),
+					})
+					if c.failFast {
+						emitter.ApplySummary(counts, time.Since(start))
+						return 1
+					}
+					break
+				}
+				if !ok {
+					counts.Tasks++
+					counts.Skipped++
+					emitter.ApplyTask(ApplyTaskEvent{
+						Play:      play.Name,
+						Name:      name,
+						Skipped:   true,
+						Duration:  time.Since(taskStart),
+						Timestamp: time.Now().UTC(),
+					})
+					continue
+				}
+			}
+
+			state := env.Task.Execute()
+			counts.Tasks++
+
+			switch {
+			case state.Error != nil:
+				counts.Errors++
+				failed = true
+				hasError = true
+				emitter.ApplyTask(ApplyTaskEvent{
+					Play:      play.Name,
+					Name:      name,
+					State:     state,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
+				if c.failFast {
+					emitter.ApplySummary(counts, time.Since(start))
+					return 1
+				}
+			case state.State != state.DesiredState:
+				counts.Errors++
+				failed = true
+				hasError = true
+				emitter.ApplyTask(ApplyTaskEvent{
+					Play:         play.Name,
+					Name:         name,
+					State:        state,
+					InvalidState: true,
+					Duration:     time.Since(taskStart),
+					Timestamp:    time.Now().UTC(),
+				})
+				if c.failFast {
+					emitter.ApplySummary(counts, time.Since(start))
+					return 1
+				}
+			case state.Changed:
+				counts.Changed++
+				emitter.ApplyTask(ApplyTaskEvent{
+					Play:      play.Name,
+					Name:      name,
+					State:     state,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
+			default:
+				counts.OK++
+				emitter.ApplyTask(ApplyTaskEvent{
+					Play:      play.Name,
+					Name:      name,
+					State:     state,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
+			}
+
+			if failed {
+				// Without --fail-fast, an error in this play aborts the
+				// rest of this play but the next play still runs.
+				break
+			}
 		}
 	}
 
 	emitter.ApplySummary(counts, time.Since(start))
+	if hasError {
+		return 1
+	}
 	return 0
+}
+
+// filterPlaysByName narrows plays to the single play whose Name matches
+// target. An empty target returns plays unchanged. An unmatched target
+// returns an error so the user sees a clear "no such play" diagnostic
+// rather than silently doing nothing.
+func filterPlaysByName(plays []*tasks.Play, target string) ([]*tasks.Play, error) {
+	if target == "" {
+		return plays, nil
+	}
+	for _, play := range plays {
+		if play.Name == target {
+			return []*tasks.Play{play}, nil
+		}
+	}
+	names := make([]string, 0, len(plays))
+	for _, play := range plays {
+		names = append(names, fmt.Sprintf("%q", play.Name))
+	}
+	return nil, fmt.Errorf("--play %q: no play with that name; available plays: %v", target, names)
 }
 
 // newEmitter constructs the EventEmitter for this run. --json builds a

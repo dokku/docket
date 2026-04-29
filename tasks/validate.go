@@ -68,6 +68,21 @@ var activeEnvelopeKeys = map[string]bool{
 	"loop": true,
 }
 
+// allowedPlayKeys is the set of play-level mapping keys the validator
+// admits without flagging as unexpected. #208 extends the legacy
+// inputs/tasks pair with name/tags/when at the play envelope.
+var allowedPlayKeys = map[string]bool{
+	"name":   true,
+	"tags":   true,
+	"when":   true,
+	"inputs": true,
+	"tasks":  true,
+}
+
+// allowedPlayKeysList is the comma-separated form rendered into the
+// "unexpected play key" diagnostic so users see the full allowlist.
+const allowedPlayKeysList = "name, tags, when, inputs, tasks"
+
 // Validate parses data as a docket recipe and returns every problem it finds.
 // It is offline by contract: the implementation must never invoke
 // subprocess.CallExecCommand.
@@ -190,13 +205,29 @@ func validatePlay(play *yaml.Node, label string, inputs []inputWithNode, opts Va
 
 	for i := 0; i < len(play.Content); i += 2 {
 		key := play.Content[i].Value
-		if key != "inputs" && key != "tasks" {
+		if !allowedPlayKeys[key] {
 			problems = append(problems, Problem{
 				Code:    "recipe_shape",
 				Play:    label,
 				Line:    play.Content[i].Line,
 				Column:  play.Content[i].Column,
-				Message: fmt.Sprintf("unexpected play key %q (expected: inputs, tasks)", key),
+				Message: fmt.Sprintf("unexpected play key %q (expected: %s)", key, allowedPlayKeysList),
+			})
+		}
+	}
+
+	// Compile the play-level when: predicate so a typo surfaces at validate
+	// time. The play's when: sees the file-level merged context only - the
+	// play's own inputs are not visible to its own when - but for parse
+	// validation we only care that the source compiles.
+	if whenNode := mappingValue(play, "when"); whenNode != nil && whenNode.Kind == yaml.ScalarNode && whenNode.Value != "" {
+		if _, err := CompilePredicate(whenNode.Value); err != nil {
+			problems = append(problems, Problem{
+				Code:    "expr_compile",
+				Play:    label,
+				Line:    whenNode.Line,
+				Column:  whenNode.Column,
+				Message: fmt.Sprintf("play when expression compile error: %v", err),
 			})
 		}
 	}

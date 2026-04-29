@@ -432,7 +432,7 @@ func normaliseYAMLMap(in map[interface{}]interface{}) (map[string]interface{}, e
 // registered Argument set, honouring the precedence rules from #207:
 //
 //  1. file-level inputs: defaults  (already in flag pointers from registerInputFlags)
-//  2. play-level inputs: defaults  (depends on #208; layer empty today)
+//  2. play-level inputs: defaults  (layered per-play in tasks.GetPlays via #208)
 //  3. --vars-file values
 //  4. --name=value CLI flags       (highest)
 //
@@ -440,13 +440,18 @@ func normaliseYAMLMap(in map[interface{}]interface{}) (map[string]interface{}, e
 // type on the command line"; the visitor only fires for flags whose Changed
 // bit is set. Any unknown vars-file key is a hard error with a Levenshtein
 // suggestion against the registered input names.
-func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths []string) error {
+//
+// The returned map contains the input names this call wrote into the
+// argument set from a vars file. Callers union it with flags.Visit to
+// derive the full "user has overridden this key" set, which #208 needs so
+// per-play input defaults do not shadow user overrides.
+func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths []string) (map[string]bool, error) {
 	if len(paths) == 0 {
-		return nil
+		return nil, nil
 	}
 	merged, sources, err := loadVarsFiles(paths)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	cliSet := map[string]bool{}
@@ -467,6 +472,7 @@ func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths [
 		knownNames = append(knownNames, name)
 	}
 
+	applied := map[string]bool{}
 	for _, key := range keys {
 		arg, ok := arguments[key]
 		if !ok {
@@ -475,16 +481,36 @@ func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths [
 			if suggestion != "" {
 				hint = fmt.Sprintf("; did you mean %q?", suggestion)
 			}
-			return fmt.Errorf("unknown input %q in --vars-file %s%s", key, sources[key], hint)
+			return nil, fmt.Errorf("unknown input %q in --vars-file %s%s", key, sources[key], hint)
 		}
 		if cliSet[key] {
 			continue
 		}
 		if err := arg.SetFromVarsFile(key, merged[key]); err != nil {
-			return fmt.Errorf("--vars-file %s: %v", sources[key], err)
+			return nil, fmt.Errorf("--vars-file %s: %v", sources[key], err)
 		}
+		applied[key] = true
 	}
-	return nil
+	return applied, nil
+}
+
+// userSetKeys merges the set of input names the user has overridden via
+// --vars-file (varsFileKeys) with those they have typed on the CLI
+// (flags.Visit). Used by #208 so per-play input defaults do not shadow a
+// user override.
+func userSetKeys(flags *flag.FlagSet, varsFileKeys map[string]bool, arguments map[string]*Argument) map[string]bool {
+	out := make(map[string]bool, len(varsFileKeys))
+	for k := range varsFileKeys {
+		out[k] = true
+	}
+	if flags != nil {
+		flags.Visit(func(f *flag.Flag) {
+			if _, ok := arguments[f.Name]; ok {
+				out[f.Name] = true
+			}
+		})
+	}
+	return out
 }
 
 // nearestInputName returns the registered input name with the lowest

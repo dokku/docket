@@ -109,7 +109,7 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	if err := applyVarsFiles(c.arguments, flags, c.varsFiles); err != nil {
+	if _, err := applyVarsFiles(c.arguments, flags, c.varsFiles); err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{
 				Code:    "vars_file_error",
