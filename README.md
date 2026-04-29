@@ -206,6 +206,7 @@ The flags are:
 | `--tasks <path>` | Use a specific task file (default `./tasks.yml`) |
 | `--verbose` | After each task line, echo every resolved Dokku command the task ran on a `→`-prefixed continuation line, in invocation order. Tasks that loop over inputs (e.g. `dokku_buildpacks` adding several URLs) emit one continuation per call. Commands are masked against the global sensitive value set. Ignored when `--json` is set; the JSON output already includes the resolved commands. |
 | `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
+| `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
 
 For example, a multi-command task renders one continuation per invocation:
 
@@ -287,6 +288,7 @@ The flags are:
 | `--tasks <path>` | Use a specific task file (default `./tasks.yml`) |
 | `--json` | Suppress the human formatter and emit one JSON-lines event per `play_start`, `task`, or `summary` to stdout. Sensitive values mask to `***`. See "JSON output" below for the schema. |
 | `--detailed-exitcode` | Exit `0` when no drift is detected, `2` when at least one task reports drift, `1` on read or probe error. Errors win over drift. Without this flag, plan exits `0` regardless of drift. Mirrors the `git diff --exit-code` / `terraform plan -detailed-exitcode` convention. |
+| `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
 
 ```shell
 # CI gate: fail the job if any task would change the server.
@@ -325,10 +327,11 @@ The shipping checks cover: YAML parses, recipe shape (top-level list of plays wi
 docket validate --tasks path/to/tasks.yml
 ```
 
-Exit codes are `0` when no problems are found and `1` otherwise. Two flags are available:
+Exit codes are `0` when no problems are found and `1` otherwise. Three flags are available:
 
 - `--json` emits one JSON-lines event per problem with a stable `version: 1` schema (`{"type":"validate_problem","code":"unknown_task_type", ...}`), suitable for piping into a CI annotator.
-- `--strict` additionally flags any input declared `required: true` that has no `default` and no value supplied via a CLI flag - useful in CI to ensure the recipe can be applied without runtime overrides.
+- `--strict` additionally flags any input declared `required: true` that has no `default` and no value supplied via a CLI flag or `--vars-file` - useful in CI to ensure the recipe can be applied without runtime overrides.
+- `--vars-file <path>` loads input values from a YAML or JSON file (repeatable; later files override earlier; CLI `--name=value` flags always win). Values fed in through `--vars-file` count as overrides for `--strict`. See "Layered input variables with `--vars-file`" below.
 
 A task file can also be specified via flag, and may be a file retrieved via http:
 
@@ -407,6 +410,65 @@ Finally, the following input keys are reserved for internal usage:
 - `tasks`
 - `v`
 - `version`
+
+#### Layered input variables with `--vars-file`
+
+`apply`, `plan`, and `validate` all accept `--vars-file <path>` for loading input values from an external YAML or JSON file. The flag is repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win.
+
+The full precedence order, lowest to highest:
+
+| Layer | Source |
+|-------|--------|
+| 1 | File-level `inputs:` defaults declared in `tasks.yml` |
+| 2 | Play-level `inputs:` defaults (per-play; reserved for #208) |
+| 3 | `--vars-file <path>` (repeatable; later files override earlier) |
+| 4 | `--name=value` CLI flags (always win) |
+
+Vars files hold a flat string-keyed map of input name to value:
+
+```yaml
+# prod.yml
+app: api
+repo: https://github.com/example/api.git
+replicas: 3
+debug: false
+```
+
+JSON works the same way; any path ending in `.json` parses as JSON, anything else parses as YAML:
+
+```json
+{
+  "app": "api",
+  "repo": "https://github.com/example/api.git",
+  "replicas": 3,
+  "debug": false
+}
+```
+
+Values are coerced to the input's declared `type:`:
+
+- `string`: any scalar (a YAML bool `true` becomes `"true"`).
+- `int`: native ints and whole-number floats; numeric strings via `strconv.Atoi`. JSON numbers always decode as floats and are accepted when whole.
+- `float`: native floats, ints, and parseable strings.
+- `bool`: native bools and the same string forms `--name=value` accepts (`true`/`yes`/`on`/`y`/`Y` and the matching false set).
+
+Unknown keys (vars-file keys that do not correspond to a declared input) are a hard error with a `did you mean` suggestion against the closest declared input name:
+
+```text
+unknown input "appp" in --vars-file prod.yml; did you mean "app"?
+```
+
+Common patterns:
+
+```shell
+# Layer environment-specific values over the recipe defaults.
+docket apply --tasks tasks.yml --vars-file prod.yml
+
+# Stack a base file under a per-environment override; override the app on the CLI.
+docket plan --tasks tasks.yml \
+  --vars-file base.yml --vars-file prod.yml \
+  --app=api-canary
+```
 
 ### Tasks
 

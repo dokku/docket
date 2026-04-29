@@ -22,6 +22,7 @@ type ValidateCommand struct {
 	tasksFile string
 	json      bool
 	strict    bool
+	varsFiles []string
 	arguments map[string]*Argument
 }
 
@@ -64,6 +65,7 @@ func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.tasksFile, "tasks", "tasks.yml", "a yaml file containing a task list")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines problem event per finding")
 	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override")
+	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
 
 	taskFile := getTaskYamlFilename(os.Args)
 	data, err := os.ReadFile(taskFile)
@@ -84,9 +86,10 @@ func (c *ValidateCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--tasks":  complete.PredictFiles("*.yml"),
-			"--json":   complete.PredictNothing,
-			"--strict": complete.PredictNothing,
+			"--tasks":     complete.PredictFiles("*.yml"),
+			"--json":      complete.PredictNothing,
+			"--strict":    complete.PredictNothing,
+			"--vars-file": complete.PredictFiles("*"),
 		},
 	)
 }
@@ -103,6 +106,18 @@ func (c *ValidateCommand) Run(args []string) int {
 	if err := flags.Parse(args); err != nil {
 		c.Ui.Error(err.Error())
 		c.Ui.Error(command.CommandErrorText(c))
+		return 1
+	}
+
+	if err := applyVarsFiles(c.arguments, flags, c.varsFiles); err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "vars_file_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(err.Error())
+		}
 		return 1
 	}
 
