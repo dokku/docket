@@ -21,16 +21,23 @@ func resolveCommands(inputs []subprocess.ExecCommandInput) []string {
 // runExecInputs runs each input in order, appending the resolved command
 // line to state.Commands and bailing on the first error. Used by
 // Plan-built apply closures that just need to invoke a list of dokku
-// commands sequentially.
+// commands sequentially. On success, the final input's
+// stdout/stderr/exit-code is copied onto the returned state via
+// WithExecResult so callers can inspect what the underlying subprocess
+// produced. When inputs is empty (no-op apply), the new fields stay
+// zero-valued.
 func runExecInputs(initial TaskOutputState, finalState State, inputs []subprocess.ExecCommandInput) TaskOutputState {
 	state := initial
+	var last subprocess.ExecCommandResponse
 	for _, in := range inputs {
 		result, err := subprocess.CallExecCommand(in)
 		state.Commands = append(state.Commands, result.Command)
 		if err != nil {
 			return TaskOutputErrorFromExec(state, err, result)
 		}
+		last = result
 	}
+	state = state.WithExecResult(last)
 	state.Changed = true
 	state.State = finalState
 	return state

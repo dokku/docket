@@ -160,68 +160,6 @@ func httpAuthEnabled(appName string) (bool, error) {
 	return strings.TrimSpace(parts[1]) == "true", nil
 }
 
-// enableHttpAuth enables HTTP authentication for an app
-func enableHttpAuth(app, username, password string) TaskOutputState {
-	state := TaskOutputState{
-		Changed: false,
-		State:   "absent",
-	}
-	enabled, _ := httpAuthEnabled(app)
-	if enabled {
-		state.State = "present"
-		return state
-	}
-
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args: []string{
-			"--quiet",
-			"http-auth:on",
-			app,
-			username,
-			password,
-		},
-	})
-	state.Commands = append(state.Commands, result.Command)
-	if err != nil {
-		return TaskOutputErrorFromExec(state, err, result)
-	}
-
-	state.Changed = true
-	state.State = "present"
-	return state
-}
-
-// disableHttpAuth disables HTTP authentication for an app
-func disableHttpAuth(app string) TaskOutputState {
-	state := TaskOutputState{
-		Changed: false,
-		State:   "present",
-	}
-	enabled, _ := httpAuthEnabled(app)
-	if !enabled {
-		state.State = "absent"
-		return state
-	}
-
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args: []string{
-			"--quiet",
-			"http-auth:off",
-			app,
-		},
-	})
-	state.Commands = append(state.Commands, result.Command)
-	if err != nil {
-		return TaskOutputErrorFromExec(state, err, result)
-	}
-
-	state.Changed = true
-	state.State = "absent"
-	return state
-}
-
 // init registers the HttpAuthTask with the task registry
 func init() {
 	RegisterTask(&HttpAuthTask{})

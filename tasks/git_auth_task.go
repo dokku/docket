@@ -117,62 +117,6 @@ func (t GitAuthTask) Plan() PlanResult {
 	})
 }
 
-// setGitAuth runs `dokku git:auth HOST USERNAME PASSWORD`.
-func setGitAuth(t GitAuthTask) TaskOutputState {
-	state := TaskOutputState{
-		Changed: false,
-		State:   StateAbsent,
-	}
-
-	if t.Host == "" {
-		state.Error = fmt.Errorf("'host' is required")
-		return state
-	}
-	if t.Username == "" || t.Password == "" {
-		state.Error = fmt.Errorf("'username' and 'password' are required when state is 'present'")
-		return state
-	}
-
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    []string{"--quiet", "git:auth", t.Host, t.Username, t.Password},
-	})
-	state.Commands = append(state.Commands, result.Command)
-	if err != nil {
-		return TaskOutputErrorFromExec(state, err, result)
-	}
-
-	state.Changed = true
-	state.State = StatePresent
-	return state
-}
-
-// unsetGitAuth runs `dokku git:auth HOST` (no username) which removes the entry.
-func unsetGitAuth(t GitAuthTask) TaskOutputState {
-	state := TaskOutputState{
-		Changed: false,
-		State:   StatePresent,
-	}
-
-	if t.Host == "" {
-		state.Error = fmt.Errorf("'host' is required")
-		return state
-	}
-
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    []string{"--quiet", "git:auth", t.Host},
-	})
-	state.Commands = append(state.Commands, result.Command)
-	if err != nil {
-		return TaskOutputErrorFromExec(state, err, result)
-	}
-
-	state.Changed = true
-	state.State = StateAbsent
-	return state
-}
-
 // init registers the GitAuthTask with the task registry
 func init() {
 	RegisterTask(&GitAuthTask{})

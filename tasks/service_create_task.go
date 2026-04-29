@@ -135,36 +135,6 @@ func serviceExists(service, name string) (bool, error) {
 	})
 }
 
-// createService creates a dokku service
-func createService(service, name string) TaskOutputState {
-	state := TaskOutputState{
-		Changed: false,
-		State:   "absent",
-	}
-	exists, _ := serviceExists(service, name)
-	if exists {
-		state.State = "present"
-		return state
-	}
-
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args: []string{
-			"--quiet",
-			fmt.Sprintf("%s:create", service),
-			name,
-		},
-	})
-	state.Commands = append(state.Commands, result.Command)
-	if err != nil {
-		return TaskOutputErrorFromExec(state, err, result)
-	}
-
-	state.Changed = true
-	state.State = "present"
-	return state
-}
-
 // destroyService destroys a dokku service
 func destroyService(service, name string) TaskOutputState {
 	state := TaskOutputState{
@@ -191,6 +161,7 @@ func destroyService(service, name string) TaskOutputState {
 		return TaskOutputErrorFromExec(state, err, result)
 	}
 
+	state = state.WithExecResult(result)
 	state.Changed = true
 	state.State = "absent"
 	return state

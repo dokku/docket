@@ -3,7 +3,8 @@ package tasks
 import "github.com/dokku/docket/subprocess"
 
 // TaskOutputErrorFromExec sets Error and Message on the given state from an
-// exec result, and ensures the failing invocation is recorded in
+// exec result, copies the captured Stdout/Stderr/ExitCode onto the state via
+// WithExecResult, and ensures the failing invocation is recorded in
 // state.Commands so it surfaces under `--verbose`. Idempotent against the
 // per-task pre-error-check append pattern: when the failing command is
 // already the most recent entry it is not appended again. Returns the
@@ -16,5 +17,5 @@ func TaskOutputErrorFromExec(state TaskOutputState, err error, result subprocess
 			state.Commands = append(state.Commands, result.Command)
 		}
 	}
-	return state
+	return state.WithExecResult(result)
 }
