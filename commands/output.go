@@ -63,6 +63,17 @@ type ApplyTaskEvent struct {
 	// but the run continues and the error does not count toward the
 	// summary.
 	Ignored bool
+	// Phase labels group children (#211): "block", "rescue", or
+	// "always". Empty for top-level tasks and for the group's own
+	// summary event. The formatter indents children one level and
+	// surfaces the phase as a marker on the continuation line; the
+	// JSON emitter exposes the same value under a `phase` key.
+	Phase string
+	// Group, when true, marks the event as a group summary (#211)
+	// rather than a leaf or child task. The formatter renders these
+	// with a `(group)` annotation so the user can spot the group's
+	// own outcome at a glance.
+	Group bool
 	// Duration is the wall-clock time Execute took (or zero for the
 	// when-skipped / when-error branches).
 	Duration time.Duration
@@ -78,6 +89,12 @@ type PlanTaskEvent struct {
 	Result    tasks.PlanResult
 	WhenError error
 	Skipped   bool
+	// Phase labels group children (#211): "block", "rescue", or
+	// "always". Empty for top-level tasks and for the group's own
+	// summary event.
+	Phase string
+	// Group, when true, marks the event as a group summary (#211).
+	Group bool
 	Duration  time.Duration
 	Timestamp time.Time
 }
@@ -211,18 +228,19 @@ func (f *Formatter) PlaySkipped(name, whenSrc string) {
 // ApplyTask renders one apply task line plus optional continuations,
 // matching the legacy formatter dispatch in commands/apply.go.
 func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
+	displayName := decoratePhaseName(ev.Name, ev.Phase, ev.Group)
 	switch {
 	case ev.WhenError != nil:
-		f.TaskLine(MarkerError, ev.Name, "")
+		f.TaskLine(MarkerError, displayName, "")
 		f.Continuation('!', fmt.Sprintf("when expression error: %v", ev.WhenError))
 	case ev.Skipped:
-		f.TaskLine(MarkerSkipped, ev.Name, "")
+		f.TaskLine(MarkerSkipped, displayName, "")
 	case ev.State.Error != nil:
 		suffix := ""
 		if ev.Ignored {
 			suffix = "(ignored)"
 		}
-		f.TaskLine(MarkerError, ev.Name, suffix)
+		f.TaskLine(MarkerError, displayName, suffix)
 		f.ErrorContinuation(ev.State.Error)
 		// Stderr already surfaces via the dokku-prefixed continuation:
 		// subprocess.CallExecCommand wraps stderr into the error itself.
@@ -240,17 +258,17 @@ func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
 		if ev.Ignored {
 			suffix = "(ignored)"
 		}
-		f.TaskLine(MarkerError, ev.Name, suffix)
+		f.TaskLine(MarkerError, displayName, suffix)
 		f.Continuation('!', fmt.Sprintf("invalid state: expected=%v actual=%v", ev.State.DesiredState, ev.State.State))
 	case ev.State.Changed:
-		f.TaskLine(MarkerChanged, ev.Name, "")
+		f.TaskLine(MarkerChanged, displayName, "")
 		if f.verbose {
 			for _, cmd := range ev.State.Commands {
 				f.Continuation('\u2192', cmd)
 			}
 		}
 	default:
-		f.TaskLine(MarkerOK, ev.Name, "")
+		f.TaskLine(MarkerOK, displayName, "")
 		if f.verbose {
 			for _, cmd := range ev.State.Commands {
 				f.Continuation('\u2192', cmd)
@@ -262,15 +280,16 @@ func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
 // PlanTask renders one plan task line plus optional continuations,
 // matching the legacy formatter dispatch in commands/plan.go.
 func (f *Formatter) PlanTask(ev PlanTaskEvent) {
+	displayName := decoratePhaseName(ev.Name, ev.Phase, ev.Group)
 	switch {
 	case ev.WhenError != nil:
-		f.TaskLine(MarkerProbeError, ev.Name, fmt.Sprintf("(when expression error: %v)", ev.WhenError))
+		f.TaskLine(MarkerProbeError, displayName, fmt.Sprintf("(when expression error: %v)", ev.WhenError))
 	case ev.Skipped:
-		f.TaskLine(MarkerSkipped, ev.Name, "(when: false)")
+		f.TaskLine(MarkerSkipped, displayName, "(when: false)")
 	case ev.Result.Error != nil:
-		f.TaskLine(MarkerProbeError, ev.Name, fmt.Sprintf("(%s)", PrefixErrorMessage(ev.Result.Error)))
+		f.TaskLine(MarkerProbeError, displayName, fmt.Sprintf("(%s)", PrefixErrorMessage(ev.Result.Error)))
 	case ev.Result.InSync:
-		f.TaskLine(MarkerOK, ev.Name, "(in sync)")
+		f.TaskLine(MarkerOK, displayName, "(in sync)")
 	default:
 		marker := Marker(ev.Result.Status)
 		if marker == "" {
@@ -280,11 +299,25 @@ func (f *Formatter) PlanTask(ev PlanTaskEvent) {
 		if ev.Result.Reason != "" {
 			suffix = "(" + ev.Result.Reason + ")"
 		}
-		f.TaskLine(marker, ev.Name, suffix)
+		f.TaskLine(marker, displayName, suffix)
 		for _, m := range ev.Result.Mutations {
 			f.Continuation('-', m)
 		}
 	}
+}
+
+// decoratePhaseName prefixes a group child's display name with its
+// clause label and tags a group's own summary line with `(group)` so
+// the user can distinguish nested events from the rest of the play.
+// Top-level non-group tasks pass through unchanged.
+func decoratePhaseName(name, phase string, group bool) string {
+	if phase != "" {
+		name = fmt.Sprintf("[%s] %s", phase, name)
+	}
+	if group {
+		name = name + "  (group)"
+	}
+	return name
 }
 
 // ErrorContinuation emits an `! <prefix>: <body>` continuation line

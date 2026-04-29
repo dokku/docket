@@ -173,3 +173,46 @@ func TestLoopVarOutsideLoopRejectedAtParse(t *testing.T) {
 		t.Errorf("got: %v", err)
 	}
 }
+
+// TestLoopOnGroupExpandsEntireGroup pins #211: a `loop:` on a group
+// duplicates the whole group N times so each iteration's children
+// share that iteration's `.item` / `.index`.
+func TestLoopOnGroupExpandsEntireGroup(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: deploy each
+      loop: [api, worker, web]
+      block:
+        - dokku_app:
+            app: "deploy-{{ .item }}"
+`)
+	out, err := GetTasks(data, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("GetTasks: %v", err)
+	}
+	keys := out.Keys()
+	if len(keys) != 3 {
+		t.Fatalf("expected 3 group expansions, got %d (%v)", len(keys), keys)
+	}
+	wantApps := []string{"deploy-api", "deploy-worker", "deploy-web"}
+	for i, k := range keys {
+		env := out.GetEnvelope(k)
+		if !env.IsGroup() {
+			t.Errorf("expansion %d %q must be a group", i, k)
+			continue
+		}
+		if !env.IsLoopExpansion {
+			t.Errorf("expansion %d %q must carry IsLoopExpansion", i, k)
+		}
+		if len(env.Block) != 1 {
+			t.Fatalf("expansion %d block: want 1 child, got %d", i, len(env.Block))
+		}
+		appTask, ok := env.Block[0].Task.(*AppTask)
+		if !ok {
+			t.Fatalf("expansion %d block[0] task type %T, want *AppTask", i, env.Block[0].Task)
+		}
+		if appTask.App != wantApps[i] {
+			t.Errorf("expansion %d block[0] app = %q, want %q", i, appTask.App, wantApps[i])
+		}
+	}
+}

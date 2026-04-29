@@ -257,6 +257,9 @@ var envelopeAllowlistKeys = []string{
 	"changed_when",
 	"failed_when",
 	"ignore_errors",
+	"block",
+	"rescue",
+	"always",
 }
 
 // envelopeAllowlistSet is envelopeAllowlistKeys as a lookup set.
@@ -575,7 +578,10 @@ func mergePlayTags(envTags, playTags []string) []string {
 // buildEnvelopesForEntry walks a single task entry, partitions envelope
 // keys vs the task-type key, decodes the body, pre-compiles `when:`, and
 // expands `loop:` if present. Returns one or more envelopes ready for
-// insertion into the ordered map.
+// insertion into the ordered map. When the entry carries `block:`, it is
+// decoded as a try/catch/finally group: child envelopes are produced
+// recursively from the block / rescue / always lists and the wrapping
+// envelope's Task is left nil.
 func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
 	envelope := &TaskEnvelope{}
 
@@ -584,6 +590,12 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 		taskBody     interface{}
 		taskTypeKeys []string
 		unknownKeys  []string
+		blockRaw     interface{}
+		rescueRaw    interface{}
+		alwaysRaw    interface{}
+		hasBlock     bool
+		hasRescue    bool
+		hasAlways    bool
 	)
 
 	for key, value := range entry {
@@ -630,6 +642,15 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 				return nil, fmt.Errorf("task parse error: task #%d: ignore_errors must be a bool, got %T", index, value)
 			}
 			envelope.IgnoreErrors = b
+		case "block":
+			blockRaw = value
+			hasBlock = true
+		case "rescue":
+			rescueRaw = value
+			hasRescue = true
+		case "always":
+			alwaysRaw = value
+			hasAlways = true
 		default:
 			if _, registered := RegisteredTasks[key]; registered {
 				taskTypeKeys = append(taskTypeKeys, key)
@@ -653,19 +674,25 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 		return nil, unknownKeyError(index, envelope.Name, unknownKeys)
 	}
 
-	if len(taskTypeKeys) == 0 {
-		return nil, fmt.Errorf("task parse error: task #%d %q was not a valid task - valid_tasks=%v", index, envelope.Name, registeredTaskNamesSorted())
+	isGroup := hasBlock
+	if hasRescue && !hasBlock {
+		return nil, fmt.Errorf("task parse error: task #%d %q has rescue: without block:", index, envelope.Name)
 	}
-	if len(taskTypeKeys) > 1 {
-		return nil, fmt.Errorf("task parse error: task #%d %q has %d task-type keys (%s); exactly one is allowed", index, envelope.Name, len(taskTypeKeys), strings.Join(taskTypeKeys, ", "))
+	if hasAlways && !hasBlock {
+		return nil, fmt.Errorf("task parse error: task #%d %q has always: without block:", index, envelope.Name)
 	}
 
-	envelope.TypeName = taskTypeKey
-	registered := RegisteredTasks[taskTypeKey]
-
-	bodyBytes, err := yaml.Marshal(taskBody)
-	if err != nil {
-		return nil, fmt.Errorf("task parse error: task #%d %q failed to marshal config to yaml - %s", index, envelope.Name, err)
+	if isGroup {
+		if len(taskTypeKeys) > 0 {
+			return nil, fmt.Errorf("task parse error: task #%d %q is a block: group and cannot also carry task-type key %q", index, envelope.Name, taskTypeKeys[0])
+		}
+	} else {
+		if len(taskTypeKeys) == 0 {
+			return nil, fmt.Errorf("task parse error: task #%d %q was not a valid task - valid_tasks=%v", index, envelope.Name, registeredTaskNamesSorted())
+		}
+		if len(taskTypeKeys) > 1 {
+			return nil, fmt.Errorf("task parse error: task #%d %q has %d task-type keys (%s); exactly one is allowed", index, envelope.Name, len(taskTypeKeys), strings.Join(taskTypeKeys, ", "))
+		}
 	}
 
 	if envelope.When != "" {
@@ -690,6 +717,51 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 			return nil, fmt.Errorf("task parse error: task #%d %q: failed_when compile error: %s", index, envelope.Name, err)
 		}
 		envelope.failedWhenProgram = prog
+	}
+
+	if isGroup {
+		if envelope.Loop != nil {
+			expanded, err := expandLoopGroup(envelope, blockRaw, rescueRaw, alwaysRaw, sigilContext, exprContext)
+			if err != nil {
+				return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+			}
+			return expanded, nil
+		}
+
+		envelope.TypeName = ""
+		blockChildren, err := decodeGroupClause(blockRaw, "block", envelope.Name, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+		}
+		if len(blockChildren) == 0 {
+			return nil, fmt.Errorf("task parse error: task #%d %q: block: must contain at least one child task", index, envelope.Name)
+		}
+		envelope.Block = blockChildren
+
+		if hasRescue {
+			rescueChildren, err := decodeGroupClause(rescueRaw, "rescue", envelope.Name, sigilContext, exprContext)
+			if err != nil {
+				return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+			}
+			envelope.Rescue = rescueChildren
+		}
+		if hasAlways {
+			alwaysChildren, err := decodeGroupClause(alwaysRaw, "always", envelope.Name, sigilContext, exprContext)
+			if err != nil {
+				return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+			}
+			envelope.Always = alwaysChildren
+		}
+
+		return []*TaskEnvelope{envelope}, nil
+	}
+
+	envelope.TypeName = taskTypeKey
+	registered := RegisteredTasks[taskTypeKey]
+
+	bodyBytes, err := yaml.Marshal(taskBody)
+	if err != nil {
+		return nil, fmt.Errorf("task parse error: task #%d %q failed to marshal config to yaml - %s", index, envelope.Name, err)
 	}
 
 	if envelope.Loop != nil {
@@ -718,6 +790,62 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 	}
 
 	return []*TaskEnvelope{envelope}, nil
+}
+
+// decodeGroupClause decodes one of `block:` / `rescue:` / `always:` into
+// a flat slice of child envelopes. The clause value must be a sequence
+// of YAML mappings (`[]interface{}` of `map[string]interface{}` after
+// the YAML unmarshal); each mapping is recursed through
+// buildEnvelopesForEntry so child entries themselves may carry envelope
+// keys, loop expansions, or nested groups.
+func decodeGroupClause(raw interface{}, clause, parentName string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	rawList, ok := raw.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("%s: must be a list of task entries, got %T", clause, raw)
+	}
+	out := make([]*TaskEnvelope, 0, len(rawList))
+	for i, item := range rawList {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			if mapped, mapOk := coerceStringKeyMap(item); mapOk {
+				entry = mapped
+			} else {
+				return nil, fmt.Errorf("%s[%d]: child entry must be a yaml mapping, got %T", clause, i, item)
+			}
+		}
+		childEnvelopes, err := buildEnvelopesForEntry(i+1, entry, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("%s[%d]: %s", clause, i, err)
+		}
+		out = append(out, childEnvelopes...)
+	}
+	return out, nil
+}
+
+// coerceStringKeyMap converts a yaml-decoded map[interface{}]interface{}
+// into a map[string]interface{} so nested entries match the shape
+// buildEnvelopesForEntry expects. yaml.v3 produces map[string]interface{}
+// out of the box, but defensive code keeps the loader robust against
+// custom unmarshallers.
+func coerceStringKeyMap(item interface{}) (map[string]interface{}, bool) {
+	if entry, ok := item.(map[string]interface{}); ok {
+		return entry, true
+	}
+	if entry, ok := item.(map[interface{}]interface{}); ok {
+		out := make(map[string]interface{}, len(entry))
+		for k, v := range entry {
+			ks, ok := k.(string)
+			if !ok {
+				return nil, false
+			}
+			out[ks] = v
+		}
+		return out, true
+	}
+	return nil, false
 }
 
 // decodeTags coerces a yaml-parsed tags value into a []string. Supports

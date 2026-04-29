@@ -296,11 +296,11 @@ func TestValidateLevenshtein(t *testing.T) {
 	}
 }
 
-func TestValidateReservedEnvelopeKeyFlagged(t *testing.T) {
-	// register / changed_when / failed_when / ignore_errors are now
-	// activated by #210; block / rescue / always remain reserved for
-	// #211, so use `block:` to pin the diagnostic to a key whose
-	// semantics have not landed yet.
+func TestValidateBlockGroupRejectsTaskTypeKey(t *testing.T) {
+	// block / rescue / always are activated by #211; an entry that
+	// carries `block:` must not also carry a task-type key. The
+	// validator's diagnostic surfaces at the task-type key node so the
+	// editor can jump to the offending key.
 	data := []byte(`---
 - tasks:
     - dokku_app:
@@ -308,8 +308,11 @@ func TestValidateReservedEnvelopeKeyFlagged(t *testing.T) {
       block: []
 `)
 	problems := Validate(data, ValidateOptions{})
-	if p := findProblem(problems, "envelope_key_unsupported"); p == nil {
-		t.Fatalf("expected envelope_key_unsupported problem, got: %+v", problems)
+	if p := findProblem(problems, "block_with_task_type"); p == nil {
+		t.Fatalf("expected block_with_task_type problem, got: %+v", problems)
+	}
+	if p := findProblem(problems, "block_empty"); p == nil {
+		t.Fatalf("expected block_empty problem, got: %+v", problems)
 	}
 }
 
@@ -525,5 +528,85 @@ func TestValidateChangedWhenCompileError(t *testing.T) {
 	problems := Validate(data, ValidateOptions{})
 	if p := findProblem(problems, "expr_compile"); p == nil {
 		t.Fatalf("expected expr_compile problem, got: %+v", problems)
+	}
+}
+
+func TestValidateBlockEmptyEmitsBlockEmpty(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: empty
+      block: []
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "block_empty"); p == nil {
+		t.Fatalf("expected block_empty problem, got: %+v", problems)
+	}
+}
+
+func TestValidateBlockOrphanRescueEmitsBlockOrphanClause(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: orphan
+      rescue:
+        - dokku_app: { app: x }
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "block_orphan_clause"); p == nil {
+		t.Fatalf("expected block_orphan_clause problem, got: %+v", problems)
+	}
+}
+
+func TestValidateBlockChildExprCompileError(t *testing.T) {
+	// Compile errors inside block children must still surface so a typo
+	// in a nested `when:` does not silently slip through.
+	data := []byte(`---
+- tasks:
+    - name: outer
+      block:
+        - name: inner
+          when: 'this is not valid expr ('
+          dokku_app:
+            app: x
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "expr_compile"); p == nil {
+		t.Fatalf("expected expr_compile problem, got: %+v", problems)
+	}
+}
+
+func TestValidateRegisterDuplicateInsideGroup(t *testing.T) {
+	// A duplicate `register:` between a top-level task and a child of a
+	// block should surface as register_duplicate so the executor's
+	// run-wide registered map cannot be silently overwritten.
+	data := []byte(`---
+- tasks:
+    - register: same_name
+      dokku_app:
+        app: a
+    - block:
+        - register: same_name
+          dokku_app:
+            app: b
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "register_duplicate"); p == nil {
+		t.Fatalf("expected register_duplicate problem, got: %+v", problems)
+	}
+}
+
+func TestValidateLoopVarInsideGroupIsAllowed(t *testing.T) {
+	// `.item` references in a group child are valid when an ancestor
+	// group entry carries `loop:`, even though the child entry itself
+	// has no `loop:`. Validate must not flag those.
+	data := []byte(`---
+- tasks:
+    - loop: [a, b]
+      block:
+        - dokku_app:
+            app: "{{ .item }}"
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "loop_var_outside_loop"); p != nil {
+		t.Fatalf("did not expect loop_var_outside_loop, got: %+v", *p)
 	}
 }

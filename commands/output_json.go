@@ -105,6 +105,12 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	if cmds := maskedCommands(ev.State.Commands); len(cmds) > 0 {
 		out["commands"] = cmds
 	}
+	if ev.Phase != "" {
+		out["phase"] = ev.Phase
+	}
+	if ev.Group {
+		out["group"] = true
+	}
 	e.write(out)
 }
 
@@ -150,6 +156,12 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 		if cmds := maskedCommands(ev.Result.Commands); len(cmds) > 0 {
 			out["commands"] = cmds
 		}
+	}
+	if ev.Phase != "" {
+		out["phase"] = ev.Phase
+	}
+	if ev.Group {
+		out["group"] = true
 	}
 	e.write(out)
 }

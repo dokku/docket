@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -221,136 +222,33 @@ playLoop:
 
 		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(context, play.Inputs, userSet))
 
+		ac := &applyContext{
+			play:        play,
+			playExprCtx: playExprCtx,
+			registered:  registered,
+			loopAccum:   loopAccum,
+			emitter:     emitter,
+			counts:      &counts,
+			failFast:    c.failFast,
+		}
+
 		failed := false
 		for _, name := range tasks.FilterByTags(play.Tasks, c.tags, c.skipTags) {
 			env := play.Tasks.GetEnvelope(name)
-			taskStart := time.Now()
-
-			if env.HasWhen() {
-				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env, nil, registered))
-				if err != nil {
-					counts.Tasks++
-					counts.Errors++
-					failed = true
-					hasError = true
-					emitter.ApplyTask(ApplyTaskEvent{
-						Play:      play.Name,
-						Name:      name,
-						WhenError: err,
-						Duration:  time.Since(taskStart),
-						Timestamp: time.Now().UTC(),
-					})
-					if c.failFast {
-						emitter.ApplySummary(counts, time.Since(start))
-						return 1
-					}
-					break
-				}
-				if !ok {
-					counts.Tasks++
-					counts.Skipped++
-					emitter.ApplyTask(ApplyTaskEvent{
-						Play:      play.Name,
-						Name:      name,
-						Skipped:   true,
-						Duration:  time.Since(taskStart),
-						Timestamp: time.Now().UTC(),
-					})
-					continue
-				}
+			outcome := c.executeTask(env, name, ac, nil, "")
+			if outcome.abort {
+				emitter.ApplySummary(counts, time.Since(start))
+				return 1
 			}
-
-			state := env.Task.Execute()
-			counts.Tasks++
-
-			postState, overrideErr := applyEnvelopeOverrides(env, state, playExprCtx, registered)
-			if overrideErr != nil {
-				counts.Errors++
+			if outcome.failed {
 				failed = true
 				hasError = true
-				emitter.ApplyTask(ApplyTaskEvent{
-					Play:      play.Name,
-					Name:      name,
-					WhenError: overrideErr,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
-				if c.failFast {
-					emitter.ApplySummary(counts, time.Since(start))
-					return 1
-				}
-				break
-			}
-			state = postState
-
-			recordRegister(env, state, loopAccum, registered)
-
-			switch {
-			case state.Error != nil:
-				ignored := env.IgnoreErrors
-				if !ignored {
-					counts.Errors++
-					failed = true
-					hasError = true
-				}
-				emitter.ApplyTask(ApplyTaskEvent{
-					Play:      play.Name,
-					Name:      name,
-					State:     state,
-					Ignored:   ignored,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
-				if c.failFast && !ignored {
-					emitter.ApplySummary(counts, time.Since(start))
-					return 1
-				}
-			case state.State != state.DesiredState:
-				ignored := env.IgnoreErrors
-				if !ignored {
-					counts.Errors++
-					failed = true
-					hasError = true
-				}
-				emitter.ApplyTask(ApplyTaskEvent{
-					Play:         play.Name,
-					Name:         name,
-					State:        state,
-					InvalidState: true,
-					Ignored:      ignored,
-					Duration:     time.Since(taskStart),
-					Timestamp:    time.Now().UTC(),
-				})
-				if c.failFast && !ignored {
-					emitter.ApplySummary(counts, time.Since(start))
-					return 1
-				}
-			case state.Changed:
-				counts.Changed++
-				emitter.ApplyTask(ApplyTaskEvent{
-					Play:      play.Name,
-					Name:      name,
-					State:     state,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
-			default:
-				counts.OK++
-				emitter.ApplyTask(ApplyTaskEvent{
-					Play:      play.Name,
-					Name:      name,
-					State:     state,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
-			}
-
-			if failed {
 				// Without --fail-fast, an error in this play aborts the
 				// rest of this play but the next play still runs.
 				break
 			}
 		}
+		_ = failed
 	}
 
 	emitter.ApplySummary(counts, time.Since(start))
@@ -358,6 +256,369 @@ playLoop:
 		return 1
 	}
 	return 0
+}
+
+// applyContext bundles the run-wide state apply's per-task helpers
+// share so the function signatures stay tractable.
+type applyContext struct {
+	play        *tasks.Play
+	playExprCtx map[string]interface{}
+	registered  map[string]tasks.RegisteredValue
+	loopAccum   loopRegisterAccumulator
+	emitter     EventEmitter
+	counts      *ApplyCounts
+	failFast    bool
+}
+
+// applyTaskOutcome is the per-task verdict the apply loop reads back
+// from executeTask. failed reports whether the task's failure should
+// abort the current play (false when ignore_errors swallowed the
+// error). abort reports --fail-fast triggered. state carries the
+// post-override TaskOutputState so a group walker can propagate the
+// failing child's state into rescue's `.failed_task` binding.
+type applyTaskOutcome struct {
+	state   tasks.TaskOutputState
+	failed  bool
+	abort   bool
+	skipped bool
+}
+
+// executeTask runs one envelope - leaf or group. The phase string
+// labels child events emitted from a group walk ("block", "rescue",
+// "always"); top-level callers pass "". failedTask is non-nil only
+// when called from a rescue walker so the rescue child's predicates
+// can reference `.failed_task`.
+func (c *ApplyCommand) executeTask(env *tasks.TaskEnvelope, name string, ac *applyContext, failedTask interface{}, phase string) applyTaskOutcome {
+	if env.IsGroup() {
+		return c.executeGroup(env, name, ac, failedTask, phase)
+	}
+	return c.executeLeafTask(env, name, ac, failedTask, phase)
+}
+
+// executeLeafTask runs a single non-group task envelope through the
+// when -> execute -> overrides -> register -> classify pipeline that
+// pre-#211 lived inline inside Run.
+func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac *applyContext, failedTask interface{}, phase string) applyTaskOutcome {
+	taskStart := time.Now()
+
+	if env.HasWhen() {
+		ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(ac.playExprCtx, env, nil, ac.registered, failedTask))
+		if err != nil {
+			ac.counts.Tasks++
+			ac.counts.Errors++
+			ac.emitter.ApplyTask(ApplyTaskEvent{
+				Play:      ac.play.Name,
+				Name:      name,
+				Phase:     phase,
+				WhenError: err,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return applyTaskOutcome{failed: true, abort: c.failFast}
+		}
+		if !ok {
+			ac.counts.Tasks++
+			ac.counts.Skipped++
+			ac.emitter.ApplyTask(ApplyTaskEvent{
+				Play:      ac.play.Name,
+				Name:      name,
+				Phase:     phase,
+				Skipped:   true,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return applyTaskOutcome{skipped: true}
+		}
+	}
+
+	state := env.Task.Execute()
+	ac.counts.Tasks++
+
+	postState, overrideErr := applyEnvelopeOverrides(env, state, ac.playExprCtx, ac.registered, failedTask)
+	if overrideErr != nil {
+		ac.counts.Errors++
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			WhenError: overrideErr,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{failed: true, abort: c.failFast}
+	}
+	state = postState
+
+	recordRegister(env, state, ac.loopAccum, ac.registered)
+
+	switch {
+	case state.Error != nil:
+		ignored := env.IgnoreErrors
+		if !ignored {
+			ac.counts.Errors++
+		}
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			State:     state,
+			Ignored:   ignored,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: state, failed: !ignored, abort: c.failFast && !ignored}
+	case state.State != state.DesiredState:
+		ignored := env.IgnoreErrors
+		if !ignored {
+			ac.counts.Errors++
+		}
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:         ac.play.Name,
+			Name:         name,
+			Phase:        phase,
+			State:        state,
+			InvalidState: true,
+			Ignored:      ignored,
+			Duration:     time.Since(taskStart),
+			Timestamp:    time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: state, failed: !ignored, abort: c.failFast && !ignored}
+	case state.Changed:
+		ac.counts.Changed++
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			State:     state,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: state}
+	default:
+		ac.counts.OK++
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			State:     state,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: state}
+	}
+}
+
+// executeGroup runs a try/catch/finally group entry (#211): block ->
+// (rescue if a block child errored) -> always. Children execute via
+// executeTask so nested groups recurse naturally. The synthesized
+// group state is passed through the group's own envelope overrides
+// (failed_when / changed_when / register / ignore_errors) so the
+// group itself participates in the same predicate chain leaf tasks do.
+func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *applyContext, failedTask interface{}, phase string) applyTaskOutcome {
+	taskStart := time.Now()
+
+	if env.HasWhen() {
+		ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(ac.playExprCtx, env, nil, ac.registered, failedTask))
+		if err != nil {
+			ac.counts.Tasks++
+			ac.counts.Errors++
+			ac.emitter.ApplyTask(ApplyTaskEvent{
+				Play:      ac.play.Name,
+				Name:      name,
+				Phase:     phase,
+				Group:     true,
+				WhenError: err,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return applyTaskOutcome{failed: true, abort: c.failFast}
+		}
+		if !ok {
+			ac.counts.Tasks++
+			ac.counts.Skipped++
+			ac.emitter.ApplyTask(ApplyTaskEvent{
+				Play:      ac.play.Name,
+				Name:      name,
+				Phase:     phase,
+				Group:     true,
+				Skipped:   true,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return applyTaskOutcome{skipped: true}
+		}
+	}
+
+	// Walk block children. Stop at the first child whose post-override
+	// outcome is failed AND ignore_errors did not swallow it. A
+	// swallowed (ignored) child does NOT trigger rescue per #210 rule:
+	// ignore_errors is the "swallow" path; rescue is the "handle" path.
+	var (
+		anyChanged       bool
+		blockFailedState *tasks.TaskOutputState
+		lastChildState   tasks.TaskOutputState
+	)
+	for i, child := range env.Block {
+		childName := child.Name
+		if childName == "" {
+			childName = fmt.Sprintf("%s.block[%d]", name, i)
+		}
+		outcome := c.executeTask(child, childName, ac, nil, "block")
+		if outcome.abort {
+			return applyTaskOutcome{abort: true}
+		}
+		if outcome.state.Changed {
+			anyChanged = true
+		}
+		lastChildState = outcome.state
+		if outcome.failed {
+			s := outcome.state
+			blockFailedState = &s
+			break
+		}
+	}
+
+	// Run rescue children when block failed.
+	rescueErr := error(nil)
+	if blockFailedState != nil {
+		for i, child := range env.Rescue {
+			childName := child.Name
+			if childName == "" {
+				childName = fmt.Sprintf("%s.rescue[%d]", name, i)
+			}
+			outcome := c.executeTask(child, childName, ac, *blockFailedState, "rescue")
+			if outcome.abort {
+				return applyTaskOutcome{abort: true}
+			}
+			if outcome.state.Changed {
+				anyChanged = true
+			}
+			lastChildState = outcome.state
+			if outcome.failed && rescueErr == nil {
+				if outcome.state.Error != nil {
+					rescueErr = outcome.state.Error
+				} else {
+					rescueErr = errors.New("rescue child failed")
+				}
+			}
+		}
+	}
+
+	// Always children run unconditionally.
+	alwaysErr := error(nil)
+	for i, child := range env.Always {
+		childName := child.Name
+		if childName == "" {
+			childName = fmt.Sprintf("%s.always[%d]", name, i)
+		}
+		outcome := c.executeTask(child, childName, ac, nil, "always")
+		if outcome.abort {
+			return applyTaskOutcome{abort: true}
+		}
+		if outcome.state.Changed {
+			anyChanged = true
+		}
+		lastChildState = outcome.state
+		if outcome.failed && alwaysErr == nil {
+			if outcome.state.Error != nil {
+				alwaysErr = outcome.state.Error
+			} else {
+				alwaysErr = errors.New("always child failed")
+			}
+		}
+	}
+
+	// Synthesize the group's TaskOutputState. Rescue clearing the
+	// block error implies the group succeeded unless always itself
+	// errored. always errors take precedence over a cleared block
+	// error; if block errored and rescue also errored, the rescue
+	// error is the group's verdict (most recent uncaught failure).
+	groupState := tasks.TaskOutputState{
+		Changed:      anyChanged,
+		DesiredState: lastChildState.DesiredState,
+		State:        lastChildState.DesiredState,
+		Stdout:       lastChildState.Stdout,
+		Stderr:       lastChildState.Stderr,
+		ExitCode:     lastChildState.ExitCode,
+		Commands:     lastChildState.Commands,
+		Message:      lastChildState.Message,
+	}
+	switch {
+	case alwaysErr != nil:
+		groupState.Error = alwaysErr
+		groupState.State = ""
+	case rescueErr != nil:
+		groupState.Error = rescueErr
+		groupState.State = ""
+	case blockFailedState != nil && len(env.Rescue) == 0:
+		// Block errored and there is no rescue clause; the original
+		// error propagates as the group's verdict.
+		groupState.Error = blockFailedState.Error
+		groupState.State = blockFailedState.State
+		groupState.DesiredState = blockFailedState.DesiredState
+	}
+
+	postState, overrideErr := applyEnvelopeOverrides(env, groupState, ac.playExprCtx, ac.registered, failedTask)
+	if overrideErr != nil {
+		ac.counts.Errors++
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			Group:     true,
+			WhenError: overrideErr,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{failed: true, abort: c.failFast}
+	}
+	groupState = postState
+
+	recordRegister(env, groupState, ac.loopAccum, ac.registered)
+	ac.counts.Tasks++
+
+	switch {
+	case groupState.Error != nil:
+		ignored := env.IgnoreErrors
+		if !ignored {
+			ac.counts.Errors++
+		}
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			Group:     true,
+			State:     groupState,
+			Ignored:   ignored,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: groupState, failed: !ignored, abort: c.failFast && !ignored}
+	case groupState.Changed:
+		ac.counts.Changed++
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			Group:     true,
+			State:     groupState,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: groupState}
+	default:
+		ac.counts.OK++
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:      ac.play.Name,
+			Name:      name,
+			Phase:     phase,
+			Group:     true,
+			State:     groupState,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: groupState}
+	}
 }
 
 // filterPlaysByName narrows plays to the single play whose Name matches

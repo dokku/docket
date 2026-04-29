@@ -47,12 +47,10 @@ const validatePlaceholder = "__docket_validate_placeholder__"
 // reservedEnvelopeKeys lists the per-task keys that are recognised at the
 // envelope level but not yet activated. They live here so a typo in a real
 // task-type name (e.g. dokku_appp) is reported as "unknown task type" rather
-// than getting silently swallowed by an envelope allowlist.
-var reservedEnvelopeKeys = map[string]string{
-	"block":  "#211",
-	"rescue": "#211",
-	"always": "#211",
-}
+// than getting silently swallowed by an envelope allowlist. Empty today
+// because #211 promoted block / rescue / always to active; kept around so
+// future issues can reserve names without revisiting validateTaskEntry.
+var reservedEnvelopeKeys = map[string]string{}
 
 // activeEnvelopeKeys are the envelope keys the validator recognises and
 // passes through to the loader without generating an "envelope key
@@ -67,7 +65,15 @@ var activeEnvelopeKeys = map[string]bool{
 	"changed_when":  true,
 	"failed_when":   true,
 	"ignore_errors": true,
+	"block":         true,
+	"rescue":        true,
+	"always":        true,
 }
+
+// groupClauseKeys is the subset of envelope keys that carry a list of
+// nested task entries for a try/catch/finally group (#211). Used by the
+// loader and validator to recognise group entries.
+var groupClauseKeys = []string{"block", "rescue", "always"}
 
 // allowedPlayKeys is the set of play-level mapping keys the validator
 // admits without flagging as unexpected. #208 extends the legacy
@@ -279,7 +285,9 @@ func validatePlay(play *yaml.Node, label string, inputs []inputWithNode, opts Va
 }
 
 // validateTaskEntry covers checks 3-5: envelope shape, registered task type,
-// and required-field decode.
+// and required-field decode. For group entries (those carrying `block:`),
+// it recurses through every child of block / rescue / always so nested
+// entries surface the same diagnostics.
 func validateTaskEntry(task *yaml.Node, playLabel string, idx int) []Problem {
 	var problems []Problem
 	taskLabel := fmt.Sprintf("task #%d", idx)
@@ -342,6 +350,15 @@ func validateTaskEntry(task *yaml.Node, playLabel string, idx int) []Problem {
 		taskLabel = fmt.Sprintf("task #%d %q", idx, nameValue)
 	}
 
+	blockNode := mappingValue(task, "block")
+	rescueNode := mappingValue(task, "rescue")
+	alwaysNode := mappingValue(task, "always")
+
+	if blockNode != nil || rescueNode != nil || alwaysNode != nil {
+		problems = append(problems, validateGroupEntry(task, blockNode, rescueNode, alwaysNode, taskTypeKeys, taskTypeNode, playLabel, taskLabel)...)
+		return problems
+	}
+
 	if len(taskTypeKeys) == 0 {
 		return append(problems, Problem{
 			Code:    "task_entry_shape",
@@ -381,6 +398,35 @@ func validateTaskEntry(task *yaml.Node, playLabel string, idx int) []Problem {
 	}
 
 	problems = append(problems, validateTaskBody(registered, taskTypeKey, taskBodyNode, playLabel, taskLabel)...)
+	return problems
+}
+
+// validateGroupEntry recurses through block / rescue / always children
+// of a try/catch/finally group (#211) entry so each nested entry
+// receives the per-task validation (envelope shape, registered task
+// type, required-field decode). The group's structural diagnostics
+// (empty block, orphan rescue/always, block alongside a task-type
+// key) live in validateBlockStructure so they are emitted exactly
+// once per recipe walk.
+func validateGroupEntry(task *yaml.Node, blockNode, rescueNode, alwaysNode *yaml.Node, taskTypeKeys []string, taskTypeNode *yaml.Node, playLabel, taskLabel string) []Problem {
+	var problems []Problem
+
+	if blockNode != nil && blockNode.Kind == yaml.SequenceNode {
+		for i, child := range blockNode.Content {
+			problems = append(problems, validateTaskEntry(child, playLabel, i+1)...)
+		}
+	}
+	if rescueNode != nil && rescueNode.Kind == yaml.SequenceNode {
+		for i, child := range rescueNode.Content {
+			problems = append(problems, validateTaskEntry(child, playLabel, i+1)...)
+		}
+	}
+	if alwaysNode != nil && alwaysNode.Kind == yaml.SequenceNode {
+		for i, child := range alwaysNode.Content {
+			problems = append(problems, validateTaskEntry(child, playLabel, i+1)...)
+		}
+	}
+
 	return problems
 }
 
@@ -505,11 +551,103 @@ func validateStrictInputs(inputs []inputWithNode, overrides map[string]bool, lab
 	return problems
 }
 
-// validateBlockStructure is a stub. #211 will populate it with checks that
-// block:/rescue:/always: children are valid task entries.
-func validateBlockStructure(_ *yaml.Node, _ string) []Problem {
-	// TODO(#211): walk block/rescue/always children once they are activated.
-	return nil
+// validateBlockStructure walks every task entry under tasksNode and
+// flags malformed try/catch/finally groups: empty `block:`, `rescue:` /
+// `always:` without a sibling `block:`, a group entry that also carries
+// a task-type key, and non-sequence clause values. Per-child structural
+// checks are handled by validateTaskEntry through its recursion into
+// group children, so this helper only emits the group-level diagnostics.
+func validateBlockStructure(tasksNode *yaml.Node, playLabel string) []Problem {
+	if tasksNode == nil || tasksNode.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var problems []Problem
+	walkGroupEntries(tasksNode, playLabel, func(task *yaml.Node, label string) {
+		blockNode := mappingValue(task, "block")
+		rescueNode := mappingValue(task, "rescue")
+		alwaysNode := mappingValue(task, "always")
+		if blockNode == nil && rescueNode == nil && alwaysNode == nil {
+			return
+		}
+		if blockNode == nil {
+			clauseNode := rescueNode
+			clauseName := "rescue"
+			if rescueNode == nil {
+				clauseNode = alwaysNode
+				clauseName = "always"
+			}
+			problems = append(problems, Problem{
+				Code:    "block_orphan_clause",
+				Play:    playLabel,
+				Task:    label,
+				Line:    clauseNode.Line,
+				Column:  clauseNode.Column,
+				Message: fmt.Sprintf("%s: requires a block: in the same task entry", clauseName),
+			})
+			return
+		}
+		if blockNode.Kind != yaml.SequenceNode {
+			problems = append(problems, Problem{
+				Code:    "block_shape",
+				Play:    playLabel,
+				Task:    label,
+				Line:    blockNode.Line,
+				Column:  blockNode.Column,
+				Message: "block: must be a yaml list of task entries",
+			})
+			return
+		}
+		if len(blockNode.Content) == 0 {
+			problems = append(problems, Problem{
+				Code:    "block_empty",
+				Play:    playLabel,
+				Task:    label,
+				Line:    blockNode.Line,
+				Column:  blockNode.Column,
+				Message: "block: must contain at least one child task",
+			})
+		}
+		for i := 0; i < len(task.Content); i += 2 {
+			key := task.Content[i].Value
+			keyNode := task.Content[i]
+			if activeEnvelopeKeys[key] || key == "name" {
+				continue
+			}
+			if _, registered := RegisteredTasks[key]; registered {
+				problems = append(problems, Problem{
+					Code:    "block_with_task_type",
+					Play:    playLabel,
+					Task:    label,
+					Line:    keyNode.Line,
+					Column:  keyNode.Column,
+					Message: fmt.Sprintf("block: group entry cannot also carry task-type key %q", key),
+				})
+			}
+		}
+	})
+	return problems
+}
+
+// walkGroupEntries calls visit on every task entry mapping reachable
+// from tasksNode, including children inside block / rescue / always
+// clauses. Children inherit the parent's task label (no per-child
+// breadcrumb) so diagnostics align with the on-disk source position.
+func walkGroupEntries(tasksNode *yaml.Node, playLabel string, visit func(task *yaml.Node, label string)) {
+	if tasksNode == nil || tasksNode.Kind != yaml.SequenceNode {
+		return
+	}
+	for i, task := range tasksNode.Content {
+		if task.Kind != yaml.MappingNode {
+			continue
+		}
+		label := taskLabelForNode(task, i+1)
+		visit(task, label)
+		for _, clause := range groupClauseKeys {
+			if child := mappingValue(task, clause); child != nil && child.Kind == yaml.SequenceNode {
+				walkGroupEntries(child, playLabel, visit)
+			}
+		}
+	}
 }
 
 // validateExprPredicates compiles each scalar `when:` / `changed_when:` /
@@ -526,18 +664,14 @@ func validateExprPredicates(tasksNode *yaml.Node, label string) []Problem {
 		return nil
 	}
 	var problems []Problem
-	for i, task := range tasksNode.Content {
-		if task.Kind != yaml.MappingNode {
-			continue
-		}
-		taskLabel := taskLabelForNode(task, i+1)
+	walkGroupEntries(tasksNode, label, func(task *yaml.Node, taskLabel string) {
 		problems = append(problems, compileExprNode(mappingValue(task, "when"), "when", label, taskLabel)...)
 		problems = append(problems, compileExprNode(mappingValue(task, "changed_when"), "changed_when", label, taskLabel)...)
 		problems = append(problems, compileExprNode(mappingValue(task, "failed_when"), "failed_when", label, taskLabel)...)
 		if loop := mappingValue(task, "loop"); loop != nil && loop.Kind == yaml.ScalarNode {
 			problems = append(problems, compileExprNode(loop, "loop", label, taskLabel)...)
 		}
-	}
+	})
 	return problems
 }
 
@@ -588,16 +722,12 @@ func validateRegisterReferences(tasksNode *yaml.Node, playLabel string, register
 		return nil
 	}
 	var problems []Problem
-	for i, task := range tasksNode.Content {
-		if task.Kind != yaml.MappingNode {
-			continue
-		}
+	walkGroupEntries(tasksNode, playLabel, func(task *yaml.Node, taskLabel string) {
 		regNode := mappingValue(task, "register")
 		if regNode == nil || regNode.Kind != yaml.ScalarNode || regNode.Value == "" {
-			continue
+			return
 		}
 		name := regNode.Value
-		taskLabel := taskLabelForNode(task, i+1)
 		if prior, ok := registerSeen[name]; ok {
 			hint := fmt.Sprintf("first declared in %s at line %d", prior.Play, prior.Line)
 			if prior.Task != "" {
@@ -612,22 +742,22 @@ func validateRegisterReferences(tasksNode *yaml.Node, playLabel string, register
 				Message: fmt.Sprintf("register name %q is already declared", name),
 				Hint:    hint,
 			})
-			continue
+			return
 		}
 		registerSeen[name] = registerHit{
 			Play: playLabel,
 			Task: taskLabel,
 			Line: regNode.Line,
 		}
-	}
+	})
 	return problems
 }
 
 // validateTargetReferences guards `.item` / `.index` references. They
 // are loop-iteration variables and are only meaningful inside a task
-// entry that carries a `loop:` key. Any non-loop entry whose body still
-// references the placeholder tokens is reported here. #208 / #212 will
-// extend this stub for --start-at-task and --play target validation.
+// entry that carries a `loop:` key, or inside a child of a group entry
+// (#211) whose ancestor carries a `loop:`. Any reference outside such a
+// scope is reported here.
 func validateTargetReferences(tasksNode *yaml.Node, label string) []Problem {
 	if tasksNode == nil || tasksNode.Kind != yaml.SequenceNode {
 		return nil
@@ -637,11 +767,44 @@ func validateTargetReferences(tasksNode *yaml.Node, label string) []Problem {
 		if task.Kind != yaml.MappingNode {
 			continue
 		}
-		if mappingValue(task, "loop") != nil {
+		taskLabel := taskLabelForNode(task, i+1)
+		problems = append(problems, walkLoopVarScope(task, label, taskLabel, false)...)
+	}
+	return problems
+}
+
+// walkLoopVarScope walks one task entry, tracking whether an ancestor
+// has `loop:` so descendants inside a group's block / rescue / always
+// see the parent loop's `.item` / `.index`. When loopActive is false at
+// a given task, scanForLoopVars flags any `.item` / `.index` reference
+// in the task's envelope and body. When loopActive is true (or the
+// current task carries its own `loop:`), the scan is skipped for that
+// entry's own envelope and body, and the recursion into nested group
+// children continues with loopActive set.
+func walkLoopVarScope(task *yaml.Node, playLabel, taskLabel string, loopActive bool) []Problem {
+	if task == nil || task.Kind != yaml.MappingNode {
+		return nil
+	}
+	var problems []Problem
+	thisLoop := mappingValue(task, "loop") != nil
+	scopeActive := loopActive || thisLoop
+
+	if !scopeActive {
+		problems = append(problems, scanForLoopVars(task, playLabel, taskLabel, true)...)
+	}
+
+	for _, clause := range groupClauseKeys {
+		clauseNode := mappingValue(task, clause)
+		if clauseNode == nil || clauseNode.Kind != yaml.SequenceNode {
 			continue
 		}
-		taskLabel := taskLabelForNode(task, i+1)
-		problems = append(problems, scanForLoopVars(task, label, taskLabel)...)
+		for j, child := range clauseNode.Content {
+			if child.Kind != yaml.MappingNode {
+				continue
+			}
+			childLabel := taskLabelForNode(child, j+1)
+			problems = append(problems, walkLoopVarScope(child, playLabel, childLabel, scopeActive)...)
+		}
 	}
 	return problems
 }
@@ -649,8 +812,12 @@ func validateTargetReferences(tasksNode *yaml.Node, label string) []Problem {
 // scanForLoopVars walks every scalar value reachable from node and
 // reports a Problem for each `{{ .item }}` / `{{ .index }}` reference.
 // Scalars are matched against the placeholder substrings the loader
-// injects at file-level render time.
-func scanForLoopVars(node *yaml.Node, playLabel, taskLabel string) []Problem {
+// injects at file-level render time. When skipGroupChildren is true,
+// recursion stops at block / rescue / always sequence values so the
+// caller can scan the envelope and leaf body without re-scanning child
+// task entries (which walkLoopVarScope handles separately so per-child
+// loop scope is honored).
+func scanForLoopVars(node *yaml.Node, playLabel, taskLabel string, skipGroupChildren bool) []Problem {
 	if node == nil {
 		return nil
 	}
@@ -668,9 +835,20 @@ func scanForLoopVars(node *yaml.Node, playLabel, taskLabel string) []Problem {
 				Hint:    "wrap the task with `loop:` or remove the reference",
 			})
 		}
-	case yaml.SequenceNode, yaml.MappingNode, yaml.DocumentNode:
+	case yaml.MappingNode:
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := node.Content[i]
+			valueNode := node.Content[i+1]
+			if skipGroupChildren {
+				if keyNode.Value == "block" || keyNode.Value == "rescue" || keyNode.Value == "always" {
+					continue
+				}
+			}
+			problems = append(problems, scanForLoopVars(valueNode, playLabel, taskLabel, skipGroupChildren)...)
+		}
+	case yaml.SequenceNode, yaml.DocumentNode:
 		for _, child := range node.Content {
-			problems = append(problems, scanForLoopVars(child, playLabel, taskLabel)...)
+			problems = append(problems, scanForLoopVars(child, playLabel, taskLabel, skipGroupChildren)...)
 		}
 	}
 	return problems

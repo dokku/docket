@@ -321,7 +321,7 @@ func TestApplyEnvelopeOverridesUnitFailedWhen(t *testing.T) {
 		State:        tasks.StateAbsent,
 		DesiredState: tasks.StatePresent,
 	}
-	got, err := applyEnvelopeOverrides(env, state, map[string]interface{}{}, nil)
+	got, err := applyEnvelopeOverrides(env, state, map[string]interface{}{}, nil, nil)
 	if err != nil {
 		t.Fatalf("applyEnvelopeOverrides: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestApplyEnvelopeOverridesUnitChangedWhen(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 	state := tasks.TaskOutputState{Changed: true}
-	got, err := applyEnvelopeOverrides(env, state, map[string]interface{}{}, nil)
+	got, err := applyEnvelopeOverrides(env, state, map[string]interface{}{}, nil, nil)
 	if err != nil {
 		t.Fatalf("applyEnvelopeOverrides: %v", err)
 	}

@@ -35,7 +35,7 @@ func TestApplyCommandHelpDoesNotPanic(t *testing.T) {
 func TestEnvelopeExprContextSkipsNonLoopEnvelopes(t *testing.T) {
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x"}
-	got := envelopeExprContext(base, env, nil, nil)
+	got := envelopeExprContext(base, env, nil, nil, nil)
 	if !reflect.DeepEqual(got, base) {
 		t.Errorf("non-loop envelope must return base context unchanged; got %v", got)
 	}
@@ -44,7 +44,7 @@ func TestEnvelopeExprContextSkipsNonLoopEnvelopes(t *testing.T) {
 func TestEnvelopeExprContextInjectsLoopVars(t *testing.T) {
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x", IsLoopExpansion: true, LoopItem: "api", LoopIndex: 2}
-	got := envelopeExprContext(base, env, nil, nil)
+	got := envelopeExprContext(base, env, nil, nil, nil)
 	if got["item"] != "api" {
 		t.Errorf("item = %v, want api", got["item"])
 	}
@@ -67,7 +67,7 @@ func TestEnvelopeExprContextExposesResultAndRegistered(t *testing.T) {
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x"}
 
-	got := envelopeExprContext(base, env, nil, nil)
+	got := envelopeExprContext(base, env, nil, nil, nil)
 	if _, ok := got["result"]; ok {
 		t.Errorf("result should be omitted when nil; got %v", got)
 	}
@@ -77,7 +77,7 @@ func TestEnvelopeExprContextExposesResultAndRegistered(t *testing.T) {
 
 	state := tasks.TaskOutputState{Changed: true}
 	registered := map[string]tasks.RegisteredValue{"foo": {TaskOutputState: state}}
-	got = envelopeExprContext(base, env, state, registered)
+	got = envelopeExprContext(base, env, state, registered, nil)
 	if got["result"] == nil {
 		t.Errorf("result should be exposed when non-nil; got %v", got)
 	}

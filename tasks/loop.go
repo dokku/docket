@@ -83,6 +83,122 @@ func expandLoop(base *TaskEnvelope, body interface{}, registered Task, sigilCont
 	return out, nil
 }
 
+// expandLoopGroup produces one group TaskEnvelope per iteration the
+// envelope's loop resolves to. The base envelope already carries the
+// resolved Loop value; blockBody / rescueBody / alwaysBody are the raw
+// YAML lists of nested task entries decoded once at the file level.
+//
+// For each iteration, the three lists are YAML-marshalled, sigil-rendered
+// with `.item` / `.index` set, then unmarshalled back into
+// []map[string]interface{} and recursed through buildEnvelopesForEntry
+// so child envelopes inherit the iteration's `.item` / `.index` in
+// every nested task body. The expanded group envelope inherits Tags /
+// When / Register from the base; LoopItem / LoopIndex carry the
+// iteration value so the per-group `when:` evaluation can see them.
+func expandLoopGroup(base *TaskEnvelope, blockBody, rescueBody, alwaysBody interface{}, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+	items, err := resolveLoopList(base.Loop, exprContext)
+	if err != nil {
+		return nil, err
+	}
+
+	blockBytes, err := yaml.Marshal(blockBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal block body: %w", err)
+	}
+	var rescueBytes, alwaysBytes []byte
+	if rescueBody != nil {
+		rescueBytes, err = yaml.Marshal(rescueBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal rescue body: %w", err)
+		}
+	}
+	if alwaysBody != nil {
+		alwaysBytes, err = yaml.Marshal(alwaysBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal always body: %w", err)
+		}
+	}
+
+	out := make([]*TaskEnvelope, 0, len(items))
+	for i, item := range items {
+		iterCtx := make(map[string]interface{}, len(sigilContext)+2)
+		for k, v := range sigilContext {
+			iterCtx[k] = v
+		}
+		iterCtx["item"] = item
+		iterCtx["index"] = i
+
+		blockChildren, err := renderAndDecodeGroupClause(blockBytes, "block", iterCtx, sigilContext, exprContext, base.Name, i)
+		if err != nil {
+			return nil, err
+		}
+		if len(blockChildren) == 0 {
+			return nil, fmt.Errorf("loop iteration %d: block: must contain at least one child task", i)
+		}
+
+		var rescueChildren []*TaskEnvelope
+		if rescueBytes != nil {
+			rescueChildren, err = renderAndDecodeGroupClause(rescueBytes, "rescue", iterCtx, sigilContext, exprContext, base.Name, i)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		var alwaysChildren []*TaskEnvelope
+		if alwaysBytes != nil {
+			alwaysChildren, err = renderAndDecodeGroupClause(alwaysBytes, "always", iterCtx, sigilContext, exprContext, base.Name, i)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		expanded := *base
+		expanded.Loop = nil
+		expanded.LoopItem = item
+		expanded.LoopIndex = i
+		expanded.IsLoopExpansion = true
+		expanded.Block = blockChildren
+		expanded.Rescue = rescueChildren
+		expanded.Always = alwaysChildren
+		expanded.Name = loopExpansionName(base.Name, item, i)
+
+		out = append(out, &expanded)
+	}
+	return out, nil
+}
+
+// renderAndDecodeGroupClause renders a single group clause's YAML for
+// one loop iteration and decodes the result into child envelopes. The
+// per-iteration sigil context carries `.item` / `.index` so every nested
+// task body sees the iteration value (per #211: each group iteration's
+// `.item` / `.index` is shared across all its children). The file-level
+// sigilContext stays available so other inputs continue to render.
+func renderAndDecodeGroupClause(body []byte, clause string, iterCtx, sigilContext, exprContext map[string]interface{}, baseName string, iter int) ([]*TaskEnvelope, error) {
+	rendered, err := sigil.Execute(body, iterCtx, "loop")
+	if err != nil {
+		return nil, fmt.Errorf("loop iteration %d %s: render error: %w", iter, clause, err)
+	}
+	renderedBytes, err := io.ReadAll(&rendered)
+	if err != nil {
+		return nil, fmt.Errorf("loop iteration %d %s: read error: %w", iter, clause, err)
+	}
+
+	var rawList []map[string]interface{}
+	if err := yaml.Unmarshal(renderedBytes, &rawList); err != nil {
+		return nil, fmt.Errorf("loop iteration %d %s: decode error: %w", iter, clause, err)
+	}
+
+	out := make([]*TaskEnvelope, 0, len(rawList))
+	for i, entry := range rawList {
+		envelopes, err := buildEnvelopesForEntry(i+1, entry, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("loop iteration %d %s[%d]: %s", iter, clause, i, err)
+		}
+		out = append(out, envelopes...)
+	}
+	return out, nil
+}
+
 // resolveLoopList normalises a loop value into a concrete list. Strings
 // are compiled and evaluated as expr programs; lists are returned
 // directly. Any other type yields an error.

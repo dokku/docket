@@ -45,8 +45,20 @@ type TaskEnvelope struct {
 	FailedWhen   string
 	IgnoreErrors bool
 
-	// Task is the decoded task body. Always non-nil for envelopes the
-	// loader produces.
+	// Block / Rescue / Always carry the nested child envelopes for a
+	// try/catch/finally group entry (#211). When Block is non-empty the
+	// envelope is a group: Task is nil, TypeName is empty, and the
+	// executor walks the three child slices instead of dispatching to a
+	// task body. The wrapping envelope's `name`, `tags`, `when`, `loop`,
+	// `register`, `changed_when`, `failed_when`, and `ignore_errors`
+	// apply to the whole group.
+	Block  []*TaskEnvelope
+	Rescue []*TaskEnvelope
+	Always []*TaskEnvelope
+
+	// Task is the decoded task body. Non-nil for leaf envelopes the
+	// loader produces; nil for group envelopes (#211) where Block /
+	// Rescue / Always carry the nested children instead.
 	Task Task
 
 	// TypeName is the registered task name (e.g. "dokku_app") that
@@ -80,6 +92,15 @@ type TaskEnvelope struct {
 // predicate that must be evaluated before execution.
 func (e *TaskEnvelope) HasWhen() bool {
 	return e != nil && e.When != ""
+}
+
+// IsGroup reports whether the envelope is a try/catch/finally group
+// entry (#211). Group envelopes carry their children in Block / Rescue
+// / Always; their Task is nil. The executor uses this flag as the
+// dispatch boundary between the leaf-task code path and the group
+// walker.
+func (e *TaskEnvelope) IsGroup() bool {
+	return e != nil && len(e.Block) > 0
 }
 
 // WhenProgram returns the pre-compiled expr program for When, or nil if

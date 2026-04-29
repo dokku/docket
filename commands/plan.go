@@ -231,102 +231,24 @@ func (c *PlanCommand) Run(args []string) int {
 
 		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(context, play.Inputs, userSet))
 
+		pc := &planContext{
+			play:        play,
+			playExprCtx: playExprCtx,
+			registered:  registered,
+			loopAccum:   loopAccum,
+			emitter:     emitter,
+			counts:      &counts,
+		}
+
 		for _, name := range tasks.FilterByTags(play.Tasks, c.tags, c.skipTags) {
 			env := play.Tasks.GetEnvelope(name)
-			taskStart := time.Now()
-
-			if env.HasWhen() {
-				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env, nil, registered))
-				if err != nil {
-					counts.Tasks++
-					counts.Errors++
-					hasError = true
-					emitter.PlanTask(PlanTaskEvent{
-						Play:      play.Name,
-						Name:      name,
-						WhenError: err,
-						Duration:  time.Since(taskStart),
-						Timestamp: time.Now().UTC(),
-					})
-					continue
-				}
-				if !ok {
-					counts.Tasks++
-					counts.Skipped++
-					emitter.PlanTask(PlanTaskEvent{
-						Play:      play.Name,
-						Name:      name,
-						Skipped:   true,
-						Duration:  time.Since(taskStart),
-						Timestamp: time.Now().UTC(),
-					})
-					continue
-				}
-			}
-
-			result := env.Task.Plan()
-			counts.Tasks++
-
-			// Synthesize a TaskOutputState from the PlanResult so the
-			// changed_when / failed_when / register phases see a
-			// consistent shape across plan and apply. Plan probes do
-			// not run subprocesses on their drift / in-sync paths, so
-			// Stdout/Stderr/ExitCode are non-zero only on probe-error
-			// paths (#210 plumbed those through PlanResult).
-			synth := tasks.TaskOutputState{
-				Changed:      !result.InSync,
-				Error:        result.Error,
-				State:        result.DesiredState,
-				DesiredState: result.DesiredState,
-				Commands:     result.Commands,
-				Stdout:       result.Stdout,
-				Stderr:       result.Stderr,
-				ExitCode:     result.ExitCode,
-			}
-			postState, overrideErr := applyEnvelopeOverrides(env, synth, playExprCtx, registered)
-			if overrideErr != nil {
-				counts.Errors++
+			outcome := planTask(env, name, pc, nil, "")
+			if outcome.errored {
 				hasError = true
-				emitter.PlanTask(PlanTaskEvent{
-					Play:      play.Name,
-					Name:      name,
-					WhenError: overrideErr,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
-				continue
 			}
-			synth = postState
-			recordRegister(env, synth, loopAccum, registered)
-
-			// Reflect the post-override verdict back onto the
-			// PlanResult so the existing classifier and the formatter
-			// / JSON output reflect the override. Falsy `failed_when`
-			// clears Error; truthy installs one. Truthy `changed_when`
-			// converts an in-sync probe to drift, while falsy
-			// `changed_when` makes drift look in-sync (the plan event
-			// continues to render via the same code path).
-			result.Error = synth.Error
-			result.InSync = !synth.Changed && synth.Error == nil
-
-			switch {
-			case result.Error != nil:
-				counts.Errors++
-				hasError = true
-			case result.InSync:
-				counts.InSync++
-			default:
-				counts.WouldChange++
+			if outcome.drift {
 				hasDrift = true
 			}
-
-			emitter.PlanTask(PlanTaskEvent{
-				Play:      play.Name,
-				Name:      name,
-				Result:    result,
-				Duration:  time.Since(taskStart),
-				Timestamp: time.Now().UTC(),
-			})
 		}
 	}
 
@@ -348,4 +270,295 @@ func (c *PlanCommand) newEmitter() EventEmitter {
 		return NewJSONEmitter(c.Ui)
 	}
 	return NewFormatter(c.Ui, false)
+}
+
+// planContext bundles the run-wide plan state per-task helpers share so
+// planTask / planLeaf / planGroup signatures stay tractable.
+type planContext struct {
+	play        *tasks.Play
+	playExprCtx map[string]interface{}
+	registered  map[string]tasks.RegisteredValue
+	loopAccum   loopRegisterAccumulator
+	emitter     EventEmitter
+	counts      *PlanCounts
+}
+
+// planTaskOutcome is the per-task verdict the plan loop reads back. The
+// errored / drift flags drive the run-level hasError / hasDrift booleans
+// the executor uses to compute the exit code; the synthesized state is
+// propagated up to a parent group walker so a rescue child's predicates
+// can reference `.failed_task`.
+type planTaskOutcome struct {
+	state   tasks.TaskOutputState
+	errored bool
+	drift   bool
+	skipped bool
+}
+
+// planTask plans one envelope - leaf or group. The phase string labels
+// child events emitted from a group walk ("block", "rescue", "always");
+// top-level callers pass "". failedTask is non-nil only when called
+// from a rescue walker so the rescue child's predicates can reference
+// `.failed_task`.
+func planTask(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask interface{}, phase string) planTaskOutcome {
+	if env.IsGroup() {
+		return planGroup(env, name, pc, failedTask, phase)
+	}
+	return planLeaf(env, name, pc, failedTask, phase)
+}
+
+// planLeaf runs a single non-group envelope through Plan() with the
+// post-override pipeline mirroring apply.
+func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask interface{}, phase string) planTaskOutcome {
+	taskStart := time.Now()
+
+	if env.HasWhen() {
+		ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(pc.playExprCtx, env, nil, pc.registered, failedTask))
+		if err != nil {
+			pc.counts.Tasks++
+			pc.counts.Errors++
+			pc.emitter.PlanTask(PlanTaskEvent{
+				Play:      pc.play.Name,
+				Name:      name,
+				Phase:     phase,
+				WhenError: err,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return planTaskOutcome{errored: true}
+		}
+		if !ok {
+			pc.counts.Tasks++
+			pc.counts.Skipped++
+			pc.emitter.PlanTask(PlanTaskEvent{
+				Play:      pc.play.Name,
+				Name:      name,
+				Phase:     phase,
+				Skipped:   true,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return planTaskOutcome{skipped: true}
+		}
+	}
+
+	result := env.Task.Plan()
+	pc.counts.Tasks++
+
+	synth := tasks.TaskOutputState{
+		Changed:      !result.InSync,
+		Error:        result.Error,
+		State:        result.DesiredState,
+		DesiredState: result.DesiredState,
+		Commands:     result.Commands,
+		Stdout:       result.Stdout,
+		Stderr:       result.Stderr,
+		ExitCode:     result.ExitCode,
+	}
+	postState, overrideErr := applyEnvelopeOverrides(env, synth, pc.playExprCtx, pc.registered, failedTask)
+	if overrideErr != nil {
+		pc.counts.Errors++
+		pc.emitter.PlanTask(PlanTaskEvent{
+			Play:      pc.play.Name,
+			Name:      name,
+			Phase:     phase,
+			WhenError: overrideErr,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return planTaskOutcome{errored: true}
+	}
+	synth = postState
+	recordRegister(env, synth, pc.loopAccum, pc.registered)
+
+	result.Error = synth.Error
+	result.InSync = !synth.Changed && synth.Error == nil
+
+	out := planTaskOutcome{state: synth}
+	switch {
+	case result.Error != nil:
+		pc.counts.Errors++
+		out.errored = true
+	case result.InSync:
+		pc.counts.InSync++
+	default:
+		pc.counts.WouldChange++
+		out.drift = true
+	}
+
+	pc.emitter.PlanTask(PlanTaskEvent{
+		Play:      pc.play.Name,
+		Name:      name,
+		Phase:     phase,
+		Result:    result,
+		Duration:  time.Since(taskStart),
+		Timestamp: time.Now().UTC(),
+	})
+	return out
+}
+
+// planGroup plans a try/catch/finally group entry (#211). Block
+// children plan unconditionally. Rescue and always children only plan
+// when at least one block child reports drift or a probe error, since
+// Plan() never triggers an apply-time error and walking
+// rescue/always when no block child is going to change is misleading
+// noise. The group's own envelope predicates apply to the synthesized
+// outcome the same way they do for a leaf task.
+func planGroup(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask interface{}, phase string) planTaskOutcome {
+	taskStart := time.Now()
+
+	if env.HasWhen() {
+		ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(pc.playExprCtx, env, nil, pc.registered, failedTask))
+		if err != nil {
+			pc.counts.Tasks++
+			pc.counts.Errors++
+			pc.emitter.PlanTask(PlanTaskEvent{
+				Play:      pc.play.Name,
+				Name:      name,
+				Phase:     phase,
+				Group:     true,
+				WhenError: err,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return planTaskOutcome{errored: true}
+		}
+		if !ok {
+			pc.counts.Tasks++
+			pc.counts.Skipped++
+			pc.emitter.PlanTask(PlanTaskEvent{
+				Play:      pc.play.Name,
+				Name:      name,
+				Phase:     phase,
+				Group:     true,
+				Skipped:   true,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
+			return planTaskOutcome{skipped: true}
+		}
+	}
+
+	var (
+		anyChanged       bool
+		anyDrift         bool
+		blockFailedState tasks.TaskOutputState
+		blockFailed      bool
+		lastChildState   tasks.TaskOutputState
+	)
+	for i, child := range env.Block {
+		childName := child.Name
+		if childName == "" {
+			childName = fmt.Sprintf("%s.block[%d]", name, i)
+		}
+		childOutcome := planTask(child, childName, pc, nil, "block")
+		if childOutcome.state.Changed {
+			anyChanged = true
+		}
+		lastChildState = childOutcome.state
+		if childOutcome.errored && !blockFailed {
+			blockFailed = true
+			blockFailedState = childOutcome.state
+		}
+		if childOutcome.drift {
+			anyDrift = true
+		}
+	}
+
+	walkRescueAlways := blockFailed || anyDrift
+	if walkRescueAlways {
+		var failedTaskCtx interface{}
+		if blockFailed {
+			failedTaskCtx = blockFailedState
+		}
+		for i, child := range env.Rescue {
+			childName := child.Name
+			if childName == "" {
+				childName = fmt.Sprintf("%s.rescue[%d]", name, i)
+			}
+			childOutcome := planTask(child, childName, pc, failedTaskCtx, "rescue")
+			if childOutcome.state.Changed {
+				anyChanged = true
+			}
+			lastChildState = childOutcome.state
+		}
+		for i, child := range env.Always {
+			childName := child.Name
+			if childName == "" {
+				childName = fmt.Sprintf("%s.always[%d]", name, i)
+			}
+			childOutcome := planTask(child, childName, pc, nil, "always")
+			if childOutcome.state.Changed {
+				anyChanged = true
+			}
+			lastChildState = childOutcome.state
+		}
+	}
+
+	groupSynth := tasks.TaskOutputState{
+		Changed:      anyChanged,
+		DesiredState: lastChildState.DesiredState,
+		State:        lastChildState.DesiredState,
+		Stdout:       lastChildState.Stdout,
+		Stderr:       lastChildState.Stderr,
+		ExitCode:     lastChildState.ExitCode,
+		Commands:     lastChildState.Commands,
+	}
+	if blockFailed && len(env.Rescue) == 0 {
+		groupSynth.Error = blockFailedState.Error
+	}
+
+	postState, overrideErr := applyEnvelopeOverrides(env, groupSynth, pc.playExprCtx, pc.registered, failedTask)
+	if overrideErr != nil {
+		pc.counts.Errors++
+		pc.emitter.PlanTask(PlanTaskEvent{
+			Play:      pc.play.Name,
+			Name:      name,
+			Phase:     phase,
+			Group:     true,
+			WhenError: overrideErr,
+			Duration:  time.Since(taskStart),
+			Timestamp: time.Now().UTC(),
+		})
+		return planTaskOutcome{errored: true}
+	}
+	groupSynth = postState
+	recordRegister(env, groupSynth, pc.loopAccum, pc.registered)
+	pc.counts.Tasks++
+
+	result := tasks.PlanResult{
+		Error:        groupSynth.Error,
+		InSync:       !groupSynth.Changed && groupSynth.Error == nil,
+		DesiredState: groupSynth.DesiredState,
+		Commands:     groupSynth.Commands,
+		Stdout:       groupSynth.Stdout,
+		Stderr:       groupSynth.Stderr,
+		ExitCode:     groupSynth.ExitCode,
+	}
+	if !result.InSync && result.Error == nil {
+		result.Status = tasks.PlanStatusModify
+		result.Reason = "block: would mutate state"
+	}
+	out := planTaskOutcome{state: groupSynth}
+	switch {
+	case result.Error != nil:
+		pc.counts.Errors++
+		out.errored = true
+	case result.InSync:
+		pc.counts.InSync++
+	default:
+		pc.counts.WouldChange++
+		out.drift = true
+	}
+
+	pc.emitter.PlanTask(PlanTaskEvent{
+		Play:      pc.play.Name,
+		Name:      name,
+		Phase:     phase,
+		Group:     true,
+		Result:    result,
+		Duration:  time.Since(taskStart),
+		Timestamp: time.Now().UTC(),
+	})
+	return out
 }
