@@ -121,7 +121,7 @@ docket apply --tasks tasks.yml --fail-fast # legacy: abort the entire run
 
 The summary line gains a `· N play skipped` segment when one or more plays were skipped (by `when:` or by a per-task `when:` predicate at the play level):
 
-```
+```text
 ==> Play: api
 [ok]      dokku apps:create api
 [changed] dokku git:sync api
