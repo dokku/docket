@@ -63,6 +63,42 @@ type ExecCommandInput struct {
 	Host string
 }
 
+// ExecError wraps a CallExecCommand failure with the underlying
+// response so callers that propagate the error up the stack can later
+// recover Stdout / Stderr / ExitCode without threading the response
+// through every helper signature. The Error() method returns the
+// inner error's text so existing callers that print err.Error() see
+// the same string as before.
+//
+// Callers recover the response with errors.As:
+//
+//	var execErr *subprocess.ExecError
+//	if errors.As(err, &execErr) {
+//	    // execErr.Response.Stderr is available
+//	}
+type ExecError struct {
+	Response ExecCommandResponse
+	Err      error
+}
+
+// Error returns the wrapped error's message so existing string-based
+// comparisons (e.g. fmt.Errorf wrapping) continue to work.
+func (e *ExecError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+// Unwrap exposes the wrapped error so errors.Is / errors.As traverse
+// chains of wrapped errors correctly.
+func (e *ExecError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 // ExecCommandResponse is the response for the ExecCommand function
 type ExecCommandResponse struct {
 	// Command is the resolved command line that was executed, including
@@ -247,23 +283,25 @@ func CallExecCommandWithContext(ctx context.Context, input ExecCommandInput) (Ex
 
 	res, err := cmd.Execute(ctx)
 	if err != nil {
-		return ExecCommandResponse{
+		response := ExecCommandResponse{
 			Command:   resolved,
 			Stdout:    res.Stdout,
 			Stderr:    res.Stderr,
 			ExitCode:  res.ExitCode,
 			Cancelled: res.Cancelled,
-		}, err
+		}
+		return response, &ExecError{Response: response, Err: err}
 	}
 
 	if res.ExitCode != 0 {
-		return ExecCommandResponse{
+		response := ExecCommandResponse{
 			Command:   resolved,
 			Stdout:    res.Stdout,
 			Stderr:    res.Stderr,
 			ExitCode:  res.ExitCode,
 			Cancelled: res.Cancelled,
-		}, errors.New(res.Stderr)
+		}
+		return response, &ExecError{Response: response, Err: errors.New(res.Stderr)}
 	}
 
 	return ExecCommandResponse{

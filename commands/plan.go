@@ -197,6 +197,13 @@ func (c *PlanCommand) Run(args []string) int {
 	hasError := false
 	hasDrift := false
 	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(context, fileLevelKeys, userSet))
+	// registered + loopAccum carry the same role as in apply: predicates
+	// in plan mode see `.registered.<name>` based on the
+	// post-override synthesized TaskOutputState of prior tasks.
+	// `ignore_errors` is a no-op in plan because plan never aborts the
+	// run.
+	registered := map[string]tasks.RegisteredValue{}
+	loopAccum := loopRegisterAccumulator{}
 
 	for _, play := range plays {
 		if play.IsFileLevel() {
@@ -229,7 +236,7 @@ func (c *PlanCommand) Run(args []string) int {
 			taskStart := time.Now()
 
 			if env.HasWhen() {
-				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env))
+				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env, nil, registered))
 				if err != nil {
 					counts.Tasks++
 					counts.Errors++
@@ -259,6 +266,48 @@ func (c *PlanCommand) Run(args []string) int {
 
 			result := env.Task.Plan()
 			counts.Tasks++
+
+			// Synthesize a TaskOutputState from the PlanResult so the
+			// changed_when / failed_when / register phases see a
+			// consistent shape across plan and apply. Plan probes do
+			// not run subprocesses on their drift / in-sync paths, so
+			// Stdout/Stderr/ExitCode are non-zero only on probe-error
+			// paths (#210 plumbed those through PlanResult).
+			synth := tasks.TaskOutputState{
+				Changed:      !result.InSync,
+				Error:        result.Error,
+				State:        result.DesiredState,
+				DesiredState: result.DesiredState,
+				Commands:     result.Commands,
+				Stdout:       result.Stdout,
+				Stderr:       result.Stderr,
+				ExitCode:     result.ExitCode,
+			}
+			postState, overrideErr := applyEnvelopeOverrides(env, synth, playExprCtx, registered)
+			if overrideErr != nil {
+				counts.Errors++
+				hasError = true
+				emitter.PlanTask(PlanTaskEvent{
+					Play:      play.Name,
+					Name:      name,
+					WhenError: overrideErr,
+					Duration:  time.Since(taskStart),
+					Timestamp: time.Now().UTC(),
+				})
+				continue
+			}
+			synth = postState
+			recordRegister(env, synth, loopAccum, registered)
+
+			// Reflect the post-override verdict back onto the
+			// PlanResult so the existing classifier and the formatter
+			// / JSON output reflect the override. Falsy `failed_when`
+			// clears Error; truthy installs one. Truthy `changed_when`
+			// converts an in-sync probe to drift, while falsy
+			// `changed_when` makes drift look in-sync (the plan event
+			// continues to render via the same code path).
+			result.Error = synth.Error
+			result.InSync = !synth.Changed && synth.Error == nil
 
 			switch {
 			case result.Error != nil:

@@ -205,6 +205,16 @@ type PlanResult struct {
 	// Error implies Status == PlanStatusError.
 	Error error
 
+	// Stdout / Stderr / ExitCode capture the underlying subprocess
+	// response that produced a probe error. Populated by probe call
+	// sites that bubble a CallExecCommand failure into a PlanResult so
+	// `failed_when` predicates referencing `result.Stderr` work in plan
+	// mode the same way they do in apply mode. Empty / zero on the
+	// in-sync, drift, and apply-only paths.
+	Stdout   string
+	Stderr   string
+	ExitCode int
+
 	// apply, when non-nil, is the closure ExecutePlan invokes to mutate
 	// server state. nil when InSync. Captures any probed state needed for
 	// the mutation so the apply path does not re-probe. Unexported so
@@ -664,6 +674,22 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 			return nil, fmt.Errorf("task parse error: task #%d %q: when compile error: %s", index, envelope.Name, err)
 		}
 		envelope.whenProgram = prog
+	}
+
+	if envelope.ChangedWhen != "" {
+		prog, err := CompilePredicate(envelope.ChangedWhen)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: task #%d %q: changed_when compile error: %s", index, envelope.Name, err)
+		}
+		envelope.changedWhenProgram = prog
+	}
+
+	if envelope.FailedWhen != "" {
+		prog, err := CompilePredicate(envelope.FailedWhen)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: task #%d %q: failed_when compile error: %s", index, envelope.Name, err)
+		}
+		envelope.failedWhenProgram = prog
 	}
 
 	if envelope.Loop != nil {

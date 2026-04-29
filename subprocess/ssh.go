@@ -375,7 +375,7 @@ func classifySshResult(target sshTarget, remote []string, resp ExecCommandRespon
 		}
 	}
 	if resp.ExitCode != 0 {
-		return resp, errors.New(resp.Stderr)
+		return resp, &ExecError{Response: resp, Err: errors.New(resp.Stderr)}
 	}
 	return resp, nil
 }

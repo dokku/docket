@@ -57,6 +57,12 @@ type ApplyTaskEvent struct {
 	// final State did not match DesiredState; treated as an error in
 	// counts and exit logic.
 	InvalidState bool
+	// Ignored, when true, indicates the task errored but `ignore_errors:
+	// true` suppressed the fatal-exit decision. The event is still
+	// emitted with the `[error]` marker so the user sees what failed,
+	// but the run continues and the error does not count toward the
+	// summary.
+	Ignored bool
 	// Duration is the wall-clock time Execute took (or zero for the
 	// when-skipped / when-error branches).
 	Duration time.Duration
@@ -212,7 +218,11 @@ func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
 	case ev.Skipped:
 		f.TaskLine(MarkerSkipped, ev.Name, "")
 	case ev.State.Error != nil:
-		f.TaskLine(MarkerError, ev.Name, "")
+		suffix := ""
+		if ev.Ignored {
+			suffix = "(ignored)"
+		}
+		f.TaskLine(MarkerError, ev.Name, suffix)
 		f.ErrorContinuation(ev.State.Error)
 		// Stderr already surfaces via the dokku-prefixed continuation:
 		// subprocess.CallExecCommand wraps stderr into the error itself.
@@ -226,7 +236,11 @@ func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
 			}
 		}
 	case ev.InvalidState:
-		f.TaskLine(MarkerError, ev.Name, "")
+		suffix := ""
+		if ev.Ignored {
+			suffix = "(ignored)"
+		}
+		f.TaskLine(MarkerError, ev.Name, suffix)
 		f.Continuation('!', fmt.Sprintf("invalid state: expected=%v actual=%v", ev.State.DesiredState, ev.State.State))
 	case ev.State.Changed:
 		f.TaskLine(MarkerChanged, ev.Name, "")

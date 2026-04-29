@@ -18,17 +18,45 @@ func buildEnvelopeExprContext(inputs map[string]interface{}) map[string]interfac
 
 // envelopeExprContext returns a per-envelope expr context. Loop-expansion
 // envelopes inject `.item` / `.index` so a `when: 'item != "web"'`
-// predicate evaluates against the iteration value.
-func envelopeExprContext(base map[string]interface{}, env *tasks.TaskEnvelope) map[string]interface{} {
-	if env == nil || !env.IsLoopExpansion {
+// predicate evaluates against the iteration value. The run-wide
+// registered map is exposed under `.registered` whenever it carries
+// any entries so a predicate can reference `.registered.<name>` once
+// a prior task has registered. result is non-nil only inside the
+// post-execute `changed_when` / `failed_when` evaluation phase; pass
+// nil from `when:` call sites so predicates running before the task
+// fires do not see a stale result.
+func envelopeExprContext(
+	base map[string]interface{},
+	env *tasks.TaskEnvelope,
+	result interface{},
+	registered map[string]tasks.RegisteredValue,
+) map[string]interface{} {
+	hasLoopVars := env != nil && env.IsLoopExpansion
+	hasResult := result != nil
+	hasRegistered := len(registered) > 0
+	if !hasLoopVars && !hasResult && !hasRegistered {
 		return base
 	}
-	out := make(map[string]interface{}, len(base)+2)
+	out := make(map[string]interface{}, len(base)+3)
 	for k, v := range base {
 		out[k] = v
 	}
-	out["item"] = env.LoopItem
-	out["index"] = env.LoopIndex
+	if hasLoopVars {
+		out["item"] = env.LoopItem
+		out["index"] = env.LoopIndex
+	}
+	if hasResult {
+		out["result"] = result
+	}
+	if hasRegistered {
+		// Copy the registered map per call so a downstream call cannot
+		// mutate the executor's working map by writing into the context.
+		registeredCopy := make(map[string]tasks.RegisteredValue, len(registered))
+		for k, v := range registered {
+			registeredCopy[k] = v
+		}
+		out["registered"] = registeredCopy
+	}
 	return out
 }
 

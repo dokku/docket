@@ -145,10 +145,10 @@ Each task entry in `tasks.yml` admits a small set of cross-cutting envelope keys
 | `tags` | active | Tag list filtered by `--tags` / `--skip-tags` on `apply` and `plan`. |
 | `when` | active | expr expression. Falsy renders the task as `[skipped]`. |
 | `loop` | active | List literal, or expr returning a list. Expands one entry into N with `.item` / `.index` available in the body. |
-| `register` | reserved (#210) | Bind the task result for downstream tasks. |
-| `changed_when` | reserved (#210) | expr override for the task's "changed" verdict. |
-| `failed_when` | reserved (#210) | expr override for the task's "failed" verdict. |
-| `ignore_errors` | reserved (#210) | Continue on task failure. |
+| `register` | active | Bind the post-override task result for downstream tasks. |
+| `changed_when` | active | expr override for the task's "changed" verdict. |
+| `failed_when` | active | expr override for the task's "failed" verdict. |
+| `ignore_errors` | active | Continue on task failure (apply only). |
 
 Unknown envelope keys are rejected at parse time with a "did you mean" suggestion against the closest valid key.
 
@@ -191,7 +191,7 @@ docket apply --tasks tasks.yml --skip-tags worker  # everything except worker
         state: enabled
 ```
 
-The expression context today carries the file-level inputs plus, for loop expansions, `.item` and `.index`. Other context keys (`.timestamp`, `.host`, `.play.name`, `.result`, `.registered`) are reserved for follow-on issues.
+The expression context today carries the file-level inputs plus, for loop expansions, `.item` and `.index`. Inside `changed_when:` / `failed_when:` the same context also includes `.result` (the just-finished task's `TaskOutputState`). Once any task has registered, every subsequent envelope predicate (including `when:`) sees `.registered.<name>`. Other context keys (`.timestamp`, `.host`, `.play.name`) are reserved for follow-on issues.
 
 #### `loop:` per-task iteration
 
@@ -218,6 +218,95 @@ or an expr expression that returns a list:
 Each iteration renders the body with `.item` (the iterator value) and `.index` (zero-based) injected. Expanded envelope names are suffixed with `(item=<value>)` to keep them unique; complex items fall back to `(item=#<index>)`. `.item` / `.index` references outside a `loop:` body are rejected at parse time so a stray reference does not silently render to an empty value.
 
 `when:` interacts with `loop:`: the predicate is evaluated per expansion, so `loop: [a, b, c]` plus `when: 'item != "b"'` runs only the `a` and `c` expansions.
+
+#### `register:` cross-task data flow
+
+`register: <name>` snapshots the just-finished task's post-override result into a run-wide map keyed by `<name>`. Every subsequent envelope predicate sees the snapshot at `.registered.<name>`:
+
+```yaml
+- tasks:
+    - name: ensure app
+      register: app_result
+      dokku_app:
+        app: api
+    - name: stamp first deploy
+      when: 'registered.app_result.Changed'
+      dokku_config:
+        app: api
+        config:
+          FIRST_RUN_FLAG: "true"
+```
+
+`registered.<name>` exposes the same fields a task's `TaskOutputState` carries: `.Changed`, `.Error`, `.State`, `.DesiredState`, `.Stdout`, `.Stderr`, `.ExitCode`, `.Commands`, `.Message`. Comparisons like `registered.foo.Error != nil` and `registered.foo.Stderr contains "..."` work directly. Reused names are rejected at parse time with `register_duplicate`; the registered map is shared across plays in one `docket apply` / `docket plan` run.
+
+When `register:` is used with `loop:`, the registered value carries an additional `.Results` list of per-iteration `TaskOutputState`s in source order. The embedded fields aggregate Ansible-style: `.Changed` is true if any iteration changed, `.Error` is the first non-nil iteration error, and the rest mirror the last iteration's values:
+
+```yaml
+- tasks:
+    - name: each
+      loop: [api, worker, web]
+      register: deploys
+      dokku_app:
+        app: "{{ .item }}"
+    - name: any-changed
+      when: 'registered.deploys.Changed'
+      dokku_config:
+        app: api
+        config:
+          LAST_DEPLOY_TS: "now"
+    - name: first-iteration-only
+      when: 'registered.deploys.Results[0].Changed'
+      dokku_config:
+        app: api
+        config:
+          API_FIRST_DEPLOY: "true"
+```
+
+#### `changed_when:` and `failed_when:` per-task overrides
+
+`changed_when:` and `failed_when:` are expr predicates that override the task's self-reported verdict. Both evaluate against `.result` (the just-finished `TaskOutputState`) plus the regular context (`.registered`, file-level inputs, loop vars). Phase ordering is `failed_when` → `changed_when` → `register` snapshot, so `register` sees the post-override values.
+
+`failed_when` matches Ansible: a truthy result marks the task as failed (installing a synthetic error if none was reported), and a falsy result fully clears the failure verdict (Error and the state-mismatch path). It is the standard "this exit code is fine" idiom for idempotent operations:
+
+```yaml
+- name: try removing legacy mount
+  register: unmount
+  failed_when: 'result.Error != nil and not (result.Stderr contains "not mounted")'
+  dokku_storage_mount:
+    app: api
+    state: absent
+    mount: /old/path:/var/data
+
+- name: log only if real failure
+  when: 'registered.unmount.Error != nil'
+  dokku_config:
+    app: api
+    config:
+      LAST_UNMOUNT_ATTEMPT_FAILED: "true"
+```
+
+`changed_when` rewrites the `Changed` flag based on truthiness. `changed_when: 'false'` silences a self-reported-changed task; `changed_when: 'true'` makes an in-sync task render as changed.
+
+#### `ignore_errors:` continue past failures
+
+`ignore_errors: true` suppresses the fatal-exit decision when a task errors. The task still appears as `[error]` in the human output (with an `(ignored)` marker) and `status: "error"` in JSON (with `"ignored": true`), but the run does not abort and the error does not count toward the summary. `ignore_errors` is consulted after `failed_when`, so a `failed_when`-cleared task is not re-flagged:
+
+```yaml
+- tasks:
+    - name: try the optional path
+      ignore_errors: true
+      dokku_storage_mount:
+        app: api
+        state: absent
+        mount: /old/path:/var/data
+    - name: continues regardless
+      dokku_config:
+        app: api
+        config:
+          LAST_RUN_TS: "now"
+```
+
+`ignore_errors` is meaningful only for `apply`. `plan` never aborts a run, so the flag is a no-op there.
 
 ### Scaffolding with `init`
 

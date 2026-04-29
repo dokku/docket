@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,6 +183,58 @@ func TestMultiPlayPlayLevelTagsPropagateToTasks(t *testing.T) {
 	}
 	if strings.Contains(stdout, "deploy-worker") {
 		t.Errorf("deploy-worker should be filtered by --tags; got:\n%s", stdout)
+	}
+}
+
+// TestPlanRegisteredVisibleToFollowUp drives plan against the stub
+// task and asserts that a register: + when: combination behaves the
+// same way it does in apply: the second task's `when:` evaluates
+// against the synthesized TaskOutputState of the first.
+func TestPlanRegisteredVisibleToFollowUp(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{Changed: true})
+	stubSet("b", StubFixture{Changed: false})
+
+	path := writeMultiPlayTasks(t, `---
+- tasks:
+    - name: first
+      register: first
+      dokku_stub: { key: a }
+    - name: follow-up
+      when: 'registered.first.Changed'
+      dokku_stub: { key: b }
+`)
+	stdout, _, exit := runPlan(t, path)
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s", exit, stdout)
+	}
+	if !strings.Contains(stdout, "follow-up") || strings.Contains(stdout, "[skipped] follow-up") {
+		t.Errorf("follow-up should plan because first.Changed is true; got:\n%s", stdout)
+	}
+}
+
+// TestPlanFailedWhenClearsError pins that failed_when in plan mode
+// rewrites the synthesized TaskOutputState's Error so the plan
+// classifier no longer treats the task as a probe error.
+func TestPlanFailedWhenClearsError(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{
+		PlanError: errors.New("App nonexistent does not exist"),
+		Stderr:    "App nonexistent does not exist",
+	})
+
+	path := writeMultiPlayTasks(t, `---
+- tasks:
+    - name: tolerant
+      failed_when: 'result.Error != nil and not (result.Stderr contains "does not exist")'
+      dokku_stub: { key: a }
+`)
+	stdout, _, exit := runPlan(t, path)
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s", exit, stdout)
+	}
+	if strings.Contains(stdout, "[!]") {
+		t.Errorf("probe error should be cleared by failed_when; got:\n%s", stdout)
 	}
 }
 

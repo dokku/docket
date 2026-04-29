@@ -35,7 +35,7 @@ func TestApplyCommandHelpDoesNotPanic(t *testing.T) {
 func TestEnvelopeExprContextSkipsNonLoopEnvelopes(t *testing.T) {
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x"}
-	got := envelopeExprContext(base, env)
+	got := envelopeExprContext(base, env, nil, nil)
 	if !reflect.DeepEqual(got, base) {
 		t.Errorf("non-loop envelope must return base context unchanged; got %v", got)
 	}
@@ -44,7 +44,7 @@ func TestEnvelopeExprContextSkipsNonLoopEnvelopes(t *testing.T) {
 func TestEnvelopeExprContextInjectsLoopVars(t *testing.T) {
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x", IsLoopExpansion: true, LoopItem: "api", LoopIndex: 2}
-	got := envelopeExprContext(base, env)
+	got := envelopeExprContext(base, env, nil, nil)
 	if got["item"] != "api" {
 		t.Errorf("item = %v, want api", got["item"])
 	}
@@ -56,6 +56,33 @@ func TestEnvelopeExprContextInjectsLoopVars(t *testing.T) {
 	}
 	if base["item"] != nil {
 		t.Errorf("base must not be mutated by envelopeExprContext")
+	}
+}
+
+// TestEnvelopeExprContextExposesResultAndRegistered pins the new keys
+// added by #210: `.result` only when the caller passes a non-nil
+// result, and `.registered` only when the registered map is
+// non-empty.
+func TestEnvelopeExprContextExposesResultAndRegistered(t *testing.T) {
+	base := map[string]interface{}{"env": "prod"}
+	env := &tasks.TaskEnvelope{Name: "x"}
+
+	got := envelopeExprContext(base, env, nil, nil)
+	if _, ok := got["result"]; ok {
+		t.Errorf("result should be omitted when nil; got %v", got)
+	}
+	if _, ok := got["registered"]; ok {
+		t.Errorf("registered should be omitted when empty; got %v", got)
+	}
+
+	state := tasks.TaskOutputState{Changed: true}
+	registered := map[string]tasks.RegisteredValue{"foo": {TaskOutputState: state}}
+	got = envelopeExprContext(base, env, state, registered)
+	if got["result"] == nil {
+		t.Errorf("result should be exposed when non-nil; got %v", got)
+	}
+	if got["registered"] == nil {
+		t.Errorf("registered should be exposed when non-empty; got %v", got)
 	}
 }
 

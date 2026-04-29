@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
@@ -43,6 +44,66 @@ func TestWithExecResultDoesNotMutateReceiver(t *testing.T) {
 	}
 	if original.ExitCode != 7 {
 		t.Errorf("receiver ExitCode mutated: %d", original.ExitCode)
+	}
+}
+
+// TestExecutePlanProbeErrorPopulatesStderrFromExecError pins the
+// behavior #210 added: when a probe helper bubbles a CallExecCommand
+// failure, the wrapped *subprocess.ExecError carries the response
+// fields, and ExecutePlan recovers them onto the returned
+// TaskOutputState so failed_when predicates can match against
+// `result.Stderr` even on probe-error paths.
+func TestExecutePlanProbeErrorPopulatesStderrFromExecError(t *testing.T) {
+	execErr := &subprocess.ExecError{
+		Response: subprocess.ExecCommandResponse{
+			Stdout:   "stdout text",
+			Stderr:   "App nonexistent does not exist",
+			ExitCode: 20,
+		},
+		Err: errors.New("App nonexistent does not exist"),
+	}
+	got := ExecutePlan(PlanResult{
+		Status:       PlanStatusError,
+		Error:        execErr,
+		DesiredState: StatePresent,
+	})
+	if got.Error == nil {
+		t.Fatalf("expected error to propagate")
+	}
+	if got.Stderr != "App nonexistent does not exist" {
+		t.Errorf("stderr should recover from ExecError; got %q", got.Stderr)
+	}
+	if got.Stdout != "stdout text" {
+		t.Errorf("stdout should recover from ExecError; got %q", got.Stdout)
+	}
+	if got.ExitCode != 20 {
+		t.Errorf("exit code should recover from ExecError; got %d", got.ExitCode)
+	}
+}
+
+// TestExecutePlanExplicitProbeFieldsTakePrecedence pins that PlanResult
+// fields populated by a probe helper that called PlanErrorFromExec
+// directly are not overwritten by the ExecError fallback.
+func TestExecutePlanExplicitProbeFieldsTakePrecedence(t *testing.T) {
+	execErr := &subprocess.ExecError{
+		Response: subprocess.ExecCommandResponse{
+			Stderr:   "from-execerror",
+			ExitCode: 1,
+		},
+		Err: errors.New("boom"),
+	}
+	got := ExecutePlan(PlanResult{
+		Status:       PlanStatusError,
+		Error:        execErr,
+		DesiredState: StatePresent,
+		Stderr:       "explicit",
+		ExitCode:     42,
+	})
+	if got.Stderr != "explicit" {
+		t.Errorf("explicit Stderr should win; got %q", got.Stderr)
+	}
+	if got.ExitCode != 42 {
+		t.Errorf("explicit ExitCode should win; got %d", got.ExitCode)
 	}
 }
 
