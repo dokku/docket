@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dokku/docket/subprocess"
+	"github.com/dokku/docket/tasks"
 	"github.com/fatih/color"
 	"github.com/mitchellh/cli"
 )
@@ -280,6 +281,53 @@ func TestFormatterColorOnEmitsAnsi(t *testing.T) {
 	}
 	if !strings.Contains(got, "[changed]") {
 		t.Errorf("colored output should still contain marker text, got %q", got)
+	}
+}
+
+func TestApplyTaskErrorRendersStdout(t *testing.T) {
+	f, ui := newTestFormatter(false)
+	f.ApplyTask(ApplyTaskEvent{
+		Name: "create boom",
+		State: tasks.TaskOutputState{
+			Error:  errors.New("app boom already exists"),
+			Stdout: "trying step one\ntrying step two\n",
+		},
+	})
+
+	out := ui.OutputWriter.String()
+	for _, want := range []string{"          ! trying step one", "          ! trying step two"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected stdout continuation %q in:\n%s", want, out)
+		}
+	}
+	// The dokku-prefixed error continuation comes from ErrorContinuation.
+	errOut := ui.ErrorWriter.String()
+	if !strings.Contains(errOut, "[error]") {
+		t.Errorf("expected error marker on stderr, got:\n%s", errOut)
+	}
+}
+
+func TestApplyTaskErrorOmitsEmptyStdout(t *testing.T) {
+	f, ui := newTestFormatter(false)
+	f.ApplyTask(ApplyTaskEvent{
+		Name: "create boom",
+		State: tasks.TaskOutputState{
+			Error: errors.New("app boom already exists"),
+		},
+	})
+
+	for _, line := range strings.Split(ui.OutputWriter.String(), "\n") {
+		// Only the error continuation may have a `!` prefix; that is
+		// emitted via ErrorContinuation -> Continuation('!') with the
+		// `dokku:` body. Empty Stdout should not produce another `!`
+		// line.
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "!") && !strings.Contains(trimmed, "dokku:") && !strings.Contains(trimmed, "ssh:") {
+			t.Errorf("unexpected `!` continuation when Stdout is empty: %q", line)
+		}
 	}
 }
 

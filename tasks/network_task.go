@@ -139,6 +139,7 @@ func destroyNetwork(name string) TaskOutputState {
 	if err != nil {
 		return TaskOutputErrorFromExec(state, err, result)
 	}
+	state = state.WithExecResult(result)
 	state.Changed = true
 	state.State = StateAbsent
 	return state

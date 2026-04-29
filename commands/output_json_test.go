@@ -165,6 +165,57 @@ func TestJSONEmitterApplyTaskError(t *testing.T) {
 	}
 }
 
+func TestJSONEmitterApplyTaskErrorIncludesExecOutput(t *testing.T) {
+	e, ui := emitterTestUI()
+	e.ApplyTask(ApplyTaskEvent{
+		Play: "tasks",
+		Name: "create app",
+		State: tasks.TaskOutputState{
+			Error:        errors.New("app foo already exists"),
+			DesiredState: tasks.StatePresent,
+			Stdout:       "trying step one\n",
+			Stderr:       "app foo already exists\n",
+			ExitCode:     1,
+		},
+	})
+	ev := decodeOnly(t, ui.OutputWriter.String())
+	if ev["stdout"] != "trying step one\n" {
+		t.Errorf("stdout = %v", ev["stdout"])
+	}
+	if ev["stderr"] != "app foo already exists\n" {
+		t.Errorf("stderr = %v", ev["stderr"])
+	}
+	if ev["exit_code"].(float64) != 1 {
+		t.Errorf("exit_code = %v, want 1", ev["exit_code"])
+	}
+}
+
+func TestJSONEmitterApplyTaskOKOmitsExecOutput(t *testing.T) {
+	e, ui := emitterTestUI()
+	e.ApplyTask(ApplyTaskEvent{
+		Play: "tasks",
+		Name: "ensure api",
+		State: tasks.TaskOutputState{
+			Changed:      true,
+			State:        tasks.StatePresent,
+			DesiredState: tasks.StatePresent,
+			Stdout:       "ok\n",
+			Stderr:       "warn\n",
+			ExitCode:     0,
+		},
+	})
+	ev := decodeOnly(t, ui.OutputWriter.String())
+	if _, ok := ev["stdout"]; ok {
+		t.Errorf("stdout should be omitted on non-error events, got %v", ev["stdout"])
+	}
+	if _, ok := ev["stderr"]; ok {
+		t.Errorf("stderr should be omitted on non-error events, got %v", ev["stderr"])
+	}
+	if _, ok := ev["exit_code"]; ok {
+		t.Errorf("exit_code should be omitted on non-error events, got %v", ev["exit_code"])
+	}
+}
+
 func TestJSONEmitterApplyTaskWhenError(t *testing.T) {
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{

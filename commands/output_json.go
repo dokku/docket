@@ -81,6 +81,13 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	case ev.State.Error != nil:
 		out["status"] = "error"
 		out["error"] = subprocess.MaskString(PrefixErrorMessage(ev.State.Error))
+		if ev.State.Stderr != "" {
+			out["stderr"] = subprocess.MaskString(ev.State.Stderr)
+		}
+		if ev.State.Stdout != "" {
+			out["stdout"] = subprocess.MaskString(ev.State.Stdout)
+		}
+		out["exit_code"] = ev.State.ExitCode
 	case ev.InvalidState:
 		out["status"] = "error"
 		out["error"] = subprocess.MaskString(invalidStateMessage(ev.State))

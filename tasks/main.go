@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dokku/docket/subprocess"
 	sigil "github.com/gliderlabs/sigil"
 	"github.com/gobuffalo/flect"
 	defaults "github.com/mcuadros/go-defaults"
@@ -112,6 +113,10 @@ type TaskOutputState struct {
 	// Error is the error of the task
 	Error error
 
+	// ExitCode is the exit code of the last subprocess command the task
+	// executed. Zero when the call succeeded or no subprocess ran.
+	ExitCode int
+
 	// Message is the message of the task
 	Message string
 
@@ -120,6 +125,28 @@ type TaskOutputState struct {
 
 	// State is the state of the task
 	State State
+
+	// Stderr is the captured stderr of the last subprocess command the
+	// task executed. Empty when no subprocess ran. Tasks that issue
+	// multiple subprocess calls record only the final call's stderr;
+	// per-call output, when needed, lives on Commands.
+	Stderr string
+
+	// Stdout is the captured stdout of the last subprocess command the
+	// task executed. Empty when no subprocess ran. Same last-call-wins
+	// rule as Stderr.
+	Stdout string
+}
+
+// WithExecResult returns a copy of s with Stdout/Stderr/ExitCode populated
+// from r. Callers use it from the success path so the returned state
+// mirrors the underlying subprocess.ExecCommandResponse without having to
+// assign each field by hand.
+func (s TaskOutputState) WithExecResult(r subprocess.ExecCommandResponse) TaskOutputState {
+	s.Stdout = r.Stdout
+	s.Stderr = r.Stderr
+	s.ExitCode = r.ExitCode
+	return s
 }
 
 // PlanStatus is the short marker that summarizes a planned change.

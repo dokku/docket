@@ -108,6 +108,36 @@ EOF
   assert_output --partial "1 error"
 }
 
+@test "docket apply --json on error emits exit_code, stderr" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: add ports to a missing app
+      dokku_ports:
+        app: docket-test-output-missing
+        port_mappings:
+          - { scheme: http, host_port: 80, container_port: 5000 }
+        state: present
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --json
+  assert_failure
+  local task_event
+  task_event="$(printf '%s\n' "${output}" | jq -c 'select(.type=="task" and .status=="error")' | head -1)"
+  if [ -z "${task_event}" ]; then
+    fail "expected an errored task event in:${output}"
+  fi
+  local exit_code
+  exit_code="$(printf '%s' "${task_event}" | jq -r '.exit_code // empty')"
+  if [ -z "${exit_code}" ] || [ "${exit_code}" = "0" ]; then
+    fail "expected non-zero exit_code on errored task event, got '${exit_code}' in: ${task_event}"
+  fi
+  local stderr
+  stderr="$(printf '%s' "${task_event}" | jq -r '.stderr // empty')"
+  if [ -z "${stderr}" ]; then
+    fail "expected stderr on errored task event in: ${task_event}"
+  fi
+}
+
 @test "docket apply respects NO_COLOR" {
   write_tasks_file <<EOF
 ---

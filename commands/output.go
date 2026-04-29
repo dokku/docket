@@ -214,6 +214,12 @@ func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
 	case ev.State.Error != nil:
 		f.TaskLine(MarkerError, ev.Name, "")
 		f.ErrorContinuation(ev.State.Error)
+		// Stderr already surfaces via the dokku-prefixed continuation:
+		// subprocess.CallExecCommand wraps stderr into the error itself.
+		// Stdout is otherwise lost on the error path.
+		if ev.State.Stdout != "" {
+			f.Continuation('!', ev.State.Stdout)
+		}
 		if f.verbose {
 			for _, cmd := range ev.State.Commands {
 				f.Continuation('\u2192', cmd)
