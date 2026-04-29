@@ -149,6 +149,9 @@ Each task entry in `tasks.yml` admits a small set of cross-cutting envelope keys
 | `changed_when` | active | expr override for the task's "changed" verdict. |
 | `failed_when` | active | expr override for the task's "failed" verdict. |
 | `ignore_errors` | active | Continue on task failure (apply only). |
+| `block` | active | Try clause: list of child task entries that run in order; the first error triggers `rescue`. |
+| `rescue` | active | Catch clause: list of child task entries that run on the first uncaught error in `block`. |
+| `always` | active | Finally clause: list of child task entries that run unconditionally after `block` / `rescue`. |
 
 Unknown envelope keys are rejected at parse time with a "did you mean" suggestion against the closest valid key.
 
@@ -307,6 +310,38 @@ When `register:` is used with `loop:`, the registered value carries an additiona
 ```
 
 `ignore_errors` is meaningful only for `apply`. `plan` never aborts a run, so the flag is a no-op there.
+
+#### `block:` / `rescue:` / `always:` structured error handling
+
+A task entry that carries `block:` becomes a *group entry*: try/catch/finally over a list of nested task entries. The wrapping envelope (`name`, `tags`, `when`, `loop`, `register`, `changed_when`, `failed_when`, `ignore_errors`) applies to the whole group; children execute in order under the group's umbrella.
+
+```yaml
+- tasks:
+    - name: deploy with rollback
+      block:
+        - dokku_app_clone:    { source_app: api, app: api-candidate }
+        - dokku_git_sync:     { app: api-candidate, repository: "{{ .repo }}" }
+        - dokku_checks_toggle: { app: api-candidate, state: enabled }
+      rescue:
+        - dokku_app: { app: api-candidate, state: absent }
+      always:
+        - dokku_config:
+            app: api
+            config:
+              LAST_DEPLOY_ATTEMPT: "now"
+```
+
+Execution rules:
+
+- `block:` children run in source order. The first child whose post-override verdict is failed and whose own `ignore_errors` is false stops the block.
+- When `rescue:` is non-empty, a stopped block triggers every `rescue:` child in order. Rescue children run with the failing block child's `TaskOutputState` bound under `.failed_task`, so a rescue can branch on the actual cause: `when: 'failed_task.Stderr contains "..."'` is the standard idiom.
+- `always:` children run unconditionally after `block:` / `rescue:`, even if rescue itself errored.
+- The group's own envelope predicates (`failed_when`, `changed_when`, `register`, `ignore_errors`) apply to the synthesized group outcome - `register: <name>` snapshots the post-rescue, post-always result; `ignore_errors: true` on the group swallows any residual error after rescue + always.
+- `ignore_errors: true` on a *child* of `block:` swallows that child's error and execution continues; it does NOT trigger `rescue:`. Rescue is the "handle" path; `ignore_errors` is the "swallow" path.
+- `loop:` on a group runs the entire group once per item, with `.item` / `.index` shared across every nested child.
+- Groups nest: a group entry can appear inside another group's `block:` / `rescue:` / `always:` lists.
+
+`plan` reports drift for `block:` children unconditionally. `rescue:` and `always:` children plan only when at least one block child reports drift or a probe error, since `Plan()` cannot fail the way `Execute()` can. Group children render with a `[block]` / `[rescue]` / `[always]` prefix on their event line; the group's own summary line carries a `(group)` annotation.
 
 ### Scaffolding with `init`
 

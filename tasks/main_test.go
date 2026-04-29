@@ -695,3 +695,164 @@ func TestTaskDocStrings(t *testing.T) {
 		}
 	}
 }
+
+func TestGetTasksGroupBlockOnly(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: deploy
+      block:
+        - name: ensure app
+          dokku_app:
+            app: my-app
+        - name: also ensure
+          dokku_app:
+            app: my-other-app
+`)
+	got, err := GetTasks(data, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("GetTasks should not error for block-only group, got: %v", err)
+	}
+	keys := got.Keys()
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 envelope (the group), got %d: %v", len(keys), keys)
+	}
+	env := got.GetEnvelope("deploy")
+	if env == nil {
+		t.Fatal("expected envelope named 'deploy'")
+	}
+	if !env.IsGroup() {
+		t.Fatal("expected envelope to be a group")
+	}
+	if len(env.Block) != 2 {
+		t.Errorf("expected 2 block children, got %d", len(env.Block))
+	}
+	if len(env.Rescue) != 0 {
+		t.Errorf("expected 0 rescue children, got %d", len(env.Rescue))
+	}
+	if len(env.Always) != 0 {
+		t.Errorf("expected 0 always children, got %d", len(env.Always))
+	}
+	if env.Task != nil {
+		t.Errorf("group envelope must have nil Task, got %T", env.Task)
+	}
+	if env.TypeName != "" {
+		t.Errorf("group envelope TypeName must be empty, got %q", env.TypeName)
+	}
+}
+
+func TestGetTasksGroupAllClauses(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: deploy with rollback
+      block:
+        - dokku_app:
+            app: candidate
+      rescue:
+        - dokku_app:
+            app: candidate
+            state: absent
+      always:
+        - dokku_config:
+            app: existing
+            config:
+              LAST_ATTEMPT: now
+`)
+	got, err := GetTasks(data, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("GetTasks: %v", err)
+	}
+	env := got.GetEnvelope("deploy with rollback")
+	if env == nil {
+		t.Fatal("expected envelope named 'deploy with rollback'")
+	}
+	if len(env.Block) != 1 || len(env.Rescue) != 1 || len(env.Always) != 1 {
+		t.Errorf("expected 1/1/1 block/rescue/always, got %d/%d/%d", len(env.Block), len(env.Rescue), len(env.Always))
+	}
+}
+
+func TestGetTasksRejectsEmptyBlock(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: empty
+      block: []
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for empty block, got nil")
+	}
+	if !strings.Contains(err.Error(), "block: must contain at least one child task") {
+		t.Errorf("expected 'block: must contain at least one child task' error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsRescueWithoutBlock(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: orphan
+      rescue:
+        - dokku_app:
+            app: x
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for rescue without block, got nil")
+	}
+	if !strings.Contains(err.Error(), "rescue: without block:") {
+		t.Errorf("expected 'rescue: without block:' error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsBlockAlongsideTaskType(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: hybrid
+      block:
+        - dokku_app:
+            app: x
+      dokku_app:
+        app: y
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for block alongside task-type, got nil")
+	}
+	if !strings.Contains(err.Error(), "is a block: group and cannot also carry task-type key") {
+		t.Errorf("expected block+task-type error, got: %v", err)
+	}
+}
+
+func TestGetTasksNestedGroup(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: outer
+      block:
+        - name: inner
+          block:
+            - dokku_app:
+                app: deepest
+          rescue:
+            - dokku_app:
+                app: rescued
+`)
+	got, err := GetTasks(data, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("GetTasks for nested group: %v", err)
+	}
+	outer := got.GetEnvelope("outer")
+	if outer == nil || !outer.IsGroup() {
+		t.Fatal("expected outer group envelope")
+	}
+	if len(outer.Block) != 1 {
+		t.Fatalf("outer.Block: want 1 child, got %d", len(outer.Block))
+	}
+	inner := outer.Block[0]
+	if !inner.IsGroup() {
+		t.Fatal("expected inner envelope to be a group")
+	}
+	if len(inner.Block) != 1 {
+		t.Errorf("inner.Block: want 1, got %d", len(inner.Block))
+	}
+	if len(inner.Rescue) != 1 {
+		t.Errorf("inner.Rescue: want 1, got %d", len(inner.Rescue))
+	}
+}

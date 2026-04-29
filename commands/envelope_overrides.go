@@ -31,13 +31,14 @@ func applyEnvelopeOverrides(
 	state tasks.TaskOutputState,
 	playExprCtx map[string]interface{},
 	registered map[string]tasks.RegisteredValue,
+	failedTask interface{},
 ) (tasks.TaskOutputState, error) {
 	if env == nil {
 		return state, nil
 	}
 
 	if env.HasFailedWhen() {
-		ctx := envelopeExprContext(playExprCtx, env, state, registered)
+		ctx := envelopeExprContext(playExprCtx, env, state, registered, failedTask)
 		ok, err := tasks.EvalBool(env.FailedWhenProgram(), ctx)
 		if err != nil {
 			return state, fmt.Errorf("failed_when expression error: %w", err)
@@ -55,7 +56,7 @@ func applyEnvelopeOverrides(
 	}
 
 	if env.HasChangedWhen() {
-		ctx := envelopeExprContext(playExprCtx, env, state, registered)
+		ctx := envelopeExprContext(playExprCtx, env, state, registered, failedTask)
 		ok, err := tasks.EvalBool(env.ChangedWhenProgram(), ctx)
 		if err != nil {
 			return state, fmt.Errorf("changed_when expression error: %w", err)

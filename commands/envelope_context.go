@@ -25,19 +25,27 @@ func buildEnvelopeExprContext(inputs map[string]interface{}) map[string]interfac
 // post-execute `changed_when` / `failed_when` evaluation phase; pass
 // nil from `when:` call sites so predicates running before the task
 // fires do not see a stale result.
+//
+// failedTask is non-nil only inside a #211 rescue child's predicate
+// evaluation; it is bound under `.failed_task` so a rescue handler can
+// inspect the failing block child's TaskOutputState (e.g.
+// `failed_task.Stderr contains "..."`). Outside rescue scope the key is
+// absent.
 func envelopeExprContext(
 	base map[string]interface{},
 	env *tasks.TaskEnvelope,
 	result interface{},
 	registered map[string]tasks.RegisteredValue,
+	failedTask interface{},
 ) map[string]interface{} {
 	hasLoopVars := env != nil && env.IsLoopExpansion
 	hasResult := result != nil
 	hasRegistered := len(registered) > 0
-	if !hasLoopVars && !hasResult && !hasRegistered {
+	hasFailedTask := failedTask != nil
+	if !hasLoopVars && !hasResult && !hasRegistered && !hasFailedTask {
 		return base
 	}
-	out := make(map[string]interface{}, len(base)+3)
+	out := make(map[string]interface{}, len(base)+4)
 	for k, v := range base {
 		out[k] = v
 	}
@@ -56,6 +64,9 @@ func envelopeExprContext(
 			registeredCopy[k] = v
 		}
 		out["registered"] = registeredCopy
+	}
+	if hasFailedTask {
+		out["failed_task"] = failedTask
 	}
 	return out
 }
