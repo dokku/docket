@@ -70,7 +70,7 @@ EOF
 
 @test "docket auto-detects tasks.json when no --tasks flag is given" {
   cd "$BATS_TEST_TMPDIR"
-  cat > tasks.json <<'EOF'
+  cat >tasks.json <<'EOF'
 [
   {
     tasks: [
@@ -87,14 +87,14 @@ EOF
 
 @test "docket prefers tasks.yml over tasks.json when both exist" {
   cd "$BATS_TEST_TMPDIR"
-  cat > tasks.yml <<'EOF'
+  cat >tasks.yml <<'EOF'
 ---
 - tasks:
     - name: yaml-task
       dokku_app:
         app: api
 EOF
-  cat > tasks.json <<'EOF'
+  cat >tasks.json <<'EOF'
 [
   { tasks: [{ name: "json-task", dokku_app: { app: "api" } }] },
 ]

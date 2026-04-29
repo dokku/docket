@@ -14,7 +14,6 @@ set -euo pipefail
 # the apt packages can install the libraries anywhere and point at
 # them locally; CI keeps using the apt-installed /usr/lib paths.
 load_bats_libraries() {
-  local lib
   local -a search_paths=()
   if [ -n "${BATS_LIB_PATH:-}" ]; then
     local IFS=:
@@ -28,12 +27,12 @@ load_bats_libraries() {
   local found_assert=0
   for base in "${search_paths[@]}"; do
     if [ "$found_support" -eq 0 ] && [ -f "$base/bats-support/load.bash" ]; then
-      # shellcheck disable=SC1090
+      # shellcheck disable=SC1090,SC1091
       source "$base/bats-support/load.bash"
       found_support=1
     fi
     if [ "$found_assert" -eq 0 ] && [ -f "$base/bats-assert/load.bash" ]; then
-      # shellcheck disable=SC1090
+      # shellcheck disable=SC1090,SC1091
       source "$base/bats-assert/load.bash"
       found_assert=1
     fi
