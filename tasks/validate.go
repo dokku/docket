@@ -10,8 +10,21 @@ import (
 
 	sigil "github.com/gliderlabs/sigil"
 	defaults "github.com/mcuadros/go-defaults"
+	json5 "github.com/titanous/json5"
 	yaml "gopkg.in/yaml.v3"
 )
+
+// json5ToYAMLBytes parses data as JSON5 and re-emits it as YAML so the
+// rest of the validator (which is yaml.v3 Node-based) can operate
+// uniformly. Used at the top of Validate; sigil templates inside string
+// values survive verbatim since they are just text to both parsers.
+func json5ToYAMLBytes(data []byte) ([]byte, error) {
+	var raw interface{}
+	if err := json5.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("json5 parse error: %v", err)
+	}
+	return yaml.Marshal(raw)
+}
 
 // Problem is a single validation finding emitted by Validate.
 //
@@ -37,11 +50,19 @@ type Problem struct {
 // `validate --start-at-task` respectively. They power the cross-reference
 // audit that runs under `--strict`: each non-empty value must resolve to a
 // real play / task name in the recipe.
+//
+// Format selects the on-disk surface syntax: "yaml" (default) or "json5".
+// JSON5 input is normalised to YAML bytes once at the top of Validate so
+// the rest of the pipeline (sigil render, yaml.Node walk, line/column
+// reporting) keeps a single implementation. Line / column numbers in
+// problems for a JSON5 file therefore index into the normalised form,
+// not the original JSON5 source.
 type ValidateOptions struct {
 	Strict         bool
 	InputOverrides map[string]bool
 	PlayName       string
 	StartAtTask    string
+	Format         string
 }
 
 // validatePlaceholder is substituted for any input that has no default during
@@ -122,6 +143,21 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 	// surfaces real template syntax errors.
 	if _, renderProblem := renderForValidate(data, map[string]interface{}{}); renderProblem != nil {
 		return []Problem{*renderProblem}
+	}
+
+	// JSON5 is normalised to YAML bytes once so the AST walk below stays
+	// yaml.v3-only. The JSON5 parse runs after the sigil syntax check so
+	// a broken template surfaces as a template_error rather than a
+	// confusing json5 parse error.
+	if IsJSON5Format(opts.Format) {
+		converted, err := json5ToYAMLBytes(data)
+		if err != nil {
+			return []Problem{{
+				Code:    "json5_parse",
+				Message: err.Error(),
+			}}
+		}
+		data = converted
 	}
 
 	var rawRoot yaml.Node

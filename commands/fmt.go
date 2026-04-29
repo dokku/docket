@@ -38,7 +38,7 @@ func (c *FmtCommand) Name() string {
 }
 
 func (c *FmtCommand) Synopsis() string {
-	return "Formats a tasks.yml file canonically"
+	return "Formats a tasks file canonically (YAML or JSON5)"
 }
 
 func (c *FmtCommand) Help() string {
@@ -48,13 +48,15 @@ func (c *FmtCommand) Help() string {
 func (c *FmtCommand) Examples() map[string]string {
 	appName := os.Getenv("CLI_APP_NAME")
 	return map[string]string{
-		"Format ./tasks.yml in place":         fmt.Sprintf("%s %s", appName, c.Name()),
-		"Check whether files are canonical":   fmt.Sprintf("%s %s --check", appName, c.Name()),
-		"Print the diff without writing":      fmt.Sprintf("%s %s --diff", appName, c.Name()),
-		"CI gate: print diff and fail on bad": fmt.Sprintf("%s %s --check --diff", appName, c.Name()),
-		"Read from stdin, write to stdout":    fmt.Sprintf("cat tasks.yml | %s %s -", appName, c.Name()),
-		"Format every yaml under recipes/":    fmt.Sprintf("%s %s 'recipes/*.yml'", appName, c.Name()),
-		"Force colorized diff in a pipe":      fmt.Sprintf("%s %s --diff --color always", appName, c.Name()),
+		"Format ./tasks.yml in place":             fmt.Sprintf("%s %s", appName, c.Name()),
+		"Format a JSON5 task file in place":       fmt.Sprintf("%s %s tasks.json", appName, c.Name()),
+		"Check whether files are canonical":       fmt.Sprintf("%s %s --check", appName, c.Name()),
+		"Print the diff without writing":          fmt.Sprintf("%s %s --diff", appName, c.Name()),
+		"CI gate: print diff and fail on bad":     fmt.Sprintf("%s %s --check --diff", appName, c.Name()),
+		"Read from stdin, write to stdout":        fmt.Sprintf("cat tasks.yml | %s %s -", appName, c.Name()),
+		"Format every yaml under recipes/":        fmt.Sprintf("%s %s 'recipes/*.yml'", appName, c.Name()),
+		"Format every JSON5 file under recipes/":  fmt.Sprintf("%s %s 'recipes/*.json5'", appName, c.Name()),
+		"Force colorized diff in a pipe":          fmt.Sprintf("%s %s --diff --color always", appName, c.Name()),
 	}
 }
 
@@ -63,7 +65,7 @@ func (c *FmtCommand) Arguments() []command.Argument {
 }
 
 func (c *FmtCommand) AutocompleteArgs() complete.Predictor {
-	return complete.PredictFiles("*.yml")
+	return complete.PredictFiles(taskFileAutocompleteGlob)
 }
 
 func (c *FmtCommand) ParsedArguments(args []string) (map[string]command.Argument, error) {
@@ -132,13 +134,18 @@ func (c *FmtCommand) Run(args []string) int {
 // runStdin reads stdin, formats it, and writes the result to stdout in
 // the default mode. With --diff the diff goes to stdout; with --check
 // the exit code reflects whether the input was canonical.
+//
+// Stdin has no filename to drive format detection, so it sniffs the
+// first non-trivia byte: a leading [ or { signals JSON5; anything else
+// (including the typical `---` document marker or a leading comment-
+// only YAML file) goes through the YAML formatter.
 func (c *FmtCommand) runStdin() int {
 	src, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read stdin: %v", err))
 		return 1
 	}
-	formatted, err := tasks.Format(src)
+	formatted, err := formatTaskFileBytes(src, sniffStdinFormat(src))
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("format error: %v", err))
 		return 1
@@ -180,7 +187,7 @@ func (c *FmtCommand) formatPath(path string) int {
 		return 1
 	}
 
-	formatted, err := tasks.Format(src)
+	formatted, err := formatTaskFileBytes(src, detectTaskFileFormat(path))
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("%s: %v", path, err))
 		return 1
@@ -219,13 +226,54 @@ func (c *FmtCommand) formatPath(path string) int {
 	return 0
 }
 
+// formatTaskFileBytes dispatches to the YAML or JSON5 formatter based
+// on format. Centralised so the in-place and stdin paths stay byte-
+// identical for the same logical operation.
+func formatTaskFileBytes(src []byte, format string) ([]byte, error) {
+	if format == taskFileFormatJSON5 {
+		return tasks.FormatJSON5(src)
+	}
+	return tasks.Format(src)
+}
+
+// sniffStdinFormat picks a format for stdin input. JSON5 input always
+// starts (after optional whitespace and comments) with `[` or `{`;
+// YAML recipes start with `-`, `---`, or a key, none of which collide.
+// On ambiguity the function defaults to YAML so existing pipelines
+// keep their pre-#218 behaviour.
+func sniffStdinFormat(src []byte) string {
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+			continue
+		}
+		if c == '/' && i+1 < len(src) && (src[i+1] == '/' || src[i+1] == '*') {
+			// Skip a leading line/block comment - JSON5 idiom.
+			return taskFileFormatJSON5
+		}
+		if c == '[' || c == '{' {
+			return taskFileFormatJSON5
+		}
+		return taskFileFormatYAML
+	}
+	return taskFileFormatYAML
+}
+
 // expandPaths resolves the positional arguments to a sorted, deduped
-// list of file paths. An empty argument list expands to "tasks.yml".
+// list of file paths. An empty argument list expands to the first
+// existing default candidate (tasks.yml -> tasks.yaml -> tasks.json),
+// falling back to "tasks.yml" so the downstream read step produces the
+// familiar "no such file" error message when nothing is present.
 // Each argument is passed through filepath.Glob; literal paths that
 // do not match the glob syntax flow through unchanged.
 func expandPaths(args []string) ([]string, error) {
 	if len(args) == 0 {
-		return []string{"tasks.yml"}, nil
+		for _, candidate := range defaultTaskFileCandidates {
+			if _, err := os.Stat(candidate); err == nil {
+				return []string{candidate}, nil
+			}
+		}
+		return []string{defaultTaskFileCandidates[0]}, nil
 	}
 
 	seen := map[string]bool{}

@@ -173,6 +173,51 @@ func TestArgumentGetValue(t *testing.T) {
 	})
 }
 
+func TestParseInputDocumentJSON5(t *testing.T) {
+	data := []byte(`[
+  {
+    inputs: [
+      // primary input
+      { name: "app", default: "myapp", description: "Application name", required: true, type: "string" },
+      { name: "port", default: "8080", description: "Port number", type: "int" },
+    ],
+    tasks: [],
+  },
+]
+`)
+	inputs, err := parseInputDocument(data, tasks.FormatNameJSON5)
+	if err != nil {
+		t.Fatalf("parseInputDocument failed: %v", err)
+	}
+	if len(inputs) != 2 {
+		t.Fatalf("expected 2 inputs, got %d", len(inputs))
+	}
+	if app, ok := inputs["app"]; !ok || app.Default != "myapp" || !app.Required || app.Type != "string" {
+		t.Errorf("'app' input mismatched: %+v ok=%v", app, ok)
+	}
+	if port, ok := inputs["port"]; !ok || port.Default != "8080" || port.Type != "int" {
+		t.Errorf("'port' input mismatched: %+v ok=%v", port, ok)
+	}
+}
+
+func TestGetInputVariablesJSON5(t *testing.T) {
+	data := []byte(`[
+  {
+    inputs: [
+      { name: "app", default: "myapp" },
+    ],
+    tasks: [],
+  },
+]`)
+	inputs, err := getInputVariables(data, tasks.FormatNameJSON5)
+	if err != nil {
+		t.Fatalf("getInputVariables: %v", err)
+	}
+	if app, ok := inputs["app"]; !ok || app.Default != "myapp" {
+		t.Errorf("'app' input mismatched: %+v ok=%v", app, ok)
+	}
+}
+
 func TestParseInputYamlValidInputs(t *testing.T) {
 	data := []byte(`---
 - inputs:
@@ -318,7 +363,7 @@ func TestGetInputVariablesValid(t *testing.T) {
       required: true
   tasks: []
 `)
-	inputs, err := getInputVariables(data)
+	inputs, err := getInputVariables(data, tasks.FormatYAML)
 	if err != nil {
 		t.Fatalf("getInputVariables failed: %v", err)
 	}
@@ -341,7 +386,7 @@ func TestGetInputVariablesTemplateError(t *testing.T) {
     - name: {{ .broken
   tasks: []
 `)
-	_, err := getInputVariables(data)
+	_, err := getInputVariables(data, tasks.FormatYAML)
 	if err == nil {
 		t.Fatal("expected error for bad template syntax")
 	}

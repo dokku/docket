@@ -17,7 +17,6 @@ import (
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/posener/complete"
 	flag "github.com/spf13/pflag"
-	yaml "gopkg.in/yaml.v3"
 )
 
 // InitCommand scaffolds a starter tasks.yml from an embedded template.
@@ -50,13 +49,14 @@ func (c *InitCommand) Help() string {
 func (c *InitCommand) Examples() map[string]string {
 	appName := os.Getenv("CLI_APP_NAME")
 	return map[string]string{
-		"Scaffold tasks.yml using cwd defaults": fmt.Sprintf("%s %s", appName, c.Name()),
-		"Write a minimal one-task scaffold":     fmt.Sprintf("%s %s --minimal", appName, c.Name()),
-		"Override the play and app name":        fmt.Sprintf("%s %s --name web", appName, c.Name()),
-		"Override the git repository URL":       fmt.Sprintf("%s %s --repo git@example.com:owner/repo.git", appName, c.Name()),
-		"Write to a specific path":              fmt.Sprintf("%s %s --output path/to/tasks.yml", appName, c.Name()),
-		"Stream the rendered YAML to stdout":    fmt.Sprintf("%s %s --output -", appName, c.Name()),
-		"Overwrite an existing file":            fmt.Sprintf("%s %s --force", appName, c.Name()),
+		"Scaffold tasks.yml using cwd defaults":   fmt.Sprintf("%s %s", appName, c.Name()),
+		"Scaffold a JSON5 tasks.json instead":     fmt.Sprintf("%s %s --output tasks.json", appName, c.Name()),
+		"Write a minimal one-task scaffold":       fmt.Sprintf("%s %s --minimal", appName, c.Name()),
+		"Override the play and app name":          fmt.Sprintf("%s %s --name web", appName, c.Name()),
+		"Override the git repository URL":         fmt.Sprintf("%s %s --repo git@example.com:owner/repo.git", appName, c.Name()),
+		"Write to a specific path":                fmt.Sprintf("%s %s --output path/to/tasks.yml", appName, c.Name()),
+		"Stream the rendered scaffold to stdout":  fmt.Sprintf("%s %s --output -", appName, c.Name()),
+		"Overwrite an existing file":              fmt.Sprintf("%s %s --force", appName, c.Name()),
 	}
 }
 
@@ -86,7 +86,7 @@ func (c *InitCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--output":  complete.PredictFiles("*.yml"),
+			"--output":  complete.PredictFiles(taskFileAutocompleteGlob),
 			"--force":   complete.PredictNothing,
 			"--minimal": complete.PredictNothing,
 			"--name":    complete.PredictNothing,
@@ -123,10 +123,19 @@ func (c *InitCommand) Run(args []string) int {
 		}
 	}
 
+	// Format is inferred from the --output extension: tasks.json /
+	// tasks.json5 -> JSON5, anything else -> YAML. Stdout (--output -)
+	// has no extension to inspect, so it falls through to YAML.
+	format := tasks.FormatYAML
+	if !toStdout {
+		format = detectTaskFileFormat(c.output)
+	}
+
 	rendered, err := renderInit(initOptions{
 		Name:    c.name,
 		Repo:    c.repo,
 		Minimal: c.minimal,
+		Format:  format,
 	})
 	if err != nil {
 		c.Ui.Error(err.Error())
@@ -146,7 +155,7 @@ func (c *InitCommand) Run(args []string) int {
 		return 1
 	}
 
-	taskCount, playCount, err := countTasks(rendered)
+	taskCount, playCount, err := countTasks(rendered, format)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("internal error: rendered scaffold did not parse: %v", err))
 		return 1
@@ -166,11 +175,18 @@ type initOptions struct {
 	Name    string
 	Repo    string
 	Minimal bool
+	// Format selects the on-disk shape of the rendered scaffold. Valid
+	// values are tasks.FormatYAML (default) and tasks.FormatNameJSON5; the
+	// empty string is treated as YAML so existing callers (and tests
+	// that drive renderInit directly) keep their behaviour.
+	Format string
 }
 
 // renderInit reads the right embedded template, parses it with custom
 // delimiters so sigil syntax in the body survives untouched, and returns
-// the rendered bytes (including the leading `---\n` document marker).
+// the rendered bytes. YAML scaffolds are prefixed with the `---\n`
+// document marker; JSON5 scaffolds are emitted as a top-level array
+// (the docket recipe shape) with no marker.
 //
 // Exposed at package scope so unit tests can drive it directly without
 // going through the cli-skeleton UI plumbing.
@@ -180,10 +196,7 @@ func renderInit(opts initOptions) ([]byte, error) {
 		name = "app"
 	}
 
-	templateName := "default.yml.tmpl"
-	if opts.Minimal {
-		templateName = "minimal.yml.tmpl"
-	}
+	templateName := selectInitTemplate(opts.Format, opts.Minimal)
 
 	raw, err := templates.FS.ReadFile(templateName)
 	if err != nil {
@@ -204,9 +217,24 @@ func renderInit(opts initOptions) ([]byte, error) {
 	}
 
 	var out bytes.Buffer
-	out.WriteString("---\n")
+	if !tasks.IsJSON5Format(opts.Format) {
+		out.WriteString("---\n")
+	}
 	out.Write(body.Bytes())
 	return out.Bytes(), nil
+}
+
+// selectInitTemplate returns the embedded template name for (format,
+// minimal). YAML / unknown format -> .yml.tmpl, JSON5 -> .json5.tmpl.
+func selectInitTemplate(format string, minimal bool) string {
+	suffix := "yml"
+	if tasks.IsJSON5Format(format) {
+		suffix = "json5"
+	}
+	if minimal {
+		return "minimal." + suffix + ".tmpl"
+	}
+	return "default." + suffix + ".tmpl"
 }
 
 // defaultName returns the basename of the working directory, or "app" if
@@ -255,12 +283,13 @@ func defaultRepo() string {
 	return ""
 }
 
-// countTasks parses rendered YAML and returns the total number of tasks
-// across all plays plus the play count. Used for the "==> Created
-// tasks.yml (N tasks, M plays)" summary line.
-func countTasks(data []byte) (int, int, error) {
-	var recipe tasks.Recipe
-	if err := yaml.Unmarshal(data, &recipe); err != nil {
+// countTasks parses rendered scaffold bytes and returns the total
+// number of tasks across all plays plus the play count. Used for the
+// "==> Created tasks.yml (N tasks, M plays)" summary line. format
+// selects the parser; the empty string defaults to YAML.
+func countTasks(data []byte, format string) (int, int, error) {
+	recipe, err := tasks.UnmarshalRecipe(data, format)
+	if err != nil {
 		return 0, 0, err
 	}
 	total := 0

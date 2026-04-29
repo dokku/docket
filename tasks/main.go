@@ -12,8 +12,42 @@ import (
 	sigil "github.com/gliderlabs/sigil"
 	"github.com/gobuffalo/flect"
 	defaults "github.com/mcuadros/go-defaults"
+	json5 "github.com/titanous/json5"
 	yaml "gopkg.in/yaml.v3"
 )
+
+// Task file format identifiers shared with the commands package.
+//
+// The empty string and any unrecognised value are treated as YAML so
+// existing call sites that pass no format keep their pre-#218 behaviour.
+const (
+	FormatYAML       = "yaml"
+	FormatNameJSON5  = "json5"
+)
+
+// IsJSON5Format returns true when format is one of the JSON5 aliases.
+// Centralised so the json/json5 split lives in exactly one place.
+func IsJSON5Format(format string) bool {
+	return format == FormatNameJSON5 || format == "json"
+}
+
+// UnmarshalRecipe decodes data as a Recipe using the parser keyed by
+// format. Exposed because the commands package's input-extraction path
+// (parseInputDocument) needs the same dispatch and there is no benefit
+// to duplicating the switch.
+func UnmarshalRecipe(data []byte, format string) (Recipe, error) {
+	recipe := Recipe{}
+	if IsJSON5Format(format) {
+		if err := json5.Unmarshal(data, &recipe); err != nil {
+			return nil, fmt.Errorf("json5 unmarshal error: %v", err.Error())
+		}
+		return recipe, nil
+	}
+	if err := yaml.Unmarshal(data, &recipe); err != nil {
+		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
+	}
+	return recipe, nil
+}
 
 // State represents the desired state of a task
 type State string
@@ -49,48 +83,48 @@ type Recipe []RecipeEntry
 type RecipeEntry struct {
 	// Name is the play's user-facing label. Auto-generated as
 	// "play #N" by GetPlays when omitted.
-	Name string `yaml:"name,omitempty"`
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 
 	// Tags accepts either a YAML list (`tags: [a, b]`) or a scalar
 	// (`tags: a`). Decoded via decodeTags into the Play.Tags slice.
-	Tags interface{} `yaml:"tags,omitempty"`
+	Tags interface{} `yaml:"tags,omitempty" json:"tags,omitempty"`
 
 	// When is the raw expr source for the play-level conditional. Empty
 	// means "always run". Compiled into the Play.whenProgram by GetPlays.
-	When string `yaml:"when,omitempty"`
+	When string `yaml:"when,omitempty" json:"when,omitempty"`
 
 	// Inputs are the play-local input defaults. Layer above file-level
 	// defaults but below --vars-file / CLI overrides (per-play merge
 	// happens in GetPlays).
-	Inputs []Input `yaml:"inputs,omitempty"`
+	Inputs []Input `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 
 	// Tasks is the raw per-play task list, decoded into envelopes by
 	// GetPlays via buildEnvelopesForEntry.
-	Tasks []map[string]interface{} `yaml:"tasks,omitempty"`
+	Tasks []map[string]interface{} `yaml:"tasks,omitempty" json:"tasks,omitempty"`
 }
 
 // Input represents an input for a task
 type Input struct {
 	// Name is the name of the input
-	Name string `yaml:"name"`
+	Name string `yaml:"name" json:"name"`
 
 	// Default is the default value of the input
-	Default string `yaml:"default"`
+	Default string `yaml:"default" json:"default,omitempty"`
 
 	// Description is the description of the input
-	Description string `yaml:"description"`
+	Description string `yaml:"description" json:"description,omitempty"`
 
 	// Required is a flag indicating if the input is required
-	Required bool `yaml:"required"`
+	Required bool `yaml:"required" json:"required,omitempty"`
 
 	// Sensitive marks the input's resolved value as a secret. When true,
 	// the value is masked as `***` anywhere it would otherwise appear in
 	// user-facing output (apply --verbose echoes, plan output, error
 	// messages, and the DOKKU_TRACE debug log).
-	Sensitive bool `yaml:"sensitive"`
+	Sensitive bool `yaml:"sensitive" json:"sensitive,omitempty"`
 
 	// Type is the type of the input
-	Type string `yaml:"type"`
+	Type string `yaml:"type" json:"type,omitempty"`
 
 	// value is the value of the input
 	value string
@@ -410,14 +444,22 @@ func GetTasks(data []byte, context map[string]interface{}) (OrderedStringEnvelop
 // the evaluation context (file-level only, per the spec - the play's own
 // inputs are not visible to its own when).
 func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
+	return GetPlaysWithFormat(data, FormatYAML, context, userSet)
+}
+
+// GetPlaysWithFormat is the format-aware variant of GetPlays. format is
+// one of "yaml" / "json5"; the empty string is treated as YAML. The
+// per-format dispatch happens at every parse point inside the function
+// so sigil templates render uniformly across both surfaces.
+func GetPlaysWithFormat(data []byte, format string, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
 	baseRendered, err := renderRecipeBytes(data, context)
 	if err != nil {
 		return nil, err
 	}
 
-	baseRecipe := Recipe{}
-	if err := yaml.Unmarshal(baseRendered, &baseRecipe); err != nil {
-		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
+	baseRecipe, err := UnmarshalRecipe(baseRendered, format)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(baseRecipe) == 0 {
@@ -461,7 +503,7 @@ func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bo
 		}
 
 		playCtx := BuildPerPlayContext(context, play.Inputs, userSet)
-		perPlayRecipe, err := renderRecipe(data, playCtx)
+		perPlayRecipe, err := renderRecipeWithFormat(data, format, playCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -510,15 +552,16 @@ func renderRecipeBytes(data []byte, context map[string]interface{}) ([]byte, err
 // renderRecipe is the convenience wrapper that renders data with context
 // and unmarshals the result into a Recipe.
 func renderRecipe(data []byte, context map[string]interface{}) (Recipe, error) {
+	return renderRecipeWithFormat(data, FormatYAML, context)
+}
+
+// renderRecipeWithFormat is renderRecipe's format-aware variant.
+func renderRecipeWithFormat(data []byte, format string, context map[string]interface{}) (Recipe, error) {
 	rendered, err := renderRecipeBytes(data, context)
 	if err != nil {
 		return nil, err
 	}
-	recipe := Recipe{}
-	if err := yaml.Unmarshal(rendered, &recipe); err != nil {
-		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
-	}
-	return recipe, nil
+	return UnmarshalRecipe(rendered, format)
 }
 
 // BuildPerPlayContext layers the play's `inputs:` defaults above the

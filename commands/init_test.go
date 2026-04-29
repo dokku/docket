@@ -266,6 +266,82 @@ func TestInitMinimalPassesValidate(t *testing.T) {
 	}
 }
 
+func TestInitDefaultJSON5PassesValidate(t *testing.T) {
+	out, err := renderInit(initOptions{Name: "demo", Format: tasks.FormatNameJSON5})
+	if err != nil {
+		t.Fatalf("renderInit (json5): %v", err)
+	}
+	if problems := tasks.Validate(out, tasks.ValidateOptions{Format: tasks.FormatNameJSON5}); len(problems) != 0 {
+		t.Fatalf("JSON5 default scaffold should pass validate, got %+v", problems)
+	}
+	out2, err := renderInit(initOptions{Name: "demo", Repo: "git@example.com:foo/bar.git", Format: tasks.FormatNameJSON5})
+	if err != nil {
+		t.Fatalf("renderInit (json5 with repo): %v", err)
+	}
+	if problems := tasks.Validate(out2, tasks.ValidateOptions{Format: tasks.FormatNameJSON5}); len(problems) != 0 {
+		t.Fatalf("JSON5 scaffold with --repo should pass validate, got %+v", problems)
+	}
+}
+
+func TestInitMinimalJSON5PassesValidate(t *testing.T) {
+	out, err := renderInit(initOptions{Name: "demo", Minimal: true, Format: tasks.FormatNameJSON5})
+	if err != nil {
+		t.Fatalf("renderInit (minimal json5): %v", err)
+	}
+	if problems := tasks.Validate(out, tasks.ValidateOptions{Format: tasks.FormatNameJSON5}); len(problems) != 0 {
+		t.Fatalf("minimal JSON5 scaffold should pass validate, got %+v", problems)
+	}
+}
+
+func TestInitJSON5HasNoYAMLDocumentMarker(t *testing.T) {
+	out, err := renderInit(initOptions{Name: "demo", Format: tasks.FormatNameJSON5})
+	if err != nil {
+		t.Fatalf("renderInit: %v", err)
+	}
+	if strings.HasPrefix(string(out), "---") {
+		t.Errorf("JSON5 scaffold should not start with YAML document marker:\n%s", out)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(out)), "[") {
+		t.Errorf("JSON5 scaffold should start with [:\n%s", out)
+	}
+}
+
+func TestInitJSON5RoundTripsThroughGetPlays(t *testing.T) {
+	out, err := renderInit(initOptions{Name: "api", Format: tasks.FormatNameJSON5})
+	if err != nil {
+		t.Fatalf("renderInit: %v", err)
+	}
+	plays, err := tasks.GetPlaysWithFormat(out, tasks.FormatNameJSON5, map[string]interface{}{
+		"app":  "api",
+		"repo": "https://example.com/repo.git",
+	}, nil)
+	if err != nil {
+		t.Fatalf("GetPlaysWithFormat: %v", err)
+	}
+	if len(plays) != 1 {
+		t.Fatalf("plays = %d, want 1", len(plays))
+	}
+	if got := len(plays[0].Tasks.Keys()); got != 4 {
+		t.Errorf("default JSON5 scaffold = %d tasks, want 4", got)
+	}
+}
+
+func TestSelectInitTemplate(t *testing.T) {
+	cases := map[[2]string]string{
+		{tasks.FormatYAML, "false"}:      "default.yml.tmpl",
+		{tasks.FormatYAML, "true"}:       "minimal.yml.tmpl",
+		{tasks.FormatNameJSON5, "false"}: "default.json5.tmpl",
+		{tasks.FormatNameJSON5, "true"}:  "minimal.json5.tmpl",
+		{"", "false"}:                    "default.yml.tmpl",
+	}
+	for key, want := range cases {
+		minimal := key[1] == "true"
+		if got := selectInitTemplate(key[0], minimal); got != want {
+			t.Errorf("selectInitTemplate(%q, %v) = %q, want %q", key[0], minimal, got, want)
+		}
+	}
+}
+
 func TestInitDefaultParsesAsRecipe(t *testing.T) {
 	out, err := renderInit(initOptions{Name: "api"})
 	if err != nil {

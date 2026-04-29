@@ -9,19 +9,34 @@
 set -euo pipefail
 
 # Load bats-support / bats-assert from the standard package paths.
+# BATS_LIB_PATH is a colon-separated list following the bats-core
+# convention (https://bats-core.readthedocs.io/) so developers without
+# the apt packages can install the libraries anywhere and point at
+# them locally; CI keeps using the apt-installed /usr/lib paths.
 load_bats_libraries() {
-  local lib
-  for lib in /usr/lib/bats/bats-support/load.bash /usr/lib/bats-support/load.bash; do
-    if [ -f "$lib" ]; then
-      # shellcheck disable=SC1090
-      source "$lib"
-      break
+  local -a search_paths=()
+  if [ -n "${BATS_LIB_PATH:-}" ]; then
+    local IFS=:
+    for entry in $BATS_LIB_PATH; do
+      search_paths+=("$entry")
+    done
+  fi
+  search_paths+=(/usr/lib/bats /usr/lib)
+
+  local found_support=0
+  local found_assert=0
+  for base in "${search_paths[@]}"; do
+    if [ "$found_support" -eq 0 ] && [ -f "$base/bats-support/load.bash" ]; then
+      # shellcheck disable=SC1090,SC1091
+      source "$base/bats-support/load.bash"
+      found_support=1
     fi
-  done
-  for lib in /usr/lib/bats/bats-assert/load.bash /usr/lib/bats-assert/load.bash; do
-    if [ -f "$lib" ]; then
-      # shellcheck disable=SC1090
-      source "$lib"
+    if [ "$found_assert" -eq 0 ] && [ -f "$base/bats-assert/load.bash" ]; then
+      # shellcheck disable=SC1090,SC1091
+      source "$base/bats-assert/load.bash"
+      found_assert=1
+    fi
+    if [ "$found_support" -eq 1 ] && [ "$found_assert" -eq 1 ]; then
       break
     fi
   done
