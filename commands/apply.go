@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dokku/docket/subprocess"
@@ -28,6 +29,8 @@ type ApplyCommand struct {
 	varsFiles         []string
 	play              string
 	failFast          bool
+	listTasks         bool
+	startAtTask       string
 	arguments         map[string]*Argument
 }
 
@@ -78,6 +81,8 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
 	f.StringVar(&c.play, "play", "", "run only the play with this name (matches the play's `name:` field; auto-named plays use `play #N`)")
 	f.BoolVar(&c.failFast, "fail-fast", false, "abort the entire run on the first task error. By default, an error aborts only the current play and the next play still runs.")
+	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without running. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
+	f.StringVar(&c.startAtTask, "start-at-task", "", "skip every task before the matched name; the matched task and successors run normally. Filter order: --start-at-task -> --tags/--skip-tags -> per-task when: at execution. The name search walks every play in source order, narrowed by --play.")
 
 	taskFile := getTaskYamlFilename(os.Args)
 	data, err := os.ReadFile(taskFile)
@@ -109,6 +114,8 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 			"--vars-file":            complete.PredictFiles("*"),
 			"--play":                 complete.PredictAnything,
 			"--fail-fast":            complete.PredictNothing,
+			"--list-tasks":           complete.PredictNothing,
+			"--start-at-task":        complete.PredictAnything,
 		},
 	)
 }
@@ -170,6 +177,28 @@ func (c *ApplyCommand) Run(args []string) int {
 		return 1
 	}
 
+	if c.startAtTask != "" {
+		if !startAtTaskMatches(plays, c.startAtTask) {
+			c.Ui.Error(fmt.Sprintf(
+				"--start-at-task %q: no task matched name; available names: %s",
+				c.startAtTask, formatStartAtTaskNames(plays),
+			))
+			return 1
+		}
+	}
+
+	if c.listTasks {
+		return renderListTasks(c.Ui, listTasksOptions{
+			plays:         plays,
+			includes:      c.tags,
+			skips:         c.skipTags,
+			fileLevelKeys: fileLevelKeys,
+			userSet:       userSet,
+			context:       context,
+			jsonOut:       c.json,
+		})
+	}
+
 	sensitiveValues = append(sensitiveValues, tasks.CollectPlaySensitiveValues(plays)...)
 	subprocess.SetGlobalSensitive(sensitiveValues)
 	defer subprocess.SetGlobalSensitive(nil)
@@ -183,6 +212,11 @@ func (c *ApplyCommand) Run(args []string) int {
 	counts := ApplyCounts{}
 	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(context, fileLevelKeys, userSet))
 	hasError := false
+	// startedAtTask gates --start-at-task: false until an envelope name
+	// matches c.startAtTask, at which point every subsequent task runs
+	// normally. Shared by reference across plays so the search spans the
+	// whole filtered play list.
+	startedAtTask := c.startAtTask == ""
 	// registered is the run-wide map predicates reach via
 	// `.registered.<name>`. loopAccum buffers per-iteration states for
 	// loop+register expansions so the running aggregate is exposed to
@@ -230,6 +264,8 @@ playLoop:
 			emitter:     emitter,
 			counts:      &counts,
 			failFast:    c.failFast,
+			startAtTask: c.startAtTask,
+			started:     &startedAtTask,
 		}
 
 		failed := false
@@ -268,6 +304,13 @@ type applyContext struct {
 	emitter     EventEmitter
 	counts      *ApplyCounts
 	failFast    bool
+	// startAtTask is the --start-at-task target, or "" when the flag
+	// was not set. started is a shared pointer flipped to true the
+	// first time an envelope name matches the target; until it flips,
+	// executeTask emits a [skipped] event with the "before
+	// --start-at-task" reason and skips dispatch.
+	startAtTask string
+	started     *bool
 }
 
 // applyTaskOutcome is the per-task verdict the apply loop reads back
@@ -288,7 +331,38 @@ type applyTaskOutcome struct {
 // "always"); top-level callers pass "". failedTask is non-nil only
 // when called from a rescue walker so the rescue child's predicates
 // can reference `.failed_task`.
+//
+// --start-at-task gating sits at the top: until ac.started flips to
+// true, an envelope whose name does not match ac.startAtTask (and
+// whose group descendants also do not) is reported as `[skipped]`
+// with reason "before --start-at-task" and dispatch is skipped. A
+// group whose own name does not match but a descendant does is
+// entered so the recursive executeTask call lands on the matched
+// child.
 func (c *ApplyCommand) executeTask(env *tasks.TaskEnvelope, name string, ac *applyContext, failedTask interface{}, phase string) applyTaskOutcome {
+	if !*ac.started && ac.startAtTask != "" {
+		switch {
+		case name == ac.startAtTask:
+			*ac.started = true
+		case env.IsGroup() && tasks.EnvelopeContainsName(env, ac.startAtTask):
+			// Don't skip; descend into the group so the matching
+			// child runs. The synthesized group state will reflect
+			// only the executed children, not the skipped ones.
+		default:
+			ac.counts.Tasks++
+			ac.counts.Skipped++
+			ac.emitter.ApplyTask(ApplyTaskEvent{
+				Play:       ac.play.Name,
+				Name:       name,
+				Phase:      phase,
+				Group:      env.IsGroup(),
+				Skipped:    true,
+				SkipReason: "before --start-at-task",
+				Timestamp:  time.Now().UTC(),
+			})
+			return applyTaskOutcome{skipped: true}
+		}
+	}
 	if env.IsGroup() {
 		return c.executeGroup(env, name, ac, failedTask, phase)
 	}
@@ -619,6 +693,63 @@ func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *ap
 		})
 		return applyTaskOutcome{state: groupState}
 	}
+}
+
+// startAtTaskMatches reports whether target matches some envelope name
+// across plays, walking each play's task envelopes plus any block /
+// rescue / always children of group entries. Used to validate the
+// --start-at-task flag before the executor begins so a typo errors out
+// up-front instead of silently skipping the entire run.
+func startAtTaskMatches(plays []*tasks.Play, target string) bool {
+	for _, play := range plays {
+		if play == nil {
+			continue
+		}
+		for _, name := range play.Tasks.Keys() {
+			env := play.Tasks.GetEnvelope(name)
+			if name == target {
+				return true
+			}
+			if tasks.EnvelopeContainsName(env, target) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// formatStartAtTaskNames builds the "available names: ..." hint for an
+// unmatched --start-at-task error. Names are deduplicated and rendered
+// in source order, quoted so the user can copy a name verbatim back
+// onto the CLI.
+func formatStartAtTaskNames(plays []*tasks.Play) string {
+	seen := map[string]bool{}
+	var quoted []string
+	for _, play := range plays {
+		if play == nil {
+			continue
+		}
+		for _, name := range play.Tasks.Keys() {
+			if !seen[name] {
+				seen[name] = true
+				quoted = append(quoted, fmt.Sprintf("%q", name))
+			}
+			env := play.Tasks.GetEnvelope(name)
+			for _, descendant := range tasks.CollectEnvelopeNames([]*tasks.TaskEnvelope{env}) {
+				if descendant == "" || descendant == name {
+					continue
+				}
+				if !seen[descendant] {
+					seen[descendant] = true
+					quoted = append(quoted, fmt.Sprintf("%q", descendant))
+				}
+			}
+		}
+	}
+	if len(quoted) == 0 {
+		return "(none)"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // filterPlaysByName narrows plays to the single play whose Name matches

@@ -429,6 +429,8 @@ The flags are:
 | `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
 | `--play <name>` | Run only the play with this name. Matches the play's `name:` field; auto-named plays use `play #N`. Composes with `--tags`. |
 | `--fail-fast` | Abort the entire run on the first task error. Without this flag, an error aborts only the current play and the next play still runs. |
+| `--list-tasks` | Print the resolved task plan and exit without running. Honors `--play` / `--tags` / `--skip-tags` and shows expanded loop iterations and `[skipped]` markers for `when:`-skipped tasks. See "Inspecting and resuming" below. |
+| `--start-at-task <name>` | Skip every task before the matched name (rendered as `[skipped] ... (before --start-at-task)`); the matched task and successors run normally. Filter order: `--start-at-task` -> `--tags`/`--skip-tags` -> per-task `when:` at execution. The name search walks every play in source order, narrowed by `--play`. |
 
 For example, a multi-command task renders one continuation per invocation:
 
@@ -439,6 +441,40 @@ For example, a multi-command task renders one continuation per invocation:
 ```
 
 Color output respects [`NO_COLOR`](https://no-color.org/): set `NO_COLOR=1` to disable ANSI escapes, or pipe to a non-TTY (output is plain in that case automatically).
+
+#### Inspecting and resuming with `--list-tasks` / `--start-at-task`
+
+Two flags help when a recipe grows long: `--list-tasks` previews the resolved task plan without running, and `--start-at-task <name>` resumes a partially-applied recipe from a specific task.
+
+`--list-tasks` walks the resolved plan (post `--play` / `--tags` filtering, post `loop:` expansion, post `when:` evaluation against inputs) and prints one line per envelope:
+
+```text
+$ docket apply --list-tasks
+==> Play: api
+[0] dokku apps:create api  [tags=core]
+[1] dokku git:sync api  [tags=deploy]
+[2] dokku config:set api  [tags=core,deploy]
+[3] dokku ports:add api  [tags=deploy]
+```
+
+`when:` predicates that evaluate false against the inputs render as `[skipped]`. Predicates that reference `.registered.<name>` cannot be decided without running prior tasks, so they render as `[unknown]` rather than misreporting a skip. `block:` groups print the group line followed by indented `[block]` / `[rescue]` / `[always]` children.
+
+`--start-at-task <name>` takes the exact envelope name (matching `name:` in the recipe). Earlier tasks render as `[skipped]` with a `(before --start-at-task)` reason and do not run; the matched task and every task after it run normally:
+
+```text
+$ docket apply --start-at-task "dokku config:set api"
+==> Play: api
+[skipped] dokku apps:create api    (before --start-at-task)
+[skipped] dokku git:sync api       (before --start-at-task)
+[ok]      dokku config:set api
+[changed] dokku ports:add api
+
+Summary: 4 tasks * 1 changed * 1 ok * 2 skipped * 0 errors  (took 1.1s)
+```
+
+Resolution order is: `--start-at-task` selects first, then `--tags` / `--skip-tags` filter, then per-task `when:` at execution time. A task can be selected by `--start-at-task` and still be filtered out by `--tags`. Inside a `block:`, matching a child does not unwind the group: the executor enters the block, skips earlier children, runs from the matched child onward, and continues with `rescue` / `always` per normal block semantics. For multi-play files the search walks every play in source order; `--play` narrows it.
+
+If `--start-at-task` does not match any task name, the run exits 1 with the available names listed so the typo can be fixed quickly.
 
 ### Remote execution over SSH
 
@@ -512,6 +548,7 @@ The flags are:
 | `--detailed-exitcode` | Exit `0` when no drift is detected, `2` when at least one task reports drift, `1` on read or probe error. Errors win over drift. Without this flag, plan exits `0` regardless of drift. Mirrors the `git diff --exit-code` / `terraform plan -detailed-exitcode` convention. |
 | `--vars-file <path>` | Load input values from a YAML or JSON file. Repeatable; later files override earlier files for the same key. CLI `--name=value` flags always win. See "Layered input variables with `--vars-file`" below. |
 | `--play <name>` | Plan only the play with this name. Matches the play's `name:` field; auto-named plays use `play #N`. Composes with `--tags`. |
+| `--list-tasks` | Print the resolved task plan and exit without contacting the server. Honors `--play` / `--tags` / `--skip-tags` and shows expanded loop iterations and `[skipped]` markers for `when:`-skipped tasks. See "Inspecting and resuming" under `apply` for the full output shape. |
 
 ```shell
 # CI gate: fail the job if any task would change the server.
@@ -551,11 +588,13 @@ The shipping checks cover: YAML parses, recipe shape (top-level list of plays wi
 docket validate --tasks path/to/tasks.yml
 ```
 
-Exit codes are `0` when no problems are found and `1` otherwise. Three flags are available:
+Exit codes are `0` when no problems are found and `1` otherwise. Five flags are available:
 
 - `--json` emits one JSON-lines event per problem with a stable `version: 1` schema (`{"type":"validate_problem","code":"unknown_task_type", ...}`), suitable for piping into a CI annotator.
-- `--strict` additionally flags any input declared `required: true` that has no `default` and no value supplied via a CLI flag or `--vars-file` - useful in CI to ensure the recipe can be applied without runtime overrides.
+- `--strict` additionally flags any input declared `required: true` that has no `default` and no value supplied via a CLI flag or `--vars-file`, and verifies that any `--play` / `--start-at-task` references passed alongside resolve to real names in the file (problem codes `unknown_play_reference` / `unknown_start_at_task`) - useful in CI to ensure the recipe can be applied without runtime overrides or stale CLI invocations.
 - `--vars-file <path>` loads input values from a YAML or JSON file (repeatable; later files override earlier; CLI `--name=value` flags always win). Values fed in through `--vars-file` count as overrides for `--strict`. See "Layered input variables with `--vars-file`" below.
+- `--play <name>` (strict-only) verifies the named play exists in the recipe. Pair with `--strict` so a CI lint job catches stale `docket apply --play <name>` invocations.
+- `--start-at-task <name>` (strict-only) verifies a task with this name exists in the recipe; narrowed by `--play` when both are set. Pair with `--strict` so a CI lint job catches typos in resume invocations before they reach `apply`.
 
 A task file can also be specified via flag, and may be a file retrieved via http:
 

@@ -53,6 +53,12 @@ type ApplyTaskEvent struct {
 	// Skipped indicates the `when:` predicate evaluated to false and the
 	// task was filtered out. Mutually exclusive with the other branches.
 	Skipped bool
+	// SkipReason carries a short human-readable annotation rendered as a
+	// parenthetical suffix after the [skipped] marker. Set when the
+	// skip is driven by something other than `when:` (e.g.
+	// "before --start-at-task"). Empty for plain `when:`-driven skips so
+	// the line stays terse.
+	SkipReason string
 	// InvalidState, when true, indicates Execute reported success but the
 	// final State did not match DesiredState; treated as an error in
 	// counts and exit logic.
@@ -234,7 +240,11 @@ func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
 		f.TaskLine(MarkerError, displayName, "")
 		f.Continuation('!', fmt.Sprintf("when expression error: %v", ev.WhenError))
 	case ev.Skipped:
-		f.TaskLine(MarkerSkipped, displayName, "")
+		suffix := ""
+		if ev.SkipReason != "" {
+			suffix = "(" + ev.SkipReason + ")"
+		}
+		f.TaskLine(MarkerSkipped, displayName, suffix)
 	case ev.State.Error != nil:
 		suffix := ""
 		if ev.Ignored {

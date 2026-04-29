@@ -78,6 +78,9 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 		out["error"] = subprocess.MaskString(ev.WhenError.Error())
 	case ev.Skipped:
 		out["status"] = "skipped"
+		if ev.SkipReason != "" {
+			out["skip_reason"] = ev.SkipReason
+		}
 	case ev.State.Error != nil:
 		out["status"] = "error"
 		out["error"] = subprocess.MaskString(PrefixErrorMessage(ev.State.Error))

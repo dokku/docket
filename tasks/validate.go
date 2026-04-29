@@ -32,9 +32,16 @@ type Problem struct {
 // ValidateOptions controls optional checks. Strict turns on the input-resolution
 // audit; InputOverrides is the set of input names whose values were supplied on
 // the CLI (the same map registerInputFlags fills in for apply/plan).
+//
+// PlayName and StartAtTask carry the values of `validate --play` and
+// `validate --start-at-task` respectively. They power the cross-reference
+// audit that runs under `--strict`: each non-empty value must resolve to a
+// real play / task name in the recipe.
 type ValidateOptions struct {
 	Strict         bool
 	InputOverrides map[string]bool
+	PlayName       string
+	StartAtTask    string
 }
 
 // validatePlaceholder is substituted for any input that has no default during
@@ -197,7 +204,120 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 		problems = append(problems, validatePlay(play, label, inputs, opts, registerSeen)...)
 	}
 
+	problems = append(problems, validateCLIReferences(doc, opts)...)
+
 	return problems
+}
+
+// validateCLIReferences checks that the values of `validate --play` and
+// `validate --start-at-task` resolve to real play / task names in the
+// recipe. The audit runs only under --strict so casual `validate` runs
+// (without --strict) never error solely on missing CLI references.
+//
+// --start-at-task is checked against task `name:` fields walked through
+// every play's `tasks:` and through the block / rescue / always
+// children of group entries (#211). Loop expansions are not enumerated
+// here because their per-iteration suffix is only resolved at apply
+// time; the runtime check in commands/apply.go is authoritative.
+func validateCLIReferences(doc *yaml.Node, opts ValidateOptions) []Problem {
+	if !opts.Strict {
+		return nil
+	}
+	if opts.PlayName == "" && opts.StartAtTask == "" {
+		return nil
+	}
+
+	var problems []Problem
+	var playNames []string
+	taskNamesByPlay := map[string][]string{}
+	var allTaskNames []string
+	seen := map[string]bool{}
+
+	for i, play := range doc.Content {
+		if play.Kind != yaml.MappingNode {
+			continue
+		}
+		playLabel := scalarChild(play, "name")
+		if playLabel == "" {
+			playLabel = fmt.Sprintf("play #%d", i+1)
+		}
+		playNames = append(playNames, playLabel)
+
+		tasksNode := mappingValue(play, "tasks")
+		if tasksNode == nil || tasksNode.Kind != yaml.SequenceNode {
+			continue
+		}
+		var names []string
+		walkGroupEntries(tasksNode, playLabel, func(task *yaml.Node, _ string) {
+			n := scalarChild(task, "name")
+			if n == "" {
+				return
+			}
+			names = append(names, n)
+			if !seen[n] {
+				seen[n] = true
+				allTaskNames = append(allTaskNames, n)
+			}
+		})
+		taskNamesByPlay[playLabel] = names
+	}
+
+	if opts.PlayName != "" {
+		found := false
+		for _, n := range playNames {
+			if n == opts.PlayName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			problems = append(problems, Problem{
+				Code:    "unknown_play_reference",
+				Message: fmt.Sprintf("--play %q does not match any play in the recipe", opts.PlayName),
+				Hint:    fmt.Sprintf("available plays: %s", quotedNamesOrNone(playNames)),
+			})
+		}
+	}
+
+	if opts.StartAtTask != "" {
+		candidates := allTaskNames
+		if opts.PlayName != "" {
+			if names, ok := taskNamesByPlay[opts.PlayName]; ok {
+				candidates = names
+			}
+		}
+		found := false
+		for _, n := range candidates {
+			if n == opts.StartAtTask {
+				found = true
+				break
+			}
+		}
+		if !found {
+			problems = append(problems, Problem{
+				Code:    "unknown_start_at_task",
+				Message: fmt.Sprintf("--start-at-task %q does not match any task in the recipe", opts.StartAtTask),
+				Hint:    fmt.Sprintf("available tasks: %s", quotedNamesOrNone(candidates)),
+			})
+		}
+	}
+
+	return problems
+}
+
+// quotedNamesOrNone formats a slice of names as a comma-separated list
+// of quoted strings, or "(none)" when the slice is empty. Used to build
+// the Hint text for unknown_play_reference and unknown_start_at_task
+// problems.
+func quotedNamesOrNone(names []string) string {
+	if len(names) == 0 {
+		return "(none)"
+	}
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = fmt.Sprintf("%q", n)
+	}
+	return strings.Join(out, ", ")
 }
 
 // registerHit records the first occurrence of a `register: <name>` so
