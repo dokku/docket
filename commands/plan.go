@@ -28,6 +28,7 @@ type PlanCommand struct {
 	tags              []string
 	skipTags          []string
 	varsFiles         []string
+	play              string
 	arguments         map[string]*Argument
 }
 
@@ -76,6 +77,7 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list are planned")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
+	f.StringVar(&c.play, "play", "", "plan only the play with this name (matches the play's `name:` field; auto-named plays use `play #N`)")
 
 	taskFile := getTaskYamlFilename(os.Args)
 	data, err := os.ReadFile(taskFile)
@@ -105,6 +107,7 @@ func (c *PlanCommand) AutocompleteFlags() complete.Flags {
 			"--tags":                 complete.PredictAnything,
 			"--skip-tags":            complete.PredictAnything,
 			"--vars-file":            complete.PredictFiles("*"),
+			"--play":                 complete.PredictAnything,
 		},
 	)
 }
@@ -132,7 +135,8 @@ func (c *PlanCommand) Run(args []string) int {
 		return 1
 	}
 
-	if err := applyVarsFiles(c.arguments, flags, c.varsFiles); err != nil {
+	varsFileKeys, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
 	}
@@ -160,13 +164,26 @@ func (c *PlanCommand) Run(args []string) int {
 		}
 	}
 
-	taskList, err := tasks.GetTasks(data, context)
+	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
+
+	plays, err := tasks.GetPlays(data, context, userSet)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("task error: %v", err))
 		return 1
 	}
 
-	sensitiveValues = append(sensitiveValues, tasks.CollectSensitiveValues(taskList)...)
+	// Compute file-level input names from the *unfiltered* play list so
+	// --play does not accidentally hide an inputs-only play whose
+	// declared inputs the surviving play's when: depends on.
+	fileLevelKeys := tasks.FileLevelInputNames(plays)
+
+	plays, err = filterPlaysByName(plays, c.play)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	sensitiveValues = append(sensitiveValues, tasks.CollectPlaySensitiveValues(plays)...)
 	subprocess.SetGlobalSensitive(sensitiveValues)
 	defer subprocess.SetGlobalSensitive(nil)
 
@@ -175,71 +192,93 @@ func (c *PlanCommand) Run(args []string) int {
 	}
 
 	emitter := c.newEmitter()
-	emitter.PlayStart("tasks", resolvedHost)
-
 	start := time.Now()
 	counts := PlanCounts{}
 	hasError := false
 	hasDrift := false
-	playName := "tasks"
+	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(context, fileLevelKeys, userSet))
 
-	keys := tasks.FilterByTags(taskList, c.tags, c.skipTags)
-	exprBaseCtx := buildEnvelopeExprContext(context)
-
-	for _, name := range keys {
-		env := taskList.GetEnvelope(name)
-		taskStart := time.Now()
-
-		if env.HasWhen() {
-			ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(exprBaseCtx, env))
+	for _, play := range plays {
+		if play.IsFileLevel() {
+			// Inputs-only plays carry no tasks; their inputs are
+			// already folded into fileLevelKeys above. They produce
+			// no output and do not count toward play totals.
+			continue
+		}
+		if play.HasWhen() {
+			ok, err := tasks.EvalBool(play.WhenProgram(), playWhenExprCtx)
 			if err != nil {
-				counts.Tasks++
-				counts.Errors++
+				counts.PlaysSkipped++
 				hasError = true
-				emitter.PlanTask(PlanTaskEvent{
-					Play:      playName,
-					Name:      name,
-					WhenError: err,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
+				emitter.PlaySkipped(play.Name, fmt.Sprintf("%s (error: %v)", play.When, err))
 				continue
 			}
 			if !ok {
-				counts.Tasks++
-				counts.Skipped++
-				emitter.PlanTask(PlanTaskEvent{
-					Play:      playName,
-					Name:      name,
-					Skipped:   true,
-					Duration:  time.Since(taskStart),
-					Timestamp: time.Now().UTC(),
-				})
+				counts.PlaysSkipped++
+				emitter.PlaySkipped(play.Name, play.When)
 				continue
 			}
 		}
 
-		result := env.Task.Plan()
-		counts.Tasks++
+		emitter.PlayStart(play.Name, resolvedHost)
 
-		switch {
-		case result.Error != nil:
-			counts.Errors++
-			hasError = true
-		case result.InSync:
-			counts.InSync++
-		default:
-			counts.WouldChange++
-			hasDrift = true
+		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(context, play.Inputs, userSet))
+
+		for _, name := range tasks.FilterByTags(play.Tasks, c.tags, c.skipTags) {
+			env := play.Tasks.GetEnvelope(name)
+			taskStart := time.Now()
+
+			if env.HasWhen() {
+				ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env))
+				if err != nil {
+					counts.Tasks++
+					counts.Errors++
+					hasError = true
+					emitter.PlanTask(PlanTaskEvent{
+						Play:      play.Name,
+						Name:      name,
+						WhenError: err,
+						Duration:  time.Since(taskStart),
+						Timestamp: time.Now().UTC(),
+					})
+					continue
+				}
+				if !ok {
+					counts.Tasks++
+					counts.Skipped++
+					emitter.PlanTask(PlanTaskEvent{
+						Play:      play.Name,
+						Name:      name,
+						Skipped:   true,
+						Duration:  time.Since(taskStart),
+						Timestamp: time.Now().UTC(),
+					})
+					continue
+				}
+			}
+
+			result := env.Task.Plan()
+			counts.Tasks++
+
+			switch {
+			case result.Error != nil:
+				counts.Errors++
+				hasError = true
+			case result.InSync:
+				counts.InSync++
+			default:
+				counts.WouldChange++
+				hasDrift = true
+			}
+
+			emitter.PlanTask(PlanTaskEvent{
+				Play:      play.Name,
+				Name:      name,
+				Result:    result,
+				Duration:  time.Since(taskStart),
+				Timestamp: time.Now().UTC(),
+			})
 		}
-
-		emitter.PlanTask(PlanTaskEvent{
-			Play:      playName,
-			Name:      name,
-			Result:    result,
-			Duration:  time.Since(taskStart),
-			Timestamp: time.Now().UTC(),
-		})
 	}
 
 	emitter.PlanSummary(counts, time.Since(start))

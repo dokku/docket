@@ -41,6 +41,23 @@ func (e *JSONEmitter) PlayStart(name, host string) {
 	e.write(ev)
 }
 
+// PlaySkipped emits a `play_skipped` event for a play that was filtered
+// out by its `when:` predicate. The reason field carries the raw expr
+// source so consumers can correlate the skip with the recipe.
+func (e *JSONEmitter) PlaySkipped(name, whenSrc string) {
+	ev := map[string]interface{}{
+		"version": jsonSchemaVersion,
+		"type":    "play_skipped",
+		"name":    name,
+		"ts":      nowRFC3339(),
+	}
+	if whenSrc != "" {
+		ev["when"] = whenSrc
+		ev["reason"] = "when: " + whenSrc
+	}
+	e.write(ev)
+}
+
 // ApplyTask emits one `task` event for an apply run. Status is one of
 // "ok", "changed", "skipped", "error".
 func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
@@ -127,28 +144,30 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 // ApplySummary emits the end-of-run summary event for apply.
 func (e *JSONEmitter) ApplySummary(c ApplyCounts, d time.Duration) {
 	e.write(map[string]interface{}{
-		"version":     jsonSchemaVersion,
-		"type":        "summary",
-		"tasks":       c.Tasks,
-		"changed":     c.Changed,
-		"ok":          c.OK,
-		"skipped":     c.Skipped,
-		"errors":      c.Errors,
-		"duration_ms": d.Milliseconds(),
+		"version":       jsonSchemaVersion,
+		"type":          "summary",
+		"tasks":         c.Tasks,
+		"changed":       c.Changed,
+		"ok":            c.OK,
+		"skipped":       c.Skipped,
+		"errors":        c.Errors,
+		"plays_skipped": c.PlaysSkipped,
+		"duration_ms":   d.Milliseconds(),
 	})
 }
 
 // PlanSummary emits the end-of-run summary event for plan.
 func (e *JSONEmitter) PlanSummary(c PlanCounts, d time.Duration) {
 	e.write(map[string]interface{}{
-		"version":      jsonSchemaVersion,
-		"type":         "summary",
-		"tasks":        c.Tasks,
-		"would_change": c.WouldChange,
-		"in_sync":      c.InSync,
-		"skipped":      c.Skipped,
-		"errors":       c.Errors,
-		"duration_ms":  d.Milliseconds(),
+		"version":       jsonSchemaVersion,
+		"type":          "summary",
+		"tasks":         c.Tasks,
+		"would_change":  c.WouldChange,
+		"in_sync":       c.InSync,
+		"skipped":       c.Skipped,
+		"errors":        c.Errors,
+		"plays_skipped": c.PlaysSkipped,
+		"duration_ms":   d.Milliseconds(),
 	})
 }
 

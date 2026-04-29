@@ -36,12 +36,35 @@ const (
 	StateSkipped State = "skipped"
 )
 
-// Recipe represents a recipe for a task
-type Recipe []struct {
-	// Inputs are the inputs for the task
+// Recipe represents a docket recipe: a YAML list of plays. Each entry is
+// a play envelope carrying the play-level metadata (name, tags, when,
+// inputs) and the per-play tasks list. Single-play files are simply a
+// one-element list and require no special handling.
+type Recipe []RecipeEntry
+
+// RecipeEntry is the on-disk shape of one play. The yaml-unmarshalled
+// form; the runtime-facing Play struct (in play.go) is built from this
+// by GetPlays.
+type RecipeEntry struct {
+	// Name is the play's user-facing label. Auto-generated as
+	// "play #N" by GetPlays when omitted.
+	Name string `yaml:"name,omitempty"`
+
+	// Tags accepts either a YAML list (`tags: [a, b]`) or a scalar
+	// (`tags: a`). Decoded via decodeTags into the Play.Tags slice.
+	Tags interface{} `yaml:"tags,omitempty"`
+
+	// When is the raw expr source for the play-level conditional. Empty
+	// means "always run". Compiled into the Play.whenProgram by GetPlays.
+	When string `yaml:"when,omitempty"`
+
+	// Inputs are the play-local input defaults. Layer above file-level
+	// defaults but below --vars-file / CLI overrides (per-play merge
+	// happens in GetPlays).
 	Inputs []Input `yaml:"inputs,omitempty"`
 
-	// Tasks are the tasks for the recipe
+	// Tasks is the raw per-play task list, decoded into envelopes by
+	// GetPlays via buildEnvelopesForEntry.
 	Tasks []map[string]interface{} `yaml:"tasks,omitempty"`
 }
 
@@ -304,61 +327,212 @@ func (i Input) GetValue() string {
 	return i.value
 }
 
-// GetTasks parses data as a docket recipe and returns the per-task
-// envelopes the executor consumes. The pipeline is:
-//
-//  1. Inject `.item` / `.index` self-reference placeholders into the
-//     sigil context so loop-body templates pass through the file-level
-//     render intact.
-//  2. Sigil-render the file with the augmented context.
-//  3. YAML-unmarshal into a Recipe.
-//  4. For each task entry: partition envelope keys vs the task-type key,
-//     reject unknown keys with a "did you mean" hint, decode envelope
-//     fields, decode task body, pre-compile any `when:` predicate.
-//  5. If `loop:` is present, expand into N envelopes via expandLoop;
-//     otherwise emit one envelope.
-//  6. Reject any envelope whose final body still contains
-//     `{{ .item }}` / `{{ .index }}` (i.e. the user referenced a loop
-//     variable from a non-loop task).
+// GetTasks is a back-compat shim that returns the first play's task
+// envelopes. New code should call GetPlays. The wrapper is kept because a
+// large number of unit tests (tasks/*_test.go) exercise GetTasks directly
+// against single-play recipes; those tests inspect the flat ordered map
+// without caring about the multi-play envelope.
 func GetTasks(data []byte, context map[string]interface{}) (OrderedStringEnvelopeMap, error) {
-	tasks := OrderedStringEnvelopeMap{}
+	plays, err := GetPlays(data, context, nil)
+	if err != nil {
+		return OrderedStringEnvelopeMap{}, err
+	}
+	if len(plays) == 0 {
+		return OrderedStringEnvelopeMap{}, nil
+	}
+	return plays[0].Tasks, nil
+}
 
+// GetPlays parses data as a docket recipe and returns one Play per
+// top-level entry, each carrying its own envelope map. The executor
+// (commands/apply.go, commands/plan.go) walks the result in order.
+//
+// The render pipeline is:
+//
+//  1. Render the whole file with `context` (file-level inputs + vars-file
+//     + CLI overrides) for the structure pass. This catches template
+//     syntax errors at the same point GetTasks did before #208 and gives
+//     us the play count plus per-play metadata (name/tags/when/inputs).
+//  2. For each play, build a per-play context by layering the play's own
+//     `inputs:` defaults above file-level defaults, but only for keys the
+//     user has not overridden via --vars-file or CLI. The userSet map
+//     identifies user-overridden keys; pass nil to disable the layering
+//     (the GetTasks shim does this since back-compat tests do not need
+//     multi-play context).
+//  3. Re-render the whole file with the per-play context so task body
+//     templates substitute the play-local values, then walk to that
+//     play's tasks and build envelopes through the existing
+//     buildEnvelopesForEntry helper.
+//  4. Append the play's tags to every envelope (additive with per-task
+//     tags) so FilterByTags treats them uniformly.
+//
+// Per-play `when:` predicates are pre-compiled here; the executor decides
+// the evaluation context (file-level only, per the spec - the play's own
+// inputs are not visible to its own when).
+func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
+	baseRendered, err := renderRecipeBytes(data, context)
+	if err != nil {
+		return nil, err
+	}
+
+	baseRecipe := Recipe{}
+	if err := yaml.Unmarshal(baseRendered, &baseRecipe); err != nil {
+		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
+	}
+
+	if len(baseRecipe) == 0 {
+		return nil, fmt.Errorf("parse error: no recipe found in tasks file")
+	}
+
+	plays := make([]*Play, 0, len(baseRecipe))
+	singleUnnamed := len(baseRecipe) == 1 && baseRecipe[0].Name == ""
+	for i, raw := range baseRecipe {
+		play := &Play{
+			Name:   raw.Name,
+			When:   raw.When,
+			Inputs: raw.Inputs,
+		}
+		if play.Name == "" {
+			// Single-play recipes without a name keep the legacy
+			// "tasks" header so existing recipes do not see a
+			// visual diff after #208. Multi-play recipes get
+			// numbered auto-names so each play header is distinct.
+			if singleUnnamed {
+				play.Name = "tasks"
+			} else {
+				play.Name = fmt.Sprintf("play #%d", i+1)
+			}
+		}
+
+		if raw.Tags != nil {
+			tags, err := decodeTags(raw.Tags)
+			if err != nil {
+				return nil, fmt.Errorf("play parse error: play #%d %q: %s", i+1, play.Name, err)
+			}
+			play.Tags = tags
+		}
+
+		if play.When != "" {
+			prog, err := CompilePredicate(play.When)
+			if err != nil {
+				return nil, fmt.Errorf("play parse error: play #%d %q: when compile error: %s", i+1, play.Name, err)
+			}
+			play.whenProgram = prog
+		}
+
+		playCtx := BuildPerPlayContext(context, play.Inputs, userSet)
+		perPlayRecipe, err := renderRecipe(data, playCtx)
+		if err != nil {
+			return nil, err
+		}
+		if i >= len(perPlayRecipe) {
+			return nil, fmt.Errorf("play parse error: play #%d %q: per-play render produced fewer plays than the structure pass", i+1, play.Name)
+		}
+
+		exprCtx := buildExprContext(playCtx)
+		play.Tasks = OrderedStringEnvelopeMap{}
+		for j, t := range perPlayRecipe[i].Tasks {
+			envelopes, err := buildEnvelopesForEntry(j+1, t, playCtx, exprCtx)
+			if err != nil {
+				return nil, err
+			}
+			for _, env := range envelopes {
+				if len(play.Tags) > 0 {
+					env.Tags = mergePlayTags(env.Tags, play.Tags)
+				}
+				play.Tasks.Set(env.Name, env)
+			}
+		}
+
+		plays = append(plays, play)
+	}
+
+	return plays, nil
+}
+
+// renderRecipeBytes runs the loop-var-safe sigil render over data with the
+// given context and returns the rendered bytes. Pulled out of the legacy
+// GetTasks so GetPlays can reuse it across the structure pass and per-play
+// passes.
+func renderRecipeBytes(data []byte, context map[string]interface{}) ([]byte, error) {
 	escaped, captured := escapeLoopVars(data)
-
 	render, err := sigil.Execute(escaped, context, "tasks")
 	if err != nil {
-		return tasks, fmt.Errorf("re-render error: %v", err.Error())
+		return nil, fmt.Errorf("re-render error: %v", err.Error())
 	}
-
 	rendered, err := io.ReadAll(&render)
 	if err != nil {
-		return tasks, fmt.Errorf("read error: %v", err.Error())
+		return nil, fmt.Errorf("read error: %v", err.Error())
 	}
+	return unescapeLoopVars(rendered, captured), nil
+}
 
-	out := unescapeLoopVars(rendered, captured)
-
+// renderRecipe is the convenience wrapper that renders data with context
+// and unmarshals the result into a Recipe.
+func renderRecipe(data []byte, context map[string]interface{}) (Recipe, error) {
+	rendered, err := renderRecipeBytes(data, context)
+	if err != nil {
+		return nil, err
+	}
 	recipe := Recipe{}
-	if err := yaml.Unmarshal([]byte(out), &recipe); err != nil {
-		return tasks, fmt.Errorf("unmarshal error: %v", err.Error())
+	if err := yaml.Unmarshal(rendered, &recipe); err != nil {
+		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
 	}
+	return recipe, nil
+}
 
-	if len(recipe) == 0 {
-		return tasks, fmt.Errorf("parse error: no recipe found in tasks file")
+// BuildPerPlayContext layers the play's `inputs:` defaults above the
+// file-level base context, but only for keys the user has not explicitly
+// overridden via --vars-file or CLI flags. The userSet map carries the
+// names of user-overridden inputs; nil disables the layering, which is
+// the GetTasks back-compat behaviour. Per-play defaults with an empty
+// Default string are skipped so they cannot accidentally shadow a real
+// file-level value with "".
+//
+// Exported because the apply / plan executors need to build the same
+// per-play context the loader used so per-task `when:` predicates see
+// the same values as the rendered task bodies.
+func BuildPerPlayContext(base map[string]interface{}, playInputs []Input, userSet map[string]bool) map[string]interface{} {
+	out := make(map[string]interface{}, len(base)+len(playInputs))
+	for k, v := range base {
+		out[k] = v
 	}
-
-	exprContext := buildExprContext(context)
-
-	for i, t := range recipe[0].Tasks {
-		envelopes, err := buildEnvelopesForEntry(i+1, t, context, exprContext)
-		if err != nil {
-			return tasks, err
+	for _, in := range playInputs {
+		if in.Name == "" {
+			continue
 		}
-		for _, env := range envelopes {
-			tasks.Set(env.Name, env)
+		if userSet[in.Name] {
+			continue
 		}
+		if in.Default == "" {
+			continue
+		}
+		out[in.Name] = in.Default
 	}
+	return out
+}
 
-	return tasks, nil
+// mergePlayTags appends playTags onto envTags, dropping duplicates so a
+// task that declares the same tag as the enclosing play does not see it
+// twice. envTags' original order is preserved; new tags from playTags
+// land at the end.
+func mergePlayTags(envTags, playTags []string) []string {
+	if len(playTags) == 0 {
+		return envTags
+	}
+	seen := make(map[string]bool, len(envTags))
+	for _, t := range envTags {
+		seen[t] = true
+	}
+	out := append([]string(nil), envTags...)
+	for _, t := range playTags {
+		if seen[t] {
+			continue
+		}
+		out = append(out, t)
+		seen[t] = true
+	}
+	return out
 }
 
 // buildEnvelopesForEntry walks a single task entry, partitions envelope
