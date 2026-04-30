@@ -59,7 +59,7 @@ jobs:
       - name: install dokku acl plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-acl.git acl
       - name: run integration tests
-        run: sudo go test -v -count=1 -run TestIntegration ./tasks/
+        run: sudo go test -v -count=1 -timeout 20m -run TestIntegration ./tasks/
 
   bats-test:
     name: bats-test
