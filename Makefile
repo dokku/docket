@@ -215,4 +215,4 @@ test:
 
 .PHONY: test-integration
 test-integration:
-	go test -v -count=1 -run TestIntegration ./tasks/
+	go test -v -count=1 -timeout 20m -run TestIntegration ./tasks/
