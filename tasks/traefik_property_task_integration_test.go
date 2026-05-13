@@ -4,41 +4,26 @@ import (
 	"testing"
 )
 
+// traefik has no per-app properties as of dokku 0.38.3 (dokku/dokku#8597);
+// every key returns "can only be set globally". Only global coverage applies.
 func TestIntegrationTraefikProperty(t *testing.T) {
+	t.Skip("traefik has no per-app properties post dokku 0.38.3")
+}
+
+// Global tests use presentOnly because traefik's :report exposes
+// global-<property> as a computed-style key that returns the default after
+// unset (filed as dokku/dokku#8631), so absent re-apply still reports
+// Changed=true until the upstream fix lands.
+func TestIntegrationTraefikPropertyGlobal(t *testing.T) {
 	skipIfNoDokkuT(t)
 
-	appName := "docket-test-traefik"
+	unsetTask := TraefikPropertyTask{Global: true, Property: "image", State: StateAbsent}
+	defer unsetTask.Execute()
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
-
-	// set traefik property
-	setTask := TraefikPropertyTask{
-		App:      appName,
-		Property: "letsencrypt-email",
-		Value:    "admin@example.com",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set traefik property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
-
-	// unset traefik property
-	unsetTask := TraefikPropertyTask{
-		App:      appName,
-		Property: "letsencrypt-email",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset traefik property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:       "traefik global",
+		setTask:     TraefikPropertyTask{Global: true, Property: "image", Value: "traefik:v3.2", State: StatePresent},
+		unsetTask:   unsetTask,
+		presentOnly: true,
+	})
 }

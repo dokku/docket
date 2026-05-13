@@ -8,37 +8,26 @@ func TestIntegrationBuilderProperty(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set builder property
-	setTask := BuilderPropertyTask{
-		App:      appName,
-		Property: "selected",
-		Value:    "dockerfile",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set builder property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "builder per-app",
+		setTask:   BuilderPropertyTask{App: appName, Property: "selected", Value: "dockerfile", State: StatePresent},
+		unsetTask: BuilderPropertyTask{App: appName, Property: "selected", State: StateAbsent},
+	})
+}
 
-	// unset builder property
-	unsetTask := BuilderPropertyTask{
-		App:      appName,
-		Property: "selected",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset builder property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+func TestIntegrationBuilderPropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	unsetTask := BuilderPropertyTask{Global: true, Property: "selected", State: StateAbsent}
+	defer unsetTask.Execute()
+
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "builder global",
+		setTask:   BuilderPropertyTask{Global: true, Property: "selected", Value: "herokuish", State: StatePresent},
+		unsetTask: unsetTask,
+	})
 }

@@ -8,37 +8,30 @@ func TestIntegrationCaddyProperty(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-caddy"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set caddy property
-	setTask := CaddyPropertyTask{
-		App:      appName,
-		Property: "tls-internal",
-		Value:    "true",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set caddy property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "caddy per-app",
+		setTask:   CaddyPropertyTask{App: appName, Property: "tls-internal", Value: "true", State: StatePresent},
+		unsetTask: CaddyPropertyTask{App: appName, Property: "tls-internal", State: StateAbsent},
+	})
+}
 
-	// unset caddy property
-	unsetTask := CaddyPropertyTask{
-		App:      appName,
-		Property: "tls-internal",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset caddy property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+func TestIntegrationCaddyPropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	unsetTask := CaddyPropertyTask{Global: true, Property: "tls-internal", State: StateAbsent}
+	defer unsetTask.Execute()
+
+	// caddy's global-<property> key returns the default value after unset
+	// rather than empty (filed as dokku/dokku#8631), so the absent re-apply
+	// would observe drift. Assert present re-apply only.
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:       "caddy global",
+		setTask:     CaddyPropertyTask{Global: true, Property: "tls-internal", Value: "true", State: StatePresent},
+		unsetTask:   unsetTask,
+		presentOnly: true,
+	})
 }

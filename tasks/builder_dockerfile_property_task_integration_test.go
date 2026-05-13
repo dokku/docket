@@ -8,37 +8,26 @@ func TestIntegrationBuilderDockerfileProperty(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-dockerfile"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set builder-dockerfile property
-	setTask := BuilderDockerfilePropertyTask{
-		App:      appName,
-		Property: "dockerfile-path",
-		Value:    "Dockerfile.production",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set builder-dockerfile property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "builder-dockerfile per-app",
+		setTask:   BuilderDockerfilePropertyTask{App: appName, Property: "dockerfile-path", Value: "Dockerfile.production", State: StatePresent},
+		unsetTask: BuilderDockerfilePropertyTask{App: appName, Property: "dockerfile-path", State: StateAbsent},
+	})
+}
 
-	// unset builder-dockerfile property
-	unsetTask := BuilderDockerfilePropertyTask{
-		App:      appName,
-		Property: "dockerfile-path",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset builder-dockerfile property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+func TestIntegrationBuilderDockerfilePropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	unsetTask := BuilderDockerfilePropertyTask{Global: true, Property: "dockerfile-path", State: StateAbsent}
+	defer unsetTask.Execute()
+
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "builder-dockerfile global",
+		setTask:   BuilderDockerfilePropertyTask{Global: true, Property: "dockerfile-path", Value: "Dockerfile.production", State: StatePresent},
+		unsetTask: unsetTask,
+	})
 }

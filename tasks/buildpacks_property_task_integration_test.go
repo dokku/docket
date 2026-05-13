@@ -8,37 +8,26 @@ func TestIntegrationBuildpacksProperty(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-buildpacks-prop"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set buildpacks property
-	setTask := BuildpacksPropertyTask{
-		App:      appName,
-		Property: "stack",
-		Value:    "gliderlabs/herokuish:latest",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set buildpacks property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "buildpacks per-app",
+		setTask:   BuildpacksPropertyTask{App: appName, Property: "stack", Value: "gliderlabs/herokuish:latest", State: StatePresent},
+		unsetTask: BuildpacksPropertyTask{App: appName, Property: "stack", State: StateAbsent},
+	})
+}
 
-	// unset buildpacks property
-	unsetTask := BuildpacksPropertyTask{
-		App:      appName,
-		Property: "stack",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset buildpacks property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+func TestIntegrationBuildpacksPropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	unsetTask := BuildpacksPropertyTask{Global: true, Property: "stack", State: StateAbsent}
+	defer unsetTask.Execute()
+
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "buildpacks global",
+		setTask:   BuildpacksPropertyTask{Global: true, Property: "stack", Value: "gliderlabs/herokuish:latest", State: StatePresent},
+		unsetTask: unsetTask,
+	})
 }

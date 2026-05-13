@@ -8,37 +8,26 @@ func TestIntegrationNetworkProperty(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-network"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set network property
-	setTask := NetworkPropertyTask{
-		App:      appName,
-		Property: "bind-all-interfaces",
-		Value:    "true",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set network property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "network per-app",
+		setTask:   NetworkPropertyTask{App: appName, Property: "bind-all-interfaces", Value: "true", State: StatePresent},
+		unsetTask: NetworkPropertyTask{App: appName, Property: "bind-all-interfaces", State: StateAbsent},
+	})
+}
 
-	// unset network property
-	unsetTask := NetworkPropertyTask{
-		App:      appName,
-		Property: "bind-all-interfaces",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset network property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+func TestIntegrationNetworkPropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	unsetTask := NetworkPropertyTask{Global: true, Property: "bind-all-interfaces", State: StateAbsent}
+	defer unsetTask.Execute()
+
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "network global",
+		setTask:   NetworkPropertyTask{Global: true, Property: "bind-all-interfaces", Value: "true", State: StatePresent},
+		unsetTask: unsetTask,
+	})
 }

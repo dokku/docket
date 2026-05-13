@@ -8,37 +8,26 @@ func TestIntegrationNginxProperty(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-nginx"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set nginx property
-	setTask := NginxPropertyTask{
-		App:      appName,
-		Property: "proxy-read-timeout",
-		Value:    "120s",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set nginx property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "nginx per-app",
+		setTask:   NginxPropertyTask{App: appName, Property: "proxy-read-timeout", Value: "120s", State: StatePresent},
+		unsetTask: NginxPropertyTask{App: appName, Property: "proxy-read-timeout", State: StateAbsent},
+	})
+}
 
-	// unset nginx property
-	unsetTask := NginxPropertyTask{
-		App:      appName,
-		Property: "proxy-read-timeout",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset nginx property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+func TestIntegrationNginxPropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	unsetTask := NginxPropertyTask{Global: true, Property: "bind-address-ipv4", State: StateAbsent}
+	defer unsetTask.Execute()
+
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "nginx global",
+		setTask:   NginxPropertyTask{Global: true, Property: "bind-address-ipv4", Value: "0.0.0.0", State: StatePresent},
+		unsetTask: unsetTask,
+	})
 }

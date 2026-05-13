@@ -9,37 +9,27 @@ func TestIntegrationLetsencryptProperty(t *testing.T) {
 	skipIfPluginMissingT(t, "letsencrypt")
 
 	appName := "docket-test-letsencrypt"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set letsencrypt property
-	setTask := LetsencryptPropertyTask{
-		App:      appName,
-		Property: "email",
-		Value:    "admin@example.com",
-		State:    StatePresent,
-	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set letsencrypt property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "letsencrypt per-app",
+		setTask:   LetsencryptPropertyTask{App: appName, Property: "email", Value: "admin@example.com", State: StatePresent},
+		unsetTask: LetsencryptPropertyTask{App: appName, Property: "email", State: StateAbsent},
+	})
+}
 
-	// unset letsencrypt property
-	unsetTask := LetsencryptPropertyTask{
-		App:      appName,
-		Property: "email",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset letsencrypt property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
-	}
+func TestIntegrationLetsencryptPropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "letsencrypt")
+
+	unsetTask := LetsencryptPropertyTask{Global: true, Property: "email", State: StateAbsent}
+	defer unsetTask.Execute()
+
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label:     "letsencrypt global",
+		setTask:   LetsencryptPropertyTask{Global: true, Property: "email", Value: "admin@example.com", State: StatePresent},
+		unsetTask: unsetTask,
+	})
 }
