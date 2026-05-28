@@ -1,0 +1,12 @@
+---
+docs:
+  - getting-started.md
+  - command-reference.md
+  - recipes.md
+  - inputs.md
+  - task-envelope.md
+  - remote-execution.md
+  - json-output.md
+  - writing-tasks.md
+  - roadmap.md
+  - tasks/README.md
