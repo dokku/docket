@@ -33,7 +33,7 @@ code into it:
         app: inflector
     - dokku_git_sync:
         app: inflector
-        repository: http://github.com/cakephp/inflector.cakephp.org
+        remote: http://github.com/cakephp/inflector.cakephp.org
 ```
 
 ## Prerequisites
@@ -125,7 +125,7 @@ Create a file named `tasks.yml` in your project. docket picks this name up autom
         app: inflector
     - dokku_git_sync:
         app: inflector
-        repository: http://github.com/cakephp/inflector.cakephp.org
+        remote: http://github.com/cakephp/inflector.cakephp.org
 ```
 
 If you would rather start from a generated template, run `docket init` and it writes a starter

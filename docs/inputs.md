@@ -21,7 +21,7 @@ Declare inputs in an `inputs:` block and reference them in task bodies:
         app: "{{ .name }}"
     - dokku_git_sync:
         app: "{{ .name }}"
-        repository: http://github.com/cakephp/inflector.cakephp.org
+        remote: http://github.com/cakephp/inflector.cakephp.org
 ```
 
 Each input supports these properties:
@@ -51,10 +51,11 @@ docket apply --name lollipop
 Any inputs you declare also appear in the recipe's `--help` output, so `docket apply --help` is a
 quick way to see what a recipe accepts.
 
-If you do not supply every input on the command line, docket prompts for the missing ones
-interactively, using the CLI-supplied values (or the declared defaults) as the suggested value.
-Pass `--no-interactive` to turn the prompt off and fail instead - useful in CI, where there is no
-human to answer.
+An input you do not supply falls back to its declared `default:`. There is no interactive prompt -
+docket is meant to run unattended in scripts and CI. An input declared `required: true` with no
+default and no supplied value renders as an empty string; `docket validate --strict` flags exactly
+that case so a recipe that cannot run without a runtime override fails the lint instead of deploying
+with a blank value.
 
 These input names are reserved for docket's own flags and cannot be used as input names:
 

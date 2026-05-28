@@ -63,17 +63,12 @@ Exit code is `0` when no problems are found, `1` otherwise.
 
 | Flag | Effect |
 |------|--------|
+| `--tasks <path>` | Use a specific recipe. |
 | `--json` | Emit one JSON-lines problem per line with a stable schema, for a CI annotator. |
 | `--strict` | Also flag any `required: true` input with no default and no supplied value, and verify that `--play` / `--start-at-task` references resolve to real names. |
 | `--vars-file <path>` | Load input values from a YAML or JSON file (repeatable). Values here count as overrides for `--strict`. See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | (strict only) Verify the named play exists. |
 | `--start-at-task <name>` | (strict only) Verify a task with this name exists; narrowed by `--play`. |
-
-A recipe can also be fetched over HTTP:
-
-```bash
-docket validate --tasks https://dokku.com/docket/example.yml
-```
 
 ## docket fmt
 
@@ -147,7 +142,12 @@ always report drift with a `(... not probed)` reason.
 | `--detailed-exitcode` | Exit `0` for no drift, `2` for drift, `1` on error. Errors win over drift. Mirrors `terraform plan -detailed-exitcode`. |
 | `--vars-file <path>` | Load input values from a file (repeatable). See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | Plan only the named play. Composes with `--tags`. |
+| `--tags <list>` | Plan only tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
+| `--skip-tags <list>` | Skip tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
 | `--list-tasks` | Print the resolved plan and exit without contacting the server. See [inspecting and resuming](#inspecting-and-resuming). |
+| `--host <user@host:port>` | Plan against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
+| `--sudo` | Wrap the remote `dokku` call in `sudo -n`. See [remote execution](remote-execution.md). |
+| `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
 
 ```bash
 # CI gate: fail the job if any task would change the server.
@@ -187,9 +187,14 @@ summary still prints with partial counts.
 | `--json` | Emit JSON-lines events instead of the human formatter. See [JSON output](json-output.md). |
 | `--vars-file <path>` | Load input values from a file (repeatable). See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | Run only the named play. Composes with `--tags`. |
+| `--tags <list>` | Run only tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
+| `--skip-tags <list>` | Skip tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
 | `--fail-fast` | Abort the whole run on the first error. Without it, an error aborts only the current play. |
 | `--list-tasks` | Print the resolved plan and exit without running. See [inspecting and resuming](#inspecting-and-resuming). |
 | `--start-at-task <name>` | Skip every task before the named one, then run from there. See [inspecting and resuming](#inspecting-and-resuming). |
+| `--host <user@host:port>` | Apply against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
+| `--sudo` | Wrap the remote `dokku` call in `sudo -n`. See [remote execution](remote-execution.md). |
+| `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
 
 A multi-command task renders one continuation line per invocation under `--verbose`:
 

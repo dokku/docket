@@ -37,7 +37,7 @@ Describe the desired state of your app in a `tasks.yml` recipe:
         app: inflector
     - dokku_git_sync:
         app: inflector
-        repository: http://github.com/cakephp/inflector.cakephp.org
+        remote: http://github.com/cakephp/inflector.cakephp.org
 ```
 
 Preview what would change, then apply it:
