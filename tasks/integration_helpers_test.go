@@ -23,6 +23,7 @@ func dokkuAvailable() bool {
 
 func skipIfNoDokkuT(t *testing.T) {
 	t.Helper()
+	skipIfNotInShardT(t)
 	if !dokkuAvailable() {
 		t.Skip("skipping integration test: dokku not available")
 	}
