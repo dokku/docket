@@ -46,7 +46,7 @@ jobs:
           curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.8
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.9
           sudo dokku plugin:install-dependencies --core
       - name: install dokku redis plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-redis.git redis
@@ -55,7 +55,7 @@ jobs:
       - name: install dokku global-cert plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git global-cert
       - name: install dokku letsencrypt plugin
-        run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish 0.20.4 letsencrypt
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish 0.25.0 letsencrypt
       - name: install dokku acl plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-acl.git acl
       - name: run integration tests
@@ -81,7 +81,7 @@ jobs:
           curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.8
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.9
           sudo dokku plugin:install-dependencies --core
       - name: install bats
         run: sudo apt-get install -qq -y bats bats-support bats-assert

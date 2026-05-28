@@ -80,42 +80,43 @@ func (t OpenrestyPropertyTask) Execute() TaskOutputState {
 }
 
 // openrestyPropertyKeys maps openresty property names to the JSON keys
-// emitted by `dokku openresty:report --format json` on dokku 0.38.8+.
-// hsts is app+global; image/letsencrypt-*/log-level/allowed-letsencrypt-* are
-// global only; the rest are per-app only.
+// emitted by `dokku openresty:report --format json` on dokku 0.38.9+, which
+// gave openresty a full raw/computed/global split. Every property is
+// app+global except image/letsencrypt-email/letsencrypt-server/log-level/
+// allowed-letsencrypt-domains-func-base64, which remain global-only.
 var openrestyPropertyKeys = map[string]PropertyKeys{
-	"access-log-format":                       {PerApp: "access-log-format", Global: ""},
-	"access-log-path":                         {PerApp: "access-log-path", Global: ""},
+	"access-log-format":                       {PerApp: "access-log-format", Global: "global-access-log-format"},
+	"access-log-path":                         {PerApp: "access-log-path", Global: "global-access-log-path"},
 	"allowed-letsencrypt-domains-func-base64": {PerApp: "", Global: "global-allowed-letsencrypt-domains-func-base64"},
-	"bind-address-ipv4":                       {PerApp: "bind-address-ipv4", Global: ""},
-	"bind-address-ipv6":                       {PerApp: "bind-address-ipv6", Global: ""},
-	"client-body-timeout":                     {PerApp: "client-body-timeout", Global: ""},
-	"client-header-timeout":                   {PerApp: "client-header-timeout", Global: ""},
-	"client-max-body-size":                    {PerApp: "client-max-body-size", Global: ""},
-	"error-log-path":                          {PerApp: "error-log-path", Global: ""},
+	"bind-address-ipv4":                       {PerApp: "bind-address-ipv4", Global: "global-bind-address-ipv4"},
+	"bind-address-ipv6":                       {PerApp: "bind-address-ipv6", Global: "global-bind-address-ipv6"},
+	"client-body-timeout":                     {PerApp: "client-body-timeout", Global: "global-client-body-timeout"},
+	"client-header-timeout":                   {PerApp: "client-header-timeout", Global: "global-client-header-timeout"},
+	"client-max-body-size":                    {PerApp: "client-max-body-size", Global: "global-client-max-body-size"},
+	"error-log-path":                          {PerApp: "error-log-path", Global: "global-error-log-path"},
 	"hsts":                                    {PerApp: "hsts", Global: "global-hsts"},
-	"hsts-include-subdomains":                 {PerApp: "hsts-include-subdomains", Global: ""},
-	"hsts-max-age":                            {PerApp: "hsts-max-age", Global: ""},
-	"hsts-preload":                            {PerApp: "hsts-preload", Global: ""},
+	"hsts-include-subdomains":                 {PerApp: "hsts-include-subdomains", Global: "global-hsts-include-subdomains"},
+	"hsts-max-age":                            {PerApp: "hsts-max-age", Global: "global-hsts-max-age"},
+	"hsts-preload":                            {PerApp: "hsts-preload", Global: "global-hsts-preload"},
 	"image":                                   {PerApp: "", Global: "global-image"},
-	"keepalive-timeout":                       {PerApp: "keepalive-timeout", Global: ""},
+	"keepalive-timeout":                       {PerApp: "keepalive-timeout", Global: "global-keepalive-timeout"},
 	"letsencrypt-email":                       {PerApp: "", Global: "global-letsencrypt-email"},
 	"letsencrypt-server":                      {PerApp: "", Global: "global-letsencrypt-server"},
-	"lingering-timeout":                       {PerApp: "lingering-timeout", Global: ""},
+	"lingering-timeout":                       {PerApp: "lingering-timeout", Global: "global-lingering-timeout"},
 	"log-level":                               {PerApp: "", Global: "global-log-level"},
-	"proxy-buffer-size":                       {PerApp: "proxy-buffer-size", Global: ""},
-	"proxy-buffering":                         {PerApp: "proxy-buffering", Global: ""},
-	"proxy-buffers":                           {PerApp: "proxy-buffers", Global: ""},
-	"proxy-busy-buffers-size":                 {PerApp: "proxy-busy-buffers-size", Global: ""},
-	"proxy-connect-timeout":                   {PerApp: "proxy-connect-timeout", Global: ""},
-	"proxy-read-timeout":                      {PerApp: "proxy-read-timeout", Global: ""},
-	"proxy-send-timeout":                      {PerApp: "proxy-send-timeout", Global: ""},
-	"send-timeout":                            {PerApp: "send-timeout", Global: ""},
-	"underscore-in-headers":                   {PerApp: "underscore-in-headers", Global: ""},
-	"x-forwarded-for-value":                   {PerApp: "x-forwarded-for-value", Global: ""},
-	"x-forwarded-port-value":                  {PerApp: "x-forwarded-port-value", Global: ""},
-	"x-forwarded-proto-value":                 {PerApp: "x-forwarded-proto-value", Global: ""},
-	"x-forwarded-ssl":                         {PerApp: "x-forwarded-ssl", Global: ""},
+	"proxy-buffer-size":                       {PerApp: "proxy-buffer-size", Global: "global-proxy-buffer-size"},
+	"proxy-buffering":                         {PerApp: "proxy-buffering", Global: "global-proxy-buffering"},
+	"proxy-buffers":                           {PerApp: "proxy-buffers", Global: "global-proxy-buffers"},
+	"proxy-busy-buffers-size":                 {PerApp: "proxy-busy-buffers-size", Global: "global-proxy-busy-buffers-size"},
+	"proxy-connect-timeout":                   {PerApp: "proxy-connect-timeout", Global: "global-proxy-connect-timeout"},
+	"proxy-read-timeout":                      {PerApp: "proxy-read-timeout", Global: "global-proxy-read-timeout"},
+	"proxy-send-timeout":                      {PerApp: "proxy-send-timeout", Global: "global-proxy-send-timeout"},
+	"send-timeout":                            {PerApp: "send-timeout", Global: "global-send-timeout"},
+	"underscore-in-headers":                   {PerApp: "underscore-in-headers", Global: "global-underscore-in-headers"},
+	"x-forwarded-for-value":                   {PerApp: "x-forwarded-for-value", Global: "global-x-forwarded-for-value"},
+	"x-forwarded-port-value":                  {PerApp: "x-forwarded-port-value", Global: "global-x-forwarded-port-value"},
+	"x-forwarded-proto-value":                 {PerApp: "x-forwarded-proto-value", Global: "global-x-forwarded-proto-value"},
+	"x-forwarded-ssl":                         {PerApp: "x-forwarded-ssl", Global: "global-x-forwarded-ssl"},
 }
 
 // Plan reports the drift the OpenrestyPropertyTask would produce.

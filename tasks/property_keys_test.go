@@ -169,14 +169,16 @@ func TestCronPropertyKeys(t *testing.T) {
 
 func TestGitPropertyKeys(t *testing.T) {
 	checkPropertyKeys(t, "git", gitPropertyKeys, []propertyKeysCase{
-		{"archive-max-files", "archive-max-files", "global-archive-max-files"},
-		{"archive-max-size", "archive-max-size", "global-archive-max-size"},
+		{"archive-max-files", "", "global-archive-max-files"},
+		{"archive-max-size", "", "global-archive-max-size"},
 		{"deploy-branch", "deploy-branch", "global-deploy-branch"},
 		{"keep-git-dir", "keep-git-dir", "global-keep-git-dir"},
-		{"rev-env-var", "rev-env-var", "global-rev-env-var"},
-		{"source-image", "source-image", "global-source-image"},
+		{"rev-env-var", "rev-env-var", ""},
+		{"source-image", "source-image", ""},
 	})
 	checkUnsupportedProperty(t, "git", gitPropertyKeys)
+	// archive-max-files is global-only; rev-env-var is per-app-only.
+	checkScopeMismatch(t, "git", gitPropertyKeys, "rev-env-var", "archive-max-files")
 }
 
 func TestHaproxyPropertyKeys(t *testing.T) {
@@ -271,41 +273,41 @@ func TestNginxPropertyKeys(t *testing.T) {
 
 func TestOpenrestyPropertyKeys(t *testing.T) {
 	checkPropertyKeys(t, "openresty", openrestyPropertyKeys, []propertyKeysCase{
-		{"access-log-format", "access-log-format", ""},
-		{"access-log-path", "access-log-path", ""},
+		{"access-log-format", "access-log-format", "global-access-log-format"},
+		{"access-log-path", "access-log-path", "global-access-log-path"},
 		{"allowed-letsencrypt-domains-func-base64", "", "global-allowed-letsencrypt-domains-func-base64"},
-		{"bind-address-ipv4", "bind-address-ipv4", ""},
-		{"bind-address-ipv6", "bind-address-ipv6", ""},
-		{"client-body-timeout", "client-body-timeout", ""},
-		{"client-header-timeout", "client-header-timeout", ""},
-		{"client-max-body-size", "client-max-body-size", ""},
-		{"error-log-path", "error-log-path", ""},
+		{"bind-address-ipv4", "bind-address-ipv4", "global-bind-address-ipv4"},
+		{"bind-address-ipv6", "bind-address-ipv6", "global-bind-address-ipv6"},
+		{"client-body-timeout", "client-body-timeout", "global-client-body-timeout"},
+		{"client-header-timeout", "client-header-timeout", "global-client-header-timeout"},
+		{"client-max-body-size", "client-max-body-size", "global-client-max-body-size"},
+		{"error-log-path", "error-log-path", "global-error-log-path"},
 		{"hsts", "hsts", "global-hsts"},
-		{"hsts-include-subdomains", "hsts-include-subdomains", ""},
-		{"hsts-max-age", "hsts-max-age", ""},
-		{"hsts-preload", "hsts-preload", ""},
+		{"hsts-include-subdomains", "hsts-include-subdomains", "global-hsts-include-subdomains"},
+		{"hsts-max-age", "hsts-max-age", "global-hsts-max-age"},
+		{"hsts-preload", "hsts-preload", "global-hsts-preload"},
 		{"image", "", "global-image"},
-		{"keepalive-timeout", "keepalive-timeout", ""},
+		{"keepalive-timeout", "keepalive-timeout", "global-keepalive-timeout"},
 		{"letsencrypt-email", "", "global-letsencrypt-email"},
 		{"letsencrypt-server", "", "global-letsencrypt-server"},
-		{"lingering-timeout", "lingering-timeout", ""},
+		{"lingering-timeout", "lingering-timeout", "global-lingering-timeout"},
 		{"log-level", "", "global-log-level"},
-		{"proxy-buffer-size", "proxy-buffer-size", ""},
-		{"proxy-buffering", "proxy-buffering", ""},
-		{"proxy-buffers", "proxy-buffers", ""},
-		{"proxy-busy-buffers-size", "proxy-busy-buffers-size", ""},
-		{"proxy-connect-timeout", "proxy-connect-timeout", ""},
-		{"proxy-read-timeout", "proxy-read-timeout", ""},
-		{"proxy-send-timeout", "proxy-send-timeout", ""},
-		{"send-timeout", "send-timeout", ""},
-		{"underscore-in-headers", "underscore-in-headers", ""},
-		{"x-forwarded-for-value", "x-forwarded-for-value", ""},
-		{"x-forwarded-port-value", "x-forwarded-port-value", ""},
-		{"x-forwarded-proto-value", "x-forwarded-proto-value", ""},
-		{"x-forwarded-ssl", "x-forwarded-ssl", ""},
+		{"proxy-buffer-size", "proxy-buffer-size", "global-proxy-buffer-size"},
+		{"proxy-buffering", "proxy-buffering", "global-proxy-buffering"},
+		{"proxy-buffers", "proxy-buffers", "global-proxy-buffers"},
+		{"proxy-busy-buffers-size", "proxy-busy-buffers-size", "global-proxy-busy-buffers-size"},
+		{"proxy-connect-timeout", "proxy-connect-timeout", "global-proxy-connect-timeout"},
+		{"proxy-read-timeout", "proxy-read-timeout", "global-proxy-read-timeout"},
+		{"proxy-send-timeout", "proxy-send-timeout", "global-proxy-send-timeout"},
+		{"send-timeout", "send-timeout", "global-send-timeout"},
+		{"underscore-in-headers", "underscore-in-headers", "global-underscore-in-headers"},
+		{"x-forwarded-for-value", "x-forwarded-for-value", "global-x-forwarded-for-value"},
+		{"x-forwarded-port-value", "x-forwarded-port-value", "global-x-forwarded-port-value"},
+		{"x-forwarded-proto-value", "x-forwarded-proto-value", "global-x-forwarded-proto-value"},
+		{"x-forwarded-ssl", "x-forwarded-ssl", "global-x-forwarded-ssl"},
 	})
 	checkUnsupportedProperty(t, "openresty", openrestyPropertyKeys)
-	checkScopeMismatch(t, "openresty", openrestyPropertyKeys, "bind-address-ipv4", "image")
+	checkScopeMismatch(t, "openresty", openrestyPropertyKeys, "", "image")
 }
 
 func TestProxyPropertyKeys(t *testing.T) {
@@ -321,13 +323,13 @@ func TestPsPropertyKeys(t *testing.T) {
 	checkPropertyKeys(t, "ps", psPropertyKeys, []propertyKeysCase{
 		{"dockerfile-start-cmd", "dockerfile-start-cmd", ""},
 		{"procfile-path", "procfile-path", "global-procfile-path"},
-		{"restart-policy", "restart-policy", ""},
+		{"restart-policy", "restart-policy", "global-restart-policy"},
 		{"skip-deploy", "skip-deploy", "global-skip-deploy"},
 		{"start-cmd", "start-cmd", ""},
 		{"stop-timeout-seconds", "stop-timeout-seconds", "global-stop-timeout-seconds"},
 	})
 	checkUnsupportedProperty(t, "ps", psPropertyKeys)
-	checkScopeMismatch(t, "ps", psPropertyKeys, "restart-policy", "")
+	checkScopeMismatch(t, "ps", psPropertyKeys, "dockerfile-start-cmd", "")
 }
 
 func TestRegistryPropertyKeys(t *testing.T) {

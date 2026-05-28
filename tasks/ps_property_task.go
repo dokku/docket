@@ -72,12 +72,13 @@ func (t PsPropertyTask) Execute() TaskOutputState {
 }
 
 // psPropertyKeys maps ps property names to the JSON keys emitted by
-// `dokku ps:report --format json` on dokku 0.38.8+. dockerfile-start-cmd,
-// restart-policy, and start-cmd are per-app only.
+// `dokku ps:report --format json` on dokku 0.38.9+. dockerfile-start-cmd and
+// start-cmd are per-app only; everything else (including restart-policy as of
+// 0.38.9) is app+global.
 var psPropertyKeys = map[string]PropertyKeys{
 	"dockerfile-start-cmd": {PerApp: "dockerfile-start-cmd", Global: ""},
 	"procfile-path":        {PerApp: "procfile-path", Global: "global-procfile-path"},
-	"restart-policy":       {PerApp: "restart-policy", Global: ""},
+	"restart-policy":       {PerApp: "restart-policy", Global: "global-restart-policy"},
 	"skip-deploy":          {PerApp: "skip-deploy", Global: "global-skip-deploy"},
 	"start-cmd":            {PerApp: "start-cmd", Global: ""},
 	"stop-timeout-seconds": {PerApp: "stop-timeout-seconds", Global: "global-stop-timeout-seconds"},

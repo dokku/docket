@@ -12,8 +12,8 @@ This package provides the above functionality by exposing the modules from `ansi
 
 ## Requirements
 
-- dokku >= 0.38.8 (property tasks rely on the bare-key `:report --format json` shape introduced in 0.38.7 and the settable-property parity finished in 0.38.8)
-- dokku-letsencrypt >= 0.20.4 if you use `dokku_letsencrypt_property` tasks
+- dokku >= 0.38.9 (property tasks rely on the bare-key `:report --format json` shape and the per-app raw/computed split finished across all plugins in 0.38.9)
+- dokku-letsencrypt >= 0.25.0 if you use `dokku_letsencrypt_property` tasks
 
 ## Building
 

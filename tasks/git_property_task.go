@@ -80,14 +80,16 @@ func (t GitPropertyTask) Execute() TaskOutputState {
 }
 
 // gitPropertyKeys maps git property names to the JSON keys emitted by
-// `dokku git:report --format json` on dokku 0.38.8+.
+// `dokku git:report --format json` on dokku 0.38.9+. archive-max-files and
+// archive-max-size only surface a global key; rev-env-var and source-image
+// only surface a per-app key.
 var gitPropertyKeys = map[string]PropertyKeys{
-	"archive-max-files": {PerApp: "archive-max-files", Global: "global-archive-max-files"},
-	"archive-max-size":  {PerApp: "archive-max-size", Global: "global-archive-max-size"},
+	"archive-max-files": {PerApp: "", Global: "global-archive-max-files"},
+	"archive-max-size":  {PerApp: "", Global: "global-archive-max-size"},
 	"deploy-branch":     {PerApp: "deploy-branch", Global: "global-deploy-branch"},
 	"keep-git-dir":      {PerApp: "keep-git-dir", Global: "global-keep-git-dir"},
-	"rev-env-var":       {PerApp: "rev-env-var", Global: "global-rev-env-var"},
-	"source-image":      {PerApp: "source-image", Global: "global-source-image"},
+	"rev-env-var":       {PerApp: "rev-env-var", Global: ""},
+	"source-image":      {PerApp: "source-image", Global: ""},
 }
 
 // Plan reports the drift the GitPropertyTask would produce.

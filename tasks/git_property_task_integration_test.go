@@ -18,12 +18,12 @@ func TestIntegrationGitPropertyAll(t *testing.T) {
 		perApp   bool
 		global   bool
 	}{
-		{"archive-max-files", "5000", true, true},
-		{"archive-max-size", "100000000", true, true},
+		{"archive-max-files", "5000", false, true},
+		{"archive-max-size", "100000000", false, true},
 		{"deploy-branch", "main", true, true},
 		{"keep-git-dir", "true", true, true},
-		{"rev-env-var", "COMMIT_SHA", true, true},
-		{"source-image", "dokku/source:latest", true, true},
+		{"rev-env-var", "COMMIT_SHA", true, false},
+		{"source-image", "dokku/source:latest", true, false},
 	}
 	for _, tc := range cases {
 		if tc.perApp {

@@ -20,7 +20,7 @@ func TestIntegrationPsPropertyAll(t *testing.T) {
 	}{
 		{"dockerfile-start-cmd", "./entrypoint.sh", true, false},
 		{"procfile-path", "Procfile.web", true, true},
-		{"restart-policy", "on-failure:5", true, false},
+		{"restart-policy", "on-failure:5", true, true},
 		{"skip-deploy", "true", true, true},
 		{"start-cmd", "npm start", true, false},
 		{"stop-timeout-seconds", "45", true, true},
