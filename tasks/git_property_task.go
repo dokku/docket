@@ -79,9 +79,20 @@ func (t GitPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// gitPropertyKeys maps git property names to the JSON keys emitted by
+// `dokku git:report --format json` on dokku 0.38.8+.
+var gitPropertyKeys = map[string]PropertyKeys{
+	"archive-max-files": {PerApp: "archive-max-files", Global: "global-archive-max-files"},
+	"archive-max-size":  {PerApp: "archive-max-size", Global: "global-archive-max-size"},
+	"deploy-branch":     {PerApp: "deploy-branch", Global: "global-deploy-branch"},
+	"keep-git-dir":      {PerApp: "keep-git-dir", Global: "global-keep-git-dir"},
+	"rev-env-var":       {PerApp: "rev-env-var", Global: "global-rev-env-var"},
+	"source-image":      {PerApp: "source-image", Global: "global-source-image"},
+}
+
 // Plan reports the drift the GitPropertyTask would produce.
 func (t GitPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "git:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "git:set", gitPropertyKeys)
 }
 
 // init registers the GitPropertyTask with the task registry

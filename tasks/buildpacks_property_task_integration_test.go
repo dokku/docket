@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestIntegrationBuildpacksProperty(t *testing.T) {
+func TestIntegrationBuildpacksPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-buildpacks-prop"
@@ -12,22 +12,34 @@ func TestIntegrationBuildpacksProperty(t *testing.T) {
 	createApp(appName)
 	defer destroyApp(appName)
 
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:     "buildpacks per-app",
-		setTask:   BuildpacksPropertyTask{App: appName, Property: "stack", Value: "gliderlabs/herokuish:latest", State: StatePresent},
-		unsetTask: BuildpacksPropertyTask{App: appName, Property: "stack", State: StateAbsent},
-	})
-}
-
-func TestIntegrationBuildpacksPropertyGlobal(t *testing.T) {
-	skipIfNoDokkuT(t)
-
-	unsetTask := BuildpacksPropertyTask{Global: true, Property: "stack", State: StateAbsent}
-	defer unsetTask.Execute()
-
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:     "buildpacks global",
-		setTask:   BuildpacksPropertyTask{Global: true, Property: "stack", Value: "gliderlabs/herokuish:latest", State: StatePresent},
-		unsetTask: unsetTask,
-	})
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"stack", "gliderlabs/herokuish:latest-24", true, true},
+	}
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "buildpacks per-app " + tc.property,
+					setTask:   BuildpacksPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: BuildpacksPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := BuildpacksPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "buildpacks global " + tc.property,
+					setTask:   BuildpacksPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
+	}
 }

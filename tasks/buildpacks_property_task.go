@@ -71,9 +71,17 @@ func (t BuildpacksPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// buildpacksPropertyKeys maps buildpacks property names to the JSON keys
+// emitted by `dokku buildpacks:report --format json` on dokku 0.38.8+.
+// The buildpacks list (set via `buildpacks:set <app> <buildpack>`) is not a
+// property in the typed-task sense and is not modeled here.
+var buildpacksPropertyKeys = map[string]PropertyKeys{
+	"stack": {PerApp: "stack", Global: "global-stack"},
+}
+
 // Plan reports the drift the BuildpacksPropertyTask would produce.
 func (t BuildpacksPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "buildpacks:set-property")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "buildpacks:set-property", buildpacksPropertyKeys)
 }
 
 // init registers the BuildpacksPropertyTask with the task registry

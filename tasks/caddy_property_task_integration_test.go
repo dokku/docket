@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestIntegrationCaddyProperty(t *testing.T) {
+func TestIntegrationCaddyPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-caddy"
@@ -12,26 +12,39 @@ func TestIntegrationCaddyProperty(t *testing.T) {
 	createApp(appName)
 	defer destroyApp(appName)
 
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:     "caddy per-app",
-		setTask:   CaddyPropertyTask{App: appName, Property: "tls-internal", Value: "true", State: StatePresent},
-		unsetTask: CaddyPropertyTask{App: appName, Property: "tls-internal", State: StateAbsent},
-	})
-}
-
-func TestIntegrationCaddyPropertyGlobal(t *testing.T) {
-	skipIfNoDokkuT(t)
-
-	unsetTask := CaddyPropertyTask{Global: true, Property: "tls-internal", State: StateAbsent}
-	defer unsetTask.Execute()
-
-	// caddy's global-<property> key returns the default value after unset
-	// rather than empty (filed as dokku/dokku#8631), so the absent re-apply
-	// would observe drift. Assert present re-apply only.
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:       "caddy global",
-		setTask:     CaddyPropertyTask{Global: true, Property: "tls-internal", Value: "true", State: StatePresent},
-		unsetTask:   unsetTask,
-		presentOnly: true,
-	})
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"image", "lucaslorentz/caddy-docker-proxy:2.12", false, true},
+		{"letsencrypt-email", "admin@example.com", false, true},
+		{"letsencrypt-server", "https://acme-staging-v02.api.letsencrypt.org/directory", false, true},
+		{"log-level", "INFO", false, true},
+		{"polling-interval", "10s", false, true},
+		{"tls-internal", "true", true, true},
+	}
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "caddy per-app " + tc.property,
+					setTask:   CaddyPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: CaddyPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := CaddyPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "caddy global " + tc.property,
+					setTask:   CaddyPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
+	}
 }

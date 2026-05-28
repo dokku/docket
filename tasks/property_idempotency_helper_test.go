@@ -10,19 +10,14 @@ type propertyTask interface {
 }
 
 // propertyIdempotencyCase describes the inputs to runPropertyIdempotencyTest.
-// presentOnly suppresses the absent re-apply assertion for plugins whose
-// global probe key returns the default value after unset (caddy/haproxy/
-// traefik global scopes - dokku/dokku#8631).
 type propertyIdempotencyCase struct {
-	label       string
-	setTask     propertyTask
-	unsetTask   propertyTask
-	presentOnly bool
+	label     string
+	setTask   propertyTask
+	unsetTask propertyTask
 }
 
 // runPropertyIdempotencyTest exercises set/re-set/unset/re-unset for a
-// property task and asserts Changed=false on the re-runs. Callers
-// providing presentOnly=true skip the absent re-apply Changed assertion.
+// property task and asserts Changed=false on the re-runs.
 func runPropertyIdempotencyTest(t *testing.T, c propertyIdempotencyCase) {
 	t.Helper()
 
@@ -48,10 +43,6 @@ func runPropertyIdempotencyTest(t *testing.T, c propertyIdempotencyCase) {
 	}
 	if result.State != StateAbsent {
 		t.Errorf("%s: expected state 'absent', got '%s'", c.label, result.State)
-	}
-
-	if c.presentOnly {
-		return
 	}
 
 	result = c.unsetTask.Execute()

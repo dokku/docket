@@ -81,9 +81,22 @@ func (t LetsencryptPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// letsencryptPropertyKeys maps letsencrypt property names to the JSON keys
+// emitted by `dokku letsencrypt:report --format json` on
+// dokku-letsencrypt v0.20.4+. The `dns-provider-*` family is dynamic and
+// handled by isDynamicProperty without a map entry.
+var letsencryptPropertyKeys = map[string]PropertyKeys{
+	"dns-provider":        {PerApp: "dns-provider", Global: "global-dns-provider"},
+	"email":               {PerApp: "email", Global: "global-email"},
+	"graceperiod":         {PerApp: "graceperiod", Global: "global-graceperiod"},
+	"lego-args":           {PerApp: "lego-args", Global: "global-lego-args"},
+	"lego-docker-options": {PerApp: "lego-docker-options", Global: "global-lego-docker-options"},
+	"server":              {PerApp: "server", Global: "global-server"},
+}
+
 // Plan reports the drift the LetsencryptPropertyTask would produce.
 func (t LetsencryptPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set", letsencryptPropertyKeys)
 }
 
 // init registers the LetsencryptPropertyTask with the task registry

@@ -79,9 +79,18 @@ func (t ProxyPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// proxyPropertyKeys maps proxy property names to the JSON keys emitted by
+// `dokku proxy:report --format json` on dokku 0.38.8+. `disabled`/`enabled`
+// are managed via proxy:enable/proxy:disable through ProxyTogglePropertyTask.
+var proxyPropertyKeys = map[string]PropertyKeys{
+	"type":           {PerApp: "type", Global: "global-type"},
+	"proxy-port":     {PerApp: "proxy-port", Global: "global-proxy-port"},
+	"proxy-ssl-port": {PerApp: "proxy-ssl-port", Global: "global-proxy-ssl-port"},
+}
+
 // Plan reports the drift the ProxyPropertyTask would produce.
 func (t ProxyPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "proxy:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "proxy:set", proxyPropertyKeys)
 }
 
 // init registers the ProxyPropertyTask with the task registry

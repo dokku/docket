@@ -71,9 +71,16 @@ func (t BuilderNixpacksPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// builderNixpacksPropertyKeys maps builder-nixpacks property names to the
+// JSON keys emitted by `dokku builder-nixpacks:report --format json` on
+// dokku 0.38.8+.
+var builderNixpacksPropertyKeys = map[string]PropertyKeys{
+	"nixpackstoml-path": {PerApp: "nixpackstoml-path", Global: "global-nixpackstoml-path"},
+}
+
 // Plan reports the drift the BuilderNixpacksPropertyTask would produce.
 func (t BuilderNixpacksPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-nixpacks:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-nixpacks:set", builderNixpacksPropertyKeys)
 }
 
 // init registers the BuilderNixpacksPropertyTask with the task registry

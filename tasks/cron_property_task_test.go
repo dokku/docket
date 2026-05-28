@@ -41,7 +41,7 @@ func TestCronPropertyTaskGlobalWithAppSet(t *testing.T) {
 func TestCronPropertyTaskPresentWithoutValue(t *testing.T) {
 	task := CronPropertyTask{
 		App:      "test-app",
-		Property: "mailto",
+		Property: "maintenance",
 		Value:    "",
 		State:    StatePresent,
 	}
@@ -57,8 +57,8 @@ func TestCronPropertyTaskPresentWithoutValue(t *testing.T) {
 func TestCronPropertyTaskAbsentWithValue(t *testing.T) {
 	task := CronPropertyTask{
 		App:      "test-app",
-		Property: "mailto",
-		Value:    "ops@example.com",
+		Property: "maintenance",
+		Value:    "true",
 		State:    StateAbsent,
 	}
 	result := task.Execute()

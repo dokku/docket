@@ -79,9 +79,20 @@ func (t RegistryPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// registryPropertyKeys maps registry property names to the JSON keys
+// emitted by `dokku registry:report --format json` on dokku 0.38.8+.
+// image-repo is per-app only; tag-version is read-only (managed by build).
+var registryPropertyKeys = map[string]PropertyKeys{
+	"image-repo":          {PerApp: "image-repo", Global: ""},
+	"image-repo-template": {PerApp: "image-repo-template", Global: "global-image-repo-template"},
+	"push-extra-tags":     {PerApp: "push-extra-tags", Global: "global-push-extra-tags"},
+	"push-on-release":     {PerApp: "push-on-release", Global: "global-push-on-release"},
+	"server":              {PerApp: "server", Global: "global-server"},
+}
+
 // Plan reports the drift the RegistryPropertyTask would produce.
 func (t RegistryPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "registry:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "registry:set", registryPropertyKeys)
 }
 
 // init registers the RegistryPropertyTask with the task registry

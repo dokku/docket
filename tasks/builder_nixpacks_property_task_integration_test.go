@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestIntegrationBuilderNixpacksProperty(t *testing.T) {
+func TestIntegrationBuilderNixpacksPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-nixpacks"
@@ -12,22 +12,34 @@ func TestIntegrationBuilderNixpacksProperty(t *testing.T) {
 	createApp(appName)
 	defer destroyApp(appName)
 
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:     "builder-nixpacks per-app",
-		setTask:   BuilderNixpacksPropertyTask{App: appName, Property: "nixpackstoml-path", Value: "config/nixpacks.toml", State: StatePresent},
-		unsetTask: BuilderNixpacksPropertyTask{App: appName, Property: "nixpackstoml-path", State: StateAbsent},
-	})
-}
-
-func TestIntegrationBuilderNixpacksPropertyGlobal(t *testing.T) {
-	skipIfNoDokkuT(t)
-
-	unsetTask := BuilderNixpacksPropertyTask{Global: true, Property: "nixpackstoml-path", State: StateAbsent}
-	defer unsetTask.Execute()
-
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:     "builder-nixpacks global",
-		setTask:   BuilderNixpacksPropertyTask{Global: true, Property: "nixpackstoml-path", Value: "config/nixpacks.toml", State: StatePresent},
-		unsetTask: unsetTask,
-	})
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"nixpackstoml-path", "config/nixpacks.toml", true, true},
+	}
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-nixpacks per-app " + tc.property,
+					setTask:   BuilderNixpacksPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: BuilderNixpacksPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := BuilderNixpacksPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-nixpacks global " + tc.property,
+					setTask:   BuilderNixpacksPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
+	}
 }

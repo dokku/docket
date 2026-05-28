@@ -71,9 +71,16 @@ func (t BuilderHerokuishPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// builderHerokuishPropertyKeys maps builder-herokuish property names to the
+// JSON keys emitted by `dokku builder-herokuish:report --format json` on
+// dokku 0.38.8+.
+var builderHerokuishPropertyKeys = map[string]PropertyKeys{
+	"allowed": {PerApp: "allowed", Global: "global-allowed"},
+}
+
 // Plan reports the drift the BuilderHerokuishPropertyTask would produce.
 func (t BuilderHerokuishPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set", builderHerokuishPropertyKeys)
 }
 
 // init registers the BuilderHerokuishPropertyTask with the task registry

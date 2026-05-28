@@ -27,207 +27,6 @@ func TestGetPropertyArgsGlobal(t *testing.T) {
 	}
 }
 
-func TestResolvePropertyKeyPerApp(t *testing.T) {
-	cases := []struct {
-		name     string
-		payload  map[string]string
-		plugin   string
-		property string
-		want     string
-	}{
-		{
-			name:     "nginx bare key",
-			payload:  map[string]string{"bind-address-ipv4": "1.2.3.4", "computed-bind-address-ipv4": "1.2.3.4"},
-			plugin:   "nginx",
-			property: "bind-address-ipv4",
-			want:     "1.2.3.4",
-		},
-		{
-			name:     "app-json prefixed key",
-			payload:  map[string]string{"app-json-appjson-path": "app.json", "app-json-computed-appjson-path": "app.json"},
-			plugin:   "app-json",
-			property: "appjson-path",
-			want:     "app.json",
-		},
-		{
-			name:     "network prefixed key",
-			payload:  map[string]string{"network-bind-all-interfaces": "true"},
-			plugin:   "network",
-			property: "bind-all-interfaces",
-			want:     "true",
-		},
-		{
-			name:     "ps prefixed key restart-policy",
-			payload:  map[string]string{"ps-restart-policy": "always"},
-			plugin:   "ps",
-			property: "restart-policy",
-			want:     "always",
-		},
-		{
-			name:     "ps bare key stop-timeout-seconds",
-			payload:  map[string]string{"stop-timeout-seconds": "60"},
-			plugin:   "ps",
-			property: "stop-timeout-seconds",
-			want:     "60",
-		},
-		{
-			name:     "letsencrypt bare key",
-			payload:  map[string]string{"email": "x@example.com"},
-			plugin:   "letsencrypt",
-			property: "email",
-			want:     "x@example.com",
-		},
-		{
-			name:     "scheduler-docker-local bare key",
-			payload:  map[string]string{"init-process": "true", "computed-init-process": "true"},
-			plugin:   "scheduler-docker-local",
-			property: "init-process",
-			want:     "true",
-		},
-		{
-			name:     "caddy bare key tls-internal",
-			payload:  map[string]string{"tls-internal": "true", "computed-tls-internal": "true"},
-			plugin:   "caddy",
-			property: "tls-internal",
-			want:     "true",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := resolvePropertyKey(tc.payload, tc.plugin, tc.property, false)
-			if !ok {
-				t.Fatalf("resolvePropertyKey returned !ok; payload=%v", tc.payload)
-			}
-			if got != tc.want {
-				t.Errorf("resolvePropertyKey = %q; want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestResolvePropertyKeyGlobal(t *testing.T) {
-	cases := []struct {
-		name     string
-		payload  map[string]string
-		plugin   string
-		property string
-		want     string
-	}{
-		{
-			name:     "nginx global- prefix",
-			payload:  map[string]string{"global-bind-address-ipv4": "1.2.3.4"},
-			plugin:   "nginx",
-			property: "bind-address-ipv4",
-			want:     "1.2.3.4",
-		},
-		{
-			name:     "app-json plugin-global- prefix",
-			payload:  map[string]string{"app-json-global-appjson-path": "app.json"},
-			plugin:   "app-json",
-			property: "appjson-path",
-			want:     "app.json",
-		},
-		{
-			name:     "network plugin-global- prefix",
-			payload:  map[string]string{"network-global-bind-all-interfaces": "true"},
-			plugin:   "network",
-			property: "bind-all-interfaces",
-			want:     "true",
-		},
-		{
-			name:     "letsencrypt global- prefix",
-			payload:  map[string]string{"global-email": "x@example.com"},
-			plugin:   "letsencrypt",
-			property: "email",
-			want:     "x@example.com",
-		},
-		{
-			name:     "scheduler-docker-local global- prefix",
-			payload:  map[string]string{"global-init-process": "true"},
-			plugin:   "scheduler-docker-local",
-			property: "init-process",
-			want:     "true",
-		},
-		{
-			name:     "logs grouped subsystem vector-image",
-			payload:  map[string]string{"logs-vector-global-image": "timberio/vector:0.55.0"},
-			plugin:   "logs",
-			property: "vector-image",
-			want:     "timberio/vector:0.55.0",
-		},
-		{
-			name:     "logs grouped subsystem vector-networks",
-			payload:  map[string]string{"logs-vector-global-networks": "net1,net2"},
-			plugin:   "logs",
-			property: "vector-networks",
-			want:     "net1,net2",
-		},
-		{
-			name:     "caddy global-tls-internal",
-			payload:  map[string]string{"global-tls-internal": "true"},
-			plugin:   "caddy",
-			property: "tls-internal",
-			want:     "true",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := resolvePropertyKey(tc.payload, tc.plugin, tc.property, true)
-			if !ok {
-				t.Fatalf("resolvePropertyKey returned !ok; payload=%v", tc.payload)
-			}
-			if got != tc.want {
-				t.Errorf("resolvePropertyKey = %q; want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestResolvePropertyKeyMissing(t *testing.T) {
-	payload := map[string]string{"unrelated": "value"}
-	if _, ok := resolvePropertyKey(payload, "nginx", "bind-address-ipv4", false); ok {
-		t.Errorf("resolvePropertyKey should return false when no candidate matches")
-	}
-	if _, ok := resolvePropertyKey(payload, "nginx", "bind-address-ipv4", true); ok {
-		t.Errorf("resolvePropertyKey should return false when no candidate matches (global)")
-	}
-}
-
-func TestCandidateKeysPerApp(t *testing.T) {
-	got := candidateKeys("nginx", "bind-address-ipv4", false)
-	want := []string{"bind-address-ipv4", "nginx-bind-address-ipv4"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("candidateKeys per-app = %v; want %v", got, want)
-	}
-}
-
-func TestCandidateKeysGlobalGroupedSubsystem(t *testing.T) {
-	got := candidateKeys("logs", "vector-image", true)
-	want := []string{
-		"global-vector-image",
-		"logs-global-vector-image",
-		"vector-image",
-		"logs-vector-image",
-		"logs-vector-global-image",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("candidateKeys global grouped = %v; want %v", got, want)
-	}
-}
-
-func TestCandidateKeysGlobalNoDash(t *testing.T) {
-	got := candidateKeys("nginx", "image", true)
-	want := []string{
-		"global-image",
-		"nginx-global-image",
-		"image",
-		"nginx-image",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("candidateKeys global no-dash = %v; want %v", got, want)
-	}
-}
-
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buf := &bytes.Buffer{}
@@ -250,13 +49,13 @@ func TestWarnIfUnknownPropertyMissingKey(t *testing.T) {
 	err := &errUnknownProperty{
 		plugin:    "nginx",
 		property:  "selecte",
-		global:    false,
+		lookedFor: "selecte",
 		validKeys: []string{"bind-address-ipv4", "selected"},
 	}
-	warnIfUnknownProperty("nginx", "selecte", false, err)
+	warnIfUnknownProperty("nginx", "selecte", err)
 	out := buf.String()
-	if !strings.Contains(out, "no key for property") {
-		t.Errorf("log output missing 'no key for property': %q", out)
+	if !strings.Contains(out, "no key") {
+		t.Errorf("log output missing 'no key': %q", out)
 	}
 	if !strings.Contains(out, "nginx") {
 		t.Errorf("log output missing plugin name: %q", out)
@@ -277,7 +76,7 @@ func TestWarnIfUnknownPropertyInvalidFlag(t *testing.T) {
 		},
 		Err: errors.New("exit status 1"),
 	}
-	warnIfUnknownProperty("letsencrypt", "email", false, execErr)
+	warnIfUnknownProperty("letsencrypt", "email", execErr)
 	out := buf.String()
 	if !strings.Contains(out, "rejected probe") {
 		t.Errorf("log output missing 'rejected probe': %q", out)
@@ -292,12 +91,12 @@ func TestWarnIfUnknownPropertyInvalidFlag(t *testing.T) {
 
 func TestWarnIfUnknownPropertyIgnoresOtherErrors(t *testing.T) {
 	buf := captureLog(t)
-	warnIfUnknownProperty("nginx", "bind-address-ipv4", false, nil)
+	warnIfUnknownProperty("nginx", "bind-address-ipv4", nil)
 	if buf.Len() != 0 {
 		t.Errorf("log output should be empty for nil error, got %q", buf.String())
 	}
 
-	warnIfUnknownProperty("nginx", "bind-address-ipv4", false, errors.New("plain"))
+	warnIfUnknownProperty("nginx", "bind-address-ipv4", errors.New("plain"))
 	if buf.Len() != 0 {
 		t.Errorf("log output should be empty for plain error, got %q", buf.String())
 	}
@@ -308,7 +107,7 @@ func TestWarnIfUnknownPropertyIgnoresOtherErrors(t *testing.T) {
 		},
 		Err: errors.New("exit status 1"),
 	}
-	warnIfUnknownProperty("nginx", "bind-address-ipv4", false, execErr)
+	warnIfUnknownProperty("nginx", "bind-address-ipv4", execErr)
 	if buf.Len() != 0 {
 		t.Errorf("log output should be empty for non-flag exec error, got %q", buf.String())
 	}
@@ -319,10 +118,10 @@ func TestWarnIfUnknownPropertyDynamicPropertySkipsWarning(t *testing.T) {
 	err := &errUnknownProperty{
 		plugin:    "letsencrypt",
 		property:  "dns-provider-NAMECHEAP_API_USER",
-		global:    false,
+		lookedFor: "dns-provider-NAMECHEAP_API_USER",
 		validKeys: []string{"email", "server"},
 	}
-	warnIfUnknownProperty("letsencrypt", "dns-provider-NAMECHEAP_API_USER", false, err)
+	warnIfUnknownProperty("letsencrypt", "dns-provider-NAMECHEAP_API_USER", err)
 	if buf.Len() != 0 {
 		t.Errorf("log output should be empty for dynamic property, got %q", buf.String())
 	}
@@ -337,6 +136,10 @@ func TestIsDynamicProperty(t *testing.T) {
 		{"letsencrypt", "dns-provider-NAMECHEAP_API_USER", true},
 		{"letsencrypt", "dns-provider-X", true},
 		{"letsencrypt", "email", false},
+		{"traefik", "dns-provider-CLOUDFLARE_API_TOKEN", true},
+		{"traefik", "dns-provider", false},
+		{"scheduler-k3s", "chart.traefik.replicas", true},
+		{"scheduler-k3s", "namespace", false},
 		{"nginx", "dns-provider-X", false},
 	}
 	for _, tc := range cases {
@@ -344,5 +147,57 @@ func TestIsDynamicProperty(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("isDynamicProperty(%q, %q) = %v; want %v", tc.plugin, tc.property, got, tc.want)
 		}
+	}
+}
+
+func TestValidateProperty(t *testing.T) {
+	keys := map[string]PropertyKeys{
+		"both":       {PerApp: "both", Global: "global-both"},
+		"app-only":   {PerApp: "app-only", Global: ""},
+		"global-only": {PerApp: "", Global: "global-global-only"},
+	}
+
+	cases := []struct {
+		name     string
+		property string
+		global   bool
+		wantErr  string
+	}{
+		{"app+global per-app ok", "both", false, ""},
+		{"app+global global ok", "both", true, ""},
+		{"app-only per-app ok", "app-only", false, ""},
+		{"app-only global rejected", "app-only", true, "no global form"},
+		{"global-only global ok", "global-only", true, ""},
+		{"global-only per-app rejected", "global-only", false, "no per-app form"},
+		{"unsupported", "wat", false, "unsupported property"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateProperty("test", tc.property, tc.global, keys)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Errorf("got error %v; want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("got nil error; want substring %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("got error %q; want substring %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidatePropertyDynamic(t *testing.T) {
+	keys := map[string]PropertyKeys{
+		"email": {PerApp: "email", Global: "global-email"},
+	}
+	if err := validateProperty("letsencrypt", "dns-provider-CLOUDFLARE_API_TOKEN", false, keys); err != nil {
+		t.Errorf("dynamic property should pass validation, got %v", err)
+	}
+	if err := validateProperty("letsencrypt", "dns-provider-CLOUDFLARE_API_TOKEN", true, keys); err != nil {
+		t.Errorf("dynamic property should pass validation in global scope, got %v", err)
 	}
 }

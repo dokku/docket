@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestIntegrationBuilderHerokuishProperty(t *testing.T) {
+func TestIntegrationBuilderHerokuishPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-herokuish"
@@ -12,22 +12,34 @@ func TestIntegrationBuilderHerokuishProperty(t *testing.T) {
 	createApp(appName)
 	defer destroyApp(appName)
 
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:     "builder-herokuish per-app",
-		setTask:   BuilderHerokuishPropertyTask{App: appName, Property: "allowed", Value: "true", State: StatePresent},
-		unsetTask: BuilderHerokuishPropertyTask{App: appName, Property: "allowed", State: StateAbsent},
-	})
-}
-
-func TestIntegrationBuilderHerokuishPropertyGlobal(t *testing.T) {
-	skipIfNoDokkuT(t)
-
-	unsetTask := BuilderHerokuishPropertyTask{Global: true, Property: "allowed", State: StateAbsent}
-	defer unsetTask.Execute()
-
-	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
-		label:     "builder-herokuish global",
-		setTask:   BuilderHerokuishPropertyTask{Global: true, Property: "allowed", Value: "true", State: StatePresent},
-		unsetTask: unsetTask,
-	})
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"allowed", "false", true, true},
+	}
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-herokuish per-app " + tc.property,
+					setTask:   BuilderHerokuishPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: BuilderHerokuishPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := BuilderHerokuishPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-herokuish global " + tc.property,
+					setTask:   BuilderHerokuishPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
+	}
 }

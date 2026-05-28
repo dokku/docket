@@ -71,9 +71,15 @@ func (t ChecksPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// checksPropertyKeys maps checks property names to the JSON keys emitted by
+// `dokku checks:report --format json` on dokku 0.38.8+.
+var checksPropertyKeys = map[string]PropertyKeys{
+	"wait-to-retire": {PerApp: "wait-to-retire", Global: "global-wait-to-retire"},
+}
+
 // Plan reports the drift the ChecksPropertyTask would produce.
 func (t ChecksPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "checks:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "checks:set", checksPropertyKeys)
 }
 
 // init registers the ChecksPropertyTask with the task registry

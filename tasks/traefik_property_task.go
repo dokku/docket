@@ -71,9 +71,31 @@ func (t TraefikPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// traefikPropertyKeys maps traefik property names to the JSON keys emitted
+// by `dokku traefik:report --format json` on dokku 0.38.8+. All properties
+// are global-only. The `dns-provider-*` family is dynamic and handled by
+// isDynamicProperty without a map entry.
+var traefikPropertyKeys = map[string]PropertyKeys{
+	"api-enabled":             {PerApp: "", Global: "global-api-enabled"},
+	"api-entry-point":         {PerApp: "", Global: "global-api-entry-point"},
+	"api-entry-point-address": {PerApp: "", Global: "global-api-entry-point-address"},
+	"api-vhost":               {PerApp: "", Global: "global-api-vhost"},
+	"basic-auth-password":     {PerApp: "", Global: "global-basic-auth-password"},
+	"basic-auth-username":     {PerApp: "", Global: "global-basic-auth-username"},
+	"challenge-mode":          {PerApp: "", Global: "global-challenge-mode"},
+	"dashboard-enabled":       {PerApp: "", Global: "global-dashboard-enabled"},
+	"dns-provider":            {PerApp: "", Global: "global-dns-provider"},
+	"http-entry-point":        {PerApp: "", Global: "global-http-entry-point"},
+	"https-entry-point":       {PerApp: "", Global: "global-https-entry-point"},
+	"image":                   {PerApp: "", Global: "global-image"},
+	"letsencrypt-email":       {PerApp: "", Global: "global-letsencrypt-email"},
+	"letsencrypt-server":      {PerApp: "", Global: "global-letsencrypt-server"},
+	"log-level":               {PerApp: "", Global: "global-log-level"},
+}
+
 // Plan reports the drift the TraefikPropertyTask would produce.
 func (t TraefikPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set", traefikPropertyKeys)
 }
 
 // init registers the TraefikPropertyTask with the task registry

@@ -71,9 +71,16 @@ func (t BuilderLambdaPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// builderLambdaPropertyKeys maps builder-lambda property names to the JSON
+// keys emitted by `dokku builder-lambda:report --format json` on dokku
+// 0.38.8+.
+var builderLambdaPropertyKeys = map[string]PropertyKeys{
+	"lambdayml-path": {PerApp: "lambdayml-path", Global: "global-lambdayml-path"},
+}
+
 // Plan reports the drift the BuilderLambdaPropertyTask would produce.
 func (t BuilderLambdaPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set", builderLambdaPropertyKeys)
 }
 
 // init registers the BuilderLambdaPropertyTask with the task registry
