@@ -55,7 +55,7 @@ jobs:
       - name: install dokku global-cert plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git global-cert
       - name: install dokku letsencrypt plugin
-        run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish v0.20.4 letsencrypt
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish 0.20.4 letsencrypt
       - name: install dokku acl plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-acl.git acl
       - name: run integration tests
