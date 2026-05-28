@@ -1,0 +1,155 @@
+# Inputs
+
+Inputs are the variables of a recipe. They let you write one recipe and reuse it across apps or
+environments by supplying different values, instead of copy-pasting the file and editing names by
+hand. You declare an input once, reference it in your tasks with a `{{ .name }}` template, and
+override it at run time.
+
+## Declaring inputs
+
+Declare inputs in an `inputs:` block and reference them in task bodies:
+
+```yaml
+---
+- inputs:
+    - name: name
+      default: "inflector"
+      description: "Name of app to be created"
+      required: true
+  tasks:
+    - dokku_app:
+        app: "{{ .name }}"
+    - dokku_git_sync:
+        app: "{{ .name }}"
+        repository: http://github.com/cakephp/inflector.cakephp.org
+```
+
+Each input supports these properties:
+
+| Property | Type | Default | Notes |
+|----------|------|---------|-------|
+| `name` | string | `""` | The variable name used in `{{ .name }}` templates. |
+| `default` | bool / float / int / string | zero value for the type | Used when no value is supplied. |
+| `description` | string | `""` | Shown in `--help` output. |
+| `required` | bool | `false` | Flagged by `validate --strict` when it has no default and no supplied value. |
+| `type` | string | `string` | One of `bool`, `float`, `int`, `string`. Controls how supplied values are coerced. |
+
+Inputs are substituted into task bodies with the [sigil](https://github.com/gliderlabs/sigil)
+template library, which wraps Go's `text/template`. Anything sigil supports is available in a task
+body. Inputs themselves must not reference other variables - they are resolved first, in a separate
+phase, and then injected.
+
+## Overriding inputs
+
+Override an input on the command line by passing its name as a flag. Omit it to use the default:
+
+```bash
+# from the same directory as the tasks.yml
+docket apply --name lollipop
+```
+
+Any inputs you declare also appear in the recipe's `--help` output, so `docket apply --help` is a
+quick way to see what a recipe accepts.
+
+If you do not supply every input on the command line, docket prompts for the missing ones
+interactively, using the CLI-supplied values (or the declared defaults) as the suggested value.
+Pass `--no-interactive` to turn the prompt off and fail instead - useful in CI, where there is no
+human to answer.
+
+These input names are reserved for docket's own flags and cannot be used as input names:
+
+- `help`
+- `tasks`
+- `v`
+- `version`
+
+## Layered values with `--vars-file`
+
+For anything beyond a couple of overrides, keep values in a file and pass it with `--vars-file`.
+This is how you manage per-environment configuration: a `prod.yml` and a `staging.yml`, each
+holding the values for that environment. `apply`, `plan`, and `validate` all accept it, and the
+flag is repeatable so you can layer a base file under an environment-specific one.
+
+A vars file is a flat map of input name to value:
+
+```yaml
+# prod.yml
+app: api
+repo: https://github.com/example/api.git
+replicas: 3
+debug: false
+```
+
+JSON works the same way - any path ending in `.json` is parsed as JSON, anything else as YAML:
+
+```json
+{
+  "app": "api",
+  "repo": "https://github.com/example/api.git",
+  "replicas": 3,
+  "debug": false
+}
+```
+
+Common patterns:
+
+```bash
+# Layer environment-specific values over the recipe defaults.
+docket apply --tasks tasks.yml --vars-file prod.yml
+
+# Stack a base file under a per-environment override, then override one value on the CLI.
+docket plan --tasks tasks.yml \
+  --vars-file base.yml --vars-file prod.yml \
+  --app=api-canary
+```
+
+Values are coerced to each input's declared `type`:
+
+- `string`: any scalar (a YAML boolean `true` becomes the string `"true"`).
+- `int`: whole numbers, including numeric strings and whole-valued JSON numbers.
+- `float`: floats, ints, and parseable numeric strings.
+- `bool`: native booleans and the same string forms the CLI accepts (`true`/`yes`/`on`/`y` and
+  their false counterparts).
+
+A key in a vars file that does not match any declared input is a hard error, with a suggestion for
+the closest real name:
+
+```text
+unknown input "appp" in --vars-file prod.yml; did you mean "app"?
+```
+
+## Precedence
+
+When the same input is set in more than one place, the highest layer wins. From lowest to highest:
+
+| Layer | Source |
+|-------|--------|
+| 1 | File-level `inputs:` defaults (declared on a play with no tasks) |
+| 2 | Per-play `inputs:` defaults (declared on a play that also has tasks) |
+| 3 | `--vars-file <path>` (repeatable; later files override earlier ones) |
+| 4 | `--name=value` CLI flags (always win) |
+
+### Per-play inputs precedence
+
+In a [multi-play recipe](recipes.md#multi-play-recipes), there are two kinds of input defaults:
+
+- A **file-level input** is declared on a play that has no tasks. It is visible to every play.
+- A **play-local input** is declared on a play that also has tasks. It is visible only to that
+  play's tasks - not to other plays, and not to any play's `when:` (including its own).
+
+```yaml
+---
+- inputs:
+    - { name: env, default: prod }     # file-level: visible to every play
+- name: api
+  inputs:
+    - { name: app, default: api }       # play-local: visible to api's tasks only
+  tasks:
+    - dokku_app: { app: "{{ .app }}" }
+```
+
+## See also
+
+- [Recipes](recipes.md) - plays and multi-play structure
+- [Task envelope](task-envelope.md) - using inputs in `when:` and `loop:` expressions
+- [Command reference](command-reference.md#docket-validate) - `validate --strict` checks required inputs

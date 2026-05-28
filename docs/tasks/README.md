@@ -1,0 +1,60 @@
+# Tasks
+
+Reference for every task type docket can run inside a recipe. Each page lists the task's fields and example usage. These pages are generated from the task definitions with `make docs`.
+
+- [dokku_acl_app](dokku_acl_app.md) - Manages the dokku-acl access list for a dokku application
+- [dokku_acl_service](dokku_acl_service.md) - Manages the dokku-acl access list for a dokku service
+- [dokku_app](dokku_app.md) - Creates or destroys an app
+- [dokku_app_clone](dokku_app_clone.md) - Clones an existing dokku app to a new app
+- [dokku_app_json_property](dokku_app_json_property.md) - Manages the app.json configuration for a given dokku application
+- [dokku_app_lock](dokku_app_lock.md) - Locks or unlocks a dokku application from deployment
+- [dokku_builder_dockerfile_property](dokku_builder_dockerfile_property.md) - Manages the builder-dockerfile configuration for a given dokku application
+- [dokku_builder_herokuish_property](dokku_builder_herokuish_property.md) - Manages the builder-herokuish configuration for a given dokku application
+- [dokku_builder_lambda_property](dokku_builder_lambda_property.md) - Manages the builder-lambda configuration for a given dokku application
+- [dokku_builder_nixpacks_property](dokku_builder_nixpacks_property.md) - Manages the builder-nixpacks configuration for a given dokku application
+- [dokku_builder_pack_property](dokku_builder_pack_property.md) - Manages the builder-pack configuration for a given dokku application
+- [dokku_builder_property](dokku_builder_property.md) - Manages the builder configuration for a given dokku application
+- [dokku_builder_railpack_property](dokku_builder_railpack_property.md) - Manages the builder-railpack configuration for a given dokku application
+- [dokku_buildpacks](dokku_buildpacks.md) - Manages the buildpacks for a given dokku application
+- [dokku_buildpacks_property](dokku_buildpacks_property.md) - Manages the buildpacks configuration for a given dokku application
+- [dokku_builds_property](dokku_builds_property.md) - Manages the builds configuration for a given dokku application
+- [dokku_caddy_property](dokku_caddy_property.md) - Manages the caddy configuration for a given dokku application
+- [dokku_certs](dokku_certs.md) - Manages SSL certificates for a dokku app or globally.
+- [dokku_checks_property](dokku_checks_property.md) - Manages the checks configuration for a given dokku application
+- [dokku_checks_toggle](dokku_checks_toggle.md) - Enables or disables the checks plugin for a given dokku application
+- [dokku_config](dokku_config.md) - Manages the configuration for a given dokku application
+- [dokku_cron_property](dokku_cron_property.md) - Manages the cron configuration for a given dokku application
+- [dokku_docker_options](dokku_docker_options.md) - Manages docker-options for a given dokku application
+- [dokku_domains](dokku_domains.md) - Manages the domains for a given dokku application or globally
+- [dokku_domains_toggle](dokku_domains_toggle.md) - Enables or disables the domains plugin for a given dokku application
+- [dokku_git_auth](dokku_git_auth.md) - Manages netrc credentials for a git host
+- [dokku_git_from_archive](dokku_git_from_archive.md) - Deploys a git repository from an archive URL
+- [dokku_git_from_image](dokku_git_from_image.md) - Deploys a git repository from a docker image
+- [dokku_git_property](dokku_git_property.md) - Manages the git configuration for a given dokku application
+- [dokku_git_sync](dokku_git_sync.md) - Syncs a git repository to a dokku application
+- [dokku_haproxy_property](dokku_haproxy_property.md) - Manages the haproxy configuration for a given dokku application
+- [dokku_http_auth](dokku_http_auth.md) - Manages HTTP authentication for a given dokku application
+- [dokku_letsencrypt](dokku_letsencrypt.md) - Enables or disables letsencrypt SSL certificates for a dokku application
+- [dokku_letsencrypt_property](dokku_letsencrypt_property.md) - Manages the letsencrypt configuration for a given dokku application
+- [dokku_logs_property](dokku_logs_property.md) - Manages the logs configuration for a given dokku application
+- [dokku_network](dokku_network.md) - Creates or destroys a Docker network
+- [dokku_network_property](dokku_network_property.md) - Manages the network property for a given dokku application
+- [dokku_nginx_property](dokku_nginx_property.md) - Manages the nginx configuration for a given dokku application
+- [dokku_openresty_property](dokku_openresty_property.md) - Manages the openresty configuration for a given dokku application
+- [dokku_ports](dokku_ports.md) - Manages the ports for a given dokku application
+- [dokku_proxy_property](dokku_proxy_property.md) - Manages the proxy configuration for a given dokku application
+- [dokku_proxy_toggle](dokku_proxy_toggle.md) - Enables or disables the proxy plugin for a given dokku application
+- [dokku_ps_property](dokku_ps_property.md) - Manages the ps configuration for a given dokku application
+- [dokku_ps_scale](dokku_ps_scale.md) - Manages the process scale for a given dokku application
+- [dokku_registry_auth](dokku_registry_auth.md) - Manages docker registry authentication for a dokku application or globally
+- [dokku_registry_property](dokku_registry_property.md) - Manages the registry configuration for a given dokku application
+- [dokku_resource_limit](dokku_resource_limit.md) - Manages the resource limits for a given dokku application
+- [dokku_resource_reserve](dokku_resource_reserve.md) - Manages the resource reservations for a given dokku application
+- [dokku_scheduler_docker_local_property](dokku_scheduler_docker_local_property.md) - Manages the scheduler-docker-local configuration for a given dokku application
+- [dokku_scheduler_k3s_property](dokku_scheduler_k3s_property.md) - Manages the scheduler-k3s configuration for a given dokku application
+- [dokku_scheduler_property](dokku_scheduler_property.md) - Manages the scheduler configuration for a given dokku application
+- [dokku_service_create](dokku_service_create.md) - Creates or destroys a dokku service
+- [dokku_service_link](dokku_service_link.md) - Links or unlinks a dokku service to an app
+- [dokku_storage_ensure](dokku_storage_ensure.md) - Ensures the storage for a given dokku application
+- [dokku_storage_mount](dokku_storage_mount.md) - Mounts or unmounts the storage for a given dokku application
+- [dokku_traefik_property](dokku_traefik_property.md) - Manages the traefik configuration for a given dokku application
