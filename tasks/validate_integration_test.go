@@ -45,6 +45,7 @@ func TestValidateDoesNotImportSubprocess(t *testing.T) {
 // the import-graph guard above by exercising the actual function at
 // runtime.
 func TestIntegrationValidateRunsOffline(t *testing.T) {
+	skipIfNotInShardT(t)
 	original := os.Getenv("PATH")
 	if err := os.Setenv("PATH", ""); err != nil {
 		t.Fatalf("os.Setenv: %v", err)

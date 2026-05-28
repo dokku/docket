@@ -29,6 +29,10 @@ jobs:
   integration-test:
     name: integration-test
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -58,8 +62,8 @@ jobs:
         run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish 0.25.0 letsencrypt
       - name: install dokku acl plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-acl.git acl
-      - name: run integration tests
-        run: sudo go test -v -count=1 -timeout 40m -run TestIntegration ./tasks/
+      - name: run integration tests (shard ${{ matrix.shard }} of 4)
+        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 20m -run TestIntegration ./tasks/
 
   bats-test:
     name: bats-test
