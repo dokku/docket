@@ -74,6 +74,83 @@ A few conventions to follow:
 - `DispatchPlan` and `DispatchState` set `DesiredState` on the result automatically.
 - `init()` registers the task with `RegisterTask`, which makes it usable in a recipe.
 
+## Toggle and property tasks
+
+Most dokku plugins expose one of two shapes, and docket has a shared `Plan()` helper for each. When
+your task fits one, reach for the helper instead of hand-writing `DispatchPlan` - the task becomes
+mostly declaration, and the idempotency probing is handled for you.
+
+- A **toggle** turns a plugin on or off for an app or globally - for example `checks`, `proxy`, and
+  `domains`.
+- A **property** stores named key/value settings you set or clear - for example `nginx`, `builder`,
+  and `git`.
+
+For both shapes the `State` field accepts only `present` and `absent`, declared with the same tag:
+`default:"present" options:"present,absent"`.
+
+### Toggle tasks
+
+A toggle task delegates `Plan()` to `planToggle`, passing the plugin's enable and disable
+subcommands and a *probe* - a function that reports whether the plugin is currently enabled. The
+probe is what keeps the task idempotent: when it reports the plugin is already in the desired
+position, the task is in sync and nothing runs. `present` means enabled, `absent` means disabled.
+The `allowGlobal` argument controls whether `global: true` is accepted; pass `false` for plugins
+that are app-only.
+
+```go
+type ChecksToggleTask struct {
+  App    string `required:"true" yaml:"app"`
+  Global bool   `required:"false" yaml:"global,omitempty"`
+  State  State  `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+}
+
+// The probe reports the current position. A non-nil error (or a nil probe) is
+// treated as drift, so the enable/disable command runs anyway.
+func checksEnabled(ctx ToggleContext) (bool, error) {
+  // dokku --quiet checks:report <app> --checks-disabled
+  // ... return true when nothing is disabled
+}
+
+func (t ChecksToggleTask) Plan() PlanResult {
+  return planToggle(t.State, t.App, t.Global, false, "checks:enable", "checks:disable", checksEnabled)
+}
+```
+
+### Property tasks
+
+A property task delegates `Plan()` to `planProperty`, passing the plugin's `:set` subcommand and a
+`PropertyKeys` map. That map is the task's source of truth: it lists every property the task manages
+and, for each, the JSON keys that `dokku <plugin>:report --format json` emits in per-app and global
+scope. An empty string for a scope means the property is not supported there, and `planProperty`
+rejects that scope at plan time. `present` sets the property and requires a `value`; `absent` clears
+it and must not have one - the helper enforces both.
+
+```go
+type NginxPropertyTask struct {
+  App      string `required:"false" yaml:"app"`
+  Global   bool   `required:"false" yaml:"global,omitempty"`
+  Property string `required:"true" yaml:"property"`
+  Value    string `required:"false" yaml:"value,omitempty"`
+  State    State  `required:"true" yaml:"state,omitempty" default:"present" options:"present,absent"`
+}
+
+// Maps each property to the report JSON keys per scope. "" means unsupported.
+var nginxPropertyKeys = map[string]PropertyKeys{
+  "client-max-body-size": {PerApp: "client-max-body-size", Global: "global-client-max-body-size"},
+  "proxy-read-timeout":   {PerApp: "proxy-read-timeout", Global: "global-proxy-read-timeout"},
+  // ...
+}
+
+func (t NginxPropertyTask) Plan() PlanResult {
+  return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "nginx:set", nginxPropertyKeys)
+}
+```
+
+Keep the `PropertyKeys` map in sync with the plugin's `:report` output - that mapping is how `plan`
+and `apply` detect drift without mutating. A property whose report key only appears after it is set
+(a dynamic family such as letsencrypt's `dns-provider-*`) skips probing and is applied
+unconditionally; those are recognized by `isDynamicProperty` in `tasks/properties.go`.
+
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()` and
