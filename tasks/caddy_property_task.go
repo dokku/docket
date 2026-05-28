@@ -71,9 +71,21 @@ func (t CaddyPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// caddyPropertyKeys maps caddy property names to the JSON keys emitted by
+// `dokku caddy:report --format json` on dokku 0.38.8+. All except
+// tls-internal are global-only.
+var caddyPropertyKeys = map[string]PropertyKeys{
+	"image":              {PerApp: "", Global: "global-image"},
+	"letsencrypt-email":  {PerApp: "", Global: "global-letsencrypt-email"},
+	"letsencrypt-server": {PerApp: "", Global: "global-letsencrypt-server"},
+	"log-level":          {PerApp: "", Global: "global-log-level"},
+	"polling-interval":   {PerApp: "", Global: "global-polling-interval"},
+	"tls-internal":       {PerApp: "tls-internal", Global: "global-tls-internal"},
+}
+
 // Plan reports the drift the CaddyPropertyTask would produce.
 func (t CaddyPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set", caddyPropertyKeys)
 }
 
 // init registers the CaddyPropertyTask with the task registry

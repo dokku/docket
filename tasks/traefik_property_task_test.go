@@ -6,7 +6,7 @@ import (
 )
 
 func TestTraefikPropertyTaskInvalidState(t *testing.T) {
-	task := TraefikPropertyTask{App: "test-app", Property: "letsencrypt-email", State: "invalid"}
+	task := TraefikPropertyTask{Global: true, Property: "letsencrypt-email", State: "invalid"}
 	result := task.Execute()
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
@@ -40,7 +40,7 @@ func TestTraefikPropertyTaskGlobalWithAppSet(t *testing.T) {
 
 func TestTraefikPropertyTaskPresentWithoutValue(t *testing.T) {
 	task := TraefikPropertyTask{
-		App:      "test-app",
+		Global:   true,
 		Property: "letsencrypt-email",
 		Value:    "",
 		State:    StatePresent,
@@ -56,7 +56,7 @@ func TestTraefikPropertyTaskPresentWithoutValue(t *testing.T) {
 
 func TestTraefikPropertyTaskAbsentWithValue(t *testing.T) {
 	task := TraefikPropertyTask{
-		App:      "test-app",
+		Global:   true,
 		Property: "letsencrypt-email",
 		Value:    "admin@example.com",
 		State:    StateAbsent,

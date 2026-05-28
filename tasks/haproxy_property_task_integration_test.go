@@ -4,41 +4,32 @@ import (
 	"testing"
 )
 
-func TestIntegrationHaproxyProperty(t *testing.T) {
+func TestIntegrationHaproxyPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
-	appName := "docket-test-haproxy"
-
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
-
-	// set haproxy property
-	setTask := HaproxyPropertyTask{
-		App:      appName,
-		Property: "letsencrypt-email",
-		Value:    "admin@example.com",
-		State:    StatePresent,
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"image", "byjg/easy-haproxy:6.0.1", false, true},
+		{"letsencrypt-email", "admin@example.com", false, true},
+		{"letsencrypt-server", "https://acme-staging-v02.api.letsencrypt.org/directory", false, true},
+		{"log-level", "INFO", false, true},
+		{"refresh-conf", "15", false, true},
 	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set haproxy property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
-
-	// unset haproxy property
-	unsetTask := HaproxyPropertyTask{
-		App:      appName,
-		Property: "letsencrypt-email",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset haproxy property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
+	for _, tc := range cases {
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := HaproxyPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "haproxy global " + tc.property,
+					setTask:   HaproxyPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
 	}
 }

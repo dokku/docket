@@ -4,41 +4,42 @@ import (
 	"testing"
 )
 
-func TestIntegrationChecksProperty(t *testing.T) {
+func TestIntegrationChecksPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-checks-prop"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set checks property
-	setTask := ChecksPropertyTask{
-		App:      appName,
-		Property: "wait-to-retire",
-		Value:    "60",
-		State:    StatePresent,
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"wait-to-retire", "90", true, true},
 	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set checks property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
-
-	// unset checks property
-	unsetTask := ChecksPropertyTask{
-		App:      appName,
-		Property: "wait-to-retire",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset checks property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "checks per-app " + tc.property,
+					setTask:   ChecksPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: ChecksPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := ChecksPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "checks global " + tc.property,
+					setTask:   ChecksPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
 	}
 }

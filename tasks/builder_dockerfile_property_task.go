@@ -71,9 +71,16 @@ func (t BuilderDockerfilePropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// builderDockerfilePropertyKeys maps builder-dockerfile property names to
+// the JSON keys emitted by `dokku builder-dockerfile:report --format json`
+// on dokku 0.38.8+.
+var builderDockerfilePropertyKeys = map[string]PropertyKeys{
+	"dockerfile-path": {PerApp: "dockerfile-path", Global: "global-dockerfile-path"},
+}
+
 // Plan reports the drift the BuilderDockerfilePropertyTask would produce.
 func (t BuilderDockerfilePropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set", builderDockerfilePropertyKeys)
 }
 
 // init registers the BuilderDockerfilePropertyTask with the task registry

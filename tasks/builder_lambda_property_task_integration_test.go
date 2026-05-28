@@ -4,41 +4,42 @@ import (
 	"testing"
 )
 
-func TestIntegrationBuilderLambdaProperty(t *testing.T) {
+func TestIntegrationBuilderLambdaPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-lambda"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set builder-lambda property
-	setTask := BuilderLambdaPropertyTask{
-		App:      appName,
-		Property: "lambdayml-path",
-		Value:    "config/lambda.yml",
-		State:    StatePresent,
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"lambdayml-path", "config/lambda.yml", true, true},
 	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set builder-lambda property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
-
-	// unset builder-lambda property
-	unsetTask := BuilderLambdaPropertyTask{
-		App:      appName,
-		Property: "lambdayml-path",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset builder-lambda property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-lambda per-app " + tc.property,
+					setTask:   BuilderLambdaPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: BuilderLambdaPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := BuilderLambdaPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-lambda global " + tc.property,
+					setTask:   BuilderLambdaPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
 	}
 }

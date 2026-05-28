@@ -71,9 +71,15 @@ func (t AppJsonPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// appJsonPropertyKeys maps app-json property names to the JSON keys emitted
+// by `dokku app-json:report --format json` on dokku 0.38.8+.
+var appJsonPropertyKeys = map[string]PropertyKeys{
+	"appjson-path": {PerApp: "appjson-path", Global: "global-appjson-path"},
+}
+
 // Plan reports the drift the AppJsonPropertyTask would produce.
 func (t AppJsonPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "app-json:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "app-json:set", appJsonPropertyKeys)
 }
 
 // init registers the AppJsonPropertyTask with the task registry

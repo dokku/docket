@@ -4,41 +4,42 @@ import (
 	"testing"
 )
 
-func TestIntegrationBuilderDockerfileProperty(t *testing.T) {
+func TestIntegrationBuilderDockerfilePropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-dockerfile"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set builder-dockerfile property
-	setTask := BuilderDockerfilePropertyTask{
-		App:      appName,
-		Property: "dockerfile-path",
-		Value:    "Dockerfile.production",
-		State:    StatePresent,
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"dockerfile-path", "Dockerfile.prod", true, true},
 	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set builder-dockerfile property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
-
-	// unset builder-dockerfile property
-	unsetTask := BuilderDockerfilePropertyTask{
-		App:      appName,
-		Property: "dockerfile-path",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset builder-dockerfile property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-dockerfile per-app " + tc.property,
+					setTask:   BuilderDockerfilePropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: BuilderDockerfilePropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := BuilderDockerfilePropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "builder-dockerfile global " + tc.property,
+					setTask:   BuilderDockerfilePropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
 	}
 }

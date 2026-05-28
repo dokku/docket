@@ -79,9 +79,21 @@ func (t NetworkPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// networkPropertyKeys maps network property names to the JSON keys emitted
+// by `dokku network:report --format json` on dokku 0.38.8+.
+// static-web-listener is per-app only.
+var networkPropertyKeys = map[string]PropertyKeys{
+	"attach-post-create":  {PerApp: "attach-post-create", Global: "global-attach-post-create"},
+	"attach-post-deploy":  {PerApp: "attach-post-deploy", Global: "global-attach-post-deploy"},
+	"bind-all-interfaces": {PerApp: "bind-all-interfaces", Global: "global-bind-all-interfaces"},
+	"initial-network":     {PerApp: "initial-network", Global: "global-initial-network"},
+	"static-web-listener": {PerApp: "static-web-listener", Global: ""},
+	"tld":                 {PerApp: "tld", Global: "global-tld"},
+}
+
 // Plan reports the drift the NetworkPropertyTask would produce.
 func (t NetworkPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "network:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "network:set", networkPropertyKeys)
 }
 
 // init registers the NetworkPropertyTask with the task registry

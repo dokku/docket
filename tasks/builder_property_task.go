@@ -79,9 +79,17 @@ func (t BuilderPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// builderPropertyKeys maps builder property names to the JSON keys emitted
+// by `dokku builder:report --format json` on dokku 0.38.8+.
+var builderPropertyKeys = map[string]PropertyKeys{
+	"build-dir":    {PerApp: "build-dir", Global: "global-build-dir"},
+	"selected":     {PerApp: "selected", Global: "global-selected"},
+	"skip-cleanup": {PerApp: "skip-cleanup", Global: "global-skip-cleanup"},
+}
+
 // Plan reports the drift the BuilderPropertyTask would produce.
 func (t BuilderPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder:set", builderPropertyKeys)
 }
 
 // init registers the BuilderTask with the task registry

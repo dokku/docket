@@ -71,9 +71,16 @@ func (t SchedulerPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// schedulerPropertyKeys maps scheduler property names to the JSON keys
+// emitted by `dokku scheduler:report --format json` on dokku 0.38.8+.
+var schedulerPropertyKeys = map[string]PropertyKeys{
+	"selected": {PerApp: "selected", Global: "global-selected"},
+	"shell":    {PerApp: "shell", Global: "global-shell"},
+}
+
 // Plan reports the drift the SchedulerPropertyTask would produce.
 func (t SchedulerPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set", schedulerPropertyKeys)
 }
 
 // init registers the SchedulerPropertyTask with the task registry

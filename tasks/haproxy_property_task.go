@@ -71,9 +71,20 @@ func (t HaproxyPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// haproxyPropertyKeys maps haproxy property names to the JSON keys emitted
+// by `dokku haproxy:report --format json` on dokku 0.38.8+. All properties
+// are global-only.
+var haproxyPropertyKeys = map[string]PropertyKeys{
+	"image":              {PerApp: "", Global: "global-image"},
+	"letsencrypt-email":  {PerApp: "", Global: "global-letsencrypt-email"},
+	"letsencrypt-server": {PerApp: "", Global: "global-letsencrypt-server"},
+	"log-level":          {PerApp: "", Global: "global-log-level"},
+	"refresh-conf":       {PerApp: "", Global: "global-refresh-conf"},
+}
+
 // Plan reports the drift the HaproxyPropertyTask would produce.
 func (t HaproxyPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set", haproxyPropertyKeys)
 }
 
 // init registers the HaproxyPropertyTask with the task registry

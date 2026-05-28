@@ -71,9 +71,15 @@ func (t BuilderPackPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// builderPackPropertyKeys maps builder-pack property names to the JSON keys
+// emitted by `dokku builder-pack:report --format json` on dokku 0.38.8+.
+var builderPackPropertyKeys = map[string]PropertyKeys{
+	"projecttoml-path": {PerApp: "projecttoml-path", Global: "global-projecttoml-path"},
+}
+
 // Plan reports the drift the BuilderPackPropertyTask would produce.
 func (t BuilderPackPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-pack:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-pack:set", builderPackPropertyKeys)
 }
 
 // init registers the BuilderPackPropertyTask with the task registry

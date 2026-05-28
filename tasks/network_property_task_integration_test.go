@@ -4,41 +4,47 @@ import (
 	"testing"
 )
 
-func TestIntegrationNetworkProperty(t *testing.T) {
+func TestIntegrationNetworkPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-network"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set network property
-	setTask := NetworkPropertyTask{
-		App:      appName,
-		Property: "bind-all-interfaces",
-		Value:    "true",
-		State:    StatePresent,
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"attach-post-create", "example-net", true, true},
+		{"attach-post-deploy", "example-net", true, true},
+		{"bind-all-interfaces", "true", true, true},
+		{"initial-network", "example-net", true, true},
+		{"static-web-listener", "1.2.3.4:5000", true, false},
+		{"tld", "example.com", true, true},
 	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set network property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
-
-	// unset network property
-	unsetTask := NetworkPropertyTask{
-		App:      appName,
-		Property: "bind-all-interfaces",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset network property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "network per-app " + tc.property,
+					setTask:   NetworkPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: NetworkPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := NetworkPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "network global " + tc.property,
+					setTask:   NetworkPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
 	}
 }

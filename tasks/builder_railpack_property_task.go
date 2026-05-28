@@ -71,9 +71,16 @@ func (t BuilderRailpackPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// builderRailpackPropertyKeys maps builder-railpack property names to the
+// JSON keys emitted by `dokku builder-railpack:report --format json` on
+// dokku 0.38.8+.
+var builderRailpackPropertyKeys = map[string]PropertyKeys{
+	"railpackjson-path": {PerApp: "railpackjson-path", Global: "global-railpackjson-path"},
+}
+
 // Plan reports the drift the BuilderRailpackPropertyTask would produce.
 func (t BuilderRailpackPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set", builderRailpackPropertyKeys)
 }
 
 // init registers the BuilderRailpackPropertyTask with the task registry

@@ -5,28 +5,28 @@ import (
 	"testing"
 )
 
-func TestHaproxyPropertyTaskInvalidState(t *testing.T) {
-	task := HaproxyPropertyTask{Global: true, Property: "letsencrypt-email", State: "invalid"}
+func TestBuildsPropertyTaskInvalidState(t *testing.T) {
+	task := BuildsPropertyTask{App: "test-app", Property: "retention", State: "invalid"}
 	result := task.Execute()
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
 }
 
-func TestHaproxyPropertyTaskMissingApp(t *testing.T) {
-	task := HaproxyPropertyTask{Property: "letsencrypt-email", Value: "admin@example.com", State: StatePresent}
+func TestBuildsPropertyTaskMissingApp(t *testing.T) {
+	task := BuildsPropertyTask{Property: "retention", Value: "50", State: StatePresent}
 	result := task.Execute()
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
 }
 
-func TestHaproxyPropertyTaskGlobalWithAppSet(t *testing.T) {
-	task := HaproxyPropertyTask{
+func TestBuildsPropertyTaskGlobalWithAppSet(t *testing.T) {
+	task := BuildsPropertyTask{
 		App:      "test-app",
 		Global:   true,
-		Property: "letsencrypt-email",
-		Value:    "admin@example.com",
+		Property: "retention",
+		Value:    "50",
 		State:    StatePresent,
 	}
 	result := task.Execute()
@@ -38,10 +38,10 @@ func TestHaproxyPropertyTaskGlobalWithAppSet(t *testing.T) {
 	}
 }
 
-func TestHaproxyPropertyTaskPresentWithoutValue(t *testing.T) {
-	task := HaproxyPropertyTask{
-		Global:   true,
-		Property: "letsencrypt-email",
+func TestBuildsPropertyTaskPresentWithoutValue(t *testing.T) {
+	task := BuildsPropertyTask{
+		App:      "test-app",
+		Property: "retention",
 		Value:    "",
 		State:    StatePresent,
 	}
@@ -54,11 +54,11 @@ func TestHaproxyPropertyTaskPresentWithoutValue(t *testing.T) {
 	}
 }
 
-func TestHaproxyPropertyTaskAbsentWithValue(t *testing.T) {
-	task := HaproxyPropertyTask{
-		Global:   true,
-		Property: "letsencrypt-email",
-		Value:    "admin@example.com",
+func TestBuildsPropertyTaskAbsentWithValue(t *testing.T) {
+	task := BuildsPropertyTask{
+		App:      "test-app",
+		Property: "retention",
+		Value:    "50",
 		State:    StateAbsent,
 	}
 	result := task.Execute()

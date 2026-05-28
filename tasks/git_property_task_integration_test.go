@@ -4,41 +4,47 @@ import (
 	"testing"
 )
 
-func TestIntegrationGitProperty(t *testing.T) {
+func TestIntegrationGitPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-git-prop"
-
 	destroyApp(appName)
 	createApp(appName)
 	defer destroyApp(appName)
 
-	// set git property
-	setTask := GitPropertyTask{
-		App:      appName,
-		Property: "deploy-branch",
-		Value:    "main",
-		State:    StatePresent,
+	cases := []struct {
+		property string
+		value    string
+		perApp   bool
+		global   bool
+	}{
+		{"archive-max-files", "5000", false, true},
+		{"archive-max-size", "100000000", false, true},
+		{"deploy-branch", "main", true, true},
+		{"keep-git-dir", "true", true, true},
+		{"rev-env-var", "COMMIT_SHA", true, false},
+		{"source-image", "dokku/source:latest", true, false},
 	}
-	result := setTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to set git property: %v", result.Error)
-	}
-	if result.State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", result.State)
-	}
-
-	// unset git property
-	unsetTask := GitPropertyTask{
-		App:      appName,
-		Property: "deploy-branch",
-		State:    StateAbsent,
-	}
-	result = unsetTask.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to unset git property: %v", result.Error)
-	}
-	if result.State != StateAbsent {
-		t.Errorf("expected state 'absent', got '%s'", result.State)
+	for _, tc := range cases {
+		if tc.perApp {
+			t.Run(tc.property+"/per-app", func(t *testing.T) {
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "git per-app " + tc.property,
+					setTask:   GitPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: GitPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+				})
+			})
+		}
+		if tc.global {
+			t.Run(tc.property+"/global", func(t *testing.T) {
+				unsetTask := GitPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+				defer unsetTask.Execute()
+				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+					label:     "git global " + tc.property,
+					setTask:   GitPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+					unsetTask: unsetTask,
+				})
+			})
+		}
 	}
 }

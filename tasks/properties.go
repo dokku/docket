@@ -1,26 +1,27 @@
 package tasks
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
 
-// PropertyContext represents the context for a property
-type PropertyContext struct {
-	// App is the name of the app
-	App string `required:"true" yaml:"app"`
-
-	// Global is a flag indicating if the property should be applied globally
-	Global bool `required:"false" yaml:"global"`
-
-	// Property is the name of the property to set
-	Property string `required:"true" yaml:"property"`
-
-	// Value is the value of the property to set
-	Value string `required:"false" yaml:"value"`
+// PropertyKeys carries the JSON keys that dokku <plugin>:report --format json
+// emits for one property on dokku 0.38.8+. An empty string means the property
+// has no form in that scope (so probing it in that scope is rejected at plan
+// time, matching dokku's own CLI rejection).
+//
+// Values point at the canonical bare-key shape (no <plugin>- prefix). The
+// legacy <plugin>-prefixed keys remain emitted during the 0.38.x deprecation
+// window but are ignored by the lookup.
+type PropertyKeys struct {
+	PerApp string
+	Global string
 }
 
 // pluginFromSubcommand returns the plugin component of a colon-separated
@@ -30,42 +31,145 @@ func pluginFromSubcommand(subcommand string) string {
 	return strings.SplitN(subcommand, ":", 2)[0]
 }
 
+// errUnknownProperty is returned by getProperty when the JSON :report payload
+// has no entry for the key the task asked us to look up.
+type errUnknownProperty struct {
+	plugin    string
+	property  string
+	lookedFor string
+	validKeys []string
+}
+
+func (e *errUnknownProperty) Error() string {
+	return fmt.Sprintf("dokku %s:report has no key %q for property %q", e.plugin, e.lookedFor, e.property)
+}
+
 // getProperty reads the current value of a property via
-// `dokku <plugin>:report <target> --<plugin>-<property>`. Returns the
-// trimmed string value on success. When the report subcommand or property
-// flag is not supported by the plugin, returns a non-nil error and callers
-// fall back to an unconditional set/unset (matches the pre-probe behavior).
-func getProperty(subcommand, app string, global bool, property string) (string, error) {
+// `dokku <plugin>:report [<app>|--global] --format json`. The JSON payload is
+// parsed and the value is read from the JSON key the task specifies via its
+// PropertyKeys map.
+//
+// Returns:
+//   - (value, nil) when the looked-up key exists in the JSON payload
+//   - ("", *errUnknownProperty) when the JSON parsed but the key was absent
+//   - ("", err) when the exec or JSON parse failed
+func getProperty(subcommand, app string, global bool, property string, keys map[string]PropertyKeys) (string, error) {
 	plugin := pluginFromSubcommand(subcommand)
-	reportSubcommand := plugin + ":report"
-	reportFlag := "--" + plugin + "-" + property
+	args := getPropertyArgs(plugin, app, global)
 
-	args := []string{"--quiet", reportSubcommand}
-	if global {
-		args = append(args, "--global", reportFlag)
-	} else {
-		args = append(args, app, reportFlag)
-	}
-
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(result.StdoutContents()), nil
+
+	payload := map[string]string{}
+	if err := json.Unmarshal(response.StdoutBytes(), &payload); err != nil {
+		return "", fmt.Errorf("parse %s:report json: %w", plugin, err)
+	}
+
+	entry := keys[property]
+	lookup := entry.PerApp
+	if global {
+		lookup = entry.Global
+	}
+
+	value, ok := payload[lookup]
+	if !ok {
+		keyList := make([]string, 0, len(payload))
+		for k := range payload {
+			keyList = append(keyList, k)
+		}
+		sort.Strings(keyList)
+		return "", &errUnknownProperty{
+			plugin:    plugin,
+			property:  property,
+			lookedFor: lookup,
+			validKeys: keyList,
+		}
+	}
+	return value, nil
+}
+
+// getPropertyArgs builds the `dokku <plugin>:report ... --format json` arg list.
+func getPropertyArgs(plugin, app string, global bool) []string {
+	args := []string{"--quiet", plugin + ":report"}
+	if global {
+		args = append(args, "--global")
+	} else {
+		args = append(args, app)
+	}
+	return append(args, "--format", "json")
+}
+
+// warnIfUnknownProperty surfaces a diagnostic when the probe identifies the
+// property as unknown, either because the JSON payload had no matching key
+// (likely a stale map or a dokku version mismatch) or because the :report
+// invocation rejected `--format json` itself (older plugin versions). Other
+// errors are silent because callers already propagate them through
+// PlanResult.Reason.
+func warnIfUnknownProperty(plugin, property string, err error) {
+	if err == nil {
+		return
+	}
+
+	var unknown *errUnknownProperty
+	if errors.As(err, &unknown) {
+		// Skip the warning for known dynamic-property families (e.g.
+		// letsencrypt dns-provider-*) where missing-from-report is the
+		// normal pre-set state, not a typo.
+		if isDynamicProperty(plugin, property) {
+			return
+		}
+		log.Printf("warning: dokku %s:report has no key %q for property %q (available keys: %s)",
+			plugin, unknown.lookedFor, property,
+			strings.Join(unknown.validKeys, ", "))
+		return
+	}
+
+	var execErr *subprocess.ExecError
+	if !errors.As(err, &execErr) {
+		return
+	}
+	stderr := strings.TrimSpace(execErr.Response.Stderr)
+	if !strings.Contains(stderr, "Invalid flag passed, valid flags:") {
+		return
+	}
+	log.Printf("warning: dokku %s:report rejected probe for property %q: %s", plugin, property, stderr)
+}
+
+// isDynamicProperty reports whether a (plugin, property) pair represents a
+// dynamic property family whose JSON keys only appear after the property is
+// set. Examples:
+//   - dokku-letsencrypt `dns-provider-*` (arbitrary env var names)
+//   - dokku traefik `dns-provider-*` (same shape, per-provider env vars)
+//   - dokku scheduler-k3s `chart.*.*` (arbitrary helm chart values)
+//
+// Dynamic property names are validated by `:set`, not the report schema.
+func isDynamicProperty(plugin, property string) bool {
+	switch plugin {
+	case "letsencrypt", "traefik":
+		return strings.HasPrefix(property, "dns-provider-")
+	case "scheduler-k3s":
+		return strings.HasPrefix(property, "chart.")
+	}
+	return false
 }
 
 // planProperty is the shared Plan() implementation for property tasks. It
-// probes the current value via getProperty, returns InSync when current
-// matches desired, and otherwise embeds an apply closure that runs the
-// underlying `dokku <subcommand>` call. ExecutePlan is the only invoker.
+// probes the current value via getProperty using the task's PropertyKeys
+// map, returns InSync when current matches desired, and otherwise embeds an
+// apply closure that runs the underlying `dokku <subcommand>` call.
+// ExecutePlan is the only invoker.
 //
-// When the report subcommand or property flag is missing, the probe error
-// is swallowed and the apply closure runs the set/unset unconditionally,
-// matching the pre-probe behavior of property tasks.
-func planProperty(state State, app string, global bool, property, value, subcommand string) PlanResult {
+// When the probe errors (other than SSH transport failures), the apply
+// closure runs the set/unset unconditionally. Diagnostic warnings are
+// emitted via warnIfUnknownProperty for typos and unsupported plugin
+// versions; other probe failures are recorded in PlanResult.Reason and
+// the apply still runs, matching pre-probe behavior.
+func planProperty(state State, app string, global bool, property, value, subcommand string, keys map[string]PropertyKeys) PlanResult {
 	if !global && app == "" {
 		return PlanResult{
 			Status: PlanStatusError,
@@ -79,9 +183,14 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 		}
 	}
 
+	plugin := pluginFromSubcommand(subcommand)
 	target := app
 	if global {
 		target = "--global"
+	}
+
+	if err := validateProperty(plugin, property, global, keys); err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
@@ -93,15 +202,22 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 				}
 			}
 
+			// Dynamic property families have no probe key; treat as drift
+			// and run the mutation unconditionally.
+			if _, mapped := keys[property]; !mapped && isDynamicProperty(plugin, property) {
+				return runUnprobedSet(subcommand, target, property, value)
+			}
+
 			// Probe; treat dokku-level failure as "drift, must mutate"
 			// (matches pre-probe behavior for unsupported plugins) but
 			// surface SSH transport failures so the user sees `! ssh:`.
-			current, probeErr := getProperty(subcommand, app, global, property)
+			current, probeErr := getProperty(subcommand, app, global, property, keys)
 			if probeErr != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(probeErr, &sshErr) {
 					return PlanResult{Status: PlanStatusError, Error: probeErr}
 				}
+				warnIfUnknownProperty(plugin, property, probeErr)
 			}
 			if probeErr == nil && current == value {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
@@ -136,12 +252,17 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 				}
 			}
 
-			current, probeErr := getProperty(subcommand, app, global, property)
+			if _, mapped := keys[property]; !mapped && isDynamicProperty(plugin, property) {
+				return runUnprobedUnset(subcommand, target, property)
+			}
+
+			current, probeErr := getProperty(subcommand, app, global, property, keys)
 			if probeErr != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(probeErr, &sshErr) {
 					return PlanResult{Status: PlanStatusError, Error: probeErr}
 				}
+				warnIfUnknownProperty(plugin, property, probeErr)
 			}
 			if probeErr == nil && current == "" {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
@@ -165,6 +286,59 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 			}
 		},
 	})
+}
+
+// validateProperty rejects unsupported properties or scope mismatches before
+// any subprocess call. Dynamic property families bypass validation since they
+// can't be enumerated in the map.
+func validateProperty(plugin, property string, global bool, keys map[string]PropertyKeys) error {
+	entry, ok := keys[property]
+	if !ok {
+		if isDynamicProperty(plugin, property) {
+			return nil
+		}
+		supported := make([]string, 0, len(keys))
+		for k := range keys {
+			supported = append(supported, k)
+		}
+		sort.Strings(supported)
+		return fmt.Errorf("dokku %s: unsupported property %q (supported: %s)", plugin, property, strings.Join(supported, ", "))
+	}
+	if global && entry.Global == "" {
+		return fmt.Errorf("property %q on plugin %s has no global form", property, plugin)
+	}
+	if !global && entry.PerApp == "" {
+		return fmt.Errorf("property %q on plugin %s has no per-app form", property, plugin)
+	}
+	return nil
+}
+
+// runUnprobedSet returns a PlanResult that runs `:set` unconditionally for
+// dynamic properties that have no probe key (e.g. letsencrypt dns-provider-*).
+func runUnprobedSet(subcommand, target, property, value string) PlanResult {
+	inputs := propertySetInputs(subcommand, target, property, value)
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusModify,
+		Reason:    fmt.Sprintf("would set %s on %s (no probe key)", property, target),
+		Mutations: []string{fmt.Sprintf("set %s=%s", property, value)},
+		Commands:  resolveCommands(inputs),
+		apply:     applyPropertySet(subcommand, target, property, value),
+	}
+}
+
+// runUnprobedUnset returns a PlanResult that runs `:set` (no value, the unset
+// form) unconditionally for dynamic properties with no probe key.
+func runUnprobedUnset(subcommand, target, property string) PlanResult {
+	inputs := propertyUnsetInputs(subcommand, target, property)
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("would unset %s on %s (no probe key)", property, target),
+		Mutations: []string{fmt.Sprintf("unset %s", property)},
+		Commands:  resolveCommands(inputs),
+		apply:     applyPropertyUnset(subcommand, target, property),
+	}
 }
 
 // propertySetInputs returns the subprocess inputs that set a property.

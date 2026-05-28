@@ -71,9 +71,18 @@ func (t CronPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// cronPropertyKeys maps cron property names to the JSON keys emitted by
+// `dokku cron:report --format json` on dokku 0.38.8+. mailfrom/mailto are
+// global-only.
+var cronPropertyKeys = map[string]PropertyKeys{
+	"maintenance": {PerApp: "maintenance", Global: "global-maintenance"},
+	"mailfrom":    {PerApp: "", Global: "global-mailfrom"},
+	"mailto":      {PerApp: "", Global: "global-mailto"},
+}
+
 // Plan reports the drift the CronPropertyTask would produce.
 func (t CronPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "cron:set")
+	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "cron:set", cronPropertyKeys)
 }
 
 // init registers the CronPropertyTask with the task registry

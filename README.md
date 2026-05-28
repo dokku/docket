@@ -10,6 +10,11 @@ While Ansible is all well and good, having something native to Dokku for shippin
 
 This package provides the above functionality by exposing the modules from `ansible-dokku` within a single Golang binary. Users of `ansible-dokku` based task lists should be able to use their existing tasks with minimal changes, while organizations can decide to expose apps in easy to use methods for their users.
 
+## Requirements
+
+- dokku >= 0.38.9 (property tasks rely on the bare-key `:report --format json` shape and the per-app raw/computed split finished across all plugins in 0.38.9)
+- dokku-letsencrypt >= 0.25.0 if you use `dokku_letsencrypt_property` tasks
+
 ## Building
 
 ```shell
