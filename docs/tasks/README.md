@@ -42,6 +42,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_network_property](dokku_network_property.md) - Manages the network property for a given dokku application
 - [dokku_nginx_property](dokku_nginx_property.md) - Manages the nginx configuration for a given dokku application
 - [dokku_openresty_property](dokku_openresty_property.md) - Manages the openresty configuration for a given dokku application
+- [dokku_plugin](dokku_plugin.md) - Installs or uninstalls a third-party dokku plugin.
 - [dokku_ports](dokku_ports.md) - Manages the ports for a given dokku application
 - [dokku_proxy_property](dokku_proxy_property.md) - Manages the proxy configuration for a given dokku application
 - [dokku_proxy_toggle](dokku_proxy_toggle.md) - Enables or disables the proxy plugin for a given dokku application
