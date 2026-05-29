@@ -31,13 +31,13 @@ func checksEnabled(ctx ToggleContext) (bool, error) {
 // ChecksToggleTask enables or disables the checks plugin for a given dokku application
 type ChecksToggleTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the checks plugin should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the checks plugin should be applied globally"`
 
 	// State is the desired state of the checks plugin
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the checks plugin"`
 }
 
 // ChecksToggleTaskExample contains an example of a ChecksToggleTask

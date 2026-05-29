@@ -11,16 +11,16 @@ import (
 // DockerOptionsTask manages docker-options for a given dokku application
 type DockerOptionsTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Phase is the deployment phase the option applies to
-	Phase string `required:"true" yaml:"phase" options:"build,deploy,run"`
+	Phase string `required:"true" yaml:"phase" options:"build,deploy,run" description:"Deployment phase the option applies to"`
 
 	// Option is the docker option string (e.g. "-v /var/run/docker.sock:/var/run/docker.sock")
-	Option string `required:"true" yaml:"option"`
+	Option string `required:"true" yaml:"option" description:"Docker option string (e.g. '-v /var/run/docker.sock:/var/run/docker.sock')"`
 
 	// State is the desired state of the docker option
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the docker option"`
 }
 
 // DockerOptionsTaskExample contains an example of a DockerOptionsTask

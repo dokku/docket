@@ -7,10 +7,10 @@ import (
 // AppTask creates or destroys an app
 type AppTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// State is the state of the app
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"State of the app"`
 }
 
 // AppTaskExample contains an example of an AppTask

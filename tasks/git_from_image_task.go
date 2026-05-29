@@ -12,23 +12,23 @@ import (
 // GitFromImageTask deploys a git repository from a docker image
 type GitFromImageTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Image is the docker image to deploy. Tagged sensitive because image
 	// references can embed registry credentials (e.g. user:token@host/repo).
-	Image string `required:"true" sensitive:"true" yaml:"image"`
+	Image string `required:"true" sensitive:"true" yaml:"image" description:"Docker image to deploy"`
 
 	// BuildDir is the directory to build the git repository
-	BuildDir string `required:"false" yaml:"build_dir"`
+	BuildDir string `required:"false" yaml:"build_dir,omitempty" description:"Directory to build the git repository"`
 
 	// GitUsername is the username to use for the git repository
-	GitUsername string `required:"false" yaml:"git_username"`
+	GitUsername string `required:"false" yaml:"git_username,omitempty" description:"Username to use for the git repository"`
 
 	// GitEmail is the email to use for the git repository
-	GitEmail string `required:"false" yaml:"git_email"`
+	GitEmail string `required:"false" yaml:"git_email,omitempty" description:"Email to use for the git repository"`
 
 	// State is the desired state of the git repository
-	State State `required:"false" yaml:"state" default:"deployed" options:"deployed"`
+	State State `required:"false" yaml:"state,omitempty" default:"deployed" options:"deployed" description:"Desired state of the git repository"`
 }
 
 // GitFromImageTaskExample contains an example of a GitFromImageTask
@@ -52,7 +52,25 @@ func (t GitFromImageTask) Doc() string {
 
 // Examples returns the examples for the git from image task
 func (t GitFromImageTask) Examples() ([]Doc, error) {
-	return MarshalExamples([]GitFromImageTaskExample{})
+	return MarshalExamples([]GitFromImageTaskExample{
+		{
+			Name: "Deploy an app from a docker image",
+			GitFromImageTask: GitFromImageTask{
+				App:   "node-js-app",
+				Image: "dokku/node-js-app:latest",
+			},
+		},
+		{
+			Name: "Deploy from an image with a build directory and git author",
+			GitFromImageTask: GitFromImageTask{
+				App:         "node-js-app",
+				Image:       "dokku/node-js-app:latest",
+				BuildDir:    "/app",
+				GitUsername: "dokku",
+				GitEmail:    "dokku@example.com",
+			},
+		},
+	})
 }
 
 // Execute deploys a git repository from a docker image

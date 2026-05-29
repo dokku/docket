@@ -10,25 +10,25 @@ import (
 // GitSyncTask syncs a git repository to a dokku application
 type GitSyncTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Remote is the git remote url to sync
-	Remote string `required:"true" yaml:"remote"`
+	Remote string `required:"true" yaml:"remote" description:"Git remote url to sync"`
 
 	// GitRef is the git reference to sync
-	GitRef string `required:"false" yaml:"git_ref"`
+	GitRef string `required:"false" yaml:"git_ref" description:"Git reference to sync"`
 
 	// Build triggers an application build after syncing
-	Build bool `required:"false" yaml:"build"`
+	Build bool `required:"false" yaml:"build" description:"Trigger an application build after syncing"`
 
 	// BuildIfChanges triggers a build only if changes are detected
-	BuildIfChanges bool `required:"false" yaml:"build_if_changes"`
+	BuildIfChanges bool `required:"false" yaml:"build_if_changes" description:"Trigger a build only if changes are detected"`
 
 	// SkipDeployBranch skips automatically setting the deploy-branch property
-	SkipDeployBranch bool `required:"false" yaml:"skip_deploy_branch"`
+	SkipDeployBranch bool `required:"false" yaml:"skip_deploy_branch" description:"Skip automatically setting the deploy-branch property"`
 
 	// State is the desired state of the git sync
-	State State `required:"false" yaml:"state" default:"present" options:"present"`
+	State State `required:"false" yaml:"state" default:"present" options:"present" description:"Desired state of the git sync"`
 }
 
 // GitSyncTaskExample contains an example of a GitSyncTask

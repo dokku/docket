@@ -9,16 +9,16 @@ import (
 // DomainsTask manages the domains for a given dokku application or globally
 type DomainsTask struct {
 	// App is the name of the app
-	App string `required:"false" yaml:"app"`
+	App string `required:"false" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the domains should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the domains should be applied globally"`
 
 	// Domains is the list of domain names
-	Domains []string `required:"false" yaml:"domains"`
+	Domains []string `required:"false" yaml:"domains" description:"List of domain names"`
 
 	// State is the desired state of the domains
-	State State `required:"false" yaml:"state" default:"present" options:"present,absent,set,clear"`
+	State State `required:"false" yaml:"state" default:"present" options:"present,absent,set,clear" description:"Desired state of the domains"`
 }
 
 // DomainsTaskExample contains an example of a DomainsTask

@@ -9,10 +9,10 @@ import (
 // AppLockTask locks or unlocks a dokku application from deployment
 type AppLockTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// State is the desired lock state
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired lock state"`
 }
 
 // AppLockTaskExample contains an example of an AppLockTask

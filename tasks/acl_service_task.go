@@ -10,16 +10,16 @@ import (
 // AclServiceTask manages the dokku-acl access list for a dokku service
 type AclServiceTask struct {
 	// Service is the name of the service instance
-	Service string `required:"true" yaml:"service"`
+	Service string `required:"true" yaml:"service" description:"Name of the service instance"`
 
 	// Type is the type of service (e.g. redis, postgres)
-	Type string `required:"true" yaml:"type"`
+	Type string `required:"true" yaml:"type" description:"Type of service (e.g. redis, postgres)"`
 
 	// Users is the list of users to add or remove from the ACL
-	Users []string `required:"false" yaml:"users"`
+	Users []string `required:"false" yaml:"users" description:"List of users to add or remove from the ACL"`
 
 	// State is the desired state of the ACL entries
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the ACL entries"`
 }
 
 // AclServiceTaskExample contains an example of an AclServiceTask
@@ -39,6 +39,11 @@ func (e AclServiceTaskExample) GetName() string {
 // Doc returns the docblock for the acl service task
 func (t AclServiceTask) Doc() string {
 	return "Manages the dokku-acl access list for a dokku service"
+}
+
+// Requirements lists the non-core dokku plugins this task depends on.
+func (t AclServiceTask) Requirements() []string {
+	return []string{"dokku-acl plugin"}
 }
 
 // Examples returns the examples for the acl service task

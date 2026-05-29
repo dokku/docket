@@ -10,16 +10,16 @@ import (
 // ConfigTask manages the configuration for a given dokku application
 type ConfigTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Restart is a flag indicating if the app should be restarted
-	Restart bool `yaml:"restart" default:"true"`
+	Restart bool `yaml:"restart" default:"true" description:"Flag indicating if the app should be restarted"`
 
 	// Config is a map of configuration key-value pairs
-	Config map[string]string `yaml:"config"`
+	Config map[string]string `yaml:"config" description:"Map of configuration key-value pairs"`
 
 	// State is the desired state of the configuration
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the configuration"`
 }
 
 // ConfigTaskExample contains an example of a ConfigTask

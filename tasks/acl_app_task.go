@@ -10,13 +10,13 @@ import (
 // AclAppTask manages the dokku-acl access list for a dokku application
 type AclAppTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Users is the list of users to add or remove from the ACL
-	Users []string `required:"false" yaml:"users"`
+	Users []string `required:"false" yaml:"users" description:"List of users to add or remove from the ACL"`
 
 	// State is the desired state of the ACL entries
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the ACL entries"`
 }
 
 // AclAppTaskExample contains an example of an AclAppTask
@@ -36,6 +36,11 @@ func (e AclAppTaskExample) GetName() string {
 // Doc returns the docblock for the acl app task
 func (t AclAppTask) Doc() string {
 	return "Manages the dokku-acl access list for a dokku application"
+}
+
+// Requirements lists the non-core dokku plugins this task depends on.
+func (t AclAppTask) Requirements() []string {
+	return []string{"dokku-acl plugin"}
 }
 
 // Examples returns the examples for the acl app task

@@ -11,13 +11,13 @@ import (
 // PortsTask manages the ports for a given dokku application
 type PortsTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// PortMappings are the port mappings to set
-	PortMappings []PortMapping `required:"true" yaml:"port_mappings"`
+	PortMappings []PortMapping `required:"true" yaml:"port_mappings" description:"Port mappings to set"`
 
 	// State is the desired state of the ports
-	State State `required:"false" yaml:"state" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the ports"`
 }
 
 // PortsTaskExample contains an example of a PortsTask
@@ -37,13 +37,13 @@ func (e PortsTaskExample) GetName() string {
 // PortMapping represents a port mapping
 type PortMapping struct {
 	// Scheme is the scheme of the port mapping
-	Scheme string `required:"true" yaml:"scheme"`
+	Scheme string `required:"true" yaml:"scheme" description:"Scheme of the port mapping"`
 
 	// Host is the host of the port mapping
-	Host int `required:"true" yaml:"host"`
+	Host int `required:"true" yaml:"host" description:"Host of the port mapping"`
 
 	// Container is the container of the port mapping
-	Container int `required:"true" yaml:"container"`
+	Container int `required:"true" yaml:"container" description:"Container of the port mapping"`
 }
 
 // String returns the string representation of the port mapping
@@ -58,7 +58,37 @@ func (t PortsTask) Doc() string {
 
 // Examples returns the examples for the ports task
 func (t PortsTask) Examples() ([]Doc, error) {
-	return MarshalExamples([]PortsTaskExample{})
+	return MarshalExamples([]PortsTaskExample{
+		{
+			Name: "Map http port 80 to container port 5000",
+			PortsTask: PortsTask{
+				App: "node-js-app",
+				PortMappings: []PortMapping{
+					{Scheme: "http", Host: 80, Container: 5000},
+				},
+			},
+		},
+		{
+			Name: "Map both http and https ports",
+			PortsTask: PortsTask{
+				App: "node-js-app",
+				PortMappings: []PortMapping{
+					{Scheme: "http", Host: 80, Container: 5000},
+					{Scheme: "https", Host: 443, Container: 5000},
+				},
+			},
+		},
+		{
+			Name: "Remove a port mapping",
+			PortsTask: PortsTask{
+				App: "node-js-app",
+				PortMappings: []PortMapping{
+					{Scheme: "http", Host: 80, Container: 5000},
+				},
+				State: StateAbsent,
+			},
+		},
+	})
 }
 
 // Execute sets or unsets the ports

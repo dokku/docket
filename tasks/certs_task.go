@@ -10,20 +10,20 @@ import (
 // CertsTask manages SSL certificates for a dokku app or globally
 type CertsTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app"`
+	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the certificate should be applied globally
 	// via the dokku-global-cert plugin
-	Global bool `required:"false" yaml:"global,omitempty"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin"`
 
 	// Cert is the path on the dokku server to the SSL certificate file
-	Cert string `required:"false" sensitive:"true" yaml:"cert,omitempty"`
+	Cert string `required:"false" sensitive:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file"`
 
 	// Key is the path on the dokku server to the SSL certificate key file
-	Key string `required:"false" sensitive:"true" yaml:"key,omitempty"`
+	Key string `required:"false" sensitive:"true" yaml:"key,omitempty" description:"Path on the dokku server to the SSL certificate key file"`
 
 	// State is the desired state of the SSL configuration
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the SSL configuration"`
 }
 
 // CertsTaskExample contains an example of a CertsTask
@@ -46,6 +46,11 @@ func (t CertsTask) Doc() string {
 		"and `key` fields are paths on the dokku server, so when running with " +
 		"`DOKKU_HOST` set the referenced files must already exist on the " +
 		"remote host - docket does not upload them."
+}
+
+// Requirements lists the non-core dokku plugins this task depends on.
+func (t CertsTask) Requirements() []string {
+	return []string{"dokku-global-cert plugin (required only when global: true)"}
 }
 
 // Examples returns the examples for the certs task

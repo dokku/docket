@@ -3,19 +3,19 @@ package tasks
 // NginxPropertyTask manages the nginx configuration for a given dokku application
 type NginxPropertyTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app"`
+	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the nginx configuration should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the nginx configuration should be applied globally"`
 
 	// Property is the name of the nginx property to set
-	Property string `required:"true" yaml:"property"`
+	Property string `required:"true" yaml:"property" description:"Name of the nginx property to set"`
 
 	// Value is the value to set for the nginx property
-	Value string `required:"false" yaml:"value,omitempty"`
+	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the nginx property"`
 
 	// State is the desired state of the nginx configuration
-	State State `required:"true" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the nginx configuration"`
 }
 
 // NginxPropertyTaskExample contains an example of a NginxPropertyTask

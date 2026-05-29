@@ -1,8 +1,25 @@
 # dokku_service_link
 
+## Synopsis
+
 Links or unlinks a dokku service to an app
 
-## Link a redis service named my-redis to my-app
+## Requirements
+
+- a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
+
+## Parameters
+
+| Parameter | Type | Required | Default | Choices | Description |
+| --- | --- | --- | --- | --- | --- |
+| `app` | string | yes |  |  | Name of the app to link the service to |
+| `service` | string | yes |  |  | Type of service to link (e.g. redis, postgres, mysql) |
+| `name` | string | yes |  |  | Name of the service instance |
+| `state` | string | no | present | present, absent | Desired state of the service link |
+
+## Examples
+
+### Link a redis service named my-redis to my-app
 
 ```yaml
 dokku_service_link:
@@ -11,7 +28,7 @@ dokku_service_link:
     name: my-redis
 ```
 
-## Link a postgres service named my-db to my-app
+### Link a postgres service named my-db to my-app
 
 ```yaml
 dokku_service_link:
@@ -20,7 +37,7 @@ dokku_service_link:
     name: my-db
 ```
 
-## Unlink a redis service named my-redis from my-app
+### Unlink a redis service named my-redis from my-app
 
 ```yaml
 dokku_service_link:
@@ -29,3 +46,18 @@ dokku_service_link:
     name: my-redis
     state: absent
 ```
+
+## Return Values
+
+Available after the task runs when captured with `register:`, referenced as `result.<Key>` (or `registered.<name>.<Key>`).
+
+| Key | Returned | Type | Description |
+| --- | --- | --- | --- |
+| `Changed` | always | bool | Whether the task changed server state. |
+| `State` | always | string | Resulting state of the resource. |
+| `DesiredState` | always | string | The state the task targeted. |
+| `Message` | always | string | Human-readable result message (may be empty). |
+| `Commands` | when a subprocess ran | list | Resolved dokku command lines executed. |
+| `Stdout` | when a subprocess ran | string | Captured stdout of the final command. |
+| `Stderr` | when a subprocess ran | string | Captured stderr of the final command. |
+| `ExitCode` | when a subprocess ran | int | Exit code of the final command. |

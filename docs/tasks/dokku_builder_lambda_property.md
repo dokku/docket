@@ -1,8 +1,22 @@
 # dokku_builder_lambda_property
 
+## Synopsis
+
 Manages the builder-lambda configuration for a given dokku application
 
-## Setting the lambda.yml path for an app
+## Parameters
+
+| Parameter | Type | Required | Default | Choices | Description |
+| --- | --- | --- | --- | --- | --- |
+| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `global` | bool | no |  |  | Flag indicating if the builder-lambda configuration should be applied globally |
+| `property` | string | yes |  |  | Name of the builder-lambda property to set |
+| `value` | string | no |  |  | Value to set for the builder-lambda property |
+| `state` | string | no | present | present, absent | Desired state of the builder-lambda configuration |
+
+## Examples
+
+### Setting the lambda.yml path for an app
 
 ```yaml
 dokku_builder_lambda_property:
@@ -11,7 +25,7 @@ dokku_builder_lambda_property:
     value: config/lambda.yml
 ```
 
-## Setting the lambda.yml path globally
+### Setting the lambda.yml path globally
 
 ```yaml
 dokku_builder_lambda_property:
@@ -21,10 +35,25 @@ dokku_builder_lambda_property:
     value: lambda.yml
 ```
 
-## Clearing the lambda.yml path for an app
+### Clearing the lambda.yml path for an app
 
 ```yaml
 dokku_builder_lambda_property:
     app: node-js-app
     property: lambdayml-path
 ```
+
+## Return Values
+
+Available after the task runs when captured with `register:`, referenced as `result.<Key>` (or `registered.<name>.<Key>`).
+
+| Key | Returned | Type | Description |
+| --- | --- | --- | --- |
+| `Changed` | always | bool | Whether the task changed server state. |
+| `State` | always | string | Resulting state of the resource. |
+| `DesiredState` | always | string | The state the task targeted. |
+| `Message` | always | string | Human-readable result message (may be empty). |
+| `Commands` | when a subprocess ran | list | Resolved dokku command lines executed. |
+| `Stdout` | when a subprocess ran | string | Captured stdout of the final command. |
+| `Stderr` | when a subprocess ran | string | Captured stderr of the final command. |
+| `ExitCode` | when a subprocess ran | int | Exit code of the final command. |

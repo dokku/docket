@@ -3,19 +3,19 @@ package tasks
 // AppJsonPropertyTask manages the app.json configuration for a given dokku application
 type AppJsonPropertyTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app"`
+	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the app.json configuration should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the app.json configuration should be applied globally"`
 
 	// Property is the name of the app.json property to set
-	Property string `required:"true" yaml:"property"`
+	Property string `required:"true" yaml:"property" description:"Name of the app.json property to set"`
 
 	// Value is the value to set for the app.json property
-	Value string `required:"false" yaml:"value,omitempty"`
+	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the app.json property"`
 
 	// State is the desired state of the app.json configuration
-	State State `required:"true" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the app.json configuration"`
 }
 
 // AppJsonPropertyTaskExample contains an example of an AppJsonPropertyTask

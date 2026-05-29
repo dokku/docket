@@ -3,19 +3,19 @@ package tasks
 // ChecksPropertyTask manages the checks configuration for a given dokku application
 type ChecksPropertyTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app"`
+	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the checks configuration should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the checks configuration should be applied globally"`
 
 	// Property is the name of the checks property to set
-	Property string `required:"true" yaml:"property"`
+	Property string `required:"true" yaml:"property" description:"Name of the checks property to set"`
 
 	// Value is the value to set for the checks property
-	Value string `required:"false" yaml:"value,omitempty"`
+	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the checks property"`
 
 	// State is the desired state of the checks configuration
-	State State `required:"true" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the checks configuration"`
 }
 
 // ChecksPropertyTaskExample contains an example of a ChecksPropertyTask
