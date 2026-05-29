@@ -58,6 +58,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_service_create](dokku_service_create.md) - Creates or destroys a dokku service
 - [dokku_service_expose](dokku_service_expose.md) - Exposes or unexposes a dokku service on host ports
 - [dokku_service_link](dokku_service_link.md) - Links or unlinks a dokku service to an app
+- [dokku_service_property](dokku_service_property.md) - Manages a property for a given dokku service
 - [dokku_ssh_key](dokku_ssh_key.md) - Manages an SSH public key for git push access via dokku's ssh-keys plugin
 - [dokku_storage_ensure](dokku_storage_ensure.md) - Ensures the storage for a given dokku application
 - [dokku_storage_mount](dokku_storage_mount.md) - Mounts or unmounts the storage for a given dokku application
