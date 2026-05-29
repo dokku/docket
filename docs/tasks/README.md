@@ -55,6 +55,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_scheduler_docker_local_property](dokku_scheduler_docker_local_property.md) - Manages the scheduler-docker-local configuration for a given dokku application
 - [dokku_scheduler_k3s_property](dokku_scheduler_k3s_property.md) - Manages the scheduler-k3s configuration for a given dokku application
 - [dokku_scheduler_property](dokku_scheduler_property.md) - Manages the scheduler configuration for a given dokku application
+- [dokku_service_backup](dokku_service_backup.md) - Manages the S3 backup schedule, authentication, and encryption for a dokku service
 - [dokku_service_create](dokku_service_create.md) - Creates or destroys a dokku service
 - [dokku_service_expose](dokku_service_expose.md) - Exposes or unexposes a dokku service on host ports
 - [dokku_service_link](dokku_service_link.md) - Links or unlinks a dokku service to an app
