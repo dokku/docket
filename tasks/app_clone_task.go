@@ -9,16 +9,16 @@ import (
 // AppCloneTask clones an existing dokku app to a new app
 type AppCloneTask struct {
 	// App is the name of the new (target) app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the new (target) app"`
 
 	// SourceApp is the name of the existing app to clone from
-	SourceApp string `required:"true" yaml:"source_app"`
+	SourceApp string `required:"true" yaml:"source_app" description:"Name of the existing app to clone from"`
 
 	// SkipDeploy skips deployment of the cloned app
-	SkipDeploy bool `required:"false" yaml:"skip_deploy,omitempty"`
+	SkipDeploy bool `required:"false" yaml:"skip_deploy,omitempty" description:"Skip deployment of the cloned app"`
 
 	// State is the desired state of the cloned app
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present" description:"Desired state of the cloned app"`
 }
 
 // AppCloneTaskExample contains an example of an AppCloneTask

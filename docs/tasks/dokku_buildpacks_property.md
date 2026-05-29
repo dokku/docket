@@ -1,8 +1,22 @@
 # dokku_buildpacks_property
 
+## Synopsis
+
 Manages the buildpacks configuration for a given dokku application
 
-## Setting the stack value for an app
+## Parameters
+
+| Parameter | Type | Required | Default | Choices | Description |
+| --- | --- | --- | --- | --- | --- |
+| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `global` | bool | no |  |  | Flag indicating if the buildpacks configuration should be applied globally |
+| `property` | string | yes |  |  | Name of the buildpacks property to set |
+| `value` | string | no |  |  | Value to set for the buildpacks property |
+| `state` | string | no | present | present, absent | Desired state of the buildpacks configuration |
+
+## Examples
+
+### Setting the stack value for an app
 
 ```yaml
 dokku_buildpacks_property:
@@ -11,7 +25,7 @@ dokku_buildpacks_property:
     value: gliderlabs/herokuish:latest
 ```
 
-## Setting the stack value globally
+### Setting the stack value globally
 
 ```yaml
 dokku_buildpacks_property:
@@ -21,10 +35,25 @@ dokku_buildpacks_property:
     value: gliderlabs/herokuish:latest
 ```
 
-## Clearing the stack value for an app
+### Clearing the stack value for an app
 
 ```yaml
 dokku_buildpacks_property:
     app: node-js-app
     property: stack
 ```
+
+## Return Values
+
+Available after the task runs when captured with `register:`, referenced as `result.<Key>` (or `registered.<name>.<Key>`).
+
+| Key | Returned | Type | Description |
+| --- | --- | --- | --- |
+| `Changed` | always | bool | Whether the task changed server state. |
+| `State` | always | string | Resulting state of the resource. |
+| `DesiredState` | always | string | The state the task targeted. |
+| `Message` | always | string | Human-readable result message (may be empty). |
+| `Commands` | when a subprocess ran | list | Resolved dokku command lines executed. |
+| `Stdout` | when a subprocess ran | string | Captured stdout of the final command. |
+| `Stderr` | when a subprocess ran | string | Captured stderr of the final command. |
+| `ExitCode` | when a subprocess ran | int | Exit code of the final command. |

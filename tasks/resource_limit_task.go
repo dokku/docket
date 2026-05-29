@@ -3,19 +3,19 @@ package tasks
 // ResourceLimitTask manages the resource limits for a given dokku application
 type ResourceLimitTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// ProcessType is the process type to set resource limits for
-	ProcessType string `required:"false" yaml:"process_type,omitempty"`
+	ProcessType string `required:"false" yaml:"process_type,omitempty" description:"Process type to set resource limits for"`
 
 	// Resources is a map of resource type to quantity
-	Resources map[string]string `yaml:"resources"`
+	Resources map[string]string `yaml:"resources" description:"Map of resource type to quantity"`
 
 	// ClearBefore clears all resource limits before applying new ones
-	ClearBefore bool `yaml:"clear_before" default:"false"`
+	ClearBefore bool `yaml:"clear_before" default:"false" description:"ClearBefore clears all resource limits before applying new ones"`
 
 	// State is the desired state of the resource limits
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the resource limits"`
 }
 
 // ResourceLimitTaskExample contains an example of a ResourceLimitTask

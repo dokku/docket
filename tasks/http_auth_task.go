@@ -11,16 +11,16 @@ import (
 // HttpAuthTask manages HTTP authentication for a dokku application
 type HttpAuthTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Username is the HTTP auth username
-	Username string `required:"false" yaml:"username,omitempty"`
+	Username string `required:"false" yaml:"username,omitempty" description:"HTTP auth username"`
 
 	// Password is the HTTP auth password
-	Password string `required:"false" sensitive:"true" yaml:"password,omitempty"`
+	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"HTTP auth password"`
 
 	// State is the state of the HTTP auth
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"State of the HTTP auth"`
 }
 
 // HttpAuthTaskExample contains an example of an HttpAuthTask
@@ -40,6 +40,11 @@ func (e HttpAuthTaskExample) GetName() string {
 // Doc returns the docblock for the HTTP auth task
 func (t HttpAuthTask) Doc() string {
 	return "Manages HTTP authentication for a given dokku application"
+}
+
+// Requirements lists the non-core dokku plugins this task depends on.
+func (t HttpAuthTask) Requirements() []string {
+	return []string{"dokku-http-auth plugin"}
 }
 
 // Examples returns a list of HttpAuthTaskExamples as yaml

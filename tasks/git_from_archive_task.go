@@ -10,23 +10,23 @@ import (
 // GitFromArchiveTask deploys a git repository from an archive URL
 type GitFromArchiveTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// ArchiveURL is the URL of the archive to deploy. Tagged sensitive
 	// because URLs can embed credentials (e.g. https://user:token@host/path).
-	ArchiveURL string `required:"true" sensitive:"true" yaml:"archive_url"`
+	ArchiveURL string `required:"true" sensitive:"true" yaml:"archive_url" description:"URL of the archive to deploy"`
 
 	// ArchiveType is the format of the archive
-	ArchiveType string `required:"false" yaml:"archive_type,omitempty" default:"tar" options:"tar,tar.gz,zip"`
+	ArchiveType string `required:"false" yaml:"archive_type,omitempty" default:"tar" options:"tar,tar.gz,zip" description:"Format of the archive"`
 
 	// GitUsername is the git author username for the synthetic commit
-	GitUsername string `required:"false" yaml:"git_username,omitempty"`
+	GitUsername string `required:"false" yaml:"git_username,omitempty" description:"Git author username for the synthetic commit"`
 
 	// GitEmail is the git author email for the synthetic commit
-	GitEmail string `required:"false" yaml:"git_email,omitempty"`
+	GitEmail string `required:"false" yaml:"git_email,omitempty" description:"Git author email for the synthetic commit"`
 
 	// State is the desired state of the deployment
-	State State `required:"false" yaml:"state,omitempty" default:"deployed" options:"deployed"`
+	State State `required:"false" yaml:"state,omitempty" default:"deployed" options:"deployed" description:"Desired state of the deployment"`
 }
 
 // GitFromArchiveTaskExample contains an example of a GitFromArchiveTask

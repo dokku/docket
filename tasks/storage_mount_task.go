@@ -11,16 +11,16 @@ import (
 // StorageMountTask manages the storage for a given dokku application
 type StorageMountTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// HostDir is the host directory to mount
-	HostDir string `required:"true" yaml:"host_dir"`
+	HostDir string `required:"true" yaml:"host_dir" description:"Host directory to mount"`
 
 	// ContainerDir is the container directory to mount
-	ContainerDir string `required:"true" yaml:"container_dir"`
+	ContainerDir string `required:"true" yaml:"container_dir" description:"Container directory to mount"`
 
 	// State is the desired state of the storage
-	State State `required:"false" yaml:"state" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage"`
 }
 
 // StorageMountTaskExample contains an example of a StorageMountTask
@@ -44,7 +44,25 @@ func (t StorageMountTask) Doc() string {
 
 // Examples returns the examples for the storage mount task
 func (t StorageMountTask) Examples() ([]Doc, error) {
-	return MarshalExamples([]StorageMountTaskExample{})
+	return MarshalExamples([]StorageMountTaskExample{
+		{
+			Name: "Mount a host directory into an app",
+			StorageMountTask: StorageMountTask{
+				App:          "node-js-app",
+				HostDir:      "/var/lib/dokku/data/storage/node-js-app",
+				ContainerDir: "/app/storage",
+			},
+		},
+		{
+			Name: "Unmount a host directory from an app",
+			StorageMountTask: StorageMountTask{
+				App:          "node-js-app",
+				HostDir:      "/var/lib/dokku/data/storage/node-js-app",
+				ContainerDir: "/app/storage",
+				State:        StateAbsent,
+			},
+		},
+	})
 }
 
 // Execute mounts or unmounts the storage for a given app

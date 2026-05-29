@@ -10,16 +10,16 @@ import (
 // PsScaleTask manages the process scale for a given dokku application
 type PsScaleTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Scale is a map of process types to quantities
-	Scale map[string]int `required:"true" yaml:"scale"`
+	Scale map[string]int `required:"true" yaml:"scale" description:"Map of process types to quantities"`
 
 	// SkipDeploy skips the corresponding deploy
-	SkipDeploy bool `yaml:"skip_deploy" default:"false"`
+	SkipDeploy bool `yaml:"skip_deploy" default:"false" description:"Skip the corresponding deploy"`
 
 	// State is the desired state of the process scale
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present" description:"Desired state of the process scale"`
 }
 
 // PsScaleTaskExample contains an example of a PsScaleTask

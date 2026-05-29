@@ -8,13 +8,13 @@ import (
 // StorageEnsureTask manages the storage for a given dokku application
 type StorageEnsureTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Chown is the chown value to set
-	Chown string `required:"false" yaml:"chown"`
+	Chown string `required:"false" yaml:"chown,omitempty" description:"Chown value to set"`
 
 	// State is the desired state of the storage
-	State State `required:"false" yaml:"state" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage"`
 }
 
 // StorageEnsureTaskExample contains an example of a StorageEnsureTask
@@ -38,7 +38,22 @@ func (t StorageEnsureTask) Doc() string {
 
 // Examples returns the examples for the storage ensure task
 func (t StorageEnsureTask) Examples() ([]Doc, error) {
-	return MarshalExamples([]StorageEnsureTaskExample{})
+	return MarshalExamples([]StorageEnsureTaskExample{
+		{
+			Name: "Ensure a storage directory owned by the herokuish user",
+			StorageEnsureTask: StorageEnsureTask{
+				App:   "node-js-app",
+				Chown: "herokuish",
+			},
+		},
+		{
+			Name: "Ensure a storage directory owned by root",
+			StorageEnsureTask: StorageEnsureTask{
+				App:   "node-js-app",
+				Chown: "root",
+			},
+		},
+	})
 }
 
 // Execute ensures the storage for a given app

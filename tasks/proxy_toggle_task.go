@@ -28,13 +28,13 @@ func proxyEnabled(ctx ToggleContext) (bool, error) {
 // ProxyToggleTask manages the proxy for a given dokku application
 type ProxyToggleTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the proxy should be applied globally
-	Global bool `required:"false" yaml:"global"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the proxy should be applied globally"`
 
 	// State is the desired state of the proxy
-	State State `required:"false" yaml:"state" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the proxy"`
 }
 
 // ProxyToggleTaskExample contains an example of a ProxyToggleTask
@@ -58,7 +58,21 @@ func (t ProxyToggleTask) Doc() string {
 
 // Examples returns the examples for the proxy toggle task
 func (t ProxyToggleTask) Examples() ([]Doc, error) {
-	return MarshalExamples([]ProxyToggleTaskExample{})
+	return MarshalExamples([]ProxyToggleTaskExample{
+		{
+			Name: "Enable the proxy for an app",
+			ProxyToggleTask: ProxyToggleTask{
+				App: "node-js-app",
+			},
+		},
+		{
+			Name: "Disable the proxy for an app",
+			ProxyToggleTask: ProxyToggleTask{
+				App:   "node-js-app",
+				State: StateAbsent,
+			},
+		},
+	})
 }
 
 // Execute enables or disables the proxy

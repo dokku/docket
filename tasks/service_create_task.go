@@ -8,13 +8,13 @@ import (
 // ServiceCreateTask creates or destroys a dokku service
 type ServiceCreateTask struct {
 	// Service is the type of service to create (e.g. redis, postgres, mysql)
-	Service string `required:"true" yaml:"service"`
+	Service string `required:"true" yaml:"service" description:"Type of service to create (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" yaml:"name"`
+	Name string `required:"true" yaml:"name" description:"Name of the service instance"`
 
 	// State is the desired state of the service
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service"`
 }
 
 // ServiceCreateTaskExample contains an example of a ServiceCreateTask
@@ -34,6 +34,11 @@ func (e ServiceCreateTaskExample) GetName() string {
 // Doc returns the docblock for the service create task
 func (t ServiceCreateTask) Doc() string {
 	return "Creates or destroys a dokku service"
+}
+
+// Requirements lists the non-core dokku plugins this task depends on.
+func (t ServiceCreateTask) Requirements() []string {
+	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
 // Examples returns a list of ServiceCreateTaskExamples as yaml

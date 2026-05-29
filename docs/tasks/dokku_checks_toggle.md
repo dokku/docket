@@ -1,8 +1,20 @@
 # dokku_checks_toggle
 
+## Synopsis
+
 Enables or disables the checks plugin for a given dokku application
 
-## Disable the zero downtime deployment
+## Parameters
+
+| Parameter | Type | Required | Default | Choices | Description |
+| --- | --- | --- | --- | --- | --- |
+| `app` | string | yes |  |  | Name of the app |
+| `global` | bool | no |  |  | Flag indicating if the checks plugin should be applied globally |
+| `state` | string | no | present | present, absent | Desired state of the checks plugin |
+
+## Examples
+
+### Disable the zero downtime deployment
 
 ```yaml
 dokku_checks_toggle:
@@ -10,10 +22,25 @@ dokku_checks_toggle:
     state: absent
 ```
 
-## Re-enable the zero downtime deployment (enabled by default)
+### Re-enable the zero downtime deployment (enabled by default)
 
 ```yaml
 dokku_checks_toggle:
     app: hello-world
     state: present
 ```
+
+## Return Values
+
+Available after the task runs when captured with `register:`, referenced as `result.<Key>` (or `registered.<name>.<Key>`).
+
+| Key | Returned | Type | Description |
+| --- | --- | --- | --- |
+| `Changed` | always | bool | Whether the task changed server state. |
+| `State` | always | string | Resulting state of the resource. |
+| `DesiredState` | always | string | The state the task targeted. |
+| `Message` | always | string | Human-readable result message (may be empty). |
+| `Commands` | when a subprocess ran | list | Resolved dokku command lines executed. |
+| `Stdout` | when a subprocess ran | string | Captured stdout of the final command. |
+| `Stderr` | when a subprocess ran | string | Captured stderr of the final command. |
+| `ExitCode` | when a subprocess ran | int | Exit code of the final command. |

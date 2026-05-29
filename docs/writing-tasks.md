@@ -30,8 +30,8 @@ named `lollipop`, `tasks/lollipop_task.go` would contain:
 package main
 
 type LollipopTask struct {
-  App   string `required:"true" yaml:"app"`
-  State State  `required:"true" yaml:"state" default:"present"`
+  App   string `required:"true" yaml:"app" description:"Name of the app"`
+  State State  `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the lollipop"`
 }
 
 func (t LollipopTask) Plan() PlanResult {
@@ -69,10 +69,19 @@ A few conventions to follow:
 
 - The struct holds the fields the task needs. The only required field is `State`, the desired state;
   everything else is specific to the task.
+- Give every field a `description:"..."` tag. The docs generator reads it (along with `required`,
+  `default`, and `options`) to build the task's Parameters table, so a field without one renders an
+  empty description cell. Add `,omitempty` to the `yaml` tag of optional fields so example YAML stays
+  clean, and use `required:"false"` whenever a field has a `default` (a defaulted field is never
+  actually required).
 - For a task that performs several atomic changes in one call (such as setting multiple config
   keys), populate `PlanResult.Mutations` with one entry per change, so `plan` can itemize the diff.
 - `DispatchPlan` and `DispatchState` set `DesiredState` on the result automatically.
 - `init()` registers the task with `RegisterTask`, which makes it usable in a recipe.
+- When a task depends on a dokku plugin that is not part of dokku core (for example `dokku-acl` or
+  `dokku-letsencrypt`), implement the optional `Requirements() []string` method. The generator
+  renders the returned entries in a Requirements section on the task's page; tasks without the
+  method simply omit the section.
 
 ## Toggle and property tasks
 
@@ -153,8 +162,11 @@ unconditionally; those are recognized by `isDynamicProperty` in `tasks/propertie
 
 ## Regenerating the task docs
 
-The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()` and
-`Examples()` methods - they are not hand-edited. After adding or changing a task, regenerate them:
+The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
+`Examples()`, and optional `Requirements()` methods plus its struct field tags - they are not
+hand-edited. Each page carries a Synopsis (from `Doc()`), a Requirements section (when the task
+implements `Requirements()`), a Parameters table (reflected from the field tags), the examples, and
+a shared Return Values table. After adding or changing a task, regenerate them:
 
 ```bash
 make docs

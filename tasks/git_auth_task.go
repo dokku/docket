@@ -15,16 +15,16 @@ import (
 // instead of always reporting Changed=true.
 type GitAuthTask struct {
 	// Host is the git server hostname (e.g. github.com)
-	Host string `required:"true" yaml:"host"`
+	Host string `required:"true" yaml:"host" description:"Git server hostname (e.g. github.com)"`
 
 	// Username is the netrc username. Required when state is present.
-	Username string `required:"false" yaml:"username,omitempty"`
+	Username string `required:"false" yaml:"username,omitempty" description:"Netrc username. Required when state is present."`
 
 	// Password is the netrc password. Required when state is present.
-	Password string `required:"false" sensitive:"true" yaml:"password,omitempty"`
+	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"Netrc password. Required when state is present."`
 
 	// State is the desired state of the netrc entry
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the netrc entry"`
 }
 
 // GitAuthTaskExample contains an example of a GitAuthTask

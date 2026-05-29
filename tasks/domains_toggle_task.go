@@ -29,13 +29,13 @@ func domainsEnabled(ctx ToggleContext) (bool, error) {
 // DomainsToggleTask enables or disables the domains plugin for a given dokku application
 type DomainsToggleTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
+	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the domains plugin should be applied globally
-	Global bool `required:"false" yaml:"global"`
+	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the domains plugin should be applied globally"`
 
 	// State is the desired state of the domains plugin
-	State State `required:"false" yaml:"state" default:"present" options:"present,absent"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the domains plugin"`
 }
 
 // DomainsToggleTaskExample contains an example of a DomainsToggleTask
@@ -59,7 +59,21 @@ func (t DomainsToggleTask) Doc() string {
 
 // Examples returns the examples for the domains toggle task
 func (t DomainsToggleTask) Examples() ([]Doc, error) {
-	return MarshalExamples([]DomainsToggleTaskExample{})
+	return MarshalExamples([]DomainsToggleTaskExample{
+		{
+			Name: "Enable the domains plugin for an app",
+			DomainsToggleTask: DomainsToggleTask{
+				App: "node-js-app",
+			},
+		},
+		{
+			Name: "Disable the domains plugin for an app",
+			DomainsToggleTask: DomainsToggleTask{
+				App:   "node-js-app",
+				State: StateAbsent,
+			},
+		},
+	})
 }
 
 // Execute enables or disables the domains plugin
