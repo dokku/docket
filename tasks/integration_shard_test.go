@@ -65,6 +65,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationPlanDetectsMissingApp":                  3.0,
 	"TestIntegrationPlanDoesNotMutate":                      0.5,
 	"TestIntegrationPlanInSyncAfterApply":                   5.9,
+	"TestIntegrationPlugin":                                 60.0,
 	"TestIntegrationPortsAddAndRemove":                      11.3,
 	"TestIntegrationProxyPropertyAll":                       10.0,
 	"TestIntegrationProxyToggle":                            7.7,
