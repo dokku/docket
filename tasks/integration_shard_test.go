@@ -42,6 +42,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationConfigSetAndUnset":                      6.5,
 	"TestIntegrationCronPropertyAll":                        10.9,
 	"TestIntegrationDockerOptions":                          6.8,
+	"TestIntegrationDockerOptionsProcessType":               7.0,
 	"TestIntegrationDomainsAddAndRemove":                    19.2,
 	"TestIntegrationDomainsToggle":                          10.0,
 	"TestIntegrationExecuteIdempotent":                      5.9,
