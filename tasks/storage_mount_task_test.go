@@ -67,14 +67,15 @@ func TestStorageMountRejectsInvalidPhase(t *testing.T) {
 
 func TestStorageMountNamedEntryCommandShape(t *testing.T) {
 	task := StorageMountTask{
-		App:          "test-app",
-		EntryName:    "data",
-		ContainerDir: "/app/storage",
-		Phases:       []string{"deploy", "run"},
-		ProcessType:  "web",
-		Subpath:      "sub",
-		Readonly:     true,
-		VolumeChown:  "herokuish",
+		App:           "test-app",
+		EntryName:     "data",
+		ContainerDir:  "/app/storage",
+		Phases:        []string{"deploy", "run"},
+		ProcessType:   "web",
+		Subpath:       "sub",
+		Readonly:      true,
+		VolumeChown:   "herokuish",
+		VolumeOptions: "noexec,nosuid",
 	}
 	args := task.mountArgs()
 	want := []string{
@@ -85,6 +86,7 @@ func TestStorageMountNamedEntryCommandShape(t *testing.T) {
 		"--volume-subpath", "sub",
 		"--volume-readonly",
 		"--volume-chown", "herokuish",
+		"--volume-options", "noexec,nosuid",
 	}
 	if !equalStrings(args, want) {
 		t.Errorf("mountArgs mismatch:\n  got: %v\n want: %v", args, want)
@@ -111,6 +113,30 @@ func TestStorageMountLegacyCommandShape(t *testing.T) {
 	wantUnmount := []string{"--quiet", "storage:unmount", "test-app", "/var/data:/app/storage"}
 	if !equalStrings(unmount, wantUnmount) {
 		t.Errorf("legacy unmountArgs mismatch:\n  got: %v\n want: %v", unmount, wantUnmount)
+	}
+}
+
+func TestStorageMountLegacyVolumeOptions(t *testing.T) {
+	task := StorageMountTask{
+		App:           "test-app",
+		HostDir:       "/var/data",
+		ContainerDir:  "/app/storage",
+		VolumeOptions: "Z",
+	}
+	args := task.mountArgs()
+	want := []string{"--quiet", "storage:mount", "test-app", "/var/data:/app/storage:Z"}
+	if !equalStrings(args, want) {
+		t.Errorf("legacy mountArgs with volume_options mismatch:\n  got: %v\n want: %v", args, want)
+	}
+	for _, a := range args {
+		if a == "--volume-options" {
+			t.Errorf("legacy form must not emit --volume-options flag (carried in colon spec): %v", args)
+		}
+	}
+	unmount := task.unmountArgs()
+	wantUnmount := []string{"--quiet", "storage:unmount", "test-app", "/var/data:/app/storage:Z"}
+	if !equalStrings(unmount, wantUnmount) {
+		t.Errorf("legacy unmountArgs with volume_options mismatch:\n  got: %v\n want: %v", unmount, wantUnmount)
 	}
 }
 

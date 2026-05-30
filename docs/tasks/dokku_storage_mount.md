@@ -17,6 +17,7 @@ Attaches or detaches storage on a dokku application
 | `subpath` | string | no |  |  | Subpath within the entry to mount |
 | `readonly` | bool | no |  |  | Mount the attachment as read-only |
 | `volume_chown` | string | no |  |  | Chown option applied to the volume at mount time |
+| `volume_options` | string | no |  |  | Comma-separated mount options applied to the attachment (e.g. 'Z' for SELinux, 'noexec,nosuid', NFS opts) |
 | `state` | string | no | present | present, absent | Desired state of the storage |
 
 ## Examples
@@ -50,6 +51,26 @@ dokku_storage_mount:
     app: node-js-app
     host_dir: /var/lib/dokku/data/storage/node-js-app
     container_dir: /app/storage
+```
+
+### Mount a host directory with SELinux relabeling
+
+```yaml
+dokku_storage_mount:
+    app: node-js-app
+    host_dir: /var/lib/dokku/data/storage/node-js-app
+    container_dir: /app/storage
+    volume_options: Z
+```
+
+### Attach a named entry with mount options
+
+```yaml
+dokku_storage_mount:
+    app: node-js-app
+    entry_name: node-js-app-data
+    container_dir: /app/storage
+    volume_options: noexec,nosuid
 ```
 
 ### Unmount a named entry from an app
