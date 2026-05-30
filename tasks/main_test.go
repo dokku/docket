@@ -215,6 +215,7 @@ func TestRegisteredTasksExist(t *testing.T) {
 		"dokku_service_create",
 		"dokku_service_link",
 		"dokku_storage_ensure",
+		"dokku_storage_entry",
 		"dokku_storage_mount",
 		"dokku_traefik_property",
 	}
@@ -487,7 +488,7 @@ func TestAllTasksExamplesReturnNoError(t *testing.T) {
 }
 
 func TestRegisteredTaskCount(t *testing.T) {
-	expected := 62
+	expected := 63
 	if got := len(RegisteredTasks); got != expected {
 		t.Errorf("expected %d registered tasks, got %d", expected, got)
 	}
@@ -684,7 +685,8 @@ func TestTaskDocStrings(t *testing.T) {
 		{&ServiceLinkTask{}, "Links or unlinks a dokku service to an app"},
 		{&ProxyToggleTask{}, "Enables or disables the proxy plugin for a given dokku application"},
 		{&StorageEnsureTask{}, "Ensures the storage for a given dokku application"},
-		{&StorageMountTask{}, "Mounts or unmounts the storage for a given dokku application"},
+		{&StorageEntryTask{}, "Creates or destroys a named storage registry entry"},
+		{&StorageMountTask{}, "Attaches or detaches storage on a dokku application"},
 		{&TraefikPropertyTask{}, "Manages the traefik configuration for a given dokku application"},
 	}
 

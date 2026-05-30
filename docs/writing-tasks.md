@@ -82,6 +82,13 @@ A few conventions to follow:
   `dokku-letsencrypt`), implement the optional `Requirements() []string` method. The generator
   renders the returned entries in a Requirements section on the task's page; tasks without the
   method simply omit the section.
+- When a task type is deprecated (typically because the underlying dokku subcommand was deprecated
+  or a richer replacement task exists), implement the optional `Deprecation() string` method.
+  The generator renders the returned message in a Deprecated admonition on the task's page and
+  appends `(deprecated)` to the task's index entry; `apply --list-tasks` marks it the same way;
+  `apply` and `plan` emit a one-time `warning` line above each deprecated task's result line.
+  Keep the message short and name the replacement, e.g.
+  `"use dokku_storage_entry instead; storage:ensure-directory has been deprecated"`.
 
 ## Toggle and property tasks
 

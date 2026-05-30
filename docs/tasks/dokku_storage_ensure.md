@@ -4,6 +4,8 @@
 
 Ensures the storage for a given dokku application
 
+> **Deprecated:** use dokku_storage_entry instead; dokku's storage:ensure-directory has been deprecated in favor of storage:create
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

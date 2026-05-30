@@ -415,6 +415,10 @@ func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac 
 		}
 	}
 
+	if msg := tasks.TaskDeprecation(env.Task); msg != "" {
+		ac.emitter.TaskWarning(ac.play.Name, name, msg)
+	}
+
 	state := env.Task.Execute()
 	ac.counts.Tasks++
 

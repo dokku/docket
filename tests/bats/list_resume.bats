@@ -104,6 +104,36 @@ EOF
   assert_output --partial "[skipped] gated"
 }
 
+@test "--list-tasks marks deprecated task types" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: ensure storage
+      dokku_storage_ensure:
+        app: docket-test-list-1
+        chown: herokuish
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "ensure storage"
+  assert_output --partial "(deprecated)"
+}
+
+@test "--list-tasks --json sets deprecated:true on deprecated tasks" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: ensure storage
+      dokku_storage_ensure:
+        app: docket-test-list-1
+        chown: herokuish
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --json
+  assert_success
+  assert_output --partial '"deprecated":true'
+  assert_output --partial '"deprecation":"'
+}
+
 @test "--list-tasks works on plan as well" {
   write_tasks_file <<EOF
 ---

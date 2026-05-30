@@ -196,6 +196,18 @@ func requirementsSection(task tasks.Task) string {
 	return b.String()
 }
 
+// deprecationSection renders the Deprecated admonition for a task that
+// implements DeprecationDocer. The notice sits between the Synopsis and
+// the Requirements/Parameters sections so the reader sees it before
+// scanning the field table.
+func deprecationSection(task tasks.Task) string {
+	msg := tasks.TaskDeprecation(task)
+	if msg == "" {
+		return ""
+	}
+	return "> **Deprecated:** " + strings.TrimSpace(msg)
+}
+
 // returnValuesSection is the shared Return Values table. Every task returns a
 // tasks.TaskOutputState, so the table is identical across pages. The keys are
 // the Go field names because that is how recipes reference them through
@@ -249,6 +261,9 @@ func renderPage(taskName string, task tasks.Task, examples []tasks.Doc) string {
 	var sections []string
 	sections = append(sections, "# "+taskName)
 	sections = append(sections, "## Synopsis\n\n"+strings.TrimSpace(task.Doc()))
+	if dep := deprecationSection(task); dep != "" {
+		sections = append(sections, dep)
+	}
 	if req := requirementsSection(task); req != "" {
 		sections = append(sections, strings.TrimRight(req, "\n"))
 	}
@@ -307,7 +322,11 @@ func main() {
 	index.WriteString("# Tasks\n\n")
 	index.WriteString("Reference for every task type docket can run inside a recipe. Each page lists the task's fields and example usage. These pages are generated from the task definitions with `make docs`.\n\n")
 	for _, name := range names {
-		index.WriteString(fmt.Sprintf("- [%s](%s.md) - %s\n", name, name, summarize(registeredTasks[name].Doc())))
+		suffix := ""
+		if tasks.TaskDeprecation(registeredTasks[name]) != "" {
+			suffix = " (deprecated)"
+		}
+		index.WriteString(fmt.Sprintf("- [%s](%s.md) - %s%s\n", name, name, summarize(registeredTasks[name].Doc()), suffix))
 	}
 
 	indexFile := filepath.Join(docsFolderName, "README.md")

@@ -367,6 +367,10 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 		}
 	}
 
+	if msg := tasks.TaskDeprecation(env.Task); msg != "" {
+		pc.emitter.TaskWarning(pc.play.Name, name, msg)
+	}
+
 	result := env.Task.Plan()
 	pc.counts.Tasks++
 

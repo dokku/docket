@@ -17,10 +17,18 @@ slightly between `apply` and `plan`:
 |-------|-----------------|-----------------|
 | `play_start` | `version`, `type`, `name`, `ts` | `host` |
 | `play_skipped` | `version`, `type`, `name`, `ts` | `when`, `reason` |
+| `warning` | `version`, `type`, `play`, `name`, `reason`, `message`, `ts` | - |
 | `task` (apply) | `version`, `type`, `play`, `name`, `status` (`ok`/`changed`/`skipped`/`error`), `changed`, `state`, `desired_state`, `duration_ms`, `ts` | `error`, `commands` |
 | `task` (plan) | `version`, `type`, `play`, `name`, `status` (`ok`/`+`/`~`/`-`/`skipped`/`error`), `would_change`, `state`, `desired_state`, `duration_ms`, `ts` | `reason`, `mutations`, `commands`, `error` |
 | `summary` (apply) | `version`, `type`, `tasks`, `changed`, `ok`, `skipped`, `errors`, `plays_skipped`, `duration_ms` | - |
 | `summary` (plan) | `version`, `type`, `tasks`, `would_change`, `in_sync`, `skipped`, `errors`, `plays_skipped`, `duration_ms` | - |
+
+A `warning` event precedes the `task` event it is associated with so consumers can correlate by
+ordering. Today the only `reason` is `deprecated`, emitted when a task whose type implements
+`Deprecation()` is about to run; `message` carries the deprecation notice with sensitive values
+masked. `--list-tasks --json` does not emit a separate `warning` event; instead, the `list_task`
+event for a deprecated task carries `"deprecated": true` and a `deprecation` field with the
+message.
 
 ## Commands
 
