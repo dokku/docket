@@ -164,14 +164,19 @@ func (t StorageMountTask) Plan() PlanResult {
 			if existing != nil && existing.VolumeOptions == t.VolumeOptions {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
-			inputs := []subprocess.ExecCommandInput{{
-				Command: "dokku",
-				Args:    t.mountArgs(),
-			}}
+			var args []string
 			reason := "mount missing"
-			if existing != nil {
+			if existing == nil {
+				args = t.mountArgs()
+			} else {
+				// Drift on an existing attachment: re-mount via the
+				// named-entry CLI form so dokku upserts in place. The
+				// legacy CLI form would error with "Mount path already
+				// exists." (dokku/dokku#8713 kept that contract).
+				args = t.namedMountArgs(existing.EntryName)
 				reason = fmt.Sprintf("volume_options drift (have %q, want %q)", existing.VolumeOptions, t.VolumeOptions)
 			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
@@ -193,7 +198,7 @@ func (t StorageMountTask) Plan() PlanResult {
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
-				Args:    t.unmountArgs(),
+				Args:    t.namedUnmountArgs(existing.EntryName),
 			}}
 			return PlanResult{
 				InSync:    false,
@@ -237,33 +242,44 @@ func (t StorageMountTask) describeMount() string {
 	return fmt.Sprintf("%s:%s", t.HostDir, t.ContainerDir)
 }
 
-// mountArgs renders the dokku storage:mount invocation. The named form
-// passes the entry name positionally and --container-dir; the legacy
-// form keeps the host:container[:opts] colon syntax.
+// mountArgs renders the storage:mount invocation for the first-time
+// mount of a recipe. When entry_name is set, the named-entry CLI form
+// is used directly. When host_dir is set and no attachment yet exists,
+// the legacy host:container[:opts] colon form is used so dokku
+// auto-generates a `legacy-<id>` entry; later operations against that
+// attachment go through namedMountArgs/namedUnmountArgs via the entry
+// name discovered from storage:list.
 func (t StorageMountTask) mountArgs() []string {
-	args := []string{"--quiet", "storage:mount"}
 	if t.EntryName != "" {
-		args = append(args, t.App, t.EntryName, "--container-dir", t.ContainerDir)
-	} else {
-		args = append(args, t.App, t.legacySpec())
+		return t.namedMountArgs(t.EntryName)
 	}
+	args := []string{"--quiet", "storage:mount", t.App, t.legacySpec()}
 	return append(args, t.attachmentFlags()...)
 }
 
-// unmountArgs mirrors mountArgs for the storage:unmount path.
-func (t StorageMountTask) unmountArgs() []string {
-	args := []string{"--quiet", "storage:unmount"}
-	if t.EntryName != "" {
-		args = append(args, t.App, t.EntryName, "--container-dir", t.ContainerDir)
-	} else {
-		args = append(args, t.App, t.legacySpec())
+// namedMountArgs renders storage:mount in the named-entry CLI form for
+// the given entry. Used both when the recipe specifies entry_name and
+// when docket is remediating drift on a legacy-CLI mount whose auto-
+// generated entry name was discovered from storage:list. Dokku 0.38.13's
+// upsert semantic (dokku/dokku#8713) makes the call idempotent.
+func (t StorageMountTask) namedMountArgs(entryName string) []string {
+	args := []string{"--quiet", "storage:mount", t.App, entryName, "--container-dir", t.ContainerDir}
+	args = append(args, t.attachmentFlags()...)
+	if t.VolumeOptions != "" {
+		args = append(args, "--volume-options", t.VolumeOptions)
 	}
 	return args
 }
 
+// namedUnmountArgs mirrors namedMountArgs for the storage:unmount path.
+func (t StorageMountTask) namedUnmountArgs(entryName string) []string {
+	return []string{"--quiet", "storage:unmount", t.App, entryName, "--container-dir", t.ContainerDir}
+}
+
 // legacySpec renders the legacy host:container[:opts] colon syntax used
-// by the legacy form. volume_options is appended as the third segment so
-// dokku's parser stores it in Attachment.VolumeOptions verbatim.
+// for the first-time mount when the recipe specifies host_dir. volume_options
+// is appended as the third segment so dokku's parser stores it in
+// Attachment.VolumeOptions verbatim.
 func (t StorageMountTask) legacySpec() string {
 	if t.VolumeOptions != "" {
 		return fmt.Sprintf("%s:%s:%s", t.HostDir, t.ContainerDir, t.VolumeOptions)
@@ -272,11 +288,11 @@ func (t StorageMountTask) legacySpec() string {
 }
 
 // attachmentFlags renders the optional --phase / --process-type /
-// --volume-subpath / --volume-readonly / --volume-chown / --volume-options
-// flags. Empty fields are omitted so the resulting command line stays
-// minimal. --volume-options is only emitted for the named-entry form;
-// the legacy form already carries the value inside the host:container:opts
-// spec returned by legacySpec.
+// --volume-subpath / --volume-readonly / --volume-chown flags. Empty
+// fields are omitted so the resulting command line stays minimal.
+// --volume-options is NOT emitted here: namedMountArgs appends it
+// directly, and the legacy first-time-mount path carries it inside the
+// host:container:opts spec returned by legacySpec.
 func (t StorageMountTask) attachmentFlags() []string {
 	var flags []string
 	for _, phase := range t.Phases {
@@ -294,20 +310,19 @@ func (t StorageMountTask) attachmentFlags() []string {
 	if t.VolumeChown != "" {
 		flags = append(flags, "--volume-chown", t.VolumeChown)
 	}
-	if t.VolumeOptions != "" && t.EntryName != "" {
-		flags = append(flags, "--volume-options", t.VolumeOptions)
-	}
 	return flags
 }
 
 // existingMount captures the subset of an existing attachment that
-// docket compares against the desired state. volume_options is returned
-// alongside the source/container identity so the caller can detect
-// option drift on a state: present plan. The other mount-time attributes
-// (phases, subpath, readonly, volume_chown) are not exposed by
-// storage:list and so are not drift-detected (mirroring the partial-probe
-// pattern in service_backup and storage_ensure).
+// docket compares against the desired state. EntryName is the attachment's
+// dokku-side identifier (user-supplied for named-entry recipes; auto-
+// generated as `legacy-<id>` for attachments created via the legacy CLI
+// form), and is the address docket uses for follow-up mount/unmount
+// commands. VolumeOptions enables option-drift detection on
+// state: present. The other mount-time attributes (phases, subpath,
+// readonly, volume_chown) are not exposed in a way docket compares today.
 type existingMount struct {
+	EntryName     string
 	VolumeOptions string
 }
 
@@ -351,10 +366,10 @@ func findMount(app, entryName, hostDir, containerDir string) (*existingMount, er
 			continue
 		}
 		if entryName != "" && mount.EntryName == entryName {
-			return &existingMount{VolumeOptions: mount.VolumeOptions}, nil
+			return &existingMount{EntryName: mount.EntryName, VolumeOptions: mount.VolumeOptions}, nil
 		}
 		if hostDir != "" && mount.HostPath == hostDir {
-			return &existingMount{VolumeOptions: mount.VolumeOptions}, nil
+			return &existingMount{EntryName: mount.EntryName, VolumeOptions: mount.VolumeOptions}, nil
 		}
 	}
 	return nil, nil

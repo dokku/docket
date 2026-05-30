@@ -91,14 +91,9 @@ func TestStorageMountNamedEntryCommandShape(t *testing.T) {
 	if !equalStrings(args, want) {
 		t.Errorf("mountArgs mismatch:\n  got: %v\n want: %v", args, want)
 	}
-	unmount := task.unmountArgs()
-	wantUnmount := []string{"--quiet", "storage:unmount", "test-app", "data", "--container-dir", "/app/storage"}
-	if !equalStrings(unmount, wantUnmount) {
-		t.Errorf("unmountArgs mismatch:\n  got: %v\n want: %v", unmount, wantUnmount)
-	}
 }
 
-func TestStorageMountLegacyCommandShape(t *testing.T) {
+func TestStorageMountLegacyFirstMountCommandShape(t *testing.T) {
 	task := StorageMountTask{
 		App:          "test-app",
 		HostDir:      "/var/data",
@@ -107,16 +102,11 @@ func TestStorageMountLegacyCommandShape(t *testing.T) {
 	args := task.mountArgs()
 	want := []string{"--quiet", "storage:mount", "test-app", "/var/data:/app/storage"}
 	if !equalStrings(args, want) {
-		t.Errorf("legacy mountArgs mismatch:\n  got: %v\n want: %v", args, want)
-	}
-	unmount := task.unmountArgs()
-	wantUnmount := []string{"--quiet", "storage:unmount", "test-app", "/var/data:/app/storage"}
-	if !equalStrings(unmount, wantUnmount) {
-		t.Errorf("legacy unmountArgs mismatch:\n  got: %v\n want: %v", unmount, wantUnmount)
+		t.Errorf("legacy first-mount args mismatch:\n  got: %v\n want: %v", args, want)
 	}
 }
 
-func TestStorageMountLegacyVolumeOptions(t *testing.T) {
+func TestStorageMountLegacyFirstMountWithVolumeOptions(t *testing.T) {
 	task := StorageMountTask{
 		App:           "test-app",
 		HostDir:       "/var/data",
@@ -126,17 +116,63 @@ func TestStorageMountLegacyVolumeOptions(t *testing.T) {
 	args := task.mountArgs()
 	want := []string{"--quiet", "storage:mount", "test-app", "/var/data:/app/storage:Z"}
 	if !equalStrings(args, want) {
-		t.Errorf("legacy mountArgs with volume_options mismatch:\n  got: %v\n want: %v", args, want)
+		t.Errorf("legacy first-mount with volume_options mismatch:\n  got: %v\n want: %v", args, want)
 	}
 	for _, a := range args {
 		if a == "--volume-options" {
-			t.Errorf("legacy form must not emit --volume-options flag (carried in colon spec): %v", args)
+			t.Errorf("legacy first-mount must not emit --volume-options flag (carried in colon spec): %v", args)
 		}
 	}
-	unmount := task.unmountArgs()
-	wantUnmount := []string{"--quiet", "storage:unmount", "test-app", "/var/data:/app/storage:Z"}
-	if !equalStrings(unmount, wantUnmount) {
-		t.Errorf("legacy unmountArgs with volume_options mismatch:\n  got: %v\n want: %v", unmount, wantUnmount)
+}
+
+func TestStorageMountNamedRemediationFromLegacy(t *testing.T) {
+	// Recipe uses host_dir; storage:list discovered the auto-named
+	// entry. Drift remediation must upsert via the named-entry CLI.
+	task := StorageMountTask{
+		App:          "test-app",
+		HostDir:      "/var/data",
+		ContainerDir: "/app/storage",
+		// VolumeOptions intentionally empty: this represents the user
+		// dropping options and expecting dokku to clear them on re-mount.
+	}
+	args := task.namedMountArgs("legacy-abc123def4")
+	want := []string{
+		"--quiet", "storage:mount", "test-app", "legacy-abc123def4",
+		"--container-dir", "/app/storage",
+	}
+	if !equalStrings(args, want) {
+		t.Errorf("namedMountArgs (drift clear) mismatch:\n  got: %v\n want: %v", args, want)
+	}
+}
+
+func TestStorageMountNamedRemediationWithOptions(t *testing.T) {
+	task := StorageMountTask{
+		App:           "test-app",
+		HostDir:       "/var/data",
+		ContainerDir:  "/app/storage",
+		VolumeOptions: "noexec,nosuid",
+	}
+	args := task.namedMountArgs("legacy-abc123def4")
+	want := []string{
+		"--quiet", "storage:mount", "test-app", "legacy-abc123def4",
+		"--container-dir", "/app/storage",
+		"--volume-options", "noexec,nosuid",
+	}
+	if !equalStrings(args, want) {
+		t.Errorf("namedMountArgs (drift set) mismatch:\n  got: %v\n want: %v", args, want)
+	}
+}
+
+func TestStorageMountNamedUnmount(t *testing.T) {
+	task := StorageMountTask{
+		App:          "test-app",
+		HostDir:      "/var/data",
+		ContainerDir: "/app/storage",
+	}
+	args := task.namedUnmountArgs("legacy-abc123def4")
+	want := []string{"--quiet", "storage:unmount", "test-app", "legacy-abc123def4", "--container-dir", "/app/storage"}
+	if !equalStrings(args, want) {
+		t.Errorf("namedUnmountArgs mismatch:\n  got: %v\n want: %v", args, want)
 	}
 }
 
