@@ -22,6 +22,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationAppCreateAndDestroy":                    6.0,
 	"TestIntegrationAppJsonPropertyAll":                     7.2,
 	"TestIntegrationAppLock":                                7.0,
+	"TestIntegrationAppsPropertyAll":                        8.0,
 	"TestIntegrationBuilderDockerfilePropertyAll":           7.5,
 	"TestIntegrationBuilderHerokuishPropertyAll":            7.5,
 	"TestIntegrationBuilderLambdaPropertyAll":               7.5,

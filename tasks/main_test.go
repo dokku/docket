@@ -488,7 +488,7 @@ func TestAllTasksExamplesReturnNoError(t *testing.T) {
 }
 
 func TestRegisteredTaskCount(t *testing.T) {
-	expected := 63
+	expected := 64
 	if got := len(RegisteredTasks); got != expected {
 		t.Errorf("expected %d registered tasks, got %d", expected, got)
 	}
