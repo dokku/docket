@@ -56,6 +56,10 @@ that path is interpreted on the **remote** host, not your local machine. docket 
 local files in this release, so any referenced file must already exist on the server. Place it there
 before the run.
 
+Some tasks offer an inline alternative that sidesteps this constraint. `dokku_certs`, for
+instance, accepts `cert_content` and `key_content` strings; docket streams the PEM material to
+dokku as a tarball over stdin, so the bytes never have to live as files on the remote.
+
 ## See also
 
 - [Command reference](command-reference.md) - the commands you run over SSH

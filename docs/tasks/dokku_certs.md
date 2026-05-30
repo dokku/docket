@@ -2,7 +2,7 @@
 
 ## Synopsis
 
-Manages SSL certificates for a dokku app or globally. The `cert` and `key` fields are paths on the dokku server, so when running with `DOKKU_HOST` set the referenced files must already exist on the remote host - docket does not upload them.
+Manages SSL certificates for a dokku app or globally.
 
 ## Requirements
 
@@ -14,8 +14,10 @@ Manages SSL certificates for a dokku app or globally. The `cert` and `key` field
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | no |  |  | Name of the app. Required if Global is false. |
 | `global` | bool | no |  |  | Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin |
-| `cert` | string | no |  |  | Path on the dokku server to the SSL certificate file (sensitive) |
-| `key` | string | no |  |  | Path on the dokku server to the SSL certificate key file (sensitive) |
+| `cert` | string | no |  |  | Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content. (sensitive) |
+| `key` | string | no |  |  | Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content. (sensitive) |
+| `cert_content` | string | no |  |  | PEM-encoded certificate contents. Mutually exclusive with cert. (sensitive) |
+| `key_content` | string | no |  |  | PEM-encoded private key contents. Mutually exclusive with key. (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the SSL configuration |
 
 ## Examples
@@ -54,6 +56,37 @@ dokku_certs:
     app: ""
     global: true
     state: absent
+```
+
+### Add an SSL certificate to an app from inline PEM
+
+```yaml
+dokku_certs:
+    app: node-js-app
+    cert_content: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+    key_content: |
+        -----BEGIN PRIVATE KEY-----
+        ...
+        -----END PRIVATE KEY-----
+```
+
+### Add a global SSL certificate from inline PEM (requires the dokku-global-cert plugin)
+
+```yaml
+dokku_certs:
+    app: ""
+    global: true
+    cert_content: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+    key_content: |
+        -----BEGIN PRIVATE KEY-----
+        ...
+        -----END PRIVATE KEY-----
 ```
 
 ## Return Values
