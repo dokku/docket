@@ -12,16 +12,17 @@ import (
 // It supports two forms:
 //
 //   - Legacy bind mount: set host_dir + container_dir to pass the colon
-//     form to `storage:mount <app> <host:container>`. Round-tripped with
-//     dokku versions that predate the named-entry registry.
+//     form to `storage:mount <app> <host:container[:opts]>`. Round-tripped
+//     with dokku versions that predate the named-entry registry.
 //   - Named-entry attachment: set entry_name + container_dir and (optionally)
-//     phases, process_type, subpath, readonly, volume_chown. Maps to
-//     `storage:mount <app> <entry_name> --container-dir <container_dir>`
+//     phases, process_type, subpath, readonly, volume_chown, volume_options.
+//     Maps to `storage:mount <app> <entry_name> --container-dir <container_dir>`
 //     plus the matching attachment flags.
 //
 // Exactly one of entry_name / host_dir must be set. Idempotency is keyed
-// on (source, container_path) using `storage:list <app> --format json`;
-// the richer attachment attributes are applied at mount time only and
+// on (source, container_path, volume_options) using `storage:list <app>
+// --format json`; the other attachment attributes (phases, process_type,
+// subpath, readonly, volume_chown) are applied at mount time only and
 // are not drift-detected (mirroring the partial-probe pattern in
 // service_backup and storage_ensure).
 type StorageMountTask struct {
@@ -54,6 +55,12 @@ type StorageMountTask struct {
 
 	// VolumeChown is the chown option applied to the volume at mount time
 	VolumeChown string `required:"false" yaml:"volume_chown,omitempty" description:"Chown option applied to the volume at mount time"`
+
+	// VolumeOptions is the comma-separated mount options applied to the
+	// attachment (e.g. "Z" for SELinux relabeling, "noexec,nosuid", NFS
+	// opts). On the legacy form it is appended as the third colon segment;
+	// on the named-entry form it is passed via --volume-options.
+	VolumeOptions string `required:"false" yaml:"volume_options,omitempty" description:"Comma-separated mount options applied to the attachment (e.g. 'Z' for SELinux, 'noexec,nosuid', NFS opts)"`
 
 	// State is the desired state of the storage
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage"`
@@ -109,6 +116,24 @@ func (t StorageMountTask) Examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Mount a host directory with SELinux relabeling",
+			StorageMountTask: StorageMountTask{
+				App:           "node-js-app",
+				HostDir:       "/var/lib/dokku/data/storage/node-js-app",
+				ContainerDir:  "/app/storage",
+				VolumeOptions: "Z",
+			},
+		},
+		{
+			Name: "Attach a named entry with mount options",
+			StorageMountTask: StorageMountTask{
+				App:           "node-js-app",
+				EntryName:     "node-js-app-data",
+				ContainerDir:  "/app/storage",
+				VolumeOptions: "noexec,nosuid",
+			},
+		},
+		{
 			Name: "Unmount a named entry from an app",
 			StorageMountTask: StorageMountTask{
 				App:          "node-js-app",
@@ -132,21 +157,30 @@ func (t StorageMountTask) Plan() PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := mountExists(t.App, t.EntryName, t.HostDir, t.ContainerDir)
+			existing, err := findMount(t.App, t.EntryName, t.HostDir, t.ContainerDir)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if exists {
+			if existing != nil && existing.VolumeOptions == t.VolumeOptions {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
-			inputs := []subprocess.ExecCommandInput{{
-				Command: "dokku",
-				Args:    t.mountArgs(),
-			}}
+			var args []string
+			reason := "mount missing"
+			if existing == nil {
+				args = t.mountArgs()
+			} else {
+				// Drift on an existing attachment: re-mount via the
+				// named-entry CLI form so dokku upserts in place. The
+				// legacy CLI form would error with "Mount path already
+				// exists." (dokku/dokku#8713 kept that contract).
+				args = t.namedMountArgs(existing.EntryName)
+				reason = fmt.Sprintf("volume_options drift (have %q, want %q)", existing.VolumeOptions, t.VolumeOptions)
+			}
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
-				Reason:    "mount missing",
+				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("mount %s on %s", t.describeMount(), t.App)},
 				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
@@ -155,16 +189,16 @@ func (t StorageMountTask) Plan() PlanResult {
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := mountExists(t.App, t.EntryName, t.HostDir, t.ContainerDir)
+			existing, err := findMount(t.App, t.EntryName, t.HostDir, t.ContainerDir)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if !exists {
+			if existing == nil {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
-				Args:    t.unmountArgs(),
+				Args:    t.namedUnmountArgs(existing.EntryName),
 			}}
 			return PlanResult{
 				InSync:    false,
@@ -208,33 +242,57 @@ func (t StorageMountTask) describeMount() string {
 	return fmt.Sprintf("%s:%s", t.HostDir, t.ContainerDir)
 }
 
-// mountArgs renders the dokku storage:mount invocation. The named form
-// passes the entry name positionally and --container-dir; the legacy
-// form keeps the host:container colon syntax.
+// mountArgs renders the storage:mount invocation for the first-time
+// mount of a recipe. When entry_name is set, the named-entry CLI form
+// is used directly. When host_dir is set and no attachment yet exists,
+// the legacy host:container[:opts] colon form is used so dokku
+// auto-generates a `legacy-<id>` entry; later operations against that
+// attachment go through namedMountArgs/namedUnmountArgs via the entry
+// name discovered from storage:list.
 func (t StorageMountTask) mountArgs() []string {
-	args := []string{"--quiet", "storage:mount"}
 	if t.EntryName != "" {
-		args = append(args, t.App, t.EntryName, "--container-dir", t.ContainerDir)
-	} else {
-		args = append(args, t.App, fmt.Sprintf("%s:%s", t.HostDir, t.ContainerDir))
+		return t.namedMountArgs(t.EntryName)
 	}
+	args := []string{"--quiet", "storage:mount", t.App, t.legacySpec()}
 	return append(args, t.attachmentFlags()...)
 }
 
-// unmountArgs mirrors mountArgs for the storage:unmount path.
-func (t StorageMountTask) unmountArgs() []string {
-	args := []string{"--quiet", "storage:unmount"}
-	if t.EntryName != "" {
-		args = append(args, t.App, t.EntryName, "--container-dir", t.ContainerDir)
-	} else {
-		args = append(args, t.App, fmt.Sprintf("%s:%s", t.HostDir, t.ContainerDir))
+// namedMountArgs renders storage:mount in the named-entry CLI form for
+// the given entry. Used both when the recipe specifies entry_name and
+// when docket is remediating drift on a legacy-CLI mount whose auto-
+// generated entry name was discovered from storage:list. Dokku 0.38.13's
+// upsert semantic (dokku/dokku#8713) makes the call idempotent.
+func (t StorageMountTask) namedMountArgs(entryName string) []string {
+	args := []string{"--quiet", "storage:mount", t.App, entryName, "--container-dir", t.ContainerDir}
+	args = append(args, t.attachmentFlags()...)
+	if t.VolumeOptions != "" {
+		args = append(args, "--volume-options", t.VolumeOptions)
 	}
 	return args
+}
+
+// namedUnmountArgs mirrors namedMountArgs for the storage:unmount path.
+func (t StorageMountTask) namedUnmountArgs(entryName string) []string {
+	return []string{"--quiet", "storage:unmount", t.App, entryName, "--container-dir", t.ContainerDir}
+}
+
+// legacySpec renders the legacy host:container[:opts] colon syntax used
+// for the first-time mount when the recipe specifies host_dir. volume_options
+// is appended as the third segment so dokku's parser stores it in
+// Attachment.VolumeOptions verbatim.
+func (t StorageMountTask) legacySpec() string {
+	if t.VolumeOptions != "" {
+		return fmt.Sprintf("%s:%s:%s", t.HostDir, t.ContainerDir, t.VolumeOptions)
+	}
+	return fmt.Sprintf("%s:%s", t.HostDir, t.ContainerDir)
 }
 
 // attachmentFlags renders the optional --phase / --process-type /
 // --volume-subpath / --volume-readonly / --volume-chown flags. Empty
 // fields are omitted so the resulting command line stays minimal.
+// --volume-options is NOT emitted here: namedMountArgs appends it
+// directly, and the legacy first-time-mount path carries it inside the
+// host:container:opts spec returned by legacySpec.
 func (t StorageMountTask) attachmentFlags() []string {
 	var flags []string
 	for _, phase := range t.Phases {
@@ -255,15 +313,25 @@ func (t StorageMountTask) attachmentFlags() []string {
 	return flags
 }
 
-// mountExists reports whether an attachment matching either the
-// named-entry form (entry_name + container_path) or the legacy form
-// (host_path + container_path) is present on the app. A transport-level
-// failure (`*subprocess.SSHError`) is propagated; a dokku-level non-
-// zero exit (e.g. app does not exist) is treated as "no mount." The
-// richer attachment attributes (phases, subpath, readonly, etc.) are
-// not exposed by storage:list, so a change to those values does not
-// surface as drift.
-func mountExists(app, entryName, hostDir, containerDir string) (bool, error) {
+// existingMount captures the subset of an existing attachment that
+// docket compares against the desired state. EntryName is the attachment's
+// dokku-side identifier (user-supplied for named-entry recipes; auto-
+// generated as `legacy-<id>` for attachments created via the legacy CLI
+// form), and is the address docket uses for follow-up mount/unmount
+// commands. VolumeOptions enables option-drift detection on
+// state: present. The other mount-time attributes (phases, subpath,
+// readonly, volume_chown) are not exposed in a way docket compares today.
+type existingMount struct {
+	EntryName     string
+	VolumeOptions string
+}
+
+// findMount returns the existing attachment matching either the named-entry
+// form (entry_name + container_path) or the legacy form (host_path +
+// container_path), or nil if none exists. A transport-level failure
+// (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit
+// (e.g. app does not exist) is treated as "no mount."
+func findMount(app, entryName, hostDir, containerDir string) (*existingMount, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
@@ -277,19 +345,20 @@ func mountExists(app, entryName, hostDir, containerDir string) (bool, error) {
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
-			return false, err
+			return nil, err
 		}
-		return false, nil
+		return nil, nil
 	}
 
 	var mounts []struct {
 		EntryName     string `json:"entry_name"`
 		HostPath      string `json:"host_path"`
 		ContainerPath string `json:"container_path"`
+		VolumeOptions string `json:"volume_options"`
 	}
 
 	if err := json.Unmarshal(result.StdoutBytes(), &mounts); err != nil {
-		return false, nil
+		return nil, nil
 	}
 
 	for _, mount := range mounts {
@@ -297,13 +366,13 @@ func mountExists(app, entryName, hostDir, containerDir string) (bool, error) {
 			continue
 		}
 		if entryName != "" && mount.EntryName == entryName {
-			return true, nil
+			return &existingMount{EntryName: mount.EntryName, VolumeOptions: mount.VolumeOptions}, nil
 		}
 		if hostDir != "" && mount.HostPath == hostDir {
-			return true, nil
+			return &existingMount{EntryName: mount.EntryName, VolumeOptions: mount.VolumeOptions}, nil
 		}
 	}
-	return false, nil
+	return nil, nil
 }
 
 // init registers the StorageMountTask with the task registry
