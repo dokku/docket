@@ -88,6 +88,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationServiceCreateAndDestroy":                2.9,
 	"TestIntegrationServiceLinkAndUnlink":                   32.0,
 	"TestIntegrationStorageEnsure":                          6.0,
+	"TestIntegrationStorageEntry":                           6.0,
 	"TestIntegrationStorageMount":                           6.0,
 	"TestIntegrationTraefikPropertyAll":                     12.0,
 	"TestIntegrationValidateRunsOffline":                    1.0,

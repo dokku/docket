@@ -2,20 +2,48 @@
 
 ## Synopsis
 
-Mounts or unmounts the storage for a given dokku application
+Attaches or detaches storage on a dokku application
 
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `host_dir` | string | yes |  |  | Host directory to mount |
+| `entry_name` | string | no |  |  | Named storage registry entry to attach (mutually exclusive with host_dir) |
+| `host_dir` | string | no |  |  | Host directory to mount in the legacy bind-mount form (mutually exclusive with entry_name) |
 | `container_dir` | string | yes |  |  | Container directory to mount |
+| `phases` | list | no |  |  | Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default. |
+| `process_type` | string | no |  |  | Process type the attachment applies to |
+| `subpath` | string | no |  |  | Subpath within the entry to mount |
+| `readonly` | bool | no |  |  | Mount the attachment as read-only |
+| `volume_chown` | string | no |  |  | Chown option applied to the volume at mount time |
 | `state` | string | no | present | present, absent | Desired state of the storage |
 
 ## Examples
 
-### Mount a host directory into an app
+### Attach a named storage entry to an app
+
+```yaml
+dokku_storage_mount:
+    app: node-js-app
+    entry_name: node-js-app-data
+    container_dir: /app/storage
+```
+
+### Attach a named entry on deploy only, read-only, for the web process
+
+```yaml
+dokku_storage_mount:
+    app: node-js-app
+    entry_name: node-js-app-data
+    container_dir: /app/storage
+    phases:
+        - deploy
+    process_type: web
+    readonly: true
+```
+
+### Mount a host directory into an app (legacy form)
 
 ```yaml
 dokku_storage_mount:
@@ -24,12 +52,12 @@ dokku_storage_mount:
     container_dir: /app/storage
 ```
 
-### Unmount a host directory from an app
+### Unmount a named entry from an app
 
 ```yaml
 dokku_storage_mount:
     app: node-js-app
-    host_dir: /var/lib/dokku/data/storage/node-js-app
+    entry_name: node-js-app-data
     container_dir: /app/storage
     state: absent
 ```

@@ -169,6 +169,25 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 	e.write(out)
 }
 
+// TaskWarning emits a `warning` event keyed by `reason` and tied to a
+// specific task. Today the only reason is "deprecated"; the event is
+// emitted before the task's own `task` event so consumers can correlate
+// by ordering.
+func (e *JSONEmitter) TaskWarning(play, name, message string) {
+	if message == "" {
+		return
+	}
+	e.write(map[string]interface{}{
+		"version": jsonSchemaVersion,
+		"type":    "warning",
+		"play":    play,
+		"name":    name,
+		"reason":  "deprecated",
+		"message": subprocess.MaskString(message),
+		"ts":      nowRFC3339(),
+	})
+}
+
 // ApplySummary emits the end-of-run summary event for apply.
 func (e *JSONEmitter) ApplySummary(c ApplyCounts, d time.Duration) {
 	e.write(map[string]interface{}{

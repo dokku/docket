@@ -38,8 +38,9 @@ code into it:
 
 ## Prerequisites
 
-- **Dokku >= 0.38.9.** docket reads each plugin's state through `:report --format json`, and the
-  shape it depends on was finalized across all plugins in 0.38.9.
+- **Dokku >= 0.38.10.** docket reads each plugin's state through `:report --format json`, and the
+  shape it depends on was finalized across all plugins in 0.38.9; 0.38.10 added `--force` to
+  `storage:destroy`, which `dokku_storage_entry` relies on to stay non-interactive.
 - **dokku-letsencrypt >= 0.25.0**, but only if your recipe uses `dokku_letsencrypt_property`
   tasks.
 

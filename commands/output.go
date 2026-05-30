@@ -29,6 +29,11 @@ type EventEmitter interface {
 	ApplyTask(ev ApplyTaskEvent)
 	// PlanTask emits one event per task in a `plan` run.
 	PlanTask(ev PlanTaskEvent)
+	// TaskWarning emits a non-fatal warning associated with a task, such
+	// as a task-type deprecation notice. It does not affect task counts
+	// or exit codes; apply / plan call it before the per-task event so
+	// the warning appears immediately above the task's result line.
+	TaskWarning(play, name, message string)
 	// ApplySummary emits the end-of-run footer for `apply`.
 	ApplySummary(c ApplyCounts, d time.Duration)
 	// PlanSummary emits the end-of-run footer for `plan`.
@@ -123,6 +128,12 @@ const (
 	MarkerModify     Marker = "~"
 	MarkerDestroy    Marker = "-"
 	MarkerProbeError Marker = "!"
+
+	// MarkerDeprecated prefixes a TaskWarning line emitted when a task
+	// type implements DeprecationDocer. Distinct from the apply/plan
+	// markers because the warning is informational and does not feed
+	// the run counts or exit code.
+	MarkerDeprecated Marker = "deprecated"
 )
 
 // markerWidth is the fixed column width that every bracketed marker is
@@ -188,8 +199,21 @@ func NewFormatter(ui cli.Ui, verbose bool) *Formatter {
 			MarkerModify:     color.New(color.FgYellow),
 			MarkerDestroy:    color.New(color.FgRed),
 			MarkerProbeError: color.New(color.FgRed),
+			MarkerDeprecated: color.New(color.FgYellow, color.Faint),
 		},
 	}
+}
+
+// TaskWarning renders a `[deprecated] <name>  (<message>)` line above the
+// task's result line. It is informational, so the line goes to
+// Ui.Output (not Ui.Error) and does not affect counts. The message is
+// masked against the global sensitive set.
+func (f *Formatter) TaskWarning(_, name, message string) {
+	if message == "" {
+		return
+	}
+	suffix := "(" + message + ")"
+	f.TaskLine(MarkerDeprecated, name, suffix)
 }
 
 // Verbose reports whether the formatter is in verbose mode.

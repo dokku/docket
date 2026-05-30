@@ -331,6 +331,32 @@ func TestApplyTaskErrorOmitsEmptyStdout(t *testing.T) {
 	}
 }
 
+func TestFormatterTaskWarningRendersDeprecatedMarker(t *testing.T) {
+	f, ui := newTestFormatter(false)
+	f.TaskWarning("tasks", "ensure storage", "use dokku_storage_entry instead")
+	got := ui.OutputWriter.String()
+	if !strings.Contains(got, "[deprecated]") {
+		t.Errorf("expected [deprecated] marker, got %q", got)
+	}
+	if !strings.Contains(got, "ensure storage") {
+		t.Errorf("expected task name in line, got %q", got)
+	}
+	if !strings.Contains(got, "use dokku_storage_entry instead") {
+		t.Errorf("expected deprecation message in line, got %q", got)
+	}
+	if ui.ErrorWriter.String() != "" {
+		t.Errorf("deprecation warning must not write to stderr, got %q", ui.ErrorWriter.String())
+	}
+}
+
+func TestFormatterTaskWarningEmptyMessageIsNoOp(t *testing.T) {
+	f, ui := newTestFormatter(false)
+	f.TaskWarning("tasks", "ensure storage", "")
+	if ui.OutputWriter.String() != "" {
+		t.Errorf("expected no output for empty message, got %q", ui.OutputWriter.String())
+	}
+}
+
 func TestFormatterVerboseAccessor(t *testing.T) {
 	f, _ := newTestFormatter(true)
 	if !f.Verbose() {

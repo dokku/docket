@@ -36,6 +36,14 @@ func (t StorageEnsureTask) Doc() string {
 	return "Ensures the storage for a given dokku application"
 }
 
+// Deprecation marks dokku_storage_ensure as deprecated. dokku's
+// underlying storage:ensure-directory subcommand has been deprecated in
+// favor of storage:create, which docket exposes through
+// dokku_storage_entry.
+func (t StorageEnsureTask) Deprecation() string {
+	return "use dokku_storage_entry instead; dokku's storage:ensure-directory has been deprecated in favor of storage:create"
+}
+
 // Examples returns the examples for the storage ensure task
 func (t StorageEnsureTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEnsureTaskExample{

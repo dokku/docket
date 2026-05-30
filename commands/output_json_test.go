@@ -403,6 +403,42 @@ func TestJSONEmitterEveryEventHasVersion1(t *testing.T) {
 }
 
 // TestEmitterInterfaceSatisfied compiles iff Formatter and JSONEmitter both
+func TestJSONEmitterTaskWarning(t *testing.T) {
+	e, ui := emitterTestUI()
+	e.TaskWarning("tasks", "ensure storage", "use dokku_storage_entry instead")
+	ev := decodeOnly(t, ui.OutputWriter.String())
+
+	if got, want := ev["version"], float64(1); got != want {
+		t.Errorf("version = %v, want %v", got, want)
+	}
+	if got, want := ev["type"], "warning"; got != want {
+		t.Errorf("type = %v, want %v", got, want)
+	}
+	if got, want := ev["play"], "tasks"; got != want {
+		t.Errorf("play = %v, want %v", got, want)
+	}
+	if got, want := ev["name"], "ensure storage"; got != want {
+		t.Errorf("name = %v, want %v", got, want)
+	}
+	if got, want := ev["reason"], "deprecated"; got != want {
+		t.Errorf("reason = %v, want %v", got, want)
+	}
+	if got, want := ev["message"], "use dokku_storage_entry instead"; got != want {
+		t.Errorf("message = %v, want %v", got, want)
+	}
+	if _, ok := ev["ts"]; !ok {
+		t.Error("ts must be set")
+	}
+}
+
+func TestJSONEmitterTaskWarningEmptyIsNoOp(t *testing.T) {
+	e, ui := emitterTestUI()
+	e.TaskWarning("tasks", "ensure storage", "")
+	if ui.OutputWriter.String() != "" {
+		t.Errorf("expected no output for empty message, got %q", ui.OutputWriter.String())
+	}
+}
+
 // satisfy the EventEmitter contract. Catches signature drift at build time.
 func TestEmitterInterfaceSatisfied(t *testing.T) {
 	var _ EventEmitter = (*Formatter)(nil)

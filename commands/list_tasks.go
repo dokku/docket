@@ -173,6 +173,10 @@ func renderListEnvelope(
 ) {
 	skipMarker := evaluateListWhen(env, playExprCtx)
 	display := listingDisplayName(env, name)
+	deprecation := ""
+	if env != nil && env.Task != nil {
+		deprecation = tasks.TaskDeprecation(env.Task)
+	}
 
 	if jsonOut {
 		ev := map[string]interface{}{
@@ -189,6 +193,10 @@ func renderListEnvelope(
 		}
 		if phase != "" {
 			ev["phase"] = phase
+		}
+		if deprecation != "" {
+			ev["deprecated"] = true
+			ev["deprecation"] = deprecation
 		}
 		switch skipMarker {
 		case "skipped":
@@ -230,6 +238,9 @@ func renderListEnvelope(
 		b.WriteString(decorated)
 		if env.IsGroup() {
 			b.WriteString("  (group)")
+		}
+		if deprecation != "" {
+			b.WriteString("  (deprecated)")
 		}
 		if len(env.Tags) > 0 {
 			b.WriteString(fmt.Sprintf("  [tags=%s]", strings.Join(env.Tags, ",")))
