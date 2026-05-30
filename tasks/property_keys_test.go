@@ -72,6 +72,17 @@ func TestAppJsonPropertyKeys(t *testing.T) {
 	checkUnsupportedProperty(t, "app-json", appJsonPropertyKeys)
 }
 
+func TestAppsPropertyKeys(t *testing.T) {
+	checkPropertyKeys(t, "apps", appsPropertyKeys, []propertyKeysCase{
+		{"deploy-source", "deploy-source", ""},
+		{"deploy-source-metadata", "deploy-source-metadata", ""},
+		{"disable-autocreation", "", "global-disable-autocreation"},
+	})
+	checkUnsupportedProperty(t, "apps", appsPropertyKeys)
+	// deploy-source* are per-app only; disable-autocreation is global only.
+	checkScopeMismatch(t, "apps", appsPropertyKeys, "deploy-source", "disable-autocreation")
+}
+
 func TestBuilderPropertyKeys(t *testing.T) {
 	checkPropertyKeys(t, "builder", builderPropertyKeys, []propertyKeysCase{
 		{"build-dir", "build-dir", "global-build-dir"},

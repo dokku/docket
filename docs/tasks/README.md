@@ -8,6 +8,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_app_clone](dokku_app_clone.md) - Clones an existing dokku app to a new app
 - [dokku_app_json_property](dokku_app_json_property.md) - Manages the app.json configuration for a given dokku application
 - [dokku_app_lock](dokku_app_lock.md) - Locks or unlocks a dokku application from deployment
+- [dokku_apps_property](dokku_apps_property.md) - Manages the apps plugin configuration for a given dokku application or globally
 - [dokku_builder_dockerfile_property](dokku_builder_dockerfile_property.md) - Manages the builder-dockerfile configuration for a given dokku application
 - [dokku_builder_herokuish_property](dokku_builder_herokuish_property.md) - Manages the builder-herokuish configuration for a given dokku application
 - [dokku_builder_lambda_property](dokku_builder_lambda_property.md) - Manages the builder-lambda configuration for a given dokku application
