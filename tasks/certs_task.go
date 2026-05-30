@@ -1,6 +1,8 @@
 package tasks
 
 import (
+	"archive/tar"
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -17,10 +19,18 @@ type CertsTask struct {
 	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin"`
 
 	// Cert is the path on the dokku server to the SSL certificate file
-	Cert string `required:"false" sensitive:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file"`
+	Cert string `required:"false" sensitive:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content."`
 
 	// Key is the path on the dokku server to the SSL certificate key file
-	Key string `required:"false" sensitive:"true" yaml:"key,omitempty" description:"Path on the dokku server to the SSL certificate key file"`
+	Key string `required:"false" sensitive:"true" yaml:"key,omitempty" description:"Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content."`
+
+	// CertContent is the PEM-encoded certificate contents. Mutually
+	// exclusive with Cert.
+	CertContent string `required:"false" sensitive:"true" yaml:"cert_content,omitempty" description:"PEM-encoded certificate contents. Mutually exclusive with cert."`
+
+	// KeyContent is the PEM-encoded private key contents. Mutually
+	// exclusive with Key.
+	KeyContent string `required:"false" sensitive:"true" yaml:"key_content,omitempty" description:"PEM-encoded private key contents. Mutually exclusive with key."`
 
 	// State is the desired state of the SSL configuration
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the SSL configuration"`
@@ -42,10 +52,7 @@ func (e CertsTaskExample) GetName() string {
 
 // Doc returns the docblock for the certs task
 func (t CertsTask) Doc() string {
-	return "Manages SSL certificates for a dokku app or globally. The `cert` " +
-		"and `key` fields are paths on the dokku server, so when running with " +
-		"`DOKKU_HOST` set the referenced files must already exist on the " +
-		"remote host - docket does not upload them."
+	return "Manages SSL certificates for a dokku app or globally."
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -86,6 +93,22 @@ func (t CertsTask) Examples() ([]Doc, error) {
 				State:  StateAbsent,
 			},
 		},
+		{
+			Name: "Add an SSL certificate to an app from inline PEM",
+			CertsTask: CertsTask{
+				App:         "node-js-app",
+				CertContent: "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+				KeyContent:  "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+			},
+		},
+		{
+			Name: "Add a global SSL certificate from inline PEM (requires the dokku-global-cert plugin)",
+			CertsTask: CertsTask{
+				Global:      true,
+				CertContent: "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+				KeyContent:  "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+			},
+		},
 	})
 }
 
@@ -101,8 +124,10 @@ func (t CertsTask) Plan() PlanResult {
 			if err := validateCertsTask(t); err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if t.Cert == "" || t.Key == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'cert' and 'key' are required when state is 'present'")}
+			hasPaths := t.Cert != "" && t.Key != ""
+			hasContent := t.CertContent != "" && t.KeyContent != ""
+			if !hasPaths && !hasContent {
+				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'cert' (or 'cert_content') and 'key' (or 'key_content') are required when state is 'present'")}
 			}
 			enabled, err := certsEnabled(t)
 			if err != nil {
@@ -115,11 +140,26 @@ func (t CertsTask) Plan() PlanResult {
 			if t.Global {
 				target = "(global)"
 			}
-			args := []string{"--quiet", "certs:add", t.App, t.Cert, t.Key}
-			if t.Global {
-				args = []string{"--quiet", "global-cert:set", t.Cert, t.Key}
+			input := subprocess.ExecCommandInput{Command: "dokku"}
+			if hasContent {
+				tarBytes, err := buildCertTarball(t.CertContent, t.KeyContent)
+				if err != nil {
+					return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("build cert tarball: %w", err)}
+				}
+				input.Stdin = bytes.NewReader(tarBytes)
+				if t.Global {
+					input.Args = []string{"--quiet", "global-cert:set"}
+				} else {
+					input.Args = []string{"--quiet", "certs:add", t.App}
+				}
+			} else {
+				if t.Global {
+					input.Args = []string{"--quiet", "global-cert:set", t.Cert, t.Key}
+				} else {
+					input.Args = []string{"--quiet", "certs:add", t.App, t.Cert, t.Key}
+				}
 			}
-			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
+			inputs := []subprocess.ExecCommandInput{input}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
@@ -173,7 +213,47 @@ func validateCertsTask(t CertsTask) error {
 	if !t.Global && t.App == "" {
 		return fmt.Errorf("'app' is required when 'global' is not set to true")
 	}
+	if t.Cert != "" && t.CertContent != "" {
+		return fmt.Errorf("'cert' and 'cert_content' are mutually exclusive")
+	}
+	if t.Key != "" && t.KeyContent != "" {
+		return fmt.Errorf("'key' and 'key_content' are mutually exclusive")
+	}
+	if (t.Cert != "" && t.KeyContent != "") || (t.CertContent != "" && t.Key != "") {
+		return fmt.Errorf("'cert'/'key' and 'cert_content'/'key_content' cannot be mixed; supply both from the same source")
+	}
 	return nil
+}
+
+// buildCertTarball produces an uncompressed tar archive containing
+// server.crt and server.key entries with the supplied PEM contents.
+// Both dokku's core certs:add and the dokku-global-cert plugin extract
+// such an archive from stdin and select the cert/key by file extension.
+func buildCertTarball(certPEM, keyPEM string) ([]byte, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	entries := []struct {
+		name, body string
+	}{
+		{"server.crt", certPEM},
+		{"server.key", keyPEM},
+	}
+	for _, e := range entries {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: e.name,
+			Mode: 0o600,
+			Size: int64(len(e.body)),
+		}); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write([]byte(e.body)); err != nil {
+			return nil, err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // certsEnabled checks if a certificate is currently configured for an app or globally

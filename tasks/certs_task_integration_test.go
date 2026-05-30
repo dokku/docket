@@ -150,6 +150,114 @@ func TestIntegrationCertsApp(t *testing.T) {
 	}
 }
 
+func TestIntegrationCertsAppInline(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-certs-inline"
+	certPath, keyPath := generateSelfSignedCert(t, appName+".example.com")
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatalf("read cert: %v", err)
+	}
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	enabled, err := certsEnabled(CertsTask{App: appName})
+	if err != nil {
+		t.Fatalf("certsEnabled failed: %v", err)
+	}
+	if enabled {
+		t.Fatalf("expected newly-created app to have no cert")
+	}
+
+	addTask := CertsTask{App: appName, CertContent: string(certPEM), KeyContent: string(keyPEM), State: StatePresent}
+	result := addTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to add cert inline: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true on first inline add")
+	}
+	if result.State != StatePresent {
+		t.Errorf("expected state 'present', got '%s'", result.State)
+	}
+	enabled, err = certsEnabled(CertsTask{App: appName})
+	if err != nil {
+		t.Fatalf("certsEnabled failed: %v", err)
+	}
+	if !enabled {
+		t.Errorf("expected cert to be enabled after inline add")
+	}
+
+	result = addTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed second inline add: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false on idempotent inline add")
+	}
+
+	removeTask := CertsTask{App: appName, State: StateAbsent}
+	result = removeTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to remove inline cert: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true on first remove")
+	}
+}
+
+func TestIntegrationCertsGlobalInline(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "global-cert")
+
+	certPath, keyPath := generateSelfSignedCert(t, "global-inline.example.com")
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatalf("read cert: %v", err)
+	}
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read key: %v", err)
+	}
+
+	cleanup := func() {
+		(CertsTask{Global: true, State: StateAbsent}).Execute()
+	}
+	cleanup()
+	defer cleanup()
+
+	addTask := CertsTask{Global: true, CertContent: string(certPEM), KeyContent: string(keyPEM), State: StatePresent}
+	result := addTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to add global cert inline: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true on first global inline add")
+	}
+	enabled, err := certsEnabled(CertsTask{Global: true})
+	if err != nil {
+		t.Fatalf("certsEnabled failed: %v", err)
+	}
+	if !enabled {
+		t.Errorf("expected global cert to be enabled after inline add")
+	}
+
+	result = addTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed second global inline add: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false on idempotent global inline add")
+	}
+}
+
 func TestIntegrationCertsGlobal(t *testing.T) {
 	skipIfNoDokkuT(t)
 	skipIfPluginMissingT(t, "global-cert")

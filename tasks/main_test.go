@@ -650,7 +650,7 @@ func TestTaskDocStrings(t *testing.T) {
 		{&BuildpacksPropertyTask{}, "Manages the buildpacks configuration for a given dokku application"},
 		{&BuildpacksTask{}, "Manages the buildpacks for a given dokku application"},
 		{&CaddyPropertyTask{}, "Manages the caddy configuration for a given dokku application"},
-		{&CertsTask{}, "Manages SSL certificates for a dokku app or globally. The `cert` and `key` fields are paths on the dokku server, so when running with `DOKKU_HOST` set the referenced files must already exist on the remote host - docket does not upload them."},
+		{&CertsTask{}, "Manages SSL certificates for a dokku app or globally."},
 		{&ChecksPropertyTask{}, "Manages the checks configuration for a given dokku application"},
 		{&ChecksToggleTask{}, "Enables or disables the checks plugin for a given dokku application"},
 		{&ConfigTask{}, "Manages the configuration for a given dokku application"},
