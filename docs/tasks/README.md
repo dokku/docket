@@ -58,6 +58,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_scheduler_k3s_autoscaling_auth](dokku_scheduler_k3s_autoscaling_auth.md) - Manages KEDA TriggerAuthentication metadata grouped under a single trigger for a dokku application or globally
 - [dokku_scheduler_k3s_chart](dokku_scheduler_k3s_chart.md) - Manages helm chart value overrides for a dokku scheduler-k3s bundled chart
 - [dokku_scheduler_k3s_labels](dokku_scheduler_k3s_labels.md) - Manages scheduler-k3s labels scoped to a (process_type, resource_type) pair for a dokku application or globally
+- [dokku_scheduler_k3s_profile](dokku_scheduler_k3s_profile.md) - Manages a global scheduler-k3s node profile used when joining nodes to a cluster
 - [dokku_scheduler_k3s_property](dokku_scheduler_k3s_property.md) - Manages the scheduler-k3s configuration for a given dokku application.
 - [dokku_scheduler_property](dokku_scheduler_property.md) - Manages the scheduler configuration for a given dokku application
 - [dokku_service_backup](dokku_service_backup.md) - Manages the S3 backup schedule, authentication, and encryption for a dokku service
