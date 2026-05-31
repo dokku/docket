@@ -59,6 +59,13 @@ func TestIntegrationSchedulerK3sAnnotationsAll(t *testing.T) {
 				"prometheus.io/scrape": "false",
 			},
 		},
+		{
+			name:         "per-app/multi-line-annotation-value",
+			resourceType: "ingress",
+			annotations: map[string]string{
+				"nginx.ingress.kubernetes.io/configuration-snippet": "if ($host = 'old.example.com') {\n  return 301 https://new.example.com$request_uri;\n}\n",
+			},
+		},
 	}
 
 	for _, tc := range cases {
