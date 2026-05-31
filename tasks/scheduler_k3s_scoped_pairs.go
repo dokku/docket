@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -29,11 +28,8 @@ type schedulerK3sScopedPairsSpec struct {
 // subprocess call. Error messages substitute the spec's noun so callers see
 // "'labels' must not be empty" / "label keys must not be empty" etc.
 func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state State) error {
-	if !spec.Global && spec.App == "" {
-		return errors.New("app is required when global is false")
-	}
-	if spec.Global && spec.App != "" {
-		return fmt.Errorf("'app' must not be set when 'global' is set to true")
+	if err := validateAppGlobalExclusive(spec.App, spec.Global); err != nil {
+		return err
 	}
 	if spec.ResourceType == "" {
 		return errors.New("resource_type is required")
@@ -63,26 +59,9 @@ func planSchedulerK3sScopedPairsSet(spec schedulerK3sScopedPairsSpec) PlanResult
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 
-	driftedKeys := []string{}
-	for k, v := range spec.Pairs {
-		if cur, ok := current[k]; !ok || cur != v {
-			driftedKeys = append(driftedKeys, k)
-		}
-	}
-	if len(driftedKeys) == 0 {
+	drifted, allNew := driftedKeys(spec.Pairs, current)
+	if len(drifted) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
-	}
-	sort.Strings(driftedKeys)
-
-	mutations := make([]string, 0, len(driftedKeys))
-	allNew := true
-	for _, k := range driftedKeys {
-		if _, ok := current[k]; ok {
-			mutations = append(mutations, fmt.Sprintf("set %s=%s (was %q)", k, spec.Pairs[k], current[k]))
-			allNew = false
-		} else {
-			mutations = append(mutations, fmt.Sprintf("set %s=%s (new)", k, spec.Pairs[k]))
-		}
 	}
 
 	status := PlanStatusModify
@@ -90,13 +69,13 @@ func planSchedulerK3sScopedPairsSet(spec schedulerK3sScopedPairsSpec) PlanResult
 		status = PlanStatusCreate
 	}
 
-	inputs := schedulerK3sScopedPairsSetInputs(spec, driftedKeys)
+	inputs := schedulerK3sScopedPairsSetInputs(spec, drifted)
 	singular := singularizeSchedulerK3sKind(spec.Kind)
 	return PlanResult{
 		InSync:    false,
 		Status:    status,
-		Reason:    fmt.Sprintf("%d %s(s) to set", len(driftedKeys), singular),
-		Mutations: mutations,
+		Reason:    fmt.Sprintf("%d %s(s) to set", len(drifted), singular),
+		Mutations: formatSetMutations(drifted, spec.Pairs, current),
 		Commands:  resolveCommands(inputs),
 		apply: func() TaskOutputState {
 			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
@@ -112,20 +91,9 @@ func planSchedulerK3sScopedPairsUnset(spec schedulerK3sScopedPairsSpec) PlanResu
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 
-	toClear := []string{}
-	for k := range spec.Pairs {
-		if _, ok := current[k]; ok {
-			toClear = append(toClear, k)
-		}
-	}
+	toClear := intersectingKeys(spec.Pairs, current)
 	if len(toClear) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
-	}
-	sort.Strings(toClear)
-
-	mutations := make([]string, 0, len(toClear))
-	for _, k := range toClear {
-		mutations = append(mutations, fmt.Sprintf("unset %s (was %q)", k, current[k]))
 	}
 
 	inputs := schedulerK3sScopedPairsClearInputs(spec, toClear)
@@ -134,7 +102,7 @@ func planSchedulerK3sScopedPairsUnset(spec schedulerK3sScopedPairsSpec) PlanResu
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d %s(s) to unset", len(toClear), singular),
-		Mutations: mutations,
+		Mutations: formatClearMutations(toClear, current),
 		Commands:  resolveCommands(inputs),
 		apply: func() TaskOutputState {
 			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
