@@ -5,7 +5,7 @@ import (
 )
 
 func TestIntegrationSchedulerK3sLabelsAll(t *testing.T) {
-	skipIfNoDokkuT(t)
+	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-labels"
 	destroyApp(appName)

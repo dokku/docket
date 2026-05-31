@@ -5,7 +5,7 @@ import (
 )
 
 func TestIntegrationSchedulerK3sAutoscalingAuthAll(t *testing.T) {
-	skipIfNoDokkuT(t)
+	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-autoscaling-auth"
 	destroyApp(appName)
@@ -76,7 +76,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAll(t *testing.T) {
 // TestIntegrationSchedulerK3sAutoscalingAuthPartialClear verifies the
 // wipe-and-restore dance preserves keys the absent task does not name.
 func TestIntegrationSchedulerK3sAutoscalingAuthPartialClear(t *testing.T) {
-	skipIfNoDokkuT(t)
+	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-autoscaling-auth-partial"
 	destroyApp(appName)
@@ -153,7 +153,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthPartialClear(t *testing.T) {
 // TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent verifies that
 // present-state leaves extra keys (set out-of-band) untouched.
 func TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent(t *testing.T) {
-	skipIfNoDokkuT(t)
+	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-autoscaling-auth-additive"
 	destroyApp(appName)
