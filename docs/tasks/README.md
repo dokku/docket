@@ -54,6 +54,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_resource_limit](dokku_resource_limit.md) - Manages the resource limits for a given dokku application
 - [dokku_resource_reserve](dokku_resource_reserve.md) - Manages the resource reservations for a given dokku application
 - [dokku_scheduler_docker_local_property](dokku_scheduler_docker_local_property.md) - Manages the scheduler-docker-local configuration for a given dokku application
+- [dokku_scheduler_k3s_labels](dokku_scheduler_k3s_labels.md) - Manages scheduler-k3s labels scoped to a (process_type, resource_type) pair for a dokku application or globally
 - [dokku_scheduler_k3s_property](dokku_scheduler_k3s_property.md) - Manages the scheduler-k3s configuration for a given dokku application
 - [dokku_scheduler_property](dokku_scheduler_property.md) - Manages the scheduler configuration for a given dokku application
 - [dokku_service_backup](dokku_service_backup.md) - Manages the S3 backup schedule, authentication, and encryption for a dokku service

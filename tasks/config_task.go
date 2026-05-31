@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sort"
+
 	"github.com/dokku/docket/subprocess"
 )
 
@@ -97,7 +99,8 @@ func (t ConfigTask) Plan() PlanResult {
 	})
 }
 
-// configKeysToSet returns keys whose desired value differs from the current value.
+// configKeysToSet returns keys whose desired value differs from the current
+// value. The slice is sorted so Plan output is stable across runs.
 func configKeysToSet(current, desired map[string]string) []string {
 	keys := []string{}
 	for k, v := range desired {
@@ -105,10 +108,12 @@ func configKeysToSet(current, desired map[string]string) []string {
 			keys = append(keys, k)
 		}
 	}
+	sort.Strings(keys)
 	return keys
 }
 
 // configKeysToUnset returns keys present in desired that exist in current.
+// The slice is sorted so Plan output is stable across runs.
 func configKeysToUnset(current, desired map[string]string) []string {
 	keys := []string{}
 	for k := range desired {
@@ -116,6 +121,7 @@ func configKeysToUnset(current, desired map[string]string) []string {
 			keys = append(keys, k)
 		}
 	}
+	sort.Strings(keys)
 	return keys
 }
 
