@@ -38,7 +38,7 @@ code into it:
 
 ## Prerequisites
 
-- **Dokku >= 0.38.13.**
+- **Dokku >= 0.38.14.**
 - **dokku-letsencrypt >= 0.25.0.**
 
 ## Installation
