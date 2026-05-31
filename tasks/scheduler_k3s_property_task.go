@@ -1,5 +1,10 @@
 package tasks
 
+import (
+	"fmt"
+	"strings"
+)
+
 // SchedulerK3sPropertyTask manages the scheduler-k3s configuration for a given dokku application
 type SchedulerK3sPropertyTask struct {
 	// App is the name of the app. Required if Global is false.
@@ -34,7 +39,7 @@ func (e SchedulerK3sPropertyTaskExample) GetName() string {
 
 // Doc returns the docblock for the scheduler-k3s property task
 func (t SchedulerK3sPropertyTask) Doc() string {
-	return "Manages the scheduler-k3s configuration for a given dokku application"
+	return "Manages the scheduler-k3s configuration for a given dokku application. chart.* properties are managed by dokku_scheduler_k3s_chart and rejected here, since dokku's scheduler-k3s:set path is deprecated for chart values."
 }
 
 // Examples returns the examples for the scheduler-k3s property task
@@ -81,8 +86,10 @@ func (t SchedulerK3sPropertyTask) Execute() TaskOutputState {
 
 // schedulerK3sPropertyKeys maps scheduler-k3s property names to the JSON
 // keys emitted by `dokku scheduler-k3s:report --format json` on dokku
-// 0.38.8+. The `chart.*.*` family is dynamic and handled by
-// isDynamicProperty without a map entry.
+// 0.38.8+. The `chart.*.*` family is intentionally absent: chart value
+// overrides are managed by dokku_scheduler_k3s_chart through dokku's
+// dedicated scheduler-k3s:charts:set surface, and Plan() rejects any
+// chart.* property before reaching this map.
 var schedulerK3sPropertyKeys = map[string]PropertyKeys{
 	"deploy-timeout":         {PerApp: "deploy-timeout", Global: "global-deploy-timeout"},
 	"image-pull-secrets":     {PerApp: "image-pull-secrets", Global: "global-image-pull-secrets"},
@@ -102,6 +109,12 @@ var schedulerK3sPropertyKeys = map[string]PropertyKeys{
 
 // Plan reports the drift the SchedulerK3sPropertyTask would produce.
 func (t SchedulerK3sPropertyTask) Plan() PlanResult {
+	if strings.HasPrefix(t.Property, "chart.") {
+		return PlanResult{
+			Status: PlanStatusError,
+			Error:  fmt.Errorf("chart.* properties are managed by dokku_scheduler_k3s_chart; the scheduler-k3s:set path for chart values is deprecated in dokku"),
+		}
+	}
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler-k3s:set", schedulerK3sPropertyKeys)
 }
 

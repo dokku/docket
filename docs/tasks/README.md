@@ -56,8 +56,9 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_scheduler_docker_local_property](dokku_scheduler_docker_local_property.md) - Manages the scheduler-docker-local configuration for a given dokku application
 - [dokku_scheduler_k3s_annotations](dokku_scheduler_k3s_annotations.md) - Manages scheduler-k3s annotations scoped to a (process_type, resource_type) pair for a dokku application or globally
 - [dokku_scheduler_k3s_autoscaling_auth](dokku_scheduler_k3s_autoscaling_auth.md) - Manages KEDA TriggerAuthentication metadata grouped under a single trigger for a dokku application or globally
+- [dokku_scheduler_k3s_chart](dokku_scheduler_k3s_chart.md) - Manages helm chart value overrides for a dokku scheduler-k3s bundled chart
 - [dokku_scheduler_k3s_labels](dokku_scheduler_k3s_labels.md) - Manages scheduler-k3s labels scoped to a (process_type, resource_type) pair for a dokku application or globally
-- [dokku_scheduler_k3s_property](dokku_scheduler_k3s_property.md) - Manages the scheduler-k3s configuration for a given dokku application
+- [dokku_scheduler_k3s_property](dokku_scheduler_k3s_property.md) - Manages the scheduler-k3s configuration for a given dokku application.
 - [dokku_scheduler_property](dokku_scheduler_property.md) - Manages the scheduler configuration for a given dokku application
 - [dokku_service_backup](dokku_service_backup.md) - Manages the S3 backup schedule, authentication, and encryption for a dokku service
 - [dokku_service_create](dokku_service_create.md) - Creates or destroys a dokku service

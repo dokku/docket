@@ -11,9 +11,9 @@ import (
 
 // schedulerK3sScopedPairsSpec captures the inputs the shared scheduler-k3s
 // "key/value pairs scoped to (process_type, resource_type)" helpers need. The
-// labels and annotations tasks both build one of these and delegate to the
-// helpers below; only Kind differs (it is plugged into both the dokku
-// subcommand name and the user-facing pluralization in plan messages).
+// labels and annotations tasks both build one of these; only Kind differs (it
+// is plugged into both the dokku subcommand name and the user-facing
+// pluralization in plan messages).
 type schedulerK3sScopedPairsSpec struct {
 	// Kind is the dokku subcommand noun ("labels" or "annotations").
 	Kind         string
@@ -50,88 +50,35 @@ func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state Sta
 	return nil
 }
 
-// planSchedulerK3sScopedPairsSet probes current pairs once, computes the diff,
-// and embeds an apply closure that runs `dokku scheduler-k3s:<kind>:set` once
-// per drifted key.
+// planSchedulerK3sScopedPairsSet delegates to planPairsSet with a current-state
+// reader and a per-key command builder bound to the spec's scope.
 func planSchedulerK3sScopedPairsSet(spec schedulerK3sScopedPairsSpec) PlanResult {
-	current, err := getSchedulerK3sScopedPairs(spec)
-	if err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
-
-	drifted, allNew := driftedKeys(spec.Pairs, current)
-	if len(drifted) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
-	}
-
-	status := PlanStatusModify
-	if allNew {
-		status = PlanStatusCreate
-	}
-
-	inputs := schedulerK3sScopedPairsSetInputs(spec, drifted)
-	singular := singularizeSchedulerK3sKind(spec.Kind)
-	return PlanResult{
-		InSync:    false,
-		Status:    status,
-		Reason:    fmt.Sprintf("%d %s(s) to set", len(drifted), singular),
-		Mutations: formatSetMutations(drifted, spec.Pairs, current),
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+	return planPairsSet(
+		singularizeSchedulerK3sKind(spec.Kind),
+		spec.Pairs,
+		func() (map[string]string, error) { return getSchedulerK3sScopedPairs(spec) },
+		func(key, value string) subprocess.ExecCommandInput {
+			return schedulerK3sScopedPairsCommand(spec, key, value)
 		},
-	}
+	)
 }
 
-// planSchedulerK3sScopedPairsUnset probes current pairs once, computes the
-// diff, and embeds an apply closure that clears each listed key that exists.
+// planSchedulerK3sScopedPairsUnset delegates to planPairsUnset; the command
+// builder passes an empty value, which dokku's `:labels:set` / `:annotations:set`
+// interpret as "clear this key".
 func planSchedulerK3sScopedPairsUnset(spec schedulerK3sScopedPairsSpec) PlanResult {
-	current, err := getSchedulerK3sScopedPairs(spec)
-	if err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
-
-	toClear := intersectingKeys(spec.Pairs, current)
-	if len(toClear) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
-	}
-
-	inputs := schedulerK3sScopedPairsClearInputs(spec, toClear)
-	singular := singularizeSchedulerK3sKind(spec.Kind)
-	return PlanResult{
-		InSync:    false,
-		Status:    PlanStatusDestroy,
-		Reason:    fmt.Sprintf("%d %s(s) to unset", len(toClear), singular),
-		Mutations: formatClearMutations(toClear, current),
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+	return planPairsUnset(
+		singularizeSchedulerK3sKind(spec.Kind),
+		spec.Pairs,
+		func() (map[string]string, error) { return getSchedulerK3sScopedPairs(spec) },
+		func(key, value string) subprocess.ExecCommandInput {
+			return schedulerK3sScopedPairsCommand(spec, key, value)
 		},
-	}
-}
-
-// schedulerK3sScopedPairsSetInputs returns one subprocess input per drifted
-// key, each invoking `dokku scheduler-k3s:<kind>:set` with the desired value.
-func schedulerK3sScopedPairsSetInputs(spec schedulerK3sScopedPairsSpec, keys []string) []subprocess.ExecCommandInput {
-	inputs := make([]subprocess.ExecCommandInput, 0, len(keys))
-	for _, key := range keys {
-		inputs = append(inputs, schedulerK3sScopedPairsCommand(spec, key, spec.Pairs[key]))
-	}
-	return inputs
-}
-
-// schedulerK3sScopedPairsClearInputs returns one subprocess input per key to
-// clear. Dokku interprets an empty value as a clear-this-key operation.
-func schedulerK3sScopedPairsClearInputs(spec schedulerK3sScopedPairsSpec, keys []string) []subprocess.ExecCommandInput {
-	inputs := make([]subprocess.ExecCommandInput, 0, len(keys))
-	for _, key := range keys {
-		inputs = append(inputs, schedulerK3sScopedPairsCommand(spec, key, ""))
-	}
-	return inputs
+	)
 }
 
 // schedulerK3sScopedPairsCommand builds one `dokku scheduler-k3s:<kind>:set`
-// call.
+// call. An empty value is forwarded verbatim; dokku interprets it as a clear.
 func schedulerK3sScopedPairsCommand(spec schedulerK3sScopedPairsSpec, key, value string) subprocess.ExecCommandInput {
 	args := []string{"--quiet", "scheduler-k3s:" + spec.Kind + ":set"}
 	args = append(args, "--resource-type", spec.ResourceType)
