@@ -67,6 +67,33 @@ jobs:
       - name: run integration tests (shard ${{ matrix.shard }} of 4)
         run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 20m -run TestIntegration ./tasks/
 
+  scheduler-k3s-test:
+    name: scheduler-k3s-test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: enable docker legacy link support
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nEnvironment="DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1"\n' | sudo tee /etc/systemd/system/docker.service.d/legacy-links.conf
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+      - name: install dokku
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.14
+          sudo dokku plugin:install-dependencies --core
+      - name: initialize k3s cluster
+        run: sudo dokku scheduler-k3s:initialize --server-ip 127.0.0.1
+      - name: run scheduler-k3s integration tests
+        run: sudo DOKKU_TEST_SCHEDULER_K3S=1 go test -v -count=1 -timeout 30m -run '^TestIntegrationSchedulerK3s' ./tasks/
+
   bats-test:
     name: bats-test
     runs-on: ubuntu-24.04
