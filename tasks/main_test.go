@@ -210,6 +210,7 @@ func TestRegisteredTasksExist(t *testing.T) {
 		"dokku_resource_limit",
 		"dokku_resource_reserve",
 		"dokku_scheduler_docker_local_property",
+		"dokku_scheduler_k3s_annotations",
 		"dokku_scheduler_k3s_labels",
 		"dokku_scheduler_k3s_property",
 		"dokku_scheduler_property",
@@ -489,7 +490,7 @@ func TestAllTasksExamplesReturnNoError(t *testing.T) {
 }
 
 func TestRegisteredTaskCount(t *testing.T) {
-	expected := 65
+	expected := 66
 	if got := len(RegisteredTasks); got != expected {
 		t.Errorf("expected %d registered tasks, got %d", expected, got)
 	}

@@ -85,6 +85,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationRunExecInputsCapturesFailureOutput":     0.2,
 	"TestIntegrationRunExecInputsPopulatesExitCodeAndStdout": 0.2,
 	"TestIntegrationSchedulerDockerLocalPropertyAll":        7.7,
+	"TestIntegrationSchedulerK3sAnnotationsAll":             8.0,
 	"TestIntegrationSchedulerK3sLabelsAll":                  8.0,
 	"TestIntegrationSchedulerK3sPropertyAll":                21.3,
 	"TestIntegrationSchedulerPropertyAll":                   8.6,
