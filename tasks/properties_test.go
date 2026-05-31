@@ -138,7 +138,10 @@ func TestIsDynamicProperty(t *testing.T) {
 		{"letsencrypt", "email", false},
 		{"traefik", "dns-provider-CLOUDFLARE_API_TOKEN", true},
 		{"traefik", "dns-provider", false},
-		{"scheduler-k3s", "chart.traefik.replicas", true},
+		// scheduler-k3s chart.* used to be dynamic; it is now handled
+		// by the dedicated dokku_scheduler_k3s_chart task and the
+		// property task rejects chart.* before reaching here.
+		{"scheduler-k3s", "chart.traefik.replicas", false},
 		{"scheduler-k3s", "namespace", false},
 		{"nginx", "dns-provider-X", false},
 	}

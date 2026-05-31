@@ -145,15 +145,15 @@ func warnIfUnknownProperty(plugin, property string, err error) {
 // set. Examples:
 //   - dokku-letsencrypt `dns-provider-*` (arbitrary env var names)
 //   - dokku traefik `dns-provider-*` (same shape, per-provider env vars)
-//   - dokku scheduler-k3s `chart.*.*` (arbitrary helm chart values)
 //
 // Dynamic property names are validated by `:set`, not the report schema.
+// scheduler-k3s `chart.*.*` used to live here but moved to the dedicated
+// dokku_scheduler_k3s_chart task; SchedulerK3sPropertyTask.Plan rejects
+// chart.* before reaching this helper.
 func isDynamicProperty(plugin, property string) bool {
 	switch plugin {
 	case "letsencrypt", "traefik":
 		return strings.HasPrefix(property, "dns-provider-")
-	case "scheduler-k3s":
-		return strings.HasPrefix(property, "chart.")
 	}
 	return false
 }

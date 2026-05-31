@@ -491,7 +491,7 @@ func TestAllTasksExamplesReturnNoError(t *testing.T) {
 }
 
 func TestRegisteredTaskCount(t *testing.T) {
-	expected := 67
+	expected := 68
 	if got := len(RegisteredTasks); got != expected {
 		t.Errorf("expected %d registered tasks, got %d", expected, got)
 	}
@@ -682,7 +682,7 @@ func TestTaskDocStrings(t *testing.T) {
 		{&ResourceLimitTask{}, "Manages the resource limits for a given dokku application"},
 		{&ResourceReserveTask{}, "Manages the resource reservations for a given dokku application"},
 		{&SchedulerDockerLocalPropertyTask{}, "Manages the scheduler-docker-local configuration for a given dokku application"},
-		{&SchedulerK3sPropertyTask{}, "Manages the scheduler-k3s configuration for a given dokku application"},
+		{&SchedulerK3sPropertyTask{}, "Manages the scheduler-k3s configuration for a given dokku application. chart.* properties are managed by dokku_scheduler_k3s_chart and rejected here, since dokku's scheduler-k3s:set path is deprecated for chart values."},
 		{&SchedulerPropertyTask{}, "Manages the scheduler configuration for a given dokku application"},
 		{&ServiceCreateTask{}, "Creates or destroys a dokku service"},
 		{&ServiceLinkTask{}, "Links or unlinks a dokku service to an app"},

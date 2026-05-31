@@ -69,3 +69,23 @@ func TestSchedulerK3sPropertyTaskAbsentWithValue(t *testing.T) {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
+
+func TestSchedulerK3sPropertyTaskRejectsChartProperty(t *testing.T) {
+	task := SchedulerK3sPropertyTask{
+		Global:   true,
+		Property: "chart.traefik.replicas",
+		Value:    "3",
+		State:    StatePresent,
+	}
+	result := task.Execute()
+	if result.Error == nil {
+		t.Fatal("expected chart.* property to be rejected")
+	}
+	msg := result.Error.Error()
+	if !strings.Contains(msg, "dokku_scheduler_k3s_chart") {
+		t.Errorf("error should point users at the replacement task, got: %v", result.Error)
+	}
+	if !strings.Contains(msg, "deprecated") {
+		t.Errorf("error should mention the dokku deprecation, got: %v", result.Error)
+	}
+}

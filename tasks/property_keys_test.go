@@ -390,9 +390,11 @@ func TestSchedulerK3sPropertyKeys(t *testing.T) {
 	})
 	checkUnsupportedProperty(t, "scheduler-k3s", schedulerK3sPropertyKeys)
 	checkScopeMismatch(t, "scheduler-k3s", schedulerK3sPropertyKeys, "", "token")
-	// chart.*.* are dynamic and should bypass map validation.
-	if err := validateProperty("scheduler-k3s", "chart.traefik.replicas", false, schedulerK3sPropertyKeys); err != nil {
-		t.Errorf("dynamic property should pass validation, got %v", err)
+	// chart.* properties used to be dynamic; they are now rejected by
+	// SchedulerK3sPropertyTask.Plan and routed to dokku_scheduler_k3s_chart,
+	// so validateProperty against the property-keys map should fail.
+	if err := validateProperty("scheduler-k3s", "chart.traefik.replicas", false, schedulerK3sPropertyKeys); err == nil {
+		t.Error("expected chart.* to be rejected by the property map (no longer dynamic)")
 	}
 }
 
