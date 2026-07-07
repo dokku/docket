@@ -87,8 +87,8 @@ func TestExportRecipeFileMode(t *testing.T) {
 		}
 	}
 
-	// app-two has no config or domains, so its play is just the app task.
-	if strings.Count(out, "dokku_app") != 2 {
+	// Both apps get a dokku_app task (the ":" avoids matching dokku_app_lock).
+	if strings.Count(out, "dokku_app:") != 2 {
 		t.Errorf("expected dokku_app in both plays:\n%s", out)
 	}
 }

@@ -26,12 +26,20 @@ type GlobalExporter interface {
 	ExportGlobal() ([]interface{}, error)
 }
 
+// globalExportOrder is the fixed order in which not-app-scoped task types are
+// emitted into the leading global play. Adding a global resource means
+// implementing GlobalExporter on its task and adding its type-key here.
+var globalExportOrder = []string{
+	"dokku_storage_entry",
+}
+
 // appExportOrder is the fixed order in which app-scoped task types are emitted
 // into each app's play. dokku_app comes first; deploy sources are emitted last.
 // Adding a task to export means implementing AppExporter on it and adding its
 // type-key here.
 var appExportOrder = []string{
 	"dokku_app",
+	"dokku_app_lock",
 	"dokku_config",
 	"dokku_domains",
 	"dokku_ports",
@@ -112,6 +120,14 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 		usedVarNames: map[string]bool{},
 	}
 
+	// Global resources come first, in a leading "global" play. Skipped when
+	// the export is narrowed to specific apps with --app.
+	if len(opts.Apps) == 0 {
+		if global := res.exportGlobalPlay(opts); global != nil {
+			res.plays = append(res.plays, global)
+		}
+	}
+
 	apps, err := listApps()
 	if err != nil {
 		return nil, err
@@ -127,6 +143,46 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 	}
 
 	return res, nil
+}
+
+// exportGlobalPlay builds the leading global play by running every registered
+// GlobalExporter. Returns nil when there are no global resources.
+func (res *ExportResult) exportGlobalPlay(opts ExportOptions) map[string]interface{} {
+	var taskList []map[string]interface{}
+	var inputs []map[string]interface{}
+
+	for _, typeKey := range globalExportOrder {
+		proto, ok := RegisteredTasks[typeKey]
+		if !ok {
+			continue
+		}
+		exporter, ok := proto.(GlobalExporter)
+		if !ok {
+			continue
+		}
+		bodies, err := exporter.ExportGlobal()
+		if err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("global: %s: %v", typeKey, err))
+			continue
+		}
+		for _, body := range bodies {
+			body, ins := res.processBody("global", body, opts)
+			taskList = append(taskList, map[string]interface{}{typeKey: body})
+			inputs = append(inputs, ins...)
+		}
+	}
+
+	if len(taskList) == 0 {
+		return nil
+	}
+
+	play := map[string]interface{}{"name": "global"}
+	if len(inputs) > 0 {
+		play["inputs"] = inputs
+	}
+	play["tasks"] = taskList
+	return play
 }
 
 // exportAppPlay builds one play for a single app by running each app-scoped
