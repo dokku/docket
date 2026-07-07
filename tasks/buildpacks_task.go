@@ -1,8 +1,9 @@
 package tasks
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -197,21 +198,38 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 }
 
 // ExportApp reads the app's buildpacks and returns a dokku_buildpacks task, or
-// nil when none are set. Order is not recoverable from the reader (it returns a
-// set), so the list is sorted for deterministic output.
+// nil when none are set. It reads the `list` key from buildpacks:report, which
+// preserves build-precedence order (getBuildpacks returns an unordered set, so
+// it cannot be used here).
 func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
-	buildpacks, err := getBuildpacks(app)
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "buildpacks:report", app, "--format", "json"},
+	})
 	if err != nil {
-		return nil, err
-	}
-	if len(buildpacks) == 0 {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
 		return nil, nil
 	}
-	list := make([]string, 0, len(buildpacks))
-	for b := range buildpacks {
-		list = append(list, b)
+
+	var report struct {
+		List string `json:"list"`
 	}
-	sort.Strings(list)
+	if err := json.Unmarshal(response.StdoutBytes(), &report); err != nil {
+		return nil, nil
+	}
+	// The list key is a comma-separated string in build-precedence order.
+	var list []string
+	for _, bp := range strings.Split(report.List, ",") {
+		if bp = strings.TrimSpace(bp); bp != "" {
+			list = append(list, bp)
+		}
+	}
+	if len(list) == 0 {
+		return nil, nil
+	}
 	return []interface{}{BuildpacksTask{App: app, Buildpacks: list, State: StatePresent}}, nil
 }
 

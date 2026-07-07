@@ -1,22 +1,30 @@
 package tasks
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
 
-// checksEnabled probes whether checks are enabled for an app via
-// `dokku --quiet checks:report <app> --checks-disabled`. The dokku-checks
-// plugin lists disabled process types here; an empty list or "none" means
-// every process has checks enabled.
+// checksEnabled probes whether checks are enabled for an app by reading the
+// `disabled-list` key from `checks:report --format json` (the global scope
+// reads `global-disabled-list`). The dokku-checks plugin lists disabled
+// process types there; an empty list or "none" means every process has checks
+// enabled. The JSON report is used because dokku 0.38.21 renamed the
+// flag-based `--checks-disabled` probe to `--checks-disabled-list`; the report
+// key is stable across those versions.
 func checksEnabled(ctx ToggleContext) (bool, error) {
-	args := []string{"--quiet", "checks:report"}
+	args := []string{"checks:report"}
+	key := "disabled-list"
 	if ctx.AllowGlobal && ctx.Global {
-		args = append(args, "--global", "--checks-disabled")
+		args = append(args, "--global")
+		key = "global-disabled-list"
 	} else {
-		args = append(args, ctx.App, "--checks-disabled")
+		args = append(args, ctx.App)
 	}
+	args = append(args, "--format", "json")
+
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
@@ -24,7 +32,12 @@ func checksEnabled(ctx ToggleContext) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	disabled := strings.TrimSpace(result.StdoutContents())
+
+	report := map[string]string{}
+	if err := json.Unmarshal(result.StdoutBytes(), &report); err != nil {
+		return false, err
+	}
+	disabled := strings.TrimSpace(report[key])
 	return disabled == "" || disabled == "none", nil
 }
 
