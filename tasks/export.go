@@ -61,6 +61,7 @@ var appExportOrder = []string{
 	"dokku_http_auth_allowed_ip",
 	"dokku_http_auth_domain",
 	"dokku_acl_app",
+	"dokku_certs",
 	"dokku_letsencrypt",
 	// property-plugin tasks (reconstructed from <plugin>:report by exportProperties)
 	"dokku_app_json_property",

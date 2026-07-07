@@ -83,6 +83,42 @@ func TestIntegrationExportReconstructsApp(t *testing.T) {
 	}
 }
 
+// TestIntegrationExportCerts verifies the app certificate exporter: certs:show
+// streams the cert/key back, so the exported task round-trips with no drift.
+// certs is a core plugin, so only dokku itself is required.
+func TestIntegrationExportCerts(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	app := "docket-test-export-certs"
+	destroyApp(app)
+	createApp(app)
+	defer destroyApp(app)
+
+	certPath, keyPath := generateSelfSignedCert(t, app+".example.com")
+	if r := (CertsTask{App: app, Cert: certPath, Key: keyPath, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("add cert: %v", r.Error)
+	}
+
+	bodies, err := CertsTask{}.ExportApp(app)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 certs task, got %d", len(bodies))
+	}
+	c := bodies[0].(CertsTask)
+	if !strings.Contains(c.CertContent, "BEGIN CERTIFICATE") {
+		t.Errorf("exported cert_content missing PEM: %q", c.CertContent)
+	}
+	if !strings.Contains(c.KeyContent, "BEGIN") {
+		t.Errorf("exported key_content missing PEM: %q", c.KeyContent)
+	}
+	c.State = StatePresent
+	if plan := c.Plan(); !plan.InSync {
+		t.Errorf("exported certs should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
 // TestIntegrationExportSchedulerK3sProfile verifies the global profile exporter
 // against a real dokku. scheduler-k3s is a core plugin and profiles are stored
 // on disk (no cluster or deploy needed), so only dokku itself is required.
