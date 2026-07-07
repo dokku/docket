@@ -42,6 +42,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_letsencrypt_property](dokku_letsencrypt_property.md) - Manages the letsencrypt configuration for a given dokku application
 - [dokku_logs_property](dokku_logs_property.md) - Manages the logs configuration for a given dokku application
 - [dokku_maintenance](dokku_maintenance.md) - Enables or disables maintenance mode for a given dokku application
+- [dokku_maintenance_custom_page](dokku_maintenance_custom_page.md) - Installs or removes a custom maintenance page for a dokku application.
 - [dokku_network](dokku_network.md) - Creates or destroys a Docker network
 - [dokku_network_property](dokku_network_property.md) - Manages the network property for a given dokku application
 - [dokku_nginx_property](dokku_nginx_property.md) - Manages the nginx configuration for a given dokku application
