@@ -36,6 +36,7 @@ var appExportOrder = []string{
 	"dokku_domains",
 	"dokku_ports",
 	"dokku_buildpacks",
+	"dokku_storage_mount",
 	"dokku_ps_scale",
 	"dokku_checks_toggle",
 	"dokku_proxy_toggle",

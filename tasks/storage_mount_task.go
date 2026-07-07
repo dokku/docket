@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
@@ -329,6 +331,48 @@ func (t StorageMountTask) attachmentFlags() []string {
 type existingMount struct {
 	EntryName     string
 	VolumeOptions string
+}
+
+// ExportApp reads the app's storage attachments and returns a dokku_storage_mount
+// task per mount. Legacy bind-mounts (dokku wraps these under an auto-generated
+// "legacy-" entry name) use the host_dir form; named registry entries use the
+// entry_name form. Phase/readonly/subpath details are not exposed by
+// storage:list, so only the mount itself is reconstructed.
+func (t StorageMountTask) ExportApp(app string) ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "storage:list", app, "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var mounts []struct {
+		EntryName     string `json:"entry_name"`
+		HostPath      string `json:"host_path"`
+		ContainerPath string `json:"container_path"`
+		VolumeOptions string `json:"volume_options"`
+	}
+	if err := json.Unmarshal(result.StdoutBytes(), &mounts); err != nil {
+		return nil, nil
+	}
+	sort.Slice(mounts, func(i, j int) bool { return mounts[i].ContainerPath < mounts[j].ContainerPath })
+
+	var out []interface{}
+	for _, m := range mounts {
+		task := StorageMountTask{App: app, ContainerDir: m.ContainerPath, VolumeOptions: m.VolumeOptions}
+		if m.EntryName == "" || strings.HasPrefix(m.EntryName, "legacy-") {
+			task.HostDir = m.HostPath
+		} else {
+			task.EntryName = m.EntryName
+		}
+		out = append(out, task)
+	}
+	return out, nil
 }
 
 // findMount returns the existing attachment matching either the named-entry
