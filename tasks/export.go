@@ -3,6 +3,7 @@ package tasks
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -87,6 +88,10 @@ var appExportOrder = []string{
 	"dokku_scheduler_docker_local_property",
 	"dokku_scheduler_k3s_property",
 	"dokku_traefik_property",
+	// deploy source last: only one of these emits per app
+	"dokku_git_sync",
+	"dokku_git_from_image",
+	"dokku_git_from_archive",
 }
 
 // ExportOptions controls an export run.
@@ -243,8 +248,69 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 	case HttpAuthUserTask:
 		return res.processHttpAuthUser(app, b, opts)
 	default:
+		return res.processSensitiveScalars(app, body, opts)
+	}
+}
+
+// processSensitiveScalars lifts every non-empty string field tagged
+// `sensitive:"true"` into a required, sensitive input (e.g. a git image or
+// archive URL, which can embed credentials). Map/slice sensitive fields are
+// handled by their own cases above.
+func (res *ExportResult) processSensitiveScalars(app string, body interface{}, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	rv := reflect.ValueOf(body)
+	if rv.Kind() != reflect.Struct {
 		return body, nil
 	}
+	rt := rv.Type()
+	out := reflect.New(rt).Elem()
+	out.Set(rv)
+
+	var inputs []map[string]interface{}
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		if field.Tag.Get("sensitive") != "true" || field.Type.Kind() != reflect.String {
+			continue
+		}
+		fv := out.Field(i)
+		value := fv.String()
+		if value == "" {
+			continue
+		}
+		if opts.Inline {
+			if opts.Redact {
+				fv.SetString("")
+			}
+			continue
+		}
+		name := res.uniqueVarName(app, yamlFieldName(field))
+		fv.SetString("{{ ." + name + " }}")
+		if opts.Redact {
+			res.Vars[name] = ""
+		} else {
+			res.Vars[name] = value
+		}
+		inputs = append(inputs, map[string]interface{}{
+			"name":      name,
+			"required":  true,
+			"sensitive": true,
+		})
+	}
+	if len(inputs) == 0 {
+		return body, nil
+	}
+	return out.Interface(), inputs
+}
+
+// yamlFieldName returns the recipe key for a struct field from its yaml tag.
+func yamlFieldName(field reflect.StructField) string {
+	tag := field.Tag.Get("yaml")
+	if comma := strings.IndexByte(tag, ','); comma >= 0 {
+		tag = tag[:comma]
+	}
+	if tag == "" || tag == "-" {
+		return strings.ToLower(field.Name)
+	}
+	return tag
 }
 
 // processHttpAuthUser lifts each user's password into a required input, since

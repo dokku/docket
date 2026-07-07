@@ -137,6 +137,19 @@ func checkAppSourceImage(app, expectedImage string) (bool, error) {
 	return source.Source == "docker-image" && source.SourceMetadata == expectedImage, nil
 }
 
+// ExportApp reconstructs a docker-image deploy source from apps:report. The
+// image reference is sensitive, so the engine lifts it into the vars-file.
+func (t GitFromImageTask) ExportApp(app string) ([]interface{}, error) {
+	source, err := getAppDeploySource(app)
+	if err != nil {
+		return nil, err
+	}
+	if source.Source != "docker-image" {
+		return nil, nil
+	}
+	return []interface{}{GitFromImageTask{App: app, Image: source.SourceMetadata}}, nil
+}
+
 // init registers the GitFromImageTask with the task registry
 func init() {
 	RegisterTask(&GitFromImageTask{})

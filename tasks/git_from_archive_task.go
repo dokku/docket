@@ -147,6 +147,21 @@ func checkAppSourceArchive(app, expectedType, expectedURL string) (bool, error) 
 	return source.Source == expectedType && source.SourceMetadata == expectedURL, nil
 }
 
+// ExportApp reconstructs a git-from-archive deploy source from apps:report.
+// dokku records the archive type (tar/tar.gz/zip) as the source and the URL as
+// the metadata; the URL is sensitive, so the engine lifts it into the vars-file.
+func (t GitFromArchiveTask) ExportApp(app string) ([]interface{}, error) {
+	source, err := getAppDeploySource(app)
+	if err != nil {
+		return nil, err
+	}
+	switch source.Source {
+	case "tar", "tar.gz", "zip":
+		return []interface{}{GitFromArchiveTask{App: app, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source}}, nil
+	}
+	return nil, nil
+}
+
 // init registers the GitFromArchiveTask with the task registry
 func init() {
 	RegisterTask(&GitFromArchiveTask{})
