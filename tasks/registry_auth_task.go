@@ -98,12 +98,23 @@ func (t RegistryAuthTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the RegistryAuthTask's inputs without contacting the server.
+func (t RegistryAuthTask) Validate() error {
+	if err := validateRegistryAuthTask(t); err != nil {
+		return err
+	}
+	if t.State == StatePresent && (t.Username == "" || t.Password == "") {
+		return fmt.Errorf("'username' and 'password' are required when state is 'present'")
+	}
+	return nil
+}
+
 // Plan reports the drift the RegistryAuthTask would produce. dokku registry
 // plugins do not expose a probe for current login state, so the plan
 // reports drift unconditionally.
 func (t RegistryAuthTask) Plan() PlanResult {
-	if err := validateRegistryAuthTask(t); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	target := t.App
 	if t.Global {
@@ -111,9 +122,6 @@ func (t RegistryAuthTask) Plan() PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if t.Username == "" || t.Password == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'username' and 'password' are required when state is 'present'")}
-			}
 			args := []string{"--quiet", "registry:login", "--password-stdin"}
 			if t.Global {
 				args = append(args, "--global")

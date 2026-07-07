@@ -89,6 +89,11 @@ var psPropertyKeys = map[string]PropertyKeys{
 	"stop-timeout-seconds": {PerApp: "stop-timeout-seconds", Global: "global-stop-timeout-seconds"},
 }
 
+// Validate checks the PsPropertyTask's inputs without contacting the server.
+func (t PsPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "ps:set", psPropertyKeys)
+}
+
 // Plan reports the drift the PsPropertyTask would produce.
 func (t PsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "ps:set", psPropertyKeys)

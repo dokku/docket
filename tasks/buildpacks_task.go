@@ -83,8 +83,22 @@ func (t BuildpacksTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the BuildpacksTask's inputs without contacting the server.
+func (t BuildpacksTask) Validate() error {
+	if t.App == "" {
+		return fmt.Errorf("'app' is required")
+	}
+	if t.State == StatePresent && len(t.Buildpacks) == 0 {
+		return fmt.Errorf("'buildpacks' must not be empty for state 'present'")
+	}
+	return nil
+}
+
 // Plan reports the drift the BuildpacksTask would produce.
 func (t BuildpacksTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planBuildpacksAdd(t) },
 		StateAbsent:  func() PlanResult { return planBuildpacksRemove(t) },
@@ -92,12 +106,6 @@ func (t BuildpacksTask) Plan() PlanResult {
 }
 
 func planBuildpacksAdd(t BuildpacksTask) PlanResult {
-	if t.App == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
-	}
-	if len(t.Buildpacks) == 0 {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'buildpacks' must not be empty for state 'present'")}
-	}
 	current, err := getBuildpacks(t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -137,9 +145,6 @@ func planBuildpacksAdd(t BuildpacksTask) PlanResult {
 }
 
 func planBuildpacksRemove(t BuildpacksTask) PlanResult {
-	if t.App == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
-	}
 	current, err := getBuildpacks(t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}

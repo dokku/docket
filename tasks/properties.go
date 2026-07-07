@@ -217,18 +217,33 @@ func isDynamicProperty(plugin, property string) bool {
 // emitted via warnIfUnknownProperty for typos and unsupported plugin
 // versions; other probe failures are recorded in PlanResult.Reason and
 // the apply still runs, matching pre-probe behavior.
-func planProperty(state State, app string, global bool, property, value, subcommand string, keys map[string]PropertyKeys) PlanResult {
+// validatePropertyInput checks a property task's inputs without probing the
+// server: app/global scoping, that the property is supported for the target
+// scope, and that a value is supplied only in the state that allows it. Both
+// planProperty and each property task's Validate() call it so plan and
+// validate report the same errors.
+func validatePropertyInput(state State, app string, global bool, property, value, subcommand string, keys map[string]PropertyKeys) error {
 	if !global && app == "" {
-		return PlanResult{
-			Status: PlanStatusError,
-			Error:  errors.New("app is required when global is false"),
-		}
+		return errors.New("app is required when global is false")
 	}
 	if global && app != "" {
-		return PlanResult{
-			Status: PlanStatusError,
-			Error:  fmt.Errorf("'app' must not be set when 'global' is set to true"),
-		}
+		return fmt.Errorf("'app' must not be set when 'global' is set to true")
+	}
+	if err := validateProperty(pluginFromSubcommand(subcommand), property, global, keys); err != nil {
+		return err
+	}
+	if state == StatePresent && value == "" {
+		return fmt.Errorf("setting a state of 'present' is invalid without a value for 'value'")
+	}
+	if state == StateAbsent && value != "" {
+		return fmt.Errorf("setting a state of 'absent' is invalid with a value for 'value'")
+	}
+	return nil
+}
+
+func planProperty(state State, app string, global bool, property, value, subcommand string, keys map[string]PropertyKeys) PlanResult {
+	if err := validatePropertyInput(state, app, global, property, value, subcommand, keys); err != nil {
+		return planErr(err)
 	}
 
 	plugin := pluginFromSubcommand(subcommand)
@@ -237,19 +252,8 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 		target = "--global"
 	}
 
-	if err := validateProperty(plugin, property, global, keys); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
-
 	return DispatchPlan(state, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if value == "" {
-				return PlanResult{
-					Status: PlanStatusError,
-					Error:  fmt.Errorf("setting a state of 'present' is invalid without a value for 'value'"),
-				}
-			}
-
 			// Dynamic property families have no probe key; treat as drift
 			// and run the mutation unconditionally.
 			if _, mapped := keys[property]; !mapped && isDynamicProperty(plugin, property) {
@@ -293,13 +297,6 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 			}
 		},
 		StateAbsent: func() PlanResult {
-			if value != "" {
-				return PlanResult{
-					Status: PlanStatusError,
-					Error:  fmt.Errorf("setting a state of 'absent' is invalid with a value for 'value'"),
-				}
-			}
-
 			if _, mapped := keys[property]; !mapped && isDynamicProperty(plugin, property) {
 				return runUnprobedUnset(subcommand, target, property)
 			}

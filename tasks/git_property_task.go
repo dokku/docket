@@ -97,6 +97,11 @@ var gitPropertyKeys = map[string]PropertyKeys{
 	"source-image":      {PerApp: "source-image", Global: ""},
 }
 
+// Validate checks the GitPropertyTask's inputs without contacting the server.
+func (t GitPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "git:set", gitPropertyKeys)
+}
+
 // Plan reports the drift the GitPropertyTask would produce.
 func (t GitPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "git:set", gitPropertyKeys)

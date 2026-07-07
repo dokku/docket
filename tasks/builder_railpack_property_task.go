@@ -83,6 +83,11 @@ var builderRailpackPropertyKeys = map[string]PropertyKeys{
 	"railpackjson-path": {PerApp: "railpackjson-path", Global: "global-railpackjson-path"},
 }
 
+// Validate checks the BuilderRailpackPropertyTask's inputs without contacting the server.
+func (t BuilderRailpackPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set", builderRailpackPropertyKeys)
+}
+
 // Plan reports the drift the BuilderRailpackPropertyTask would produce.
 func (t BuilderRailpackPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set", builderRailpackPropertyKeys)

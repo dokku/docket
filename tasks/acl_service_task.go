@@ -87,16 +87,24 @@ func (t AclServiceTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the AclServiceTask's inputs without contacting the server.
+func (t AclServiceTask) Validate() error {
+	if err := validateAclServiceTask(t); err != nil {
+		return err
+	}
+	if t.State == StatePresent && len(t.Users) == 0 {
+		return fmt.Errorf("'users' must not be empty for state 'present'")
+	}
+	return nil
+}
+
 // Plan reports the drift the AclServiceTask would produce.
 func (t AclServiceTask) Plan() PlanResult {
-	if err := validateAclServiceTask(t); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if len(t.Users) == 0 {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'users' must not be empty for state 'present'")}
-			}
 			current, err := getAclServiceUsers(t.Type, t.Service)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

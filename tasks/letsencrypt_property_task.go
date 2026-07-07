@@ -104,6 +104,11 @@ var letsencryptPropertyKeys = map[string]PropertyKeys{
 	"server":              {PerApp: "server", Global: "global-server"},
 }
 
+// Validate checks the LetsencryptPropertyTask's inputs without contacting the server.
+func (t LetsencryptPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set", letsencryptPropertyKeys)
+}
+
 // Plan reports the drift the LetsencryptPropertyTask would produce.
 func (t LetsencryptPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set", letsencryptPropertyKeys)

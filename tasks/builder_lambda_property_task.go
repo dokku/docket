@@ -83,6 +83,11 @@ var builderLambdaPropertyKeys = map[string]PropertyKeys{
 	"lambdayml-path": {PerApp: "lambdayml-path", Global: "global-lambdayml-path"},
 }
 
+// Validate checks the BuilderLambdaPropertyTask's inputs without contacting the server.
+func (t BuilderLambdaPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set", builderLambdaPropertyKeys)
+}
+
 // Plan reports the drift the BuilderLambdaPropertyTask would produce.
 func (t BuilderLambdaPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set", builderLambdaPropertyKeys)

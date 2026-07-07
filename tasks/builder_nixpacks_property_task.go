@@ -83,6 +83,11 @@ var builderNixpacksPropertyKeys = map[string]PropertyKeys{
 	"nixpackstoml-path": {PerApp: "nixpackstoml-path", Global: "global-nixpackstoml-path"},
 }
 
+// Validate checks the BuilderNixpacksPropertyTask's inputs without contacting the server.
+func (t BuilderNixpacksPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-nixpacks:set", builderNixpacksPropertyKeys)
+}
+
 // Plan reports the drift the BuilderNixpacksPropertyTask would produce.
 func (t BuilderNixpacksPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-nixpacks:set", builderNixpacksPropertyKeys)

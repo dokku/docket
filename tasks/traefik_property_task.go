@@ -98,6 +98,11 @@ var traefikPropertyKeys = map[string]PropertyKeys{
 	"log-level":               {PerApp: "", Global: "global-log-level"},
 }
 
+// Validate checks the TraefikPropertyTask's inputs without contacting the server.
+func (t TraefikPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set", traefikPropertyKeys)
+}
+
 // Plan reports the drift the TraefikPropertyTask would produce.
 func (t TraefikPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set", traefikPropertyKeys)

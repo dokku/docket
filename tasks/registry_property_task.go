@@ -95,6 +95,11 @@ var registryPropertyKeys = map[string]PropertyKeys{
 	"server":              {PerApp: "server", Global: "global-server"},
 }
 
+// Validate checks the RegistryPropertyTask's inputs without contacting the server.
+func (t RegistryPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "registry:set", registryPropertyKeys)
+}
+
 // Plan reports the drift the RegistryPropertyTask would produce.
 func (t RegistryPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "registry:set", registryPropertyKeys)

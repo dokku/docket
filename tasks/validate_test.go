@@ -255,6 +255,178 @@ func TestValidateMultipleProblemsCollected(t *testing.T) {
 	}
 }
 
+func TestValidateInvalidTaskInput(t *testing.T) {
+	// acl_app requires a non-empty users list when state is present. That
+	// conditional rule lives in AclAppTask.Validate(), which the offline
+	// validator now enforces.
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        app: my-app
+        users: []
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'users' must not be empty") {
+		t.Errorf("expected message to mention empty users, got: %q", p.Message)
+	}
+	if p.Line == 0 {
+		t.Errorf("expected non-zero line, got: %d", p.Line)
+	}
+}
+
+func TestValidateInvalidTaskInputSatisfied(t *testing.T) {
+	// A present acl_app with users, and an absent acl_app with no users
+	// (clear the whole ACL), are both valid inputs.
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        app: my-app
+        users:
+            - alice
+        state: present
+    - dokku_acl_app:
+        app: my-app
+        state: absent
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateInvalidTaskInputSkippedWhenRequiredMissing(t *testing.T) {
+	// When a required field is missing, only missing_required_field is
+	// reported; the conditional Validate() check (which depends on that
+	// field) is skipped so the two do not double-report.
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        users: []
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "missing_required_field"); p == nil {
+		t.Fatalf("expected missing_required_field problem, got: %+v", problems)
+	}
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input when a required field is missing, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateInvalidTaskInputSkippedWithPlaceholder(t *testing.T) {
+	// A required-no-default input renders to the validate placeholder, whose
+	// real value is unknown offline. The conditional check is skipped for the
+	// whole task so it can never false-positive on a parameterized recipe.
+	data := []byte(`---
+- inputs:
+    - name: app
+      required: true
+  tasks:
+    - dokku_acl_app:
+        app: {{ .app }}
+        users: []
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input with placeholder input, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateInvalidTaskInputNestedItem(t *testing.T) {
+	// http_auth_user validates each user in the list; a present user without
+	// a password is a conditional error the offline validator now catches.
+	data := []byte(`---
+- tasks:
+    - dokku_http_auth_user:
+        app: my-app
+        state: present
+        users:
+            - username: alice
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'password' is required") {
+		t.Errorf("expected message to mention required password, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputForbiddenWhenAbsent(t *testing.T) {
+	// service_property forbids a value when clearing (state absent); this is
+	// the "must not be set" shape, which the placeholder guard protects from
+	// false positives but concrete recipes still enforce.
+	data := []byte(`---
+- tasks:
+    - dokku_service_property:
+        service: postgres
+        name: my-db
+        property: some-property
+        value: nope
+        state: absent
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "must not be set") {
+		t.Errorf("expected message to mention value must not be set, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputMutuallyExclusive(t *testing.T) {
+	// certs routes its validateCertsTask helper through Validate(); supplying
+	// both a cert path and cert_content is a mutually-exclusive input error.
+	data := []byte(`---
+- tasks:
+    - dokku_certs:
+        app: my-app
+        cert: /etc/ssl/server.crt
+        cert_content: "-----BEGIN CERTIFICATE-----"
+        key: /etc/ssl/server.key
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "mutually exclusive") {
+		t.Errorf("expected message to mention mutual exclusion, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputPropertyScope(t *testing.T) {
+	// Property tasks route their input validation through validatePropertyInput
+	// via the shared planProperty helper; setting both global and app is a
+	// scoping error the offline validator now catches.
+	data := []byte(`---
+- tasks:
+    - dokku_nginx_property:
+        app: my-app
+        global: true
+        property: client-max-body-size
+        value: 10m
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "must not be set when 'global'") {
+		t.Errorf("expected message to mention global/app conflict, got: %q", p.Message)
+	}
+}
+
 func TestValidateNearestTaskName(t *testing.T) {
 	tests := []struct {
 		input  string

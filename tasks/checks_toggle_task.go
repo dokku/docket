@@ -115,6 +115,11 @@ func (t ChecksToggleTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the ChecksToggleTask's inputs without contacting the server.
+func (t ChecksToggleTask) Validate() error {
+	return validateToggleInput(t.App, t.Global, false)
+}
+
 // Plan reports the drift the ChecksToggleTask would produce.
 func (t ChecksToggleTask) Plan() PlanResult {
 	return planToggle(t.State, t.App, t.Global, false, "checks:enable", "checks:disable", checksEnabled)

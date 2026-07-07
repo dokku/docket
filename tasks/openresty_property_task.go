@@ -124,6 +124,11 @@ var openrestyPropertyKeys = map[string]PropertyKeys{
 	"x-forwarded-ssl":                         {PerApp: "x-forwarded-ssl", Global: "global-x-forwarded-ssl"},
 }
 
+// Validate checks the OpenrestyPropertyTask's inputs without contacting the server.
+func (t OpenrestyPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "openresty:set", openrestyPropertyKeys)
+}
+
 // Plan reports the drift the OpenrestyPropertyTask would produce.
 func (t OpenrestyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "openresty:set", openrestyPropertyKeys)

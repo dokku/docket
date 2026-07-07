@@ -157,10 +157,18 @@ func (t StorageMountTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the StorageMountTask's inputs without contacting the server.
+func (t StorageMountTask) Validate() error {
+	if err := t.validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Plan reports the drift the StorageMountTask would produce.
 func (t StorageMountTask) Plan() PlanResult {
-	if err := t.validate(); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

@@ -87,13 +87,21 @@ func (t ServiceExposeTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the ServiceExposeTask's inputs without contacting the server.
+func (t ServiceExposeTask) Validate() error {
+	if t.State == StatePresent && len(t.Ports) == 0 {
+		return fmt.Errorf("'ports' is required when state is 'present'")
+	}
+	return nil
+}
+
 // Plan reports the drift the ServiceExposeTask would produce.
 func (t ServiceExposeTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if len(t.Ports) == 0 {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'ports' is required when state is 'present'")}
-			}
 			exists, err := serviceExists(t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

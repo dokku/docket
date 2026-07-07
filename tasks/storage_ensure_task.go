@@ -74,18 +74,31 @@ func (t StorageEnsureTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the StorageEnsureTask's inputs without contacting the server.
+func (t StorageEnsureTask) Validate() error {
+	if t.State == StatePresent {
+		chownValues := map[string]bool{
+			"heroku": true, "herokuish": true, "paketo": true, "root": true, "false": true,
+		}
+		if !chownValues[t.Chown] {
+			return errors.New("invalid chown value specified")
+		}
+	}
+	if t.State == StateAbsent {
+		return errors.New("the absent state is not supported for storage:ensure")
+	}
+	return nil
+}
+
 // Plan reports the drift the StorageEnsureTask would produce. dokku does
 // not expose a probe for storage:ensure-directory, so the plan reports
 // drift unconditionally.
 func (t StorageEnsureTask) Plan() PlanResult {
-	chownValues := map[string]bool{
-		"heroku": true, "herokuish": true, "paketo": true, "root": true, "false": true,
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if !chownValues[t.Chown] {
-				return PlanResult{Status: PlanStatusError, Error: errors.New("invalid chown value specified")}
-			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "storage:ensure-directory", "--chown", t.Chown, t.App},
@@ -100,9 +113,6 @@ func (t StorageEnsureTask) Plan() PlanResult {
 					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
-		},
-		StateAbsent: func() PlanResult {
-			return PlanResult{Status: PlanStatusError, Error: errors.New("the absent state is not supported for storage:ensure")}
 		},
 	})
 }

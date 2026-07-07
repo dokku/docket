@@ -82,6 +82,11 @@ var appJsonPropertyKeys = map[string]PropertyKeys{
 	"appjson-path": {PerApp: "appjson-path", Global: "global-appjson-path"},
 }
 
+// Validate checks the AppJsonPropertyTask's inputs without contacting the server.
+func (t AppJsonPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "app-json:set", appJsonPropertyKeys)
+}
+
 // Plan reports the drift the AppJsonPropertyTask would produce.
 func (t AppJsonPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "app-json:set", appJsonPropertyKeys)

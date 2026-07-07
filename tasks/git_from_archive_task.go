@@ -83,25 +83,37 @@ func (t GitFromArchiveTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the GitFromArchiveTask's inputs without contacting the server.
+func (t GitFromArchiveTask) Validate() error {
+	if t.App == "" {
+		return fmt.Errorf("'app' is required")
+	}
+	if t.ArchiveURL == "" {
+		return fmt.Errorf("'archive_url' is required")
+	}
+	archiveType := t.ArchiveType
+	if archiveType == "" {
+		archiveType = "tar"
+	}
+	if !validGitFromArchiveTypes[archiveType] {
+		return fmt.Errorf("'archive_type' must be one of tar, tar.gz, zip")
+	}
+	if (t.GitUsername == "") != (t.GitEmail == "") {
+		return fmt.Errorf("'git_username' and 'git_email' must be set together")
+	}
+	return nil
+}
+
 // Plan reports the drift the GitFromArchiveTask would produce.
 func (t GitFromArchiveTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StateDeployed: func() PlanResult {
-			if t.App == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
-			}
-			if t.ArchiveURL == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'archive_url' is required")}
-			}
 			archiveType := t.ArchiveType
 			if archiveType == "" {
 				archiveType = "tar"
-			}
-			if !validGitFromArchiveTypes[archiveType] {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'archive_type' must be one of tar, tar.gz, zip")}
-			}
-			if (t.GitUsername == "") != (t.GitEmail == "") {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'git_username' and 'git_email' must be set together")}
 			}
 			match, err := checkAppSourceArchive(t.App, archiveType, t.ArchiveURL)
 			if err != nil {

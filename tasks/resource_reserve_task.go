@@ -87,6 +87,11 @@ func (t ResourceReserveTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// Validate checks the ResourceReserveTask's inputs without contacting the server.
+func (t ResourceReserveTask) Validate() error {
+	return validateResourceInput(t.State, t.Resources)
+}
+
 // Plan reports the drift the ResourceReserveTask would produce.
 func (t ResourceReserveTask) Plan() PlanResult {
 	return planResource(t.State, t.App, t.ProcessType, t.Resources, t.ClearBefore, "resource:reserve")

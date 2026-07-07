@@ -128,6 +128,11 @@ func (t NginxPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// Validate checks the NginxPropertyTask's inputs without contacting the server.
+func (t NginxPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "nginx:set", nginxPropertyKeys)
+}
+
 // Plan reports the drift the NginxPropertyTask would produce.
 func (t NginxPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "nginx:set", nginxPropertyKeys)

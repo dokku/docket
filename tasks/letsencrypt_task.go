@@ -69,10 +69,18 @@ func (t LetsencryptTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the LetsencryptTask's inputs without contacting the server.
+func (t LetsencryptTask) Validate() error {
+	if t.App == "" {
+		return fmt.Errorf("'app' is required")
+	}
+	return nil
+}
+
 // Plan reports the drift the LetsencryptTask would produce.
 func (t LetsencryptTask) Plan() PlanResult {
-	if t.App == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

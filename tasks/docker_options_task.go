@@ -136,13 +136,21 @@ func (t DockerOptionsTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the DockerOptionsTask's inputs without contacting the server.
+func (t DockerOptionsTask) Validate() error {
+	if err := validateDockerOptionsTask(t); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Plan reports the drift the DockerOptionsTask would produce.
 func (t DockerOptionsTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if err := validateDockerOptionsTask(t); err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
 			current, err := getDockerOptions(t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
@@ -167,9 +175,6 @@ func (t DockerOptionsTask) Plan() PlanResult {
 			}
 		},
 		StateAbsent: func() PlanResult {
-			if err := validateDockerOptionsTask(t); err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
 			current, err := getDockerOptions(t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

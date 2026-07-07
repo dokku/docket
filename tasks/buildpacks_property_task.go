@@ -84,6 +84,11 @@ var buildpacksPropertyKeys = map[string]PropertyKeys{
 	"stack": {PerApp: "stack", Global: "global-stack"},
 }
 
+// Validate checks the BuildpacksPropertyTask's inputs without contacting the server.
+func (t BuildpacksPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "buildpacks:set-property", buildpacksPropertyKeys)
+}
+
 // Plan reports the drift the BuildpacksPropertyTask would produce.
 func (t BuildpacksPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "buildpacks:set-property", buildpacksPropertyKeys)

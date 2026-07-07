@@ -96,6 +96,11 @@ var networkPropertyKeys = map[string]PropertyKeys{
 	"tld":                 {PerApp: "tld", Global: "global-tld"},
 }
 
+// Validate checks the NetworkPropertyTask's inputs without contacting the server.
+func (t NetworkPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "network:set", networkPropertyKeys)
+}
+
 // Plan reports the drift the NetworkPropertyTask would produce.
 func (t NetworkPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "network:set", networkPropertyKeys)

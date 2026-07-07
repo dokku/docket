@@ -93,6 +93,11 @@ var proxyPropertyKeys = map[string]PropertyKeys{
 	"proxy-ssl-port": {PerApp: "proxy-ssl-port", Global: "global-proxy-ssl-port"},
 }
 
+// Validate checks the ProxyPropertyTask's inputs without contacting the server.
+func (t ProxyPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "proxy:set", proxyPropertyKeys)
+}
+
 // Plan reports the drift the ProxyPropertyTask would produce.
 func (t ProxyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "proxy:set", proxyPropertyKeys)

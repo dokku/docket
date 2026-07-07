@@ -77,3 +77,29 @@ func TestIntegrationValidateRunsOffline(t *testing.T) {
 		t.Fatalf("expected no problems with empty PATH, got: %+v", problems)
 	}
 }
+
+// TestIntegrationValidateInputValidationRunsOffline confirms the conditional
+// input validation (InputValidator.Validate) also stays offline: with PATH
+// cleared, a recipe that trips a task's Validate() must still surface the
+// invalid_task_input problem without ever shelling out to `dokku`.
+func TestIntegrationValidateInputValidationRunsOffline(t *testing.T) {
+	skipIfNotInShardT(t)
+	original := os.Getenv("PATH")
+	if err := os.Setenv("PATH", ""); err != nil {
+		t.Fatalf("os.Setenv: %v", err)
+	}
+	defer os.Setenv("PATH", original)
+
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        app: docket-validate-offline
+        users: []
+        state: present
+`)
+
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "invalid_task_input"); p == nil {
+		t.Fatalf("expected invalid_task_input with empty PATH, got: %+v", problems)
+	}
+}

@@ -106,13 +106,17 @@ func (t SchedulerK3sAnnotationsTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the SchedulerK3sAnnotationsTask's inputs without contacting the server.
+func (t SchedulerK3sAnnotationsTask) Validate() error {
+	return validateSchedulerK3sScopedPairs(t.spec(), t.State)
+}
+
 // Plan reports the drift the SchedulerK3sAnnotationsTask would produce.
 func (t SchedulerK3sAnnotationsTask) Plan() PlanResult {
-	spec := t.spec()
-	if err := validateSchedulerK3sScopedPairs(spec, t.State); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
-
+	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsSet(spec) },
 		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsUnset(spec) },

@@ -82,6 +82,11 @@ var schedulerDockerLocalPropertyKeys = map[string]PropertyKeys{
 	"parallel-schedule-count": {PerApp: "parallel-schedule-count", Global: ""},
 }
 
+// Validate checks the SchedulerDockerLocalPropertyTask's inputs without contacting the server.
+func (t SchedulerDockerLocalPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, false, t.Property, t.Value, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys)
+}
+
 // Plan reports the drift the SchedulerDockerLocalPropertyTask would produce.
 func (t SchedulerDockerLocalPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, false, t.Property, t.Value, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys)

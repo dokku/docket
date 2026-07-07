@@ -123,12 +123,20 @@ func exportResourceTasks(app, kind string, factory func(app, processType string,
 
 // planResource is the shared Plan() implementation for resource tasks. The
 // probe runs once; the apply closure consumes the diff.
-func planResource(state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
+// validateResourceInput checks a resource task's inputs without probing the
+// server. planResource and each resource task's Validate() call it so plan and
+// validate report the same error. The unknown-resource-key check stays in
+// planSetResource because it needs the live resource report.
+func validateResourceInput(state State, resources map[string]string) error {
 	if state == StatePresent && len(resources) == 0 {
-		return PlanResult{
-			Status: PlanStatusError,
-			Error:  errors.New("resources are required when state is present"),
-		}
+		return errors.New("resources are required when state is present")
+	}
+	return nil
+}
+
+func planResource(state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
+	if err := validateResourceInput(state, resources); err != nil {
+		return planErr(err)
 	}
 
 	rctx := ResourceContext{

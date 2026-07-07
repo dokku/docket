@@ -91,18 +91,29 @@ func (t ServicePropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the ServicePropertyTask's inputs without contacting the server.
+func (t ServicePropertyTask) Validate() error {
+	if t.Property == "" {
+		return fmt.Errorf("'property' is required")
+	}
+	if t.State == StatePresent && t.Value == "" {
+		return fmt.Errorf("'value' is required when state is 'present'")
+	}
+	if t.State == StateAbsent && t.Value != "" {
+		return fmt.Errorf("'value' must not be set when state is 'absent'")
+	}
+	return nil
+}
+
 // Plan reports the drift the ServicePropertyTask would produce. dokku has no
 // reliable way to read back a service set key, so the plan reports drift
 // unconditionally once the service is confirmed to exist.
 func (t ServicePropertyTask) Plan() PlanResult {
-	if t.Property == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'property' is required")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if t.Value == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'value' is required when state is 'present'")}
-			}
 			exists, err := serviceExists(t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
@@ -126,9 +137,6 @@ func (t ServicePropertyTask) Plan() PlanResult {
 			}
 		},
 		StateAbsent: func() PlanResult {
-			if t.Value != "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'value' must not be set when state is 'absent'")}
-			}
 			exists, err := serviceExists(t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

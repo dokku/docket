@@ -102,6 +102,11 @@ func (t MaintenanceTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the MaintenanceTask's inputs without contacting the server.
+func (t MaintenanceTask) Validate() error {
+	return validateToggleInput(t.App, false, false)
+}
+
 // Plan reports the drift the MaintenanceTask would produce.
 func (t MaintenanceTask) Plan() PlanResult {
 	return planToggle(t.State, t.App, false, false, "maintenance:enable", "maintenance:disable", maintenanceEnabled)

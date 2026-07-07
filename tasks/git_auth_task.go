@@ -77,17 +77,25 @@ func (t GitAuthTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the GitAuthTask's inputs without contacting the server.
+func (t GitAuthTask) Validate() error {
+	if t.Host == "" {
+		return fmt.Errorf("'host' is required")
+	}
+	if t.State == StatePresent && (t.Username == "" || t.Password == "") {
+		return fmt.Errorf("'username' and 'password' are required when state is 'present'")
+	}
+	return nil
+}
+
 // Plan reports the drift the GitAuthTask would produce. dokku has no public
 // way to query netrc state, so the plan reports drift unconditionally.
 func (t GitAuthTask) Plan() PlanResult {
-	if t.Host == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'host' is required")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if t.Username == "" || t.Password == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'username' and 'password' are required when state is 'present'")}
-			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "git:auth", t.Host, t.Username, t.Password},

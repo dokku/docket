@@ -87,6 +87,11 @@ var logsPropertyKeys = map[string]PropertyKeys{
 	"vector-sink":     {PerApp: "vector-sink", Global: "global-vector-sink"},
 }
 
+// Validate checks the LogsPropertyTask's inputs without contacting the server.
+func (t LogsPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "logs:set", logsPropertyKeys)
+}
+
 // Plan reports the drift the LogsPropertyTask would produce.
 func (t LogsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "logs:set", logsPropertyKeys)

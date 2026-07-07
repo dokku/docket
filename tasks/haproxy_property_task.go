@@ -87,6 +87,11 @@ var haproxyPropertyKeys = map[string]PropertyKeys{
 	"refresh-conf":       {PerApp: "", Global: "global-refresh-conf"},
 }
 
+// Validate checks the HaproxyPropertyTask's inputs without contacting the server.
+func (t HaproxyPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set", haproxyPropertyKeys)
+}
+
 // Plan reports the drift the HaproxyPropertyTask would produce.
 func (t HaproxyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set", haproxyPropertyKeys)

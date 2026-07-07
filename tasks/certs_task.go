@@ -123,18 +123,29 @@ func (t CertsTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the CertsTask's inputs without contacting the server.
+func (t CertsTask) Validate() error {
+	if err := validateCertsTask(t); err != nil {
+		return err
+	}
+	if t.State == StatePresent {
+		hasPaths := t.Cert != "" && t.Key != ""
+		hasContent := t.CertContent != "" && t.KeyContent != ""
+		if !hasPaths && !hasContent {
+			return fmt.Errorf("'cert' (or 'cert_content') and 'key' (or 'key_content') are required when state is 'present'")
+		}
+	}
+	return nil
+}
+
 // Plan reports the drift the CertsTask would produce.
 func (t CertsTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if err := validateCertsTask(t); err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			hasPaths := t.Cert != "" && t.Key != ""
 			hasContent := t.CertContent != "" && t.KeyContent != ""
-			if !hasPaths && !hasContent {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'cert' (or 'cert_content') and 'key' (or 'key_content') are required when state is 'present'")}
-			}
 			enabled, err := certsEnabled(t)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
@@ -178,9 +189,6 @@ func (t CertsTask) Plan() PlanResult {
 			}
 		},
 		StateAbsent: func() PlanResult {
-			if err := validateCertsTask(t); err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
 			enabled, err := certsEnabled(t)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

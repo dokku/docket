@@ -71,16 +71,26 @@ func (t AppCloneTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the AppCloneTask's inputs without contacting the server.
+func (t AppCloneTask) Validate() error {
+	if t.State == StatePresent {
+		if t.App == "" {
+			return fmt.Errorf("'app' is required")
+		}
+		if t.SourceApp == "" {
+			return fmt.Errorf("'source_app' is required")
+		}
+	}
+	return nil
+}
+
 // Plan reports the drift the AppCloneTask would produce.
 func (t AppCloneTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if t.App == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
-			}
-			if t.SourceApp == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'source_app' is required")}
-			}
 			exists, err := appExists(t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

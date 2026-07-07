@@ -78,10 +78,18 @@ func (t PsScaleTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the PsScaleTask's inputs without contacting the server.
+func (t PsScaleTask) Validate() error {
+	if t.State == StatePresent && len(t.Scale) == 0 {
+		return fmt.Errorf("scale must be specified when state is present")
+	}
+	return nil
+}
+
 // Plan reports the drift the PsScaleTask would produce.
 func (t PsScaleTask) Plan() PlanResult {
-	if t.State == StatePresent && len(t.Scale) == 0 {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("scale must be specified when state is present")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

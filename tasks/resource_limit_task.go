@@ -87,6 +87,11 @@ func (t ResourceLimitTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// Validate checks the ResourceLimitTask's inputs without contacting the server.
+func (t ResourceLimitTask) Validate() error {
+	return validateResourceInput(t.State, t.Resources)
+}
+
 // Plan reports the drift the ResourceLimitTask would produce.
 func (t ResourceLimitTask) Plan() PlanResult {
 	return planResource(t.State, t.App, t.ProcessType, t.Resources, t.ClearBefore, "resource:limit")

@@ -27,12 +27,19 @@ type ToggleProbe func(ctx ToggleContext) (enabled bool, err error)
 // probe reports whether the underlying plugin is currently in the
 // "enabled" position; when probe is nil or fails, planToggle reports drift
 // and the apply closure runs the underlying enable/disable command.
-func planToggle(state State, app string, global bool, allowGlobal bool, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
+// validateToggleInput checks a toggle task's inputs without probing the
+// server. planToggle and each toggle task's Validate() call it so plan and
+// validate report the same error.
+func validateToggleInput(app string, global, allowGlobal bool) error {
 	if allowGlobal && global && app != "" {
-		return PlanResult{
-			Status: PlanStatusError,
-			Error:  fmt.Errorf("'app' must not be set when 'global' is set to true"),
-		}
+		return fmt.Errorf("'app' must not be set when 'global' is set to true")
+	}
+	return nil
+}
+
+func planToggle(state State, app string, global bool, allowGlobal bool, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
+	if err := validateToggleInput(app, global, allowGlobal); err != nil {
+		return planErr(err)
 	}
 
 	target := app

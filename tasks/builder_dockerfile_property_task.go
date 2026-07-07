@@ -83,6 +83,11 @@ var builderDockerfilePropertyKeys = map[string]PropertyKeys{
 	"dockerfile-path": {PerApp: "dockerfile-path", Global: "global-dockerfile-path"},
 }
 
+// Validate checks the BuilderDockerfilePropertyTask's inputs without contacting the server.
+func (t BuilderDockerfilePropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set", builderDockerfilePropertyKeys)
+}
+
 // Plan reports the drift the BuilderDockerfilePropertyTask would produce.
 func (t BuilderDockerfilePropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set", builderDockerfilePropertyKeys)
