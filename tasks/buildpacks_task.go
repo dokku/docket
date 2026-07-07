@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -193,6 +194,25 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
+}
+
+// ExportApp reads the app's buildpacks and returns a dokku_buildpacks task, or
+// nil when none are set. Order is not recoverable from the reader (it returns a
+// set), so the list is sorted for deterministic output.
+func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
+	buildpacks, err := getBuildpacks(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(buildpacks) == 0 {
+		return nil, nil
+	}
+	list := make([]string, 0, len(buildpacks))
+	for b := range buildpacks {
+		list = append(list, b)
+	}
+	sort.Strings(list)
+	return []interface{}{BuildpacksTask{App: app, Buildpacks: list, State: StatePresent}}, nil
 }
 
 // getBuildpacks fetches the current buildpacks list for an app
