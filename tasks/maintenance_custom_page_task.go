@@ -97,17 +97,27 @@ func (t MaintenanceCustomPageTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the MaintenanceCustomPageTask's inputs without contacting the server.
+func (t MaintenanceCustomPageTask) Validate() error {
+	if err := validateMaintenanceCustomPageTask(t); err != nil {
+		return err
+	}
+	if t.State == StatePresent && t.Content == "" && t.Tarball == "" {
+		return fmt.Errorf("one of 'content' or 'tarball' is required when state is 'present'")
+	}
+	if t.State == StateAbsent && (t.Content != "" || t.Tarball != "") {
+		return fmt.Errorf("'content' and 'tarball' must not be set when state is 'absent'")
+	}
+	return nil
+}
+
 // Plan reports the drift the MaintenanceCustomPageTask would produce.
 func (t MaintenanceCustomPageTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if err := validateMaintenanceCustomPageTask(t); err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if t.Content == "" && t.Tarball == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("one of 'content' or 'tarball' is required when state is 'present'")}
-			}
-
 			tarBytes, err := maintenanceCustomPageTarball(t)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
@@ -160,13 +170,6 @@ func (t MaintenanceCustomPageTask) Plan() PlanResult {
 			}
 		},
 		StateAbsent: func() PlanResult {
-			if err := validateMaintenanceCustomPageTask(t); err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if t.Content != "" || t.Tarball != "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'content' and 'tarball' must not be set when state is 'absent'")}
-			}
-
 			current, reported, err := maintenanceCustomPageState(t.App)
 			if err != nil {
 				var sshErr *subprocess.SSHError

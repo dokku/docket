@@ -382,6 +382,28 @@ func TestValidateInvalidTaskInputForbiddenWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestValidateInvalidTaskInputMutuallyExclusive(t *testing.T) {
+	// certs routes its validateCertsTask helper through Validate(); supplying
+	// both a cert path and cert_content is a mutually-exclusive input error.
+	data := []byte(`---
+- tasks:
+    - dokku_certs:
+        app: my-app
+        cert: /etc/ssl/server.crt
+        cert_content: "-----BEGIN CERTIFICATE-----"
+        key: /etc/ssl/server.key
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "mutually exclusive") {
+		t.Errorf("expected message to mention mutual exclusion, got: %q", p.Message)
+	}
+}
+
 func TestValidateNearestTaskName(t *testing.T) {
 	tests := []struct {
 		input  string

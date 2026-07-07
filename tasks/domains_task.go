@@ -87,8 +87,19 @@ func (t DomainsTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the DomainsTask's inputs without contacting the server.
+func (t DomainsTask) Validate() error {
+	if err := validateDomainsTask(t, t.State != StateClear); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Plan reports the drift the DomainsTask would produce.
 func (t DomainsTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planDomainsPresent(t) },
 		StateAbsent:  func() PlanResult { return planDomainsAbsent(t) },
@@ -99,9 +110,6 @@ func (t DomainsTask) Plan() PlanResult {
 
 // planDomainsPresent reports drift for the present-state domain add.
 func planDomainsPresent(t DomainsTask) PlanResult {
-	if err := validateDomainsTask(t, true); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
 	currentDomains, err := getDomains(t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -140,9 +148,6 @@ func planDomainsPresent(t DomainsTask) PlanResult {
 
 // planDomainsAbsent reports drift for the absent-state domain remove.
 func planDomainsAbsent(t DomainsTask) PlanResult {
-	if err := validateDomainsTask(t, true); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
 	currentDomains, err := getDomains(t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -177,9 +182,6 @@ func planDomainsAbsent(t DomainsTask) PlanResult {
 
 // planDomainsSet reports drift for the set-state full replacement.
 func planDomainsSet(t DomainsTask) PlanResult {
-	if err := validateDomainsTask(t, true); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
 	currentDomains, err := getDomains(t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -221,9 +223,6 @@ func planDomainsSet(t DomainsTask) PlanResult {
 
 // planDomainsClear reports drift for the clear-state operation.
 func planDomainsClear(t DomainsTask) PlanResult {
-	if err := validateDomainsTask(t, false); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
 	currentDomains, err := getDomains(t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}

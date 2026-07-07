@@ -106,10 +106,18 @@ func (t SchedulerK3sProfileTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the SchedulerK3sProfileTask's inputs without contacting the server.
+func (t SchedulerK3sProfileTask) Validate() error {
+	if err := validateSchedulerK3sProfile(t); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Plan reports the drift the SchedulerK3sProfileTask would produce.
 func (t SchedulerK3sProfileTask) Plan() PlanResult {
-	if err := validateSchedulerK3sProfile(t); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 
 	return DispatchPlan(t.State, map[State]func() PlanResult{
