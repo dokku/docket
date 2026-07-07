@@ -92,6 +92,11 @@ var builderPropertyKeys = map[string]PropertyKeys{
 	"skip-cleanup": {PerApp: "skip-cleanup", Global: "global-skip-cleanup"},
 }
 
+// Validate checks the BuilderPropertyTask's inputs without contacting the server.
+func (t BuilderPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder:set", builderPropertyKeys)
+}
+
 // Plan reports the drift the BuilderPropertyTask would produce.
 func (t BuilderPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder:set", builderPropertyKeys)

@@ -85,6 +85,11 @@ var cronPropertyKeys = map[string]PropertyKeys{
 	"mailto":      {PerApp: "", Global: "global-mailto"},
 }
 
+// Validate checks the CronPropertyTask's inputs without contacting the server.
+func (t CronPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "cron:set", cronPropertyKeys)
+}
+
 // Plan reports the drift the CronPropertyTask would produce.
 func (t CronPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "cron:set", cronPropertyKeys)

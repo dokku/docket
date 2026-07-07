@@ -88,6 +88,11 @@ var caddyPropertyKeys = map[string]PropertyKeys{
 	"tls-internal":       {PerApp: "tls-internal", Global: "global-tls-internal"},
 }
 
+// Validate checks the CaddyPropertyTask's inputs without contacting the server.
+func (t CaddyPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set", caddyPropertyKeys)
+}
+
 // Plan reports the drift the CaddyPropertyTask would produce.
 func (t CaddyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set", caddyPropertyKeys)

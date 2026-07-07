@@ -99,6 +99,11 @@ func (t DomainsToggleTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the DomainsToggleTask's inputs without contacting the server.
+func (t DomainsToggleTask) Validate() error {
+	return validateToggleInput(t.App, t.Global, false)
+}
+
 // Plan reports the drift the DomainsToggleTask would produce.
 func (t DomainsToggleTask) Plan() PlanResult {
 	return planToggle(t.State, t.App, t.Global, false, "domains:enable", "domains:disable", domainsEnabled)

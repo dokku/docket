@@ -99,6 +99,11 @@ var appsPropertyKeys = map[string]PropertyKeys{
 	"disable-autocreation":   {PerApp: "", Global: "global-disable-autocreation"},
 }
 
+// Validate checks the AppsPropertyTask's inputs without contacting the server.
+func (t AppsPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "apps:set", appsPropertyKeys)
+}
+
 // Plan reports the drift the AppsPropertyTask would produce.
 func (t AppsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "apps:set", appsPropertyKeys)

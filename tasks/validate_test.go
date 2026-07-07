@@ -404,6 +404,29 @@ func TestValidateInvalidTaskInputMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestValidateInvalidTaskInputPropertyScope(t *testing.T) {
+	// Property tasks route their input validation through validatePropertyInput
+	// via the shared planProperty helper; setting both global and app is a
+	// scoping error the offline validator now catches.
+	data := []byte(`---
+- tasks:
+    - dokku_nginx_property:
+        app: my-app
+        global: true
+        property: client-max-body-size
+        value: 10m
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "must not be set when 'global'") {
+		t.Errorf("expected message to mention global/app conflict, got: %q", p.Message)
+	}
+}
+
 func TestValidateNearestTaskName(t *testing.T) {
 	tests := []struct {
 		input  string

@@ -92,13 +92,17 @@ func (t SchedulerK3sAutoscalingAuthTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the SchedulerK3sAutoscalingAuthTask's inputs without contacting the server.
+func (t SchedulerK3sAutoscalingAuthTask) Validate() error {
+	return validateSchedulerK3sAutoscalingAuth(t.spec())
+}
+
 // Plan reports the drift the SchedulerK3sAutoscalingAuthTask would produce.
 func (t SchedulerK3sAutoscalingAuthTask) Plan() PlanResult {
-	spec := t.spec()
-	if err := validateSchedulerK3sAutoscalingAuth(spec); err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
-
+	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planSchedulerK3sAutoscalingAuthSet(spec) },
 		StateAbsent:  func() PlanResult { return planSchedulerK3sAutoscalingAuthUnset(spec) },

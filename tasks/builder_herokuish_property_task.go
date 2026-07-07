@@ -83,6 +83,11 @@ var builderHerokuishPropertyKeys = map[string]PropertyKeys{
 	"allowed": {PerApp: "allowed", Global: "global-allowed"},
 }
 
+// Validate checks the BuilderHerokuishPropertyTask's inputs without contacting the server.
+func (t BuilderHerokuishPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set", builderHerokuishPropertyKeys)
+}
+
 // Plan reports the drift the BuilderHerokuishPropertyTask would produce.
 func (t BuilderHerokuishPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set", builderHerokuishPropertyKeys)

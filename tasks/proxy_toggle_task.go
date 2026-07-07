@@ -98,6 +98,11 @@ func (t ProxyToggleTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the ProxyToggleTask's inputs without contacting the server.
+func (t ProxyToggleTask) Validate() error {
+	return validateToggleInput(t.App, t.Global, false)
+}
+
 // Plan reports the drift the ProxyToggleTask would produce.
 func (t ProxyToggleTask) Plan() PlanResult {
 	return planToggle(t.State, t.App, t.Global, false, "proxy:enable", "proxy:disable", proxyEnabled)

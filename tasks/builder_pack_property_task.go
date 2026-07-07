@@ -82,6 +82,11 @@ var builderPackPropertyKeys = map[string]PropertyKeys{
 	"projecttoml-path": {PerApp: "projecttoml-path", Global: "global-projecttoml-path"},
 }
 
+// Validate checks the BuilderPackPropertyTask's inputs without contacting the server.
+func (t BuilderPackPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-pack:set", builderPackPropertyKeys)
+}
+
 // Plan reports the drift the BuilderPackPropertyTask would produce.
 func (t BuilderPackPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-pack:set", builderPackPropertyKeys)

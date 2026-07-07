@@ -112,6 +112,11 @@ var schedulerK3sPropertyKeys = map[string]PropertyKeys{
 	"token":                  {PerApp: "", Global: "global-token"},
 }
 
+// Validate checks the SchedulerK3sPropertyTask's inputs without contacting the server.
+func (t SchedulerK3sPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "scheduler-k3s:set", schedulerK3sPropertyKeys)
+}
+
 // Plan reports the drift the SchedulerK3sPropertyTask would produce.
 func (t SchedulerK3sPropertyTask) Plan() PlanResult {
 	if strings.HasPrefix(t.Property, "chart.") {

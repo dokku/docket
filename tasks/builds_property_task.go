@@ -82,6 +82,11 @@ var buildsPropertyKeys = map[string]PropertyKeys{
 	"retention": {PerApp: "retention", Global: "global-retention"},
 }
 
+// Validate checks the BuildsPropertyTask's inputs without contacting the server.
+func (t BuildsPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builds:set", buildsPropertyKeys)
+}
+
 // Plan reports the drift the BuildsPropertyTask would produce.
 func (t BuildsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builds:set", buildsPropertyKeys)

@@ -82,6 +82,11 @@ var checksPropertyKeys = map[string]PropertyKeys{
 	"wait-to-retire": {PerApp: "wait-to-retire", Global: "global-wait-to-retire"},
 }
 
+// Validate checks the ChecksPropertyTask's inputs without contacting the server.
+func (t ChecksPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "checks:set", checksPropertyKeys)
+}
+
 // Plan reports the drift the ChecksPropertyTask would produce.
 func (t ChecksPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "checks:set", checksPropertyKeys)

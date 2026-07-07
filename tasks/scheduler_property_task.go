@@ -83,6 +83,11 @@ var schedulerPropertyKeys = map[string]PropertyKeys{
 	"shell":    {PerApp: "shell", Global: "global-shell"},
 }
 
+// Validate checks the SchedulerPropertyTask's inputs without contacting the server.
+func (t SchedulerPropertyTask) Validate() error {
+	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set", schedulerPropertyKeys)
+}
+
 // Plan reports the drift the SchedulerPropertyTask would produce.
 func (t SchedulerPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set", schedulerPropertyKeys)
