@@ -35,6 +35,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_git_sync](dokku_git_sync.md) - Syncs a git repository to a dokku application
 - [dokku_haproxy_property](dokku_haproxy_property.md) - Manages the haproxy configuration for a given dokku application
 - [dokku_http_auth](dokku_http_auth.md) - Manages HTTP authentication for a given dokku application
+- [dokku_http_auth_allowed_ip](dokku_http_auth_allowed_ip.md) - Manages the set of IP addresses allowed to bypass HTTP auth for a dokku application
 - [dokku_http_auth_user](dokku_http_auth_user.md) - Manages the set of HTTP auth users for a dokku application
 - [dokku_letsencrypt](dokku_letsencrypt.md) - Enables or disables letsencrypt SSL certificates for a dokku application
 - [dokku_letsencrypt_property](dokku_letsencrypt_property.md) - Manages the letsencrypt configuration for a given dokku application
