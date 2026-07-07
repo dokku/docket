@@ -10,7 +10,7 @@ Installs or removes a custom maintenance page for a dokku application.
 
 ## Export support
 
-Partial - maintenance:report exposes only a custom-page-sha256 checksum, not the HTML; a faithful export needs an upstream export command (dokku/dokku-maintenance#28), otherwise the content is supplied as a required input (docket#284).
+Partial - maintenance:report exposes only a custom-page-sha256 checksum, not the HTML, so the page content cannot be read back; export detects that a custom page is set and lifts it into a required content input the user supplies before apply. Multi-file tarball pages collapse to that single content input, so extra assets are not captured. A faithful export awaits an upstream export command (dokku/dokku-maintenance#28).
 
 ## Parameters
 

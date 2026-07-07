@@ -124,6 +124,74 @@ func TestExportHttpAuthUserPasswordsBecomeInputs(t *testing.T) {
 	}
 }
 
+func TestExportMaintenanceCustomPageBecomesInput(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                    "web",
+		"maintenance:report web --format json": `{"enabled":"false","custom-page-sha256":"7b645f273842a941c68302a4022ed03e219bd8db318ef32a92dddb148a72ef05"}`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	// The HTML is not readable, so it is lifted to a required input with an
+	// empty placeholder in the vars map.
+	v, ok := res.Vars["web_maintenance_custom_page"]
+	if !ok || v != "" {
+		t.Errorf("expected empty placeholder for custom page, got %q (ok=%v)", v, ok)
+	}
+
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	for _, want := range []string{
+		"dokku_maintenance_custom_page",
+		"{{ .web_maintenance_custom_page }}",
+		"name: web_maintenance_custom_page",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+	// The page is public HTML, not a secret: the input is not marked sensitive,
+	// and the checksum never leaks into the recipe body.
+	if strings.Contains(out, "sensitive: true") {
+		t.Errorf("custom page input should not be sensitive:\n%s", out)
+	}
+	if strings.Contains(out, "7b645f273842a941") {
+		t.Errorf("recipe leaked the custom-page checksum:\n%s", out)
+	}
+}
+
+func TestExportMaintenanceCustomPageAbsentEmitsNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		report string
+	}{
+		{"set but empty", `{"enabled":"false","custom-page-sha256":""}`},
+		{"key absent (old plugin)", `{"enabled":"false"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+				"--quiet apps:list":                    "web",
+				"maintenance:report web --format json": tc.report,
+			}))()
+
+			res, err := ExportRecipe(ExportOptions{})
+			if err != nil {
+				t.Fatalf("ExportRecipe: %v", err)
+			}
+			if _, ok := res.Vars["web_maintenance_custom_page"]; ok {
+				t.Errorf("expected no lifted var when no custom page is set")
+			}
+			recipe, _ := res.MarshalRecipe("yaml")
+			if strings.Contains(string(recipe), "dokku_maintenance_custom_page") {
+				t.Errorf("expected no dokku_maintenance_custom_page task:\n%s", recipe)
+			}
+		})
+	}
+}
+
 func TestExportRecipeRedactBlanksVars(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
