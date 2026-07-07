@@ -269,6 +269,24 @@ func getHttpAuthUsers(appName string) (map[string]bool, error) {
 	return users, nil
 }
 
+// ExportApp reconstructs the app's HTTP-auth users. Usernames come from the
+// report; passwords are not exposed, so the engine lifts each into a required
+// input the user fills in before applying (see processHttpAuthUser).
+func (t HttpAuthUserTask) ExportApp(app string) ([]interface{}, error) {
+	users, err := getHttpAuthUsers(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+	list := make([]HttpAuthUser, 0, len(users))
+	for _, name := range sortedSetKeys(users) {
+		list = append(list, HttpAuthUser{Username: name})
+	}
+	return []interface{}{HttpAuthUserTask{App: app, Users: list}}, nil
+}
+
 // init registers the HttpAuthUserTask with the task registry
 func init() {
 	RegisterTask(&HttpAuthUserTask{})

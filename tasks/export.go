@@ -53,6 +53,7 @@ var appExportOrder = []string{
 	"dokku_proxy_toggle",
 	"dokku_domains_toggle",
 	"dokku_maintenance",
+	"dokku_http_auth_user",
 	"dokku_http_auth_allowed_ip",
 	"dokku_http_auth_domain",
 	"dokku_acl_app",
@@ -238,9 +239,35 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 	switch b := body.(type) {
 	case ConfigTask:
 		return res.processConfig(app, b, opts)
+	case HttpAuthUserTask:
+		return res.processHttpAuthUser(app, b, opts)
 	default:
 		return body, nil
 	}
+}
+
+// processHttpAuthUser lifts each user's password into a required input, since
+// http-auth:report never exposes password material. The recipe therefore always
+// needs the passwords supplied in the vars-file before apply.
+func (res *ExportResult) processHttpAuthUser(app string, b HttpAuthUserTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if opts.Inline || len(b.Users) == 0 {
+		return b, nil
+	}
+	var inputs []map[string]interface{}
+	users := make([]HttpAuthUser, len(b.Users))
+	for i, u := range b.Users {
+		name := res.uniqueVarName(app, "http_auth_password_"+u.Username)
+		u.Password = "{{ ." + name + " }}"
+		users[i] = u
+		res.Vars[name] = "" // password is not readable; the user fills this in
+		inputs = append(inputs, map[string]interface{}{
+			"name":      name,
+			"required":  true,
+			"sensitive": true,
+		})
+	}
+	b.Users = users
+	return b, inputs
 }
 
 // processConfig lifts config values into the vars map (file mode) or blanks

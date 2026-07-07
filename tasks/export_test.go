@@ -93,6 +93,37 @@ func TestExportRecipeFileMode(t *testing.T) {
 	}
 }
 
+func TestExportHttpAuthUserPasswordsBecomeInputs(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                  "web",
+		"http-auth:report web --format json": `{"enabled":"true","users":"admin","allowed-ips":"","domains":""}`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	// The password is not readable, so it is lifted to a required input with an
+	// empty placeholder in the vars map.
+	v, ok := res.Vars["web_http_auth_password_admin"]
+	if !ok || v != "" {
+		t.Errorf("expected empty placeholder for http-auth password, got %q (ok=%v)", v, ok)
+	}
+
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	for _, want := range []string{
+		"username: admin",
+		"{{ .web_http_auth_password_admin }}",
+		"name: web_http_auth_password_admin",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestExportRecipeRedactBlanksVars(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
