@@ -40,6 +40,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 			{Username: "alice", Password: "alice-pass"},
 			{Username: "bob", Password: "bob-pass"},
 		},
+		State: StatePresent,
 	}
 	result := addTask.Execute()
 	if result.Error != nil {
@@ -64,7 +65,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	}
 
 	// present for an existing user without update_password is in sync
-	noop := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "ignored"}}}
+	noop := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "ignored"}}, State: StatePresent}
 	result = noop.Execute()
 	if result.Error != nil {
 		t.Fatalf("failed present no-op: %v", result.Error)
@@ -74,7 +75,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	}
 
 	// update_password re-issues add-user for an existing user
-	rotate := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "new-pass"}}, UpdatePassword: true}
+	rotate := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "new-pass"}}, UpdatePassword: true, State: StatePresent}
 	result = rotate.Execute()
 	if result.Error != nil {
 		t.Fatalf("failed to rotate password: %v", result.Error)
