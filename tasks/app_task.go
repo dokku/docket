@@ -107,6 +107,12 @@ func (t AppTask) Plan() PlanResult {
 	})
 }
 
+// ExportApp reconstructs the app itself. Enumeration already confirmed the app
+// exists, so this simply declares it present (its default state).
+func (t AppTask) ExportApp(app string) ([]interface{}, error) {
+	return []interface{}{AppTask{App: app}}, nil
+}
+
 // appExists checks if an app exists. Returns (true, nil) when the app
 // is present, (false, nil) when dokku reports it absent, and
 // (false, *subprocess.SSHError) when the probe could not reach the

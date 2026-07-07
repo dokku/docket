@@ -210,6 +210,21 @@ func planConfigUnset(t ConfigTask) PlanResult {
 	}
 }
 
+// ExportApp reads the app's config and returns a dokku_config task carrying
+// the current values, or nil when there are none. Restart mirrors the task
+// default so the emitted recipe matches apply's behaviour; the engine lifts
+// the values into the companion vars-file.
+func (t ConfigTask) ExportApp(app string) ([]interface{}, error) {
+	config, err := getConfig(ConfigTask{App: app})
+	if err != nil {
+		return nil, err
+	}
+	if len(config) == 0 {
+		return nil, nil
+	}
+	return []interface{}{ConfigTask{App: app, Restart: true, Config: config}}, nil
+}
+
 // getConfig retrieves the current configuration for a given dokku application
 func getConfig(t ConfigTask) (map[string]string, error) {
 	var config map[string]string
