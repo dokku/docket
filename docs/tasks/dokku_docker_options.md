@@ -6,7 +6,7 @@ Manages docker-options for a given dokku application
 
 ## Export support
 
-Supported.
+Partial - docker-options:report space-joins each phase's options, so options whose values contain spaces cannot be split back into individual entries (dokku/dokku#8799).
 
 ## Parameters
 
