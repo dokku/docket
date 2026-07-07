@@ -57,7 +57,7 @@ func (t CertsTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t CertsTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "certificate and key material may not be fully readable from the server"}
+	return ExportSupport{Status: ExportPartial, Caveat: "certs:report exposes cert metadata but not the PEM material, which would have to be supplied as required inputs (docket#283)"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.

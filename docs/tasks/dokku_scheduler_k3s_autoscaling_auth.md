@@ -6,7 +6,7 @@ Manages KEDA TriggerAuthentication metadata grouped under a single trigger for a
 
 ## Export support
 
-Not supported - scheduler-k3s exposes no report for KEDA trigger authentication, so the current state cannot be read back (dokku/dokku#8800).
+Not supported - scheduler-k3s exposes no report for KEDA trigger authentication, so the current state cannot be read back (docket#287, dokku/dokku#8800).
 
 ## Parameters
 

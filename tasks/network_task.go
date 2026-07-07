@@ -34,7 +34,7 @@ func (t NetworkTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t NetworkTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportSupported}
+	return ExportSupport{Status: ExportUnsupported, Caveat: "network:list cannot distinguish dokku-created networks from Docker built-ins and other apps' networks (docket#285, dokku/dokku#8797)"}
 }
 
 // Examples returns a list of NetworkTaskExamples as yaml

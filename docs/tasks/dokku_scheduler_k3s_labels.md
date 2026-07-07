@@ -6,7 +6,7 @@ Manages scheduler-k3s labels scoped to a (process_type, resource_type) pair for 
 
 ## Export support
 
-Not supported - scheduler-k3s exposes no report for labels, so the current state cannot be read back (dokku/dokku#8800).
+Not supported - scheduler-k3s exposes no report for labels, so the current state cannot be read back (docket#287, dokku/dokku#8800).
 
 ## Parameters
 

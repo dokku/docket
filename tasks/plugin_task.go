@@ -52,7 +52,7 @@ func (t PluginTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t PluginTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportSupported}
+	return ExportSupport{Status: ExportUnsupported, Caveat: "plugin:list does not expose the install source URL a third-party plugin needs to be reinstalled (docket#286, dokku/dokku#8798)"}
 }
 
 // Examples returns the examples for the plugin task

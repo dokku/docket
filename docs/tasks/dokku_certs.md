@@ -10,7 +10,7 @@ Manages SSL certificates for a dokku app or globally.
 
 ## Export support
 
-Partial - certificate and key material may not be fully readable from the server.
+Partial - certs:report exposes cert metadata but not the PEM material, which would have to be supplied as required inputs (docket#283).
 
 ## Parameters
 
