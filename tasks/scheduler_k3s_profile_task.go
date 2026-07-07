@@ -325,6 +325,40 @@ func formatProfileSetMutation(t SchedulerK3sProfileTask, current schedulerK3sPro
 	)
 }
 
+// ExportGlobal reconstructs every scheduler-k3s node profile from
+// profiles:list, which exposes the full profile definition.
+func (t SchedulerK3sProfileTask) ExportGlobal() ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "scheduler-k3s:profiles:list", "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var entries []schedulerK3sProfileEntry
+	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
+		return nil, nil
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+	var out []interface{}
+	for _, e := range entries {
+		out = append(out, SchedulerK3sProfileTask{
+			Name:              e.Name,
+			Role:              e.Role,
+			KubeletArgs:       e.KubeletArgs,
+			TaintScheduling:   e.TaintScheduling,
+			AllowUnknownHosts: e.AllowUnknownHosts,
+		})
+	}
+	return out, nil
+}
+
 // init registers the SchedulerK3sProfileTask with the task registry
 func init() {
 	RegisterTask(&SchedulerK3sProfileTask{})

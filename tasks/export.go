@@ -33,6 +33,7 @@ type GlobalExporter interface {
 var globalExportOrder = []string{
 	"dokku_ssh_key",
 	"dokku_storage_entry",
+	"dokku_scheduler_k3s_profile",
 }
 
 // appExportOrder is the fixed order in which app-scoped task types are emitted
