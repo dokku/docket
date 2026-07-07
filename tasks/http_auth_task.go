@@ -1,9 +1,9 @@
 package tasks
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
@@ -92,13 +92,13 @@ func (t HttpAuthTask) Plan() PlanResult {
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
-				Args:    []string{"--quiet", "http-auth:on", t.App, t.Username, t.Password},
+				Args:    []string{"--quiet", "http-auth:enable", t.App, t.Username, t.Password},
 			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "http-auth disabled",
-				Mutations: []string{"http-auth:on " + t.App},
+				Mutations: []string{"http-auth:enable " + t.App},
 				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
 					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
@@ -115,13 +115,13 @@ func (t HttpAuthTask) Plan() PlanResult {
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
-				Args:    []string{"--quiet", "http-auth:off", t.App},
+				Args:    []string{"--quiet", "http-auth:disable", t.App},
 			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "http-auth enabled",
-				Mutations: []string{"http-auth:off " + t.App},
+				Mutations: []string{"http-auth:disable " + t.App},
 				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
 					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
@@ -131,17 +131,20 @@ func (t HttpAuthTask) Plan() PlanResult {
 	})
 }
 
-// httpAuthEnabled checks if HTTP authentication is enabled for an app.
-// A transport-level failure (`*subprocess.SSHError`) is propagated; a
-// dokku-level non-zero exit (e.g. app does not exist) is treated as
-// "disabled."
+// httpAuthEnabled checks if HTTP authentication is enabled for an app by
+// reading the `enabled` key from `http-auth:report --format json` (the plugin
+// strips the `http-auth-` prefix from JSON report keys, matching the nginx and
+// proxy property plugins). A transport-level failure (`*subprocess.SSHError`)
+// is propagated; a dokku-level non-zero exit (e.g. app does not exist) is
+// treated as "disabled"; malformed JSON surfaces as an error.
 func httpAuthEnabled(appName string) (bool, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
-			"--quiet",
 			"http-auth:report",
 			appName,
+			"--format",
+			"json",
 		},
 	})
 	if err != nil {
@@ -152,17 +155,14 @@ func httpAuthEnabled(appName string) (bool, error) {
 		return false, nil
 	}
 
-	lines := strings.SplitN(result.StdoutContents(), "\n", 2)
-	if len(lines) == 0 {
-		return false, nil
+	var report struct {
+		Enabled string `json:"enabled"`
+	}
+	if err := json.Unmarshal(result.StdoutBytes(), &report); err != nil {
+		return false, err
 	}
 
-	parts := strings.SplitN(lines[0], ":", 2)
-	if len(parts) < 2 {
-		return false, nil
-	}
-
-	return strings.TrimSpace(parts[1]) == "true", nil
+	return report.Enabled == "true", nil
 }
 
 // init registers the HttpAuthTask with the task registry
