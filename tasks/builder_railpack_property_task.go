@@ -88,6 +88,13 @@ func (t BuilderRailpackPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set", builderRailpackPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderRailpackPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-railpack:set", builderRailpackPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderRailpackPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderRailpackPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderRailpackPropertyTask{})

@@ -103,6 +103,13 @@ func (t TraefikPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set", traefikPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t TraefikPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "traefik:set", traefikPropertyKeys, func(app, property, value string) interface{} {
+		return TraefikPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the TraefikPropertyTask with the task registry
 func init() {
 	RegisterTask(&TraefikPropertyTask{})

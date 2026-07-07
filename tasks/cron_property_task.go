@@ -90,6 +90,13 @@ func (t CronPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "cron:set", cronPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t CronPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "cron:set", cronPropertyKeys, func(app, property, value string) interface{} {
+		return CronPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the CronPropertyTask with the task registry
 func init() {
 	RegisterTask(&CronPropertyTask{})

@@ -123,6 +123,13 @@ func (t SchedulerK3sPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler-k3s:set", schedulerK3sPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t SchedulerK3sPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "scheduler-k3s:set", schedulerK3sPropertyKeys, func(app, property, value string) interface{} {
+		return SchedulerK3sPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the SchedulerK3sPropertyTask with the task registry
 func init() {
 	RegisterTask(&SchedulerK3sPropertyTask{})

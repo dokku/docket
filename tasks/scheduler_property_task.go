@@ -88,6 +88,13 @@ func (t SchedulerPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set", schedulerPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t SchedulerPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "scheduler:set", schedulerPropertyKeys, func(app, property, value string) interface{} {
+		return SchedulerPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the SchedulerPropertyTask with the task registry
 func init() {
 	RegisterTask(&SchedulerPropertyTask{})

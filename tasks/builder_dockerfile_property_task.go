@@ -88,6 +88,13 @@ func (t BuilderDockerfilePropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set", builderDockerfilePropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderDockerfilePropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-dockerfile:set", builderDockerfilePropertyKeys, func(app, property, value string) interface{} {
+		return BuilderDockerfilePropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderDockerfilePropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderDockerfilePropertyTask{})

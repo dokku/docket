@@ -88,6 +88,13 @@ func (t BuilderLambdaPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set", builderLambdaPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderLambdaPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-lambda:set", builderLambdaPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderLambdaPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderLambdaPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderLambdaPropertyTask{})

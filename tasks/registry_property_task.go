@@ -100,6 +100,13 @@ func (t RegistryPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "registry:set", registryPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t RegistryPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "registry:set", registryPropertyKeys, func(app, property, value string) interface{} {
+		return RegistryPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the RegistryPropertyTask with the task registry
 func init() {
 	RegisterTask(&RegistryPropertyTask{})

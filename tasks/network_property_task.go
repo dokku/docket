@@ -101,6 +101,13 @@ func (t NetworkPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "network:set", networkPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t NetworkPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "network:set", networkPropertyKeys, func(app, property, value string) interface{} {
+		return NetworkPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the NetworkPropertyTask with the task registry
 func init() {
 	RegisterTask(&NetworkPropertyTask{})

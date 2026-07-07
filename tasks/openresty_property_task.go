@@ -129,6 +129,13 @@ func (t OpenrestyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "openresty:set", openrestyPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t OpenrestyPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "openresty:set", openrestyPropertyKeys, func(app, property, value string) interface{} {
+		return OpenrestyPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the OpenrestyPropertyTask with the task registry
 func init() {
 	RegisterTask(&OpenrestyPropertyTask{})

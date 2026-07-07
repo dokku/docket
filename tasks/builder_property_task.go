@@ -97,6 +97,13 @@ func (t BuilderPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder:set", builderPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder:set", builderPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderTask with the task registry
 func init() {
 	RegisterTask(&BuilderPropertyTask{})

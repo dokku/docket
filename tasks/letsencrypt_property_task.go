@@ -109,6 +109,13 @@ func (t LetsencryptPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set", letsencryptPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t LetsencryptPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "letsencrypt:set", letsencryptPropertyKeys, func(app, property, value string) interface{} {
+		return LetsencryptPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the LetsencryptPropertyTask with the task registry
 func init() {
 	RegisterTask(&LetsencryptPropertyTask{})

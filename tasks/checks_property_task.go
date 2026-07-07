@@ -87,6 +87,13 @@ func (t ChecksPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "checks:set", checksPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t ChecksPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "checks:set", checksPropertyKeys, func(app, property, value string) interface{} {
+		return ChecksPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the ChecksPropertyTask with the task registry
 func init() {
 	RegisterTask(&ChecksPropertyTask{})

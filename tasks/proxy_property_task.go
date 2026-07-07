@@ -98,6 +98,13 @@ func (t ProxyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "proxy:set", proxyPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t ProxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "proxy:set", proxyPropertyKeys, func(app, property, value string) interface{} {
+		return ProxyPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the ProxyPropertyTask with the task registry
 func init() {
 	RegisterTask(&ProxyPropertyTask{})

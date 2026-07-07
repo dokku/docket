@@ -88,6 +88,13 @@ func (t BuilderNixpacksPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-nixpacks:set", builderNixpacksPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderNixpacksPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-nixpacks:set", builderNixpacksPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderNixpacksPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderNixpacksPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderNixpacksPropertyTask{})

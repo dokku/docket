@@ -87,6 +87,13 @@ func (t SchedulerDockerLocalPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, false, t.Property, t.Value, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t SchedulerDockerLocalPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys, func(app, property, value string) interface{} {
+		return SchedulerDockerLocalPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the SchedulerDockerLocalPropertyTask with the task registry
 func init() {
 	RegisterTask(&SchedulerDockerLocalPropertyTask{})

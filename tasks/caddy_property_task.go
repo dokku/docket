@@ -93,6 +93,13 @@ func (t CaddyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set", caddyPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t CaddyPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "caddy:set", caddyPropertyKeys, func(app, property, value string) interface{} {
+		return CaddyPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the CaddyPropertyTask with the task registry
 func init() {
 	RegisterTask(&CaddyPropertyTask{})

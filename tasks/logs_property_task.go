@@ -92,6 +92,13 @@ func (t LogsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "logs:set", logsPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t LogsPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "logs:set", logsPropertyKeys, func(app, property, value string) interface{} {
+		return LogsPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the LogsPropertyTask with the task registry
 func init() {
 	RegisterTask(&LogsPropertyTask{})

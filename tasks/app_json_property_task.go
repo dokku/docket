@@ -87,6 +87,13 @@ func (t AppJsonPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "app-json:set", appJsonPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t AppJsonPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "app-json:set", appJsonPropertyKeys, func(app, property, value string) interface{} {
+		return AppJsonPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the AppJsonPropertyTask with the task registry
 func init() {
 	RegisterTask(&AppJsonPropertyTask{})

@@ -104,6 +104,13 @@ func (t AppsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "apps:set", appsPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t AppsPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "apps:set", appsPropertyKeys, func(app, property, value string) interface{} {
+		return AppsPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the AppsPropertyTask with the task registry
 func init() {
 	RegisterTask(&AppsPropertyTask{})

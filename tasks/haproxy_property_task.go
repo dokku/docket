@@ -92,6 +92,13 @@ func (t HaproxyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set", haproxyPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t HaproxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "haproxy:set", haproxyPropertyKeys, func(app, property, value string) interface{} {
+		return HaproxyPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the HaproxyPropertyTask with the task registry
 func init() {
 	RegisterTask(&HaproxyPropertyTask{})

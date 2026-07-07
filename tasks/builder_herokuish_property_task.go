@@ -88,6 +88,13 @@ func (t BuilderHerokuishPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set", builderHerokuishPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderHerokuishPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-herokuish:set", builderHerokuishPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderHerokuishPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderHerokuishPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderHerokuishPropertyTask{})

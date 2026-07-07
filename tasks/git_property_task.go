@@ -102,6 +102,13 @@ func (t GitPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "git:set", gitPropertyKeys)
 }
 
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t GitPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "git:set", gitPropertyKeys, func(app, property, value string) interface{} {
+		return GitPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // init registers the GitPropertyTask with the task registry
 func init() {
 	RegisterTask(&GitPropertyTask{})
