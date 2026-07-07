@@ -121,6 +121,13 @@ var nginxPropertyKeys = map[string]PropertyKeys{
 	"x-forwarded-ssl":         {PerApp: "x-forwarded-ssl", Global: "global-x-forwarded-ssl"},
 }
 
+// ExportApp reconstructs the app's explicitly-set nginx properties.
+func (t NginxPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "nginx:set", nginxPropertyKeys, func(app, property, value string) interface{} {
+		return NginxPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
 // Plan reports the drift the NginxPropertyTask would produce.
 func (t NginxPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "nginx:set", nginxPropertyKeys)
