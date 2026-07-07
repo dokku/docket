@@ -36,6 +36,11 @@ var appExportOrder = []string{
 	"dokku_domains",
 	"dokku_ports",
 	"dokku_buildpacks",
+	"dokku_ps_scale",
+	"dokku_checks_toggle",
+	"dokku_proxy_toggle",
+	"dokku_domains_toggle",
+	"dokku_maintenance",
 }
 
 // ExportOptions controls an export run.

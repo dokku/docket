@@ -126,6 +126,26 @@ func (t PsScaleTask) Plan() PlanResult {
 	})
 }
 
+// ExportApp reads the app's process scale and returns a dokku_ps_scale task
+// when any process is scaled above zero (an undeployed app has nothing to set).
+func (t PsScaleTask) ExportApp(app string) ([]interface{}, error) {
+	scale, err := getPsScale(app)
+	if err != nil {
+		return nil, err
+	}
+	any := false
+	for _, qty := range scale {
+		if qty > 0 {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return nil, nil
+	}
+	return []interface{}{PsScaleTask{App: app, Scale: scale}}, nil
+}
+
 // getPsScale retrieves the current process scale for a given dokku application
 func getPsScale(app string) (map[string]int, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{

@@ -28,6 +28,19 @@ func checksEnabled(ctx ToggleContext) (bool, error) {
 	return disabled == "" || disabled == "none", nil
 }
 
+// ExportApp emits a dokku_checks_toggle task only when checks are disabled
+// (they are enabled by default).
+func (t ChecksToggleTask) ExportApp(app string) ([]interface{}, error) {
+	enabled, err := checksEnabled(ToggleContext{App: app})
+	if err != nil {
+		return nil, err
+	}
+	if enabled {
+		return nil, nil
+	}
+	return []interface{}{ChecksToggleTask{App: app, State: StateAbsent}}, nil
+}
+
 // ChecksToggleTask enables or disables the checks plugin for a given dokku application
 type ChecksToggleTask struct {
 	// App is the name of the app

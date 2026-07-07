@@ -26,6 +26,19 @@ func domainsEnabled(ctx ToggleContext) (bool, error) {
 	return strings.TrimSpace(result.StdoutContents()) == "true", nil
 }
 
+// ExportApp emits a dokku_domains_toggle task only when the domains plugin is
+// disabled for the app (it is enabled by default).
+func (t DomainsToggleTask) ExportApp(app string) ([]interface{}, error) {
+	enabled, err := domainsEnabled(ToggleContext{App: app})
+	if err != nil {
+		return nil, err
+	}
+	if enabled {
+		return nil, nil
+	}
+	return []interface{}{DomainsToggleTask{App: app, State: StateAbsent}}, nil
+}
+
 // DomainsToggleTask enables or disables the domains plugin for a given dokku application
 type DomainsToggleTask struct {
 	// App is the name of the app
