@@ -57,7 +57,7 @@ func (t MaintenanceCustomPageTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t MaintenanceCustomPageTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "maintenance:report exposes only a custom-page-sha256 checksum, not the HTML, so the page content would have to be supplied as a required input (docket#284)"}
+	return ExportSupport{Status: ExportPartial, Caveat: "maintenance:report exposes only a custom-page-sha256 checksum, not the HTML; a faithful export needs an upstream export command (dokku/dokku-maintenance#28), otherwise the content is supplied as a required input (docket#284)"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
