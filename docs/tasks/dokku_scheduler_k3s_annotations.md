@@ -6,7 +6,7 @@ Manages scheduler-k3s annotations scoped to a (process_type, resource_type) pair
 
 ## Export support
 
-Supported.
+Not supported - scheduler-k3s exposes no report for annotations, so the current state cannot be read back (dokku/dokku#8800).
 
 ## Parameters
 

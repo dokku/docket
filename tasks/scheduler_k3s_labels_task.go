@@ -47,7 +47,7 @@ func (t SchedulerK3sLabelsTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t SchedulerK3sLabelsTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportSupported}
+	return ExportSupport{Status: ExportUnsupported, Caveat: "scheduler-k3s exposes no report for labels, so the current state cannot be read back (dokku/dokku#8800)"}
 }
 
 // Examples returns the examples for the scheduler-k3s labels task

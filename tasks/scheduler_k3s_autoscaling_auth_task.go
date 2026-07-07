@@ -45,7 +45,7 @@ func (t SchedulerK3sAutoscalingAuthTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t SchedulerK3sAutoscalingAuthTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "authentication metadata values are written to the companion vars-file"}
+	return ExportSupport{Status: ExportUnsupported, Caveat: "scheduler-k3s exposes no report for KEDA trigger authentication, so the current state cannot be read back (dokku/dokku#8800)"}
 }
 
 // Examples returns the examples for the scheduler-k3s autoscaling-auth task
