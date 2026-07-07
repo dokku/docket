@@ -650,6 +650,27 @@ func validateTaskBody(registered Task, typeName string, body *yaml.Node, playLab
 		})
 	}
 
+	// Enforce the task's conditional/semantic input rules offline, but only
+	// when the body is fully concrete. Skip if a required field is missing
+	// (that primary problem is already reported and the conditional checks
+	// depend on it) or if a required-no-default input rendered to the
+	// validatePlaceholder sentinel, whose real value is unknown offline and
+	// could otherwise trip a "must not be set" check into a false positive.
+	if len(problems) == 0 && !strings.Contains(string(marshaled), validatePlaceholder) {
+		if validator, ok := v.Interface().(InputValidator); ok {
+			if err := validator.Validate(); err != nil {
+				problems = append(problems, Problem{
+					Code:    "invalid_task_input",
+					Play:    playLabel,
+					Task:    taskLabel,
+					Line:    body.Line,
+					Column:  body.Column,
+					Message: err.Error(),
+				})
+			}
+		}
+	}
+
 	return problems
 }
 

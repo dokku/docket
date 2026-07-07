@@ -255,6 +255,89 @@ func TestValidateMultipleProblemsCollected(t *testing.T) {
 	}
 }
 
+func TestValidateInvalidTaskInput(t *testing.T) {
+	// acl_app requires a non-empty users list when state is present. That
+	// conditional rule lives in AclAppTask.Validate(), which the offline
+	// validator now enforces.
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        app: my-app
+        users: []
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'users' must not be empty") {
+		t.Errorf("expected message to mention empty users, got: %q", p.Message)
+	}
+	if p.Line == 0 {
+		t.Errorf("expected non-zero line, got: %d", p.Line)
+	}
+}
+
+func TestValidateInvalidTaskInputSatisfied(t *testing.T) {
+	// A present acl_app with users, and an absent acl_app with no users
+	// (clear the whole ACL), are both valid inputs.
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        app: my-app
+        users:
+            - alice
+        state: present
+    - dokku_acl_app:
+        app: my-app
+        state: absent
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateInvalidTaskInputSkippedWhenRequiredMissing(t *testing.T) {
+	// When a required field is missing, only missing_required_field is
+	// reported; the conditional Validate() check (which depends on that
+	// field) is skipped so the two do not double-report.
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        users: []
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "missing_required_field"); p == nil {
+		t.Fatalf("expected missing_required_field problem, got: %+v", problems)
+	}
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input when a required field is missing, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateInvalidTaskInputSkippedWithPlaceholder(t *testing.T) {
+	// A required-no-default input renders to the validate placeholder, whose
+	// real value is unknown offline. The conditional check is skipped for the
+	// whole task so it can never false-positive on a parameterized recipe.
+	data := []byte(`---
+- inputs:
+    - name: app
+      required: true
+  tasks:
+    - dokku_acl_app:
+        app: {{ .app }}
+        users: []
+        state: present
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input with placeholder input, got %d: %+v", n, problems)
+	}
+}
+
 func TestValidateNearestTaskName(t *testing.T) {
 	tests := []struct {
 		input  string

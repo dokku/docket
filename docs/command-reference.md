@@ -53,8 +53,11 @@ deploy.
 
 The checks cover: the file parses; the recipe shape is a list of plays; each task entry has the
 right envelope keys plus exactly one task-type key; the task type is registered (with a "did you
-mean" for typos); required fields decode; sigil templates render against the input defaults; expr
-predicates parse; and `.item` / `.index` are only used inside a `loop:`.
+mean" for typos); required fields decode; a task's conditional/semantic input rules hold (for
+example a list that must be non-empty when `state: present`, or mutually-exclusive fields) - the same
+checks `plan` and `apply` run, surfaced offline as `invalid_task_input`; sigil templates render
+against the input defaults; expr predicates parse; and `.item` / `.index` are only used inside a
+`loop:`.
 
 ```bash
 docket validate --tasks path/to/tasks.yml

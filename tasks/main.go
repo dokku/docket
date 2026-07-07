@@ -256,6 +256,14 @@ type PlanResult struct {
 	apply func() TaskOutputState
 }
 
+// planErr wraps an input-validation error in a PlanResult. Tasks return it
+// from Plan() when their Validate() (or another pure input check) fails, so
+// the error surfaces uniformly as a PlanStatusError without contacting the
+// server.
+func planErr(err error) PlanResult {
+	return PlanResult{Status: PlanStatusError, Error: err}
+}
+
 // Task represents a task
 type Task interface {
 	// Doc returns the docblock for the task
@@ -272,6 +280,20 @@ type Task interface {
 	// ExecutePlan(t.Plan()) so probing happens once and the per-state
 	// mutation logic lives only in Plan().
 	Execute() TaskOutputState
+}
+
+// InputValidator is an optional interface a task implements to expose
+// input-only validation: checks that are a pure function of the task's
+// fields and require no server probing (empty-list-when-present, per-item
+// required fields, enum values, mutually-exclusive fields, and so on).
+//
+// A task's Plan() calls Validate() before it probes, so plan and apply
+// surface these errors. `docket validate` calls the same Validate() offline
+// (see validateTaskBody) so the identical conditional/semantic errors are
+// caught without contacting a server. Implementations must never call a
+// mutating or probing dokku command; that is what keeps validate offline.
+type InputValidator interface {
+	Validate() error
 }
 
 // Global registry for Tasks.

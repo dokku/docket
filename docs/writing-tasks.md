@@ -89,6 +89,40 @@ A few conventions to follow:
   `apply` and `plan` emit a one-time `warning` line above each deprecated task's result line.
   Keep the message short and name the replacement, e.g.
   `"use dokku_storage_entry instead; storage:ensure-directory has been deprecated"`.
+- When a task has conditional or semantic input rules that a `required:"true"` tag cannot express -
+  a list that must be non-empty only when `state: present`, mutually-exclusive fields, an enum, a
+  per-item requirement on a slice field - put them in the optional `Validate() error` method (the
+  `InputValidator` interface) and call it as the first line of `Plan()`. See below.
+
+## Validating inputs
+
+`required:"true"` field tags are enforced offline by `docket validate` (it reports
+`missing_required_field`), but they can only express "this scalar field must be present". Anything
+conditional - non-empty-when-present, mutually-exclusive fields, enums, per-item checks on a slice -
+has to live in code. Put it in `Validate() error` rather than inline in `Plan()`:
+
+```go
+// Validate checks inputs without contacting the server.
+func (t LollipopTask) Validate() error {
+  if t.State == StatePresent && len(t.Flavors) == 0 {
+    return fmt.Errorf("'flavors' must not be empty for state 'present'")
+  }
+  return nil
+}
+
+func (t LollipopTask) Plan() PlanResult {
+  if err := t.Validate(); err != nil {
+    return planErr(err)
+  }
+  // ... probe and DispatchPlan
+}
+```
+
+`Plan()` calls `Validate()` before it probes, so `plan` and `apply` still report the error. Because
+`Validate()` is a pure function of the struct - it must never call a probing or mutating dokku
+command - `docket validate` calls the same method offline and surfaces any error as
+`invalid_task_input`, catching the mistake before a server is ever contacted. Keep the error strings
+identical to what `Plan()` used to return so `plan`, `apply`, and `validate` all read the same.
 
 ## Toggle and property tasks
 

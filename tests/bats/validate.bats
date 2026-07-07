@@ -43,6 +43,34 @@ EOF
   assert_output --partial 'missing required field "app"'
 }
 
+@test "docket validate exits 1 on a conditional input error" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_acl_app:
+        app: docket-test-validate
+        users: []
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'users' must not be empty"
+}
+
+@test "docket validate --json emits invalid_task_input" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_acl_app:
+        app: docket-test-validate
+        users: []
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"invalid_task_input"'
+}
+
 @test "docket validate exits 1 on broken sigil template" {
   write_tasks_file <<EOF
 ---
