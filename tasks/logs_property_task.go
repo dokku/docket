@@ -37,6 +37,11 @@ func (t LogsPropertyTask) Doc() string {
 	return "Manages the logs configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t LogsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the logs property task
 func (t LogsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]LogsPropertyTaskExample{

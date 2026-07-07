@@ -4,6 +4,10 @@
 
 Manages KEDA TriggerAuthentication metadata grouped under a single trigger for a dokku application or globally
 
+## Export support
+
+Partial - authentication metadata values are written to the companion vars-file.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

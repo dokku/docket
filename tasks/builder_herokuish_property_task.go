@@ -37,6 +37,11 @@ func (t BuilderHerokuishPropertyTask) Doc() string {
 	return "Manages the builder-herokuish configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderHerokuishPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-herokuish property task
 func (t BuilderHerokuishPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderHerokuishPropertyTaskExample{

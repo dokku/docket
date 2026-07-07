@@ -45,6 +45,11 @@ func (t SchedulerK3sLabelsTask) Doc() string {
 	return "Manages scheduler-k3s labels scoped to a (process_type, resource_type) pair for a dokku application or globally"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sLabelsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s labels task
 func (t SchedulerK3sLabelsTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sLabelsTaskExample{

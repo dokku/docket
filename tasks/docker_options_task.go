@@ -53,6 +53,11 @@ func (t DockerOptionsTask) Doc() string {
 	return "Manages docker-options for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t DockerOptionsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the docker options task
 func (t DockerOptionsTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]DockerOptionsTaskExample{

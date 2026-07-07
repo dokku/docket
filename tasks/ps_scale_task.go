@@ -41,6 +41,11 @@ func (t PsScaleTask) Doc() string {
 	return "Manages the process scale for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t PsScaleTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the ps scale task
 func (t PsScaleTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PsScaleTaskExample{

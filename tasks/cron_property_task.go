@@ -37,6 +37,11 @@ func (t CronPropertyTask) Doc() string {
 	return "Manages the cron configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t CronPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the cron property task
 func (t CronPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]CronPropertyTaskExample{

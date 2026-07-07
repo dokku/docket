@@ -4,6 +4,10 @@
 
 Installs or uninstalls a third-party dokku plugin. Installation is a root-level operation, so this task must run over the SSH transport (where dokku wraps privilege server-side) or as root locally. Idempotency is by plugin name only - a changed `url` or `committish` on an already-installed plugin is not detected.
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

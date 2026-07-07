@@ -85,6 +85,11 @@ func (t StorageMountTask) Doc() string {
 	return "Attaches or detaches storage on a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t StorageMountTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the storage mount task
 func (t StorageMountTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]StorageMountTaskExample{

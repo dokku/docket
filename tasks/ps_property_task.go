@@ -37,6 +37,11 @@ func (t PsPropertyTask) Doc() string {
 	return "Manages the ps configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t PsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the ps property task
 func (t PsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PsPropertyTaskExample{

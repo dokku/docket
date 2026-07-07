@@ -51,6 +51,11 @@ func (t SchedulerK3sChartTask) Doc() string {
 	return "Manages helm chart value overrides for a dokku scheduler-k3s bundled chart"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sChartTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s chart task
 func (t SchedulerK3sChartTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sChartTaskExample{
@@ -59,7 +64,7 @@ func (t SchedulerK3sChartTask) Examples() ([]Doc, error) {
 			SchedulerK3sChartTask: SchedulerK3sChartTask{
 				Chart: "ingress-nginx",
 				Values: map[string]any{
-					"controller.replicaCount":      "3",
+					"controller.replicaCount":         "3",
 					"controller.resources.limits.cpu": "200m",
 				},
 			},

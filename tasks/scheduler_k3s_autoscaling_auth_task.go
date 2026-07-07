@@ -43,6 +43,11 @@ func (t SchedulerK3sAutoscalingAuthTask) Doc() string {
 	return "Manages KEDA TriggerAuthentication metadata grouped under a single trigger for a dokku application or globally"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sAutoscalingAuthTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "authentication metadata values are written to the companion vars-file"}
+}
+
 // Examples returns the examples for the scheduler-k3s autoscaling-auth task
 func (t SchedulerK3sAutoscalingAuthTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sAutoscalingAuthTaskExample{

@@ -4,6 +4,10 @@
 
 Syncs a git repository to a dokku application
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

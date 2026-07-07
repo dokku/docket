@@ -37,6 +37,11 @@ func (t BuilderLambdaPropertyTask) Doc() string {
 	return "Manages the builder-lambda configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderLambdaPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-lambda property task
 func (t BuilderLambdaPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderLambdaPropertyTaskExample{

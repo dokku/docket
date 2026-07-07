@@ -35,6 +35,11 @@ func (t LetsencryptTask) Doc() string {
 	return "Enables or disables letsencrypt SSL certificates for a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t LetsencryptTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t LetsencryptTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin"}

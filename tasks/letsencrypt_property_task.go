@@ -39,6 +39,11 @@ func (t LetsencryptPropertyTask) Doc() string {
 	return "Manages the letsencrypt configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t LetsencryptPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t LetsencryptPropertyTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin"}

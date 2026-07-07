@@ -37,6 +37,11 @@ func (t AppJsonPropertyTask) Doc() string {
 	return "Manages the app.json configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AppJsonPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the app.json property task
 func (t AppJsonPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppJsonPropertyTaskExample{

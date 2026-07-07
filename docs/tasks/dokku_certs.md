@@ -8,6 +8,10 @@ Manages SSL certificates for a dokku app or globally.
 
 - dokku-global-cert plugin (required only when global: true)
 
+## Export support
+
+Partial - certificate and key material may not be fully readable from the server.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

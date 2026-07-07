@@ -4,6 +4,10 @@
 
 Creates or destroys a Docker network
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

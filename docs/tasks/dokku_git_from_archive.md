@@ -4,6 +4,10 @@
 
 Deploys a git repository from an archive URL
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -42,6 +42,11 @@ func (t SshKeyTask) Doc() string {
 	return "Manages an SSH public key for git push access via dokku's ssh-keys plugin"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SshKeyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the ssh key task
 func (t SshKeyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SshKeyTaskExample{

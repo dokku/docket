@@ -4,6 +4,10 @@
 
 Locks or unlocks a dokku application from deployment
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

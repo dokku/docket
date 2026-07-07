@@ -32,6 +32,11 @@ func (t AppTask) Doc() string {
 	return "Creates or destroys an app"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AppTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns a list of AppTaskExamples as yaml
 func (t AppTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppTaskExample{

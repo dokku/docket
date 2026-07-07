@@ -74,6 +74,11 @@ func (t ServiceBackupTask) Doc() string {
 	return "Manages the S3 backup schedule, authentication, and encryption for a dokku service"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ServiceBackupTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t ServiceBackupTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}

@@ -55,6 +55,11 @@ func (t MaintenanceTask) Doc() string {
 	return "Enables or disables maintenance mode for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t MaintenanceTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t MaintenanceTask) Requirements() []string {
 	return []string{"dokku-maintenance plugin"}

@@ -48,6 +48,11 @@ func (t GitFromArchiveTask) Doc() string {
 	return "Deploys a git repository from an archive URL"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t GitFromArchiveTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the git from archive task
 func (t GitFromArchiveTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromArchiveTaskExample{

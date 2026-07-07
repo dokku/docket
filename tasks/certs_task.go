@@ -55,6 +55,11 @@ func (t CertsTask) Doc() string {
 	return "Manages SSL certificates for a dokku app or globally."
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t CertsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "certificate and key material may not be fully readable from the server"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t CertsTask) Requirements() []string {
 	return []string{"dokku-global-cert plugin (required only when global: true)"}

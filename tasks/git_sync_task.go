@@ -50,6 +50,11 @@ func (t GitSyncTask) Doc() string {
 	return "Syncs a git repository to a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t GitSyncTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the git sync task
 func (t GitSyncTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitSyncTaskExample{

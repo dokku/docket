@@ -190,6 +190,26 @@ func CallExecCommand(input ExecCommandInput) (ExecCommandResponse, error) {
 	return CallExecCommandWithContext(ctx, input)
 }
 
+// execRunner is the executor CallExecCommand and CallExecCommandWithContext
+// delegate to. It defaults to defaultExecRunner (the real implementation) and
+// can be swapped in tests via SetExecRunner so unit tests return canned
+// responses without spawning a process or contacting a server. Production code
+// must never reassign it.
+//
+// The swap mutates package state and is therefore test-only and not safe under
+// t.Parallel().
+var execRunner = defaultExecRunner
+
+// SetExecRunner swaps the executor and returns a function that restores the
+// previous one. Intended for tests:
+//
+//	defer subprocess.SetExecRunner(fake)()
+func SetExecRunner(fn func(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error)) func() {
+	prev := execRunner
+	execRunner = fn
+	return func() { execRunner = prev }
+}
+
 // CallExecCommandWithContext executes a command on the local host with the given context.
 //
 // When `input.Host` is set (or a default has been configured via
@@ -198,7 +218,16 @@ func CallExecCommand(input ExecCommandInput) (ExecCommandResponse, error) {
 // host. Non-dokku subprocesses (echo/git/etc.) always run locally even
 // when a host is configured, since the remote side may not have those
 // binaries (and tests expect local execution).
+//
+// The call is routed through the swappable execRunner so tests can substitute a
+// fake executor; defaultExecRunner is the production path.
 func CallExecCommandWithContext(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
+	return execRunner(ctx, input)
+}
+
+// defaultExecRunner is the production executor: it runs the command locally, or
+// routes dokku commands through the SSH transport when a host is configured.
+func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
 	if input.Host == "" {
 		input.Host = GetDefaultHost()
 	}

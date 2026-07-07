@@ -40,6 +40,11 @@ func (t DomainsTask) Doc() string {
 	return "Manages the domains for a given dokku application or globally"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t DomainsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the domains task
 func (t DomainsTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]DomainsTaskExample{

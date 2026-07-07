@@ -37,6 +37,11 @@ func (t SchedulerPropertyTask) Doc() string {
 	return "Manages the scheduler configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler property task
 func (t SchedulerPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerPropertyTaskExample{

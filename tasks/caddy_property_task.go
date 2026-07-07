@@ -37,6 +37,11 @@ func (t CaddyPropertyTask) Doc() string {
 	return "Manages the caddy configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t CaddyPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the caddy property task
 func (t CaddyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]CaddyPropertyTaskExample{

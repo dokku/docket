@@ -50,6 +50,11 @@ func (t PluginTask) Doc() string {
 		"plugin is not detected."
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t PluginTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the plugin task
 func (t PluginTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PluginTaskExample{

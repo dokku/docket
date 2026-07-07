@@ -37,6 +37,11 @@ func (t BuilderDockerfilePropertyTask) Doc() string {
 	return "Manages the builder-dockerfile configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderDockerfilePropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-dockerfile property task
 func (t BuilderDockerfilePropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderDockerfilePropertyTaskExample{

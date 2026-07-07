@@ -37,6 +37,11 @@ func (t OpenrestyPropertyTask) Doc() string {
 	return "Manages the openresty configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t OpenrestyPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the openresty property task
 func (t OpenrestyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]OpenrestyPropertyTaskExample{

@@ -38,6 +38,11 @@ func (t BuildpacksTask) Doc() string {
 	return "Manages the buildpacks for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuildpacksTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the buildpacks task
 func (t BuildpacksTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuildpacksTaskExample{

@@ -37,6 +37,11 @@ func (t BuilderPackPropertyTask) Doc() string {
 	return "Manages the builder-pack configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderPackPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-pack property task
 func (t BuilderPackPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderPackPropertyTaskExample{

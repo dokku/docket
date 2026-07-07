@@ -196,6 +196,33 @@ func requirementsSection(task tasks.Task) string {
 	return b.String()
 }
 
+// exportSupportSection renders the Export support section, stating whether
+// `docket export` can reconstruct the task from a live server. Every task
+// declares this via ExportSupport(); the section is omitted only if a task
+// does not (the export coverage test prevents that in practice).
+func exportSupportSection(task tasks.Task) string {
+	support, ok := tasks.TaskExportSupport(task)
+	if !ok {
+		return ""
+	}
+	var label string
+	switch support.Status {
+	case tasks.ExportSupported:
+		label = "Supported"
+	case tasks.ExportPartial:
+		label = "Partial"
+	case tasks.ExportUnsupported:
+		label = "Not supported"
+	default:
+		label = string(support.Status)
+	}
+	line := label
+	if support.Caveat != "" {
+		line += " - " + support.Caveat
+	}
+	return "## Export support\n\n" + line + "."
+}
+
 // deprecationSection renders the Deprecated admonition for a task that
 // implements DeprecationDocer. The notice sits between the Synopsis and
 // the Requirements/Parameters sections so the reader sees it before
@@ -266,6 +293,9 @@ func renderPage(taskName string, task tasks.Task, examples []tasks.Doc) string {
 	}
 	if req := requirementsSection(task); req != "" {
 		sections = append(sections, strings.TrimRight(req, "\n"))
+	}
+	if es := exportSupportSection(task); es != "" {
+		sections = append(sections, es)
 	}
 	if pt := parametersSection(buildParams(rt)); pt != "" {
 		sections = append(sections, strings.TrimRight(pt, "\n"))

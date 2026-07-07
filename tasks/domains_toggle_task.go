@@ -57,6 +57,11 @@ func (t DomainsToggleTask) Doc() string {
 	return "Enables or disables the domains plugin for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t DomainsToggleTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the domains toggle task
 func (t DomainsToggleTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]DomainsToggleTaskExample{

@@ -8,6 +8,10 @@ Manages the set of HTTP auth users for a dokku application
 
 - dokku-http-auth plugin
 
+## Export support
+
+Partial - usernames are exported; each password is not readable and becomes a required input.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

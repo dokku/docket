@@ -56,6 +56,11 @@ func (t ProxyToggleTask) Doc() string {
 	return "Enables or disables the proxy plugin for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ProxyToggleTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the proxy toggle task
 func (t ProxyToggleTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ProxyToggleTaskExample{

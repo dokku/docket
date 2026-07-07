@@ -34,6 +34,11 @@ func (t SchedulerDockerLocalPropertyTask) Doc() string {
 	return "Manages the scheduler-docker-local configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerDockerLocalPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-docker-local property task
 func (t SchedulerDockerLocalPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerDockerLocalPropertyTaskExample{

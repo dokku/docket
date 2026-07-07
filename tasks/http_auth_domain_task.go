@@ -42,6 +42,11 @@ func (t HttpAuthDomainTask) Doc() string {
 	return "Manages the set of domains HTTP auth is restricted to for a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t HttpAuthDomainTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthDomainTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin"}

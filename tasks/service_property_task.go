@@ -52,6 +52,11 @@ func (t ServicePropertyTask) Doc() string {
 	return "Manages a property for a given dokku service"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ServicePropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t ServicePropertyTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}

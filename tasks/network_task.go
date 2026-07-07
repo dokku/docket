@@ -32,6 +32,11 @@ func (t NetworkTask) Doc() string {
 	return "Creates or destroys a Docker network"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t NetworkTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns a list of NetworkTaskExamples as yaml
 func (t NetworkTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkTaskExample{

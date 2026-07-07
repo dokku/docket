@@ -37,6 +37,11 @@ func (t ResourceLimitTask) Doc() string {
 	return "Manages the resource limits for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ResourceLimitTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the resource limit task
 func (t ResourceLimitTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceLimitTaskExample{

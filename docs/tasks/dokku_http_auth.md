@@ -8,6 +8,10 @@ Manages HTTP authentication for a given dokku application
 
 - dokku-http-auth plugin
 
+## Export support
+
+Partial - credentials are not readable and become required inputs.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

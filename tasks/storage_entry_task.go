@@ -70,6 +70,11 @@ func (t StorageEntryTask) Doc() string {
 	return "Creates or destroys a named storage registry entry"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t StorageEntryTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the storage entry task
 func (t StorageEntryTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEntryTaskExample{

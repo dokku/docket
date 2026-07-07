@@ -4,6 +4,10 @@
 
 Manages the configuration for a given dokku application
 
+## Export support
+
+Partial - config values are written to the companion vars-file.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

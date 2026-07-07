@@ -37,6 +37,11 @@ func (t HaproxyPropertyTask) Doc() string {
 	return "Manages the haproxy configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t HaproxyPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the haproxy property task
 func (t HaproxyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]HaproxyPropertyTaskExample{

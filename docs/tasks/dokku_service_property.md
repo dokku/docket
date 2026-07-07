@@ -8,6 +8,10 @@ Manages a property for a given dokku service
 
 - a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
+## Export support
+
+Not supported - service export is not yet implemented; tracked in a follow-up issue.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

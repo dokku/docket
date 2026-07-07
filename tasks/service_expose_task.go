@@ -42,6 +42,11 @@ func (t ServiceExposeTask) Doc() string {
 	return "Exposes or unexposes a dokku service on host ports"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ServiceExposeTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t ServiceExposeTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}

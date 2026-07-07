@@ -37,6 +37,11 @@ func (t AppsPropertyTask) Doc() string {
 	return "Manages the apps plugin configuration for a given dokku application or globally"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AppsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the apps property task
 func (t AppsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppsPropertyTaskExample{

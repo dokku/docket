@@ -8,6 +8,10 @@ Manages the dokku-acl access list for a dokku service
 
 - dokku-acl plugin
 
+## Export support
+
+Not supported - service export is not yet implemented; tracked in a follow-up issue.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

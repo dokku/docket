@@ -56,6 +56,11 @@ func (t PortsTask) Doc() string {
 	return "Manages the ports for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t PortsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the ports task
 func (t PortsTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PortsTaskExample{

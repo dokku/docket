@@ -37,6 +37,11 @@ func (t NetworkPropertyTask) Doc() string {
 	return "Manages the network property for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t NetworkPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the network property task
 func (t NetworkPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkPropertyTaskExample{

@@ -8,6 +8,10 @@ Manages the set of domains HTTP auth is restricted to for a dokku application
 
 - dokku-http-auth plugin
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -58,6 +58,11 @@ func (t HttpAuthUserTask) Doc() string {
 	return "Manages the set of HTTP auth users for a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t HttpAuthUserTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "usernames are exported; each password is not readable and becomes a required input"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthUserTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin"}

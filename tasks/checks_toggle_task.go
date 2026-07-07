@@ -59,6 +59,11 @@ func (t ChecksToggleTask) Doc() string {
 	return "Enables or disables the checks plugin for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ChecksToggleTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the checks toggle task
 func (t ChecksToggleTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksToggleTaskExample{

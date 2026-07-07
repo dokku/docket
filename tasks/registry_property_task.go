@@ -37,6 +37,11 @@ func (t RegistryPropertyTask) Doc() string {
 	return "Manages the registry configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t RegistryPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the registry property task
 func (t RegistryPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryPropertyTaskExample{

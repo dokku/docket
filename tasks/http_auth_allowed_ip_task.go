@@ -42,6 +42,11 @@ func (t HttpAuthAllowedIpTask) Doc() string {
 	return "Manages the set of IP addresses allowed to bypass HTTP auth for a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t HttpAuthAllowedIpTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthAllowedIpTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin"}

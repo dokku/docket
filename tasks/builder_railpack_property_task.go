@@ -37,6 +37,11 @@ func (t BuilderRailpackPropertyTask) Doc() string {
 	return "Manages the builder-railpack configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderRailpackPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-railpack property task
 func (t BuilderRailpackPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderRailpackPropertyTaskExample{

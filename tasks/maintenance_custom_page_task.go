@@ -55,6 +55,11 @@ func (t MaintenanceCustomPageTask) Doc() string {
 	return "Installs or removes a custom maintenance page for a dokku application."
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t MaintenanceCustomPageTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "the custom page is detected but its content may not be reconstructable and becomes a required input"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t MaintenanceCustomPageTask) Requirements() []string {
 	return []string{"dokku-maintenance plugin"}

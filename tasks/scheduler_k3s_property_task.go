@@ -42,6 +42,11 @@ func (t SchedulerK3sPropertyTask) Doc() string {
 	return "Manages the scheduler-k3s configuration for a given dokku application. chart.* properties are managed by dokku_scheduler_k3s_chart and rejected here, since dokku's scheduler-k3s:set path is deprecated for chart values."
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s property task
 func (t SchedulerK3sPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sPropertyTaskExample{

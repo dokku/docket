@@ -37,6 +37,11 @@ func (t ChecksPropertyTask) Doc() string {
 	return "Manages the checks configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ChecksPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the checks property task
 func (t ChecksPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksPropertyTaskExample{

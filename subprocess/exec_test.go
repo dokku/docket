@@ -207,6 +207,40 @@ func TestCallExecCommandWithContext(t *testing.T) {
 	}
 }
 
+func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
+	var gotInput ExecCommandInput
+	fake := func(_ context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
+		gotInput = input
+		return ExecCommandResponse{Stdout: "canned"}, nil
+	}
+
+	restore := SetExecRunner(fake)
+
+	// Both entry points route through the swapped runner without spawning a
+	// process (the command below does not exist on PATH).
+	resp, err := CallExecCommand(ExecCommandInput{Command: "dokku", Args: []string{"apps:list"}})
+	if err != nil {
+		t.Fatalf("CallExecCommand with fake runner failed: %v", err)
+	}
+	if resp.Stdout != "canned" {
+		t.Errorf("expected canned stdout, got %q", resp.Stdout)
+	}
+	if gotInput.Command != "dokku" || len(gotInput.Args) != 1 || gotInput.Args[0] != "apps:list" {
+		t.Errorf("fake runner did not receive the input: %+v", gotInput)
+	}
+
+	restore()
+
+	// After restore the real executor runs again: echo succeeds locally.
+	resp, err = CallExecCommand(ExecCommandInput{Command: "echo", Args: []string{"hi"}})
+	if err != nil {
+		t.Fatalf("CallExecCommand after restore failed: %v", err)
+	}
+	if resp.StdoutContents() != "hi" {
+		t.Errorf("expected real executor output %q, got %q", "hi", resp.StdoutContents())
+	}
+}
+
 func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
 	SetGlobalSensitive([]string{"topsecret123"})
 	defer SetGlobalSensitive(nil)

@@ -8,6 +8,10 @@ Manages the letsencrypt configuration for a given dokku application
 
 - dokku-letsencrypt plugin
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

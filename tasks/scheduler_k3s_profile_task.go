@@ -62,6 +62,11 @@ func (t SchedulerK3sProfileTask) Doc() string {
 	return "Manages a global scheduler-k3s node profile used when joining nodes to a cluster"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sProfileTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s profile task
 func (t SchedulerK3sProfileTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sProfileTaskExample{

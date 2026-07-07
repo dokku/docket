@@ -4,6 +4,10 @@
 
 Attaches or detaches storage on a dokku application
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

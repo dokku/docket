@@ -8,6 +8,10 @@ Manages the set of IP addresses allowed to bypass HTTP auth for a dokku applicat
 
 - dokku-http-auth plugin
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

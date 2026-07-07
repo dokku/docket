@@ -8,6 +8,10 @@ Manages the S3 backup schedule, authentication, and encryption for a dokku servi
 
 - a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
+## Export support
+
+Not supported - service export is not yet implemented; tracked in a follow-up issue.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

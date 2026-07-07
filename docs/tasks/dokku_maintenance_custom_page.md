@@ -8,6 +8,10 @@ Installs or removes a custom maintenance page for a dokku application.
 
 - dokku-maintenance plugin
 
+## Export support
+
+Partial - the custom page is detected but its content may not be reconstructable and becomes a required input.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

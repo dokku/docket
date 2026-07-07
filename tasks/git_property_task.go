@@ -37,6 +37,11 @@ func (t GitPropertyTask) Doc() string {
 	return "Manages the git configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t GitPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the git property task
 func (t GitPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitPropertyTaskExample{

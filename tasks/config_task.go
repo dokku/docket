@@ -43,6 +43,11 @@ func (t ConfigTask) Doc() string {
 	return "Manages the configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ConfigTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "config values are written to the companion vars-file"}
+}
+
 // Examples returns the examples for the config task
 func (t ConfigTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ConfigTaskExample{

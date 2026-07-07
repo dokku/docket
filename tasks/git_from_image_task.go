@@ -50,6 +50,11 @@ func (t GitFromImageTask) Doc() string {
 	return "Deploys a git repository from a docker image"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t GitFromImageTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "the image reference is written to the companion vars-file"}
+}
+
 // Examples returns the examples for the git from image task
 func (t GitFromImageTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromImageTaskExample{
