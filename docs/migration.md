@@ -25,9 +25,9 @@ covered below.
 | SSH keys (`dokku_ssh_key`) | |
 | App code (`dokku_git_sync`, `dokku_git_from_image`, `dokku_git_from_archive`) | |
 
-The cert distinction is worth keeping straight: docket can carry a certificate whose PEM bytes you
-inline in the recipe, but it does not migrate an existing letsencrypt issuance - you re-issue that
-on the new host once DNS points at it.
+For certificates, docket can carry a certificate whose PEM bytes you inline in the recipe, but
+it does not migrate an existing letsencrypt issuance - you must re-issue that on the new host
+once DNS points at it.
 
 ## Before you start
 
