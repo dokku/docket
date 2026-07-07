@@ -1,8 +1,10 @@
 package tasks
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -60,6 +62,63 @@ func getResources(subcommand string, rctx ResourceContext) (map[string]string, e
 	}
 
 	return resources, nil
+}
+
+// exportResourceTasks reconstructs resource tasks of the given kind ("limit" or
+// "reserve") from resource:report, one task per process type (in sorted order),
+// carrying only the explicitly-set (non-empty) resources. factory builds the
+// concrete task body for a (process type, resources) pair.
+func exportResourceTasks(app, kind string, factory func(app, processType string, resources map[string]string) interface{}) ([]interface{}, error) {
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "resource:report", app, "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	payload := map[string]string{}
+	if err := json.Unmarshal(response.StdoutBytes(), &payload); err != nil {
+		return nil, nil
+	}
+
+	// Keys look like "<process>.<kind>.<resource>"; the legacy "resource-"
+	// prefixed duplicates are skipped. The "_default_" process maps to the
+	// empty process type.
+	byProcess := map[string]map[string]string{}
+	for key, value := range payload {
+		if value == "" || strings.HasPrefix(key, "resource-") {
+			continue
+		}
+		parts := strings.SplitN(key, ".", 3)
+		if len(parts) != 3 || parts[1] != kind {
+			continue
+		}
+		process := parts[0]
+		if process == "_default_" {
+			process = ""
+		}
+		if byProcess[process] == nil {
+			byProcess[process] = map[string]string{}
+		}
+		byProcess[process][parts[2]] = value
+	}
+
+	processes := make([]string, 0, len(byProcess))
+	for process := range byProcess {
+		processes = append(processes, process)
+	}
+	sort.Strings(processes)
+
+	var out []interface{}
+	for _, process := range processes {
+		out = append(out, factory(app, process, byProcess[process]))
+	}
+	return out, nil
 }
 
 // planResource is the shared Plan() implementation for resource tasks. The

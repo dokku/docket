@@ -80,6 +80,13 @@ func (t ResourceReserveTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// ExportApp reconstructs the app's resource reservations, one task per process type.
+func (t ResourceReserveTask) ExportApp(app string) ([]interface{}, error) {
+	return exportResourceTasks(app, "reserve", func(app, processType string, resources map[string]string) interface{} {
+		return ResourceReserveTask{App: app, ProcessType: processType, Resources: resources}
+	})
+}
+
 // Plan reports the drift the ResourceReserveTask would produce.
 func (t ResourceReserveTask) Plan() PlanResult {
 	return planResource(t.State, t.App, t.ProcessType, t.Resources, t.ClearBefore, "resource:reserve")
