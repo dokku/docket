@@ -89,7 +89,7 @@ func (t StorageMountTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t StorageMountTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportSupported}
+	return ExportSupport{Status: ExportPartial, Caveat: "storage:list does not expose phases, readonly, subpath, or process-type, so those attachment details are not reconstructed"}
 }
 
 // Examples returns the examples for the storage mount task
