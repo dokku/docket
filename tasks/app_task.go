@@ -32,6 +32,11 @@ func (t AppTask) Doc() string {
 	return "Creates or destroys an app"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AppTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns a list of AppTaskExamples as yaml
 func (t AppTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppTaskExample{
@@ -100,6 +105,12 @@ func (t AppTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// ExportApp reconstructs the app itself. Enumeration already confirmed the app
+// exists, so this simply declares it present (its default state).
+func (t AppTask) ExportApp(app string) ([]interface{}, error) {
+	return []interface{}{AppTask{App: app}}, nil
 }
 
 // appExists checks if an app exists. Returns (true, nil) when the app

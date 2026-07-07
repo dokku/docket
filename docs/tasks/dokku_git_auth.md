@@ -4,6 +4,10 @@
 
 Manages netrc credentials for a git host
 
+## Export support
+
+Not supported - netrc credentials are write-only and cannot be read back.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -58,6 +58,11 @@ func (t HttpAuthUserTask) Doc() string {
 	return "Manages the set of HTTP auth users for a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t HttpAuthUserTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "usernames are exported; each password is not readable and becomes a required input"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthUserTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin"}
@@ -262,6 +267,24 @@ func getHttpAuthUsers(appName string) (map[string]bool, error) {
 		users[u] = true
 	}
 	return users, nil
+}
+
+// ExportApp reconstructs the app's HTTP-auth users. Usernames come from the
+// report; passwords are not exposed, so the engine lifts each into a required
+// input the user fills in before applying (see processHttpAuthUser).
+func (t HttpAuthUserTask) ExportApp(app string) ([]interface{}, error) {
+	users, err := getHttpAuthUsers(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+	list := make([]HttpAuthUser, 0, len(users))
+	for _, name := range sortedSetKeys(users) {
+		list = append(list, HttpAuthUser{Username: name})
+	}
+	return []interface{}{HttpAuthUserTask{App: app, Users: list}}, nil
 }
 
 // init registers the HttpAuthUserTask with the task registry

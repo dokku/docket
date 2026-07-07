@@ -34,6 +34,11 @@ func (t SchedulerDockerLocalPropertyTask) Doc() string {
 	return "Manages the scheduler-docker-local configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerDockerLocalPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-docker-local property task
 func (t SchedulerDockerLocalPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerDockerLocalPropertyTaskExample{
@@ -80,6 +85,13 @@ var schedulerDockerLocalPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the SchedulerDockerLocalPropertyTask would produce.
 func (t SchedulerDockerLocalPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, false, t.Property, t.Value, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t SchedulerDockerLocalPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys, func(app, property, value string) interface{} {
+		return SchedulerDockerLocalPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the SchedulerDockerLocalPropertyTask with the task registry

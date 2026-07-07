@@ -8,6 +8,10 @@ Manages the dokku-acl access list for a dokku application
 
 - dokku-acl plugin
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

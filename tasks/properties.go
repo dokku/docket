@@ -93,6 +93,54 @@ func getProperty(subcommand, app string, global bool, property string, keys map[
 	return value, nil
 }
 
+// exportProperties reconstructs the explicitly-set properties of a property
+// plugin for an app. It reads `<plugin>:report --format json` once and, for
+// each property in keys, emits a task body (built by factory) when the raw
+// per-app key is present and non-empty. dokku only includes the raw key in the
+// report when the property has been set (unset properties appear only under a
+// `computed-` key), so this naturally captures the non-default settings without
+// a defaults table. Read-only/computed keys are skipped because they are not in
+// keys.
+func exportProperties(app, subcommand string, keys map[string]PropertyKeys, factory func(app, property, value string) interface{}) ([]interface{}, error) {
+	plugin := pluginFromSubcommand(subcommand)
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    getPropertyArgs(plugin, app, false),
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	payload := map[string]string{}
+	if err := json.Unmarshal(response.StdoutBytes(), &payload); err != nil {
+		return nil, nil
+	}
+
+	props := make([]string, 0, len(keys))
+	for prop := range keys {
+		props = append(props, prop)
+	}
+	sort.Strings(props)
+
+	var out []interface{}
+	for _, prop := range props {
+		key := keys[prop].PerApp
+		if key == "" {
+			continue
+		}
+		value, ok := payload[key]
+		if !ok || value == "" {
+			continue
+		}
+		out = append(out, factory(app, prop, value))
+	}
+	return out, nil
+}
+
 // getPropertyArgs builds the `dokku <plugin>:report ... --format json` arg list.
 func getPropertyArgs(plugin, app string, global bool) []string {
 	args := []string{"--quiet", plugin + ":report"}

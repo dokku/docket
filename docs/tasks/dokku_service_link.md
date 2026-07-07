@@ -8,6 +8,10 @@ Links or unlinks a dokku service to an app
 
 - a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
+## Export support
+
+Not supported - service export is not yet implemented; tracked in issue #279.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

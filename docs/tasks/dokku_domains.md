@@ -4,6 +4,10 @@
 
 Manages the domains for a given dokku application or globally
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

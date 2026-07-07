@@ -37,6 +37,11 @@ func (t OpenrestyPropertyTask) Doc() string {
 	return "Manages the openresty configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t OpenrestyPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the openresty property task
 func (t OpenrestyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]OpenrestyPropertyTaskExample{
@@ -122,6 +127,13 @@ var openrestyPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the OpenrestyPropertyTask would produce.
 func (t OpenrestyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "openresty:set", openrestyPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t OpenrestyPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "openresty:set", openrestyPropertyKeys, func(app, property, value string) interface{} {
+		return OpenrestyPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the OpenrestyPropertyTask with the task registry

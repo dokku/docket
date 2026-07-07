@@ -4,6 +4,10 @@
 
 Attaches or detaches storage on a dokku application
 
+## Export support
+
+Partial - storage:list does not expose phases, readonly, subpath, or process-type, so those attachment details are not reconstructed.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

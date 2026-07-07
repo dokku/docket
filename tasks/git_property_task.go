@@ -37,6 +37,11 @@ func (t GitPropertyTask) Doc() string {
 	return "Manages the git configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t GitPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the git property task
 func (t GitPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitPropertyTaskExample{
@@ -95,6 +100,13 @@ var gitPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the GitPropertyTask would produce.
 func (t GitPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "git:set", gitPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t GitPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "git:set", gitPropertyKeys, func(app, property, value string) interface{} {
+		return GitPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the GitPropertyTask with the task registry

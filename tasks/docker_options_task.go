@@ -2,7 +2,9 @@ package tasks
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -51,6 +53,50 @@ func (e DockerOptionsTaskExample) GetName() string {
 // Doc returns the docblock for the docker options task
 func (t DockerOptionsTask) Doc() string {
 	return "Manages docker-options for a given dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t DockerOptionsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "docker-options:report space-joins each phase's options, so options whose values contain spaces cannot be split back into individual entries (dokku/dokku#8799)"}
+}
+
+// ExportApp reconstructs the app's docker options as one task per individual
+// option, per (phase, process type). The report space-joins a phase's options,
+// so this splits on whitespace; options whose values contain spaces cannot be
+// recovered faithfully (dokku/dokku#8799).
+func (t DockerOptionsTask) ExportApp(app string) ([]interface{}, error) {
+	scoped, err := getDockerOptions(app)
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	scopes := make([]dockerOptionsScope, 0, len(scoped))
+	for scope := range scoped {
+		scopes = append(scopes, scope)
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].Phase != scopes[j].Phase {
+			return scopes[i].Phase < scopes[j].Phase
+		}
+		return scopes[i].ProcessType < scopes[j].ProcessType
+	})
+
+	var out []interface{}
+	for _, scope := range scopes {
+		for _, option := range strings.Fields(scoped[scope]) {
+			out = append(out, DockerOptionsTask{
+				App:         app,
+				Phase:       scope.Phase,
+				ProcessType: scope.ProcessType,
+				Option:      option,
+			})
+		}
+	}
+	return out, nil
 }
 
 // Examples returns the examples for the docker options task

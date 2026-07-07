@@ -37,6 +37,11 @@ func (t NginxPropertyTask) Doc() string {
 	return "Manages the nginx configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t NginxPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the nginx property task
 func (t NginxPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]NginxPropertyTaskExample{
@@ -114,6 +119,13 @@ var nginxPropertyKeys = map[string]PropertyKeys{
 	"x-forwarded-port-value":  {PerApp: "x-forwarded-port-value", Global: "global-x-forwarded-port-value"},
 	"x-forwarded-proto-value": {PerApp: "x-forwarded-proto-value", Global: "global-x-forwarded-proto-value"},
 	"x-forwarded-ssl":         {PerApp: "x-forwarded-ssl", Global: "global-x-forwarded-ssl"},
+}
+
+// ExportApp reconstructs the app's explicitly-set nginx properties.
+func (t NginxPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "nginx:set", nginxPropertyKeys, func(app, property, value string) interface{} {
+		return NginxPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // Plan reports the drift the NginxPropertyTask would produce.

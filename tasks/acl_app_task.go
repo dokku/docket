@@ -38,6 +38,11 @@ func (t AclAppTask) Doc() string {
 	return "Manages the dokku-acl access list for a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AclAppTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t AclAppTask) Requirements() []string {
 	return []string{"dokku-acl plugin"}
@@ -183,6 +188,18 @@ func getAclAppUsers(app string) (map[string]bool, error) {
 		users[trimmed] = true
 	}
 	return users, nil
+}
+
+// ExportApp reconstructs the app's ACL user list, or nil when it is empty.
+func (t AclAppTask) ExportApp(app string) ([]interface{}, error) {
+	users, err := getAclAppUsers(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+	return []interface{}{AclAppTask{App: app, Users: sortedSetKeys(users)}}, nil
 }
 
 // init registers the AclAppTask with the task registry

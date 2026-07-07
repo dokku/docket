@@ -37,6 +37,11 @@ func (t PsPropertyTask) Doc() string {
 	return "Manages the ps configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t PsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the ps property task
 func (t PsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PsPropertyTaskExample{
@@ -87,6 +92,13 @@ var psPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the PsPropertyTask would produce.
 func (t PsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "ps:set", psPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t PsPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "ps:set", psPropertyKeys, func(app, property, value string) interface{} {
+		return PsPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the PsPropertyTask with the task registry

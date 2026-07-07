@@ -41,6 +41,11 @@ func (t AclServiceTask) Doc() string {
 	return "Manages the dokku-acl access list for a dokku service"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AclServiceTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t AclServiceTask) Requirements() []string {
 	return []string{"dokku-acl plugin"}

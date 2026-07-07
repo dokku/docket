@@ -27,6 +27,19 @@ func maintenanceEnabled(ctx ToggleContext) (bool, error) {
 	return report.Enabled == "true", nil
 }
 
+// ExportApp emits a dokku_maintenance task only when maintenance mode is on
+// (it is off by default, so a normal app needs no task).
+func (t MaintenanceTask) ExportApp(app string) ([]interface{}, error) {
+	on, err := maintenanceEnabled(ToggleContext{App: app})
+	if err != nil {
+		return nil, err
+	}
+	if !on {
+		return nil, nil
+	}
+	return []interface{}{MaintenanceTask{App: app, State: StatePresent}}, nil
+}
+
 // MaintenanceTask enables or disables maintenance mode for a given dokku application
 type MaintenanceTask struct {
 	// App is the name of the app
@@ -53,6 +66,11 @@ func (e MaintenanceTaskExample) GetName() string {
 // Doc returns the docblock for the maintenance task
 func (t MaintenanceTask) Doc() string {
 	return "Enables or disables maintenance mode for a given dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t MaintenanceTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.

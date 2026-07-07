@@ -3,6 +3,7 @@ package tasks
 import (
 	"fmt"
 	"github.com/dokku/docket/subprocess"
+	"sort"
 	"strings"
 )
 
@@ -38,6 +39,11 @@ func (e DomainsTaskExample) GetName() string {
 // Doc returns the docblock for the domains task
 func (t DomainsTask) Doc() string {
 	return "Manages the domains for a given dokku application or globally"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t DomainsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the domains task
@@ -276,6 +282,24 @@ func validateDomainsTask(t DomainsTask, requireDomains bool) error {
 		return fmt.Errorf("'domains' must not be empty for state '%s'", t.State)
 	}
 	return nil
+}
+
+// ExportApp reads the app's vhosts and returns a dokku_domains task that sets
+// exactly that set, or nil when the app has no custom domains.
+func (t DomainsTask) ExportApp(app string) ([]interface{}, error) {
+	domains, err := getDomains(app, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(domains) == 0 {
+		return nil, nil
+	}
+	list := make([]string, 0, len(domains))
+	for d := range domains {
+		list = append(list, d)
+	}
+	sort.Strings(list)
+	return []interface{}{DomainsTask{App: app, Domains: list, State: StateSet}}, nil
 }
 
 // getDomains fetches current domains for an app or globally

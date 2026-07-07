@@ -37,6 +37,11 @@ func (t BuilderHerokuishPropertyTask) Doc() string {
 	return "Manages the builder-herokuish configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderHerokuishPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-herokuish property task
 func (t BuilderHerokuishPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderHerokuishPropertyTaskExample{
@@ -81,6 +86,13 @@ var builderHerokuishPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the BuilderHerokuishPropertyTask would produce.
 func (t BuilderHerokuishPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set", builderHerokuishPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderHerokuishPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-herokuish:set", builderHerokuishPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderHerokuishPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the BuilderHerokuishPropertyTask with the task registry

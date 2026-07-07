@@ -25,6 +25,19 @@ func proxyEnabled(ctx ToggleContext) (bool, error) {
 	return strings.TrimSpace(result.StdoutContents()) == "true", nil
 }
 
+// ExportApp emits a dokku_proxy_toggle task only when the proxy is disabled
+// (it is enabled by default).
+func (t ProxyToggleTask) ExportApp(app string) ([]interface{}, error) {
+	enabled, err := proxyEnabled(ToggleContext{App: app})
+	if err != nil {
+		return nil, err
+	}
+	if enabled {
+		return nil, nil
+	}
+	return []interface{}{ProxyToggleTask{App: app, State: StateAbsent}}, nil
+}
+
 // ProxyToggleTask manages the proxy for a given dokku application
 type ProxyToggleTask struct {
 	// App is the name of the app
@@ -54,6 +67,11 @@ func (e ProxyToggleTaskExample) GetName() string {
 // Doc returns the docblock for the proxy toggle task
 func (t ProxyToggleTask) Doc() string {
 	return "Enables or disables the proxy plugin for a given dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t ProxyToggleTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the proxy toggle task

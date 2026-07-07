@@ -40,6 +40,11 @@ func (t AppCloneTask) Doc() string {
 	return "Clones an existing dokku app to a new app"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AppCloneTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: "an imperative clone operation, not reconstructable state"}
+}
+
 // Examples returns the examples for the app clone task
 func (t AppCloneTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppCloneTaskExample{

@@ -36,6 +36,11 @@ func (t StorageEnsureTask) Doc() string {
 	return "Ensures the storage for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t StorageEnsureTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: "deprecated; storage state is exported via dokku_storage_mount"}
+}
+
 // Deprecation marks dokku_storage_ensure as deprecated. dokku's
 // underlying storage:ensure-directory subcommand has been deprecated in
 // favor of storage:create, which docket exposes through

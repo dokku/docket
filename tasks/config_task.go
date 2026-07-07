@@ -43,6 +43,11 @@ func (t ConfigTask) Doc() string {
 	return "Manages the configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ConfigTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "config values are written to the companion vars-file"}
+}
+
 // Examples returns the examples for the config task
 func (t ConfigTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ConfigTaskExample{
@@ -203,6 +208,21 @@ func planConfigUnset(t ConfigTask) PlanResult {
 			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
+}
+
+// ExportApp reads the app's config and returns a dokku_config task carrying
+// the current values, or nil when there are none. Restart mirrors the task
+// default so the emitted recipe matches apply's behaviour; the engine lifts
+// the values into the companion vars-file.
+func (t ConfigTask) ExportApp(app string) ([]interface{}, error) {
+	config, err := getConfig(ConfigTask{App: app})
+	if err != nil {
+		return nil, err
+	}
+	if len(config) == 0 {
+		return nil, nil
+	}
+	return []interface{}{ConfigTask{App: app, Restart: true, Config: config}}, nil
 }
 
 // getConfig retrieves the current configuration for a given dokku application

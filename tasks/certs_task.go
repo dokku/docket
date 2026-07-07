@@ -3,6 +3,7 @@ package tasks
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -53,6 +54,11 @@ func (e CertsTaskExample) GetName() string {
 // Doc returns the docblock for the certs task
 func (t CertsTask) Doc() string {
 	return "Manages SSL certificates for a dokku app or globally."
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t CertsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "app certs are exported via certs:show; the global cert has no show command in the dokku-global-cert plugin, so it is not exported (docket#283)"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -272,6 +278,49 @@ func certsEnabled(t CertsTask) (bool, error) {
 	}
 
 	return strings.TrimSpace(result.StdoutContents()) == "true", nil
+}
+
+// ExportApp reconstructs an app's SSL certificate. certs:show streams the cert
+// and key PEM, which are sensitive and lifted into the vars-file by the engine.
+// The global cert (dokku-global-cert plugin) has no show command, so it is not
+// exported (docket#283).
+func (t CertsTask) ExportApp(app string) ([]interface{}, error) {
+	enabled, err := certsEnabled(CertsTask{App: app})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if !enabled {
+		return nil, nil
+	}
+
+	crt, err := certsShow(app, "crt")
+	if err != nil {
+		return nil, err
+	}
+	key, err := certsShow(app, "key")
+	if err != nil {
+		return nil, err
+	}
+	if crt == "" || key == "" {
+		return nil, nil
+	}
+	return []interface{}{CertsTask{App: app, CertContent: crt, KeyContent: key}}, nil
+}
+
+// certsShow returns the app's server.crt or server.key PEM via certs:show.
+func certsShow(app, kind string) (string, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "certs:show", app, kind},
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.StdoutContents(), nil
 }
 
 // init registers the CertsTask with the task registry

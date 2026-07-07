@@ -3,6 +3,7 @@ package tasks
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
@@ -48,6 +49,11 @@ func (e GitSyncTaskExample) GetName() string {
 // Doc returns the docblock for the git sync task
 func (t GitSyncTask) Doc() string {
 	return "Syncs a git repository to a dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t GitSyncTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the git sync task
@@ -137,6 +143,24 @@ func checkAppSyncState(app, expectedRemote, expectedRef string) (bool, error) {
 
 	expectedMetadata := fmt.Sprintf("%s#%s", expectedRemote, expectedRef)
 	return source.Source == "git-sync" && source.SourceMetadata == expectedMetadata, nil
+}
+
+// ExportApp reconstructs a git-sync deploy source from apps:report. The
+// metadata is "<remote>#<ref>"; it only emits when the app was last deployed
+// via git:sync.
+func (t GitSyncTask) ExportApp(app string) ([]interface{}, error) {
+	source, err := getAppDeploySource(app)
+	if err != nil {
+		return nil, err
+	}
+	if source.Source != "git-sync" {
+		return nil, nil
+	}
+	remote, ref := source.SourceMetadata, ""
+	if i := strings.LastIndex(source.SourceMetadata, "#"); i >= 0 {
+		remote, ref = source.SourceMetadata[:i], source.SourceMetadata[i+1:]
+	}
+	return []interface{}{GitSyncTask{App: app, Remote: remote, GitRef: ref}}, nil
 }
 
 // init registers the GitSyncTask with the task registry

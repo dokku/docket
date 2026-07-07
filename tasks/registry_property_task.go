@@ -37,6 +37,11 @@ func (t RegistryPropertyTask) Doc() string {
 	return "Manages the registry configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t RegistryPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the registry property task
 func (t RegistryPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryPropertyTaskExample{
@@ -93,6 +98,13 @@ var registryPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the RegistryPropertyTask would produce.
 func (t RegistryPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "registry:set", registryPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t RegistryPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "registry:set", registryPropertyKeys, func(app, property, value string) interface{} {
+		return RegistryPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the RegistryPropertyTask with the task registry

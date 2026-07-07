@@ -37,6 +37,11 @@ func (t ChecksPropertyTask) Doc() string {
 	return "Manages the checks configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ChecksPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the checks property task
 func (t ChecksPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksPropertyTaskExample{
@@ -80,6 +85,13 @@ var checksPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the ChecksPropertyTask would produce.
 func (t ChecksPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "checks:set", checksPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t ChecksPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "checks:set", checksPropertyKeys, func(app, property, value string) interface{} {
+		return ChecksPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the ChecksPropertyTask with the task registry

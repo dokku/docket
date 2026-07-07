@@ -39,6 +39,11 @@ func (t ServiceLinkTask) Doc() string {
 	return "Links or unlinks a dokku service to an app"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ServiceLinkTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t ServiceLinkTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}

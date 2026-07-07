@@ -37,6 +37,11 @@ func (t CronPropertyTask) Doc() string {
 	return "Manages the cron configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t CronPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the cron property task
 func (t CronPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]CronPropertyTaskExample{
@@ -83,6 +88,13 @@ var cronPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the CronPropertyTask would produce.
 func (t CronPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "cron:set", cronPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t CronPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "cron:set", cronPropertyKeys, func(app, property, value string) interface{} {
+		return CronPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the CronPropertyTask with the task registry

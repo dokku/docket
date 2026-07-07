@@ -37,6 +37,11 @@ func (t ResourceReserveTask) Doc() string {
 	return "Manages the resource reservations for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ResourceReserveTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the resource reserve task
 func (t ResourceReserveTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceReserveTaskExample{
@@ -73,6 +78,13 @@ func (t ResourceReserveTask) Examples() ([]Doc, error) {
 // Execute sets or clears the resource reservations for a given dokku application
 func (t ResourceReserveTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
+}
+
+// ExportApp reconstructs the app's resource reservations, one task per process type.
+func (t ResourceReserveTask) ExportApp(app string) ([]interface{}, error) {
+	return exportResourceTasks(app, "reserve", func(app, processType string, resources map[string]string) interface{} {
+		return ResourceReserveTask{App: app, ProcessType: processType, Resources: resources}
+	})
 }
 
 // Plan reports the drift the ResourceReserveTask would produce.

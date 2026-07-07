@@ -4,6 +4,10 @@
 
 Manages docker registry authentication for a dokku application or globally
 
+## Export support
+
+Not supported - registry login credentials are write-only and cannot be read back.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

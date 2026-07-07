@@ -48,6 +48,11 @@ func (t RegistryAuthTask) Doc() string {
 	return "Manages docker registry authentication for a dokku application or globally"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t RegistryAuthTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: "registry login credentials are write-only and cannot be read back"}
+}
+
 // Examples returns the examples for the registry auth task
 func (t RegistryAuthTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryAuthTaskExample{

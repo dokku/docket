@@ -4,6 +4,10 @@
 
 Creates or destroys a Docker network
 
+## Export support
+
+Not supported - network:list cannot distinguish dokku-created networks from Docker built-ins and other apps' networks (docket#285, dokku/dokku#8797).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

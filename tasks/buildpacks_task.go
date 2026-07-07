@@ -1,6 +1,8 @@
 package tasks
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -36,6 +38,11 @@ func (e BuildpacksTaskExample) GetName() string {
 // Doc returns the docblock for the buildpacks task
 func (t BuildpacksTask) Doc() string {
 	return "Manages the buildpacks for a given dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t BuildpacksTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the buildpacks task
@@ -188,6 +195,42 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
+}
+
+// ExportApp reads the app's buildpacks and returns a dokku_buildpacks task, or
+// nil when none are set. It reads the `list` key from buildpacks:report, which
+// preserves build-precedence order (getBuildpacks returns an unordered set, so
+// it cannot be used here).
+func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "buildpacks:report", app, "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var report struct {
+		List string `json:"list"`
+	}
+	if err := json.Unmarshal(response.StdoutBytes(), &report); err != nil {
+		return nil, nil
+	}
+	// The list key is a comma-separated string in build-precedence order.
+	var list []string
+	for _, bp := range strings.Split(report.List, ",") {
+		if bp = strings.TrimSpace(bp); bp != "" {
+			list = append(list, bp)
+		}
+	}
+	if len(list) == 0 {
+		return nil, nil
+	}
+	return []interface{}{BuildpacksTask{App: app, Buildpacks: list, State: StatePresent}}, nil
 }
 
 // getBuildpacks fetches the current buildpacks list for an app

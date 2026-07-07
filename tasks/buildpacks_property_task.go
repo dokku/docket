@@ -37,6 +37,11 @@ func (t BuildpacksPropertyTask) Doc() string {
 	return "Manages the buildpacks configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuildpacksPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the buildpacks property task
 func (t BuildpacksPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuildpacksPropertyTaskExample{
@@ -82,6 +87,13 @@ var buildpacksPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the BuildpacksPropertyTask would produce.
 func (t BuildpacksPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "buildpacks:set-property", buildpacksPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuildpacksPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "buildpacks:set-property", buildpacksPropertyKeys, func(app, property, value string) interface{} {
+		return BuildpacksPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the BuildpacksPropertyTask with the task registry

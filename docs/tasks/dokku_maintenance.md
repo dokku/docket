@@ -8,6 +8,10 @@ Enables or disables maintenance mode for a given dokku application
 
 - dokku-maintenance plugin
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

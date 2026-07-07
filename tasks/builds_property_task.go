@@ -37,6 +37,11 @@ func (t BuildsPropertyTask) Doc() string {
 	return "Manages the builds configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuildsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builds property task
 func (t BuildsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuildsPropertyTaskExample{
@@ -80,6 +85,13 @@ var buildsPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the BuildsPropertyTask would produce.
 func (t BuildsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builds:set", buildsPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuildsPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builds:set", buildsPropertyKeys, func(app, property, value string) interface{} {
+		return BuildsPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the BuildsPropertyTask with the task registry

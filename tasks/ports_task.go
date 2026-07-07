@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dokku/docket/subprocess"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -54,6 +55,11 @@ func (p PortMapping) String() string {
 // Doc returns the docblock for the ports task
 func (t PortsTask) Doc() string {
 	return "Manages the ports for a given dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t PortsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the ports task
@@ -171,6 +177,28 @@ func (t PortsTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// ExportApp reads the app's port mappings and returns a dokku_ports task, or
+// nil when none are configured. Mappings are sorted for deterministic output.
+func (t PortsTask) ExportApp(app string) ([]interface{}, error) {
+	mappings, err := getPorts(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(mappings) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(mappings))
+	for k := range mappings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	list := make([]PortMapping, 0, len(keys))
+	for _, k := range keys {
+		list = append(list, mappings[k])
+	}
+	return []interface{}{PortsTask{App: app, PortMappings: list}}, nil
 }
 
 // getPorts gets the ports for a given app. A transport-level failure

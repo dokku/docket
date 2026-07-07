@@ -37,6 +37,11 @@ func (t TraefikPropertyTask) Doc() string {
 	return "Manages the traefik configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t TraefikPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the traefik property task
 func (t TraefikPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]TraefikPropertyTaskExample{
@@ -96,6 +101,13 @@ var traefikPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the TraefikPropertyTask would produce.
 func (t TraefikPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set", traefikPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t TraefikPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "traefik:set", traefikPropertyKeys, func(app, property, value string) interface{} {
+		return TraefikPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the TraefikPropertyTask with the task registry

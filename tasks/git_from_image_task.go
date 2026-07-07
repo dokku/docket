@@ -50,6 +50,11 @@ func (t GitFromImageTask) Doc() string {
 	return "Deploys a git repository from a docker image"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t GitFromImageTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportPartial, Caveat: "the image reference is written to the companion vars-file"}
+}
+
 // Examples returns the examples for the git from image task
 func (t GitFromImageTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromImageTaskExample{
@@ -130,6 +135,19 @@ func checkAppSourceImage(app, expectedImage string) (bool, error) {
 	}
 
 	return source.Source == "docker-image" && source.SourceMetadata == expectedImage, nil
+}
+
+// ExportApp reconstructs a docker-image deploy source from apps:report. The
+// image reference is sensitive, so the engine lifts it into the vars-file.
+func (t GitFromImageTask) ExportApp(app string) ([]interface{}, error) {
+	source, err := getAppDeploySource(app)
+	if err != nil {
+		return nil, err
+	}
+	if source.Source != "docker-image" {
+		return nil, nil
+	}
+	return []interface{}{GitFromImageTask{App: app, Image: source.SourceMetadata}}, nil
 }
 
 // init registers the GitFromImageTask with the task registry

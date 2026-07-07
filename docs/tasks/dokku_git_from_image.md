@@ -4,6 +4,10 @@
 
 Deploys a git repository from a docker image
 
+## Export support
+
+Partial - the image reference is written to the companion vars-file.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

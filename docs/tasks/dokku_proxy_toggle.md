@@ -4,6 +4,10 @@
 
 Enables or disables the proxy plugin for a given dokku application
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

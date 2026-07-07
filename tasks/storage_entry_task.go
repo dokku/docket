@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
@@ -68,6 +70,11 @@ func (e StorageEntryTaskExample) GetName() string {
 // Doc returns the docblock for the storage entry task
 func (t StorageEntryTask) Doc() string {
 	return "Creates or destroys a named storage registry entry"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t StorageEntryTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the storage entry task
@@ -175,6 +182,43 @@ func (t StorageEntryTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// ExportGlobal reads the named storage registry entries and returns a
+// dokku_storage_entry task per explicitly-created entry. Auto-generated
+// "legacy-" entries (created implicitly by legacy bind-mounts) are skipped
+// since they are reconstructed by dokku_storage_mount.
+func (t StorageEntryTask) ExportGlobal() ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "storage:list-entries", "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var entries []struct {
+		Name      string `json:"name"`
+		Scheduler string `json:"scheduler"`
+		HostPath  string `json:"host_path"`
+	}
+	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
+		return nil, nil
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+	var out []interface{}
+	for _, e := range entries {
+		if e.Name == "" || strings.HasPrefix(e.Name, "legacy-") {
+			continue
+		}
+		out = append(out, StorageEntryTask{Name: e.Name, Path: e.HostPath, Scheduler: e.Scheduler})
+	}
+	return out, nil
 }
 
 // storageEntryExists reports whether a named storage registry entry

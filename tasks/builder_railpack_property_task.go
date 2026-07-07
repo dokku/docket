@@ -37,6 +37,11 @@ func (t BuilderRailpackPropertyTask) Doc() string {
 	return "Manages the builder-railpack configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderRailpackPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-railpack property task
 func (t BuilderRailpackPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderRailpackPropertyTaskExample{
@@ -81,6 +86,13 @@ var builderRailpackPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the BuilderRailpackPropertyTask would produce.
 func (t BuilderRailpackPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set", builderRailpackPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderRailpackPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-railpack:set", builderRailpackPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderRailpackPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the BuilderRailpackPropertyTask with the task registry

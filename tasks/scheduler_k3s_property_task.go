@@ -42,6 +42,11 @@ func (t SchedulerK3sPropertyTask) Doc() string {
 	return "Manages the scheduler-k3s configuration for a given dokku application. chart.* properties are managed by dokku_scheduler_k3s_chart and rejected here, since dokku's scheduler-k3s:set path is deprecated for chart values."
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s property task
 func (t SchedulerK3sPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sPropertyTaskExample{
@@ -116,6 +121,13 @@ func (t SchedulerK3sPropertyTask) Plan() PlanResult {
 		}
 	}
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler-k3s:set", schedulerK3sPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t SchedulerK3sPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "scheduler-k3s:set", schedulerK3sPropertyKeys, func(app, property, value string) interface{} {
+		return SchedulerK3sPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the SchedulerK3sPropertyTask with the task registry

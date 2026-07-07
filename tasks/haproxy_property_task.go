@@ -37,6 +37,11 @@ func (t HaproxyPropertyTask) Doc() string {
 	return "Manages the haproxy configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t HaproxyPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the haproxy property task
 func (t HaproxyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]HaproxyPropertyTaskExample{
@@ -85,6 +90,13 @@ var haproxyPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the HaproxyPropertyTask would produce.
 func (t HaproxyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set", haproxyPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t HaproxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "haproxy:set", haproxyPropertyKeys, func(app, property, value string) interface{} {
+		return HaproxyPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the HaproxyPropertyTask with the task registry

@@ -47,6 +47,11 @@ func (t SchedulerK3sAnnotationsTask) Doc() string {
 	return "Manages scheduler-k3s annotations scoped to a (process_type, resource_type) pair for a dokku application or globally"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sAnnotationsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: "scheduler-k3s exposes no report for annotations, so the current state cannot be read back (docket#287, dokku/dokku#8800)"}
+}
+
 // Examples returns the examples for the scheduler-k3s annotations task
 func (t SchedulerK3sAnnotationsTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sAnnotationsTaskExample{

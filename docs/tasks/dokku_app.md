@@ -4,6 +4,10 @@
 
 Creates or destroys an app
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -37,6 +37,11 @@ func (t ResourceLimitTask) Doc() string {
 	return "Manages the resource limits for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t ResourceLimitTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the resource limit task
 func (t ResourceLimitTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceLimitTaskExample{
@@ -73,6 +78,13 @@ func (t ResourceLimitTask) Examples() ([]Doc, error) {
 // Execute sets or clears the resource limits for a given dokku application
 func (t ResourceLimitTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
+}
+
+// ExportApp reconstructs the app's resource limits, one task per process type.
+func (t ResourceLimitTask) ExportApp(app string) ([]interface{}, error) {
+	return exportResourceTasks(app, "limit", func(app, processType string, resources map[string]string) interface{} {
+		return ResourceLimitTask{App: app, ProcessType: processType, Resources: resources}
+	})
 }
 
 // Plan reports the drift the ResourceLimitTask would produce.

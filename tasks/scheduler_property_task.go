@@ -37,6 +37,11 @@ func (t SchedulerPropertyTask) Doc() string {
 	return "Manages the scheduler configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler property task
 func (t SchedulerPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerPropertyTaskExample{
@@ -81,6 +86,13 @@ var schedulerPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the SchedulerPropertyTask would produce.
 func (t SchedulerPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set", schedulerPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t SchedulerPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "scheduler:set", schedulerPropertyKeys, func(app, property, value string) interface{} {
+		return SchedulerPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the SchedulerPropertyTask with the task registry

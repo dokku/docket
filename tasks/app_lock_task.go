@@ -34,6 +34,11 @@ func (t AppLockTask) Doc() string {
 	return "Locks or unlocks a dokku application from deployment"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AppLockTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the app lock task
 func (t AppLockTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppLockTaskExample{
@@ -111,6 +116,19 @@ func (t AppLockTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// ExportApp emits a dokku_app_lock task only when the app is locked (apps are
+// unlocked by default).
+func (t AppLockTask) ExportApp(app string) ([]interface{}, error) {
+	locked, err := appLocked(app)
+	if err != nil {
+		return nil, err
+	}
+	if !locked {
+		return nil, nil
+	}
+	return []interface{}{AppLockTask{App: app, State: StatePresent}}, nil
 }
 
 // appLocked checks if a dokku app is locked. Returns (false,

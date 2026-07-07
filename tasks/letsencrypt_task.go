@@ -35,6 +35,11 @@ func (t LetsencryptTask) Doc() string {
 	return "Enables or disables letsencrypt SSL certificates for a dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t LetsencryptTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t LetsencryptTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin"}
@@ -117,6 +122,19 @@ func (t LetsencryptTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// ExportApp emits a dokku_letsencrypt task when letsencrypt is active for the
+// app (it is inactive by default, so a normal app needs no task).
+func (t LetsencryptTask) ExportApp(app string) ([]interface{}, error) {
+	active, err := letsencryptActive(app)
+	if err != nil {
+		return nil, err
+	}
+	if !active {
+		return nil, nil
+	}
+	return []interface{}{LetsencryptTask{App: app, State: StatePresent}}, nil
 }
 
 // letsencryptActive reports whether letsencrypt is currently active for an app.

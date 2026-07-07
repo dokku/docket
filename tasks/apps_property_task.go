@@ -37,6 +37,11 @@ func (t AppsPropertyTask) Doc() string {
 	return "Manages the apps plugin configuration for a given dokku application or globally"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t AppsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the apps property task
 func (t AppsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppsPropertyTaskExample{
@@ -97,6 +102,13 @@ var appsPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the AppsPropertyTask would produce.
 func (t AppsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "apps:set", appsPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t AppsPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "apps:set", appsPropertyKeys, func(app, property, value string) interface{} {
+		return AppsPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the AppsPropertyTask with the task registry

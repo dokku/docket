@@ -37,6 +37,11 @@ func (t LogsPropertyTask) Doc() string {
 	return "Manages the logs configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t LogsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the logs property task
 func (t LogsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]LogsPropertyTaskExample{
@@ -85,6 +90,13 @@ var logsPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the LogsPropertyTask would produce.
 func (t LogsPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "logs:set", logsPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t LogsPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "logs:set", logsPropertyKeys, func(app, property, value string) interface{} {
+		return LogsPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the LogsPropertyTask with the task registry

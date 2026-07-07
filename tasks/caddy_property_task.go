@@ -37,6 +37,11 @@ func (t CaddyPropertyTask) Doc() string {
 	return "Manages the caddy configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t CaddyPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the caddy property task
 func (t CaddyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]CaddyPropertyTaskExample{
@@ -86,6 +91,13 @@ var caddyPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the CaddyPropertyTask would produce.
 func (t CaddyPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set", caddyPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t CaddyPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "caddy:set", caddyPropertyKeys, func(app, property, value string) interface{} {
+		return CaddyPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the CaddyPropertyTask with the task registry

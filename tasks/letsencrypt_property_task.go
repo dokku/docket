@@ -39,6 +39,11 @@ func (t LetsencryptPropertyTask) Doc() string {
 	return "Manages the letsencrypt configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t LetsencryptPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t LetsencryptPropertyTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin"}
@@ -102,6 +107,13 @@ var letsencryptPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the LetsencryptPropertyTask would produce.
 func (t LetsencryptPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set", letsencryptPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t LetsencryptPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "letsencrypt:set", letsencryptPropertyKeys, func(app, property, value string) interface{} {
+		return LetsencryptPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the LetsencryptPropertyTask with the task registry

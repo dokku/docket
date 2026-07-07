@@ -37,6 +37,11 @@ func (t BuilderDockerfilePropertyTask) Doc() string {
 	return "Manages the builder-dockerfile configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderDockerfilePropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-dockerfile property task
 func (t BuilderDockerfilePropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderDockerfilePropertyTaskExample{
@@ -81,6 +86,13 @@ var builderDockerfilePropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the BuilderDockerfilePropertyTask would produce.
 func (t BuilderDockerfilePropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set", builderDockerfilePropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderDockerfilePropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-dockerfile:set", builderDockerfilePropertyKeys, func(app, property, value string) interface{} {
+		return BuilderDockerfilePropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the BuilderDockerfilePropertyTask with the task registry

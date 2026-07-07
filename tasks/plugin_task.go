@@ -50,6 +50,11 @@ func (t PluginTask) Doc() string {
 		"plugin is not detected."
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t PluginTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: "plugin:list does not expose the install source URL a third-party plugin needs to be reinstalled (docket#286, dokku/dokku#8798)"}
+}
+
 // Examples returns the examples for the plugin task
 func (t PluginTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PluginTaskExample{

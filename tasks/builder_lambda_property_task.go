@@ -37,6 +37,11 @@ func (t BuilderLambdaPropertyTask) Doc() string {
 	return "Manages the builder-lambda configuration for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t BuilderLambdaPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the builder-lambda property task
 func (t BuilderLambdaPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderLambdaPropertyTaskExample{
@@ -81,6 +86,13 @@ var builderLambdaPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the BuilderLambdaPropertyTask would produce.
 func (t BuilderLambdaPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set", builderLambdaPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuilderLambdaPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "builder-lambda:set", builderLambdaPropertyKeys, func(app, property, value string) interface{} {
+		return BuilderLambdaPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the BuilderLambdaPropertyTask with the task registry

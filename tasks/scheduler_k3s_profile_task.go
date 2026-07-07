@@ -62,6 +62,11 @@ func (t SchedulerK3sProfileTask) Doc() string {
 	return "Manages a global scheduler-k3s node profile used when joining nodes to a cluster"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sProfileTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s profile task
 func (t SchedulerK3sProfileTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sProfileTaskExample{
@@ -318,6 +323,40 @@ func formatProfileSetMutation(t SchedulerK3sProfileTask, current schedulerK3sPro
 		t.TaintScheduling, current.TaintScheduling,
 		t.AllowUnknownHosts, current.AllowUnknownHosts,
 	)
+}
+
+// ExportGlobal reconstructs every scheduler-k3s node profile from
+// profiles:list, which exposes the full profile definition.
+func (t SchedulerK3sProfileTask) ExportGlobal() ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "scheduler-k3s:profiles:list", "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var entries []schedulerK3sProfileEntry
+	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
+		return nil, nil
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+	var out []interface{}
+	for _, e := range entries {
+		out = append(out, SchedulerK3sProfileTask{
+			Name:              e.Name,
+			Role:              e.Role,
+			KubeletArgs:       e.KubeletArgs,
+			TaintScheduling:   e.TaintScheduling,
+			AllowUnknownHosts: e.AllowUnknownHosts,
+		})
+	}
+	return out, nil
 }
 
 // init registers the SchedulerK3sProfileTask with the task registry

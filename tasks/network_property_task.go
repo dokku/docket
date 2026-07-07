@@ -37,6 +37,11 @@ func (t NetworkPropertyTask) Doc() string {
 	return "Manages the network property for a given dokku application"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t NetworkPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the network property task
 func (t NetworkPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkPropertyTaskExample{
@@ -94,6 +99,13 @@ var networkPropertyKeys = map[string]PropertyKeys{
 // Plan reports the drift the NetworkPropertyTask would produce.
 func (t NetworkPropertyTask) Plan() PlanResult {
 	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "network:set", networkPropertyKeys)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t NetworkPropertyTask) ExportApp(app string) ([]interface{}, error) {
+	return exportProperties(app, "network:set", networkPropertyKeys, func(app, property, value string) interface{} {
+		return NetworkPropertyTask{App: app, Property: property, Value: value}
+	})
 }
 
 // init registers the NetworkPropertyTask with the task registry

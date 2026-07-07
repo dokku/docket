@@ -51,6 +51,11 @@ func (t SchedulerK3sChartTask) Doc() string {
 	return "Manages helm chart value overrides for a dokku scheduler-k3s bundled chart"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sChartTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s chart task
 func (t SchedulerK3sChartTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sChartTaskExample{
@@ -59,7 +64,7 @@ func (t SchedulerK3sChartTask) Examples() ([]Doc, error) {
 			SchedulerK3sChartTask: SchedulerK3sChartTask{
 				Chart: "ingress-nginx",
 				Values: map[string]any{
-					"controller.replicaCount":      "3",
+					"controller.replicaCount":         "3",
 					"controller.resources.limits.cpu": "200m",
 				},
 			},
@@ -307,6 +312,53 @@ func escapeChartSegment(segment string) string {
 		return segment
 	}
 	return strings.ReplaceAll(segment, ".", `\.`)
+}
+
+// ExportGlobal reconstructs helm chart value overrides from charts:report,
+// which returns every override keyed "<chart>.<key>". Values are grouped into
+// one task per chart, keyed by the dotted override path.
+func (t SchedulerK3sChartTask) ExportGlobal() ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "scheduler-k3s:charts:report", "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	payload := map[string]string{}
+	if err := json.Unmarshal(result.StdoutBytes(), &payload); err != nil {
+		return nil, nil
+	}
+
+	byChart := map[string]map[string]any{}
+	for composed, value := range payload {
+		i := strings.Index(composed, ".")
+		if i <= 0 {
+			continue
+		}
+		chart, key := composed[:i], composed[i+1:]
+		if byChart[chart] == nil {
+			byChart[chart] = map[string]any{}
+		}
+		byChart[chart][key] = value
+	}
+
+	charts := make([]string, 0, len(byChart))
+	for chart := range byChart {
+		charts = append(charts, chart)
+	}
+	sort.Strings(charts)
+
+	var out []interface{}
+	for _, chart := range charts {
+		out = append(out, SchedulerK3sChartTask{Chart: chart, Values: byChart[chart]})
+	}
+	return out, nil
 }
 
 // init registers the SchedulerK3sChartTask with the task registry

@@ -4,6 +4,10 @@
 
 Manages helm chart value overrides for a dokku scheduler-k3s bundled chart
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

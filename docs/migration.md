@@ -38,33 +38,31 @@ Provision the new server first. docket needs [Dokku >= 0.38.15 and dokku-letsenc
 recipe, but the base Dokku install and the datastore plugins are prerequisites you set up
 before docket runs.
 
-## Step 1: Get a recipe that matches the old server
+## Step 1: Capture the old server as a recipe
 
-docket has no export command. Its six commands (`init`, `validate`, `fmt`, `plan`, `apply`,
-`version`) cannot introspect a running server and emit a recipe, and `docket init` only writes a
-fixed offline starter template. So the migration starts from a recipe:
-
-- If your recipe is already the source of truth for the old server, you are ready - skip to step 2.
-- If not, hand-write one and converge it. Run [`docket plan`](command-reference.md#docket-plan)
-  against the old server and refine the recipe until the tasks report `[ok]`. At that point the
-  recipe faithfully describes the old server.
+Run [`docket export`](command-reference.md#docket-export) against the old server to write a recipe
+plus a companion vars-file describing it:
 
 ```bash
-docket plan --host deploy@old-server
+docket export --host deploy@old-server
 ```
 
-A few tasks cannot read their own state and always report drift with a `(... not probed)` reason -
-notably `dokku_git_auth`, `dokku_registry_auth`, and `dokku_storage_ensure`. Treat those as
-expected rather than a sign the recipe is wrong. See the [recipe format](recipes.md) for how to
-structure the file.
+This enumerates the apps and reconstructs their declarative state. Sensitive values (config and
+other secrets) are lifted into `tasks.vars.yml`; the recipe references them through inputs, so the
+pair is applied together with `--vars-file`. If you already maintain a recipe as the source of
+truth for the old server, skip this and use it directly.
+
+Some state cannot be read back and is left out with a warning - notably write-only credentials
+(`dokku_git_auth`, `dokku_registry_auth`) and datastore service data, which you add by hand. Each
+task's [reference page](tasks/README.md) has an Export support section noting its limits.
 
 ## Step 2: Apply the recipe to the new server
 
-Point docket at the new host and preview, then apply:
+Point docket at the new host and preview, then apply the exported pair:
 
 ```bash
-docket plan  --host deploy@new-server
-docket apply --host deploy@new-server
+docket plan  --host deploy@new-server --tasks tasks.yml --vars-file tasks.vars.yml
+docket apply --host deploy@new-server --tasks tasks.yml --vars-file tasks.vars.yml
 ```
 
 `plan` is the safe first move: it shows everything docket would create on the empty server without

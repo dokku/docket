@@ -4,6 +4,10 @@
 
 Creates or destroys a named storage registry entry
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

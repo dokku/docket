@@ -4,6 +4,10 @@
 
 Manages a global scheduler-k3s node profile used when joining nodes to a cluster
 
+## Export support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

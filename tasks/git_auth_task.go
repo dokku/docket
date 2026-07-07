@@ -46,6 +46,11 @@ func (t GitAuthTask) Doc() string {
 	return "Manages netrc credentials for a git host"
 }
 
+// ExportSupport reports how docket export handles this task.
+func (t GitAuthTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportUnsupported, Caveat: "netrc credentials are write-only and cannot be read back"}
+}
+
 // Examples returns the examples for the git auth task
 func (t GitAuthTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitAuthTaskExample{
