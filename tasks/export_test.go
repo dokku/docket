@@ -27,6 +27,19 @@ func exportFixture() map[string]string {
 	}
 }
 
+func TestAppExportOrderIsValid(t *testing.T) {
+	for _, key := range appExportOrder {
+		proto, ok := RegisteredTasks[key]
+		if !ok {
+			t.Errorf("appExportOrder has unknown task key %q", key)
+			continue
+		}
+		if _, ok := proto.(AppExporter); !ok {
+			t.Errorf("task %q in appExportOrder does not implement AppExporter", key)
+		}
+	}
+}
+
 func TestExportRecipeFileMode(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
