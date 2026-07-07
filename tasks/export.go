@@ -43,6 +43,7 @@ var appExportOrder = []string{
 	"dokku_config",
 	"dokku_domains",
 	"dokku_ports",
+	"dokku_docker_options",
 	"dokku_buildpacks",
 	"dokku_storage_mount",
 	"dokku_ps_scale",
@@ -52,6 +53,9 @@ var appExportOrder = []string{
 	"dokku_proxy_toggle",
 	"dokku_domains_toggle",
 	"dokku_maintenance",
+	"dokku_http_auth_allowed_ip",
+	"dokku_http_auth_domain",
+	"dokku_acl_app",
 	// property-plugin tasks (reconstructed from <plugin>:report by exportProperties)
 	"dokku_app_json_property",
 	"dokku_apps_property",
@@ -294,6 +298,17 @@ func (res *ExportResult) uniqueVarName(app, key string) string {
 	}
 	res.usedVarNames[name] = true
 	return name
+}
+
+// sortedSetKeys returns the keys of a set (map[string]bool) in sorted order, a
+// common shape for the list-returning readers the exporters reuse.
+func sortedSetKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // sanitizeIdent replaces every character that is not a letter, digit, or

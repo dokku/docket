@@ -303,6 +303,19 @@ func getHttpAuthDomains(appName string) (map[string]bool, error) {
 	return domains, nil
 }
 
+// ExportApp reconstructs the domains HTTP auth is restricted to, or nil when
+// none are set. state:set replaces the whole domain set for an exact match.
+func (t HttpAuthDomainTask) ExportApp(app string) ([]interface{}, error) {
+	domains, err := getHttpAuthDomains(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(domains) == 0 {
+		return nil, nil
+	}
+	return []interface{}{HttpAuthDomainTask{App: app, Domains: sortedSetKeys(domains), State: StateSet}}, nil
+}
+
 // init registers the HttpAuthDomainTask with the task registry
 func init() {
 	RegisterTask(&HttpAuthDomainTask{})

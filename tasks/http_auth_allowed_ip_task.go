@@ -217,6 +217,19 @@ func getHttpAuthAllowedIps(appName string) (map[string]bool, error) {
 	return ips, nil
 }
 
+// ExportApp reconstructs the app's HTTP-auth allowed IPs, or nil when none are
+// set.
+func (t HttpAuthAllowedIpTask) ExportApp(app string) ([]interface{}, error) {
+	ips, err := getHttpAuthAllowedIps(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, nil
+	}
+	return []interface{}{HttpAuthAllowedIpTask{App: app, AllowedIps: sortedSetKeys(ips)}}, nil
+}
+
 // init registers the HttpAuthAllowedIpTask with the task registry
 func init() {
 	RegisterTask(&HttpAuthAllowedIpTask{})

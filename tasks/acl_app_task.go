@@ -190,6 +190,18 @@ func getAclAppUsers(app string) (map[string]bool, error) {
 	return users, nil
 }
 
+// ExportApp reconstructs the app's ACL user list, or nil when it is empty.
+func (t AclAppTask) ExportApp(app string) ([]interface{}, error) {
+	users, err := getAclAppUsers(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+	return []interface{}{AclAppTask{App: app, Users: sortedSetKeys(users)}}, nil
+}
+
 // init registers the AclAppTask with the task registry
 func init() {
 	RegisterTask(&AclAppTask{})
