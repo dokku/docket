@@ -5,10 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
+
+// storageDefaultProcessType is dokku's wildcard process type (DefaultProcessType
+// in the storage plugin). An attachment carrying it applies to every process, so
+// export omits process_type in that case to keep the recipe minimal.
+const storageDefaultProcessType = "_default_"
 
 // StorageMountTask manages a storage attachment for a dokku application.
 // It supports two forms:
@@ -22,11 +28,12 @@ import (
 //     plus the matching attachment flags.
 //
 // Exactly one of entry_name / host_dir must be set. Idempotency is keyed
-// on (source, container_path, volume_options) using `storage:list <app>
+// on (source, container_path, volume_options) using `storage:report <app>
 // --format json`; the other attachment attributes (phases, process_type,
 // subpath, readonly, volume_chown) are applied at mount time only and
 // are not drift-detected (mirroring the partial-probe pattern in
-// service_backup and storage_ensure).
+// service_backup and storage_ensure). Export reads the same report and
+// reconstructs every attribute in full.
 type StorageMountTask struct {
 	// App is the name of the app
 	App string `required:"true" yaml:"app" description:"Name of the app"`
@@ -89,7 +96,7 @@ func (t StorageMountTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t StorageMountTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "storage:list does not expose phases, readonly, subpath, or process-type, so those attachment details are not reconstructed"}
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the storage mount task
@@ -263,7 +270,7 @@ func (t StorageMountTask) describeMount() string {
 // the legacy host:container[:opts] colon form is used so dokku
 // auto-generates a `legacy-<id>` entry; later operations against that
 // attachment go through namedMountArgs/namedUnmountArgs via the entry
-// name discovered from storage:list.
+// name discovered from storage:report.
 func (t StorageMountTask) mountArgs() []string {
 	if t.EntryName != "" {
 		return t.namedMountArgs(t.EntryName)
@@ -275,7 +282,7 @@ func (t StorageMountTask) mountArgs() []string {
 // namedMountArgs renders storage:mount in the named-entry CLI form for
 // the given entry. Used both when the recipe specifies entry_name and
 // when docket is remediating drift on a legacy-CLI mount whose auto-
-// generated entry name was discovered from storage:list. Dokku 0.38.13's
+// generated entry name was discovered from storage:report. Dokku 0.38.13's
 // upsert semantic (dokku/dokku#8713) makes the call idempotent.
 func (t StorageMountTask) namedMountArgs(entryName string) []string {
 	args := []string{"--quiet", "storage:mount", t.App, entryName, "--container-dir", t.ContainerDir}
@@ -334,70 +341,84 @@ func (t StorageMountTask) attachmentFlags() []string {
 // generated as `legacy-<id>` for attachments created via the legacy CLI
 // form), and is the address docket uses for follow-up mount/unmount
 // commands. VolumeOptions enables option-drift detection on
-// state: present. The other mount-time attributes (phases, subpath,
-// readonly, volume_chown) are not exposed in a way docket compares today.
+// state: present. The other mount-time attributes (phases, process_type,
+// subpath, readonly, volume_chown) are read by the exporter but
+// intentionally not drift-detected here.
 type existingMount struct {
 	EntryName     string
 	VolumeOptions string
 }
 
-// ExportApp reads the app's storage attachments and returns a dokku_storage_mount
-// task per mount. Legacy bind-mounts (dokku wraps these under an auto-generated
+// ExportApp reads the app's storage attachments via storage:report and returns
+// a dokku_storage_mount task per attachment, reconstructing every mount-time
+// attribute (phases, process_type, subpath, readonly, volume_options,
+// volume_chown). Legacy bind-mounts (dokku wraps these under an auto-generated
 // "legacy-" entry name) use the host_dir form; named registry entries use the
-// entry_name form. Phase/readonly/subpath details are not exposed by
-// storage:list, so only the mount itself is reconstructed.
+// entry_name form. Phases and process_type that match dokku's defaults are
+// omitted so the exported recipe stays minimal.
 func (t StorageMountTask) ExportApp(app string) ([]interface{}, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    []string{"--quiet", "storage:list", app, "--format", "json"},
-	})
+	attachments, err := readStorageAttachments(app)
 	if err != nil {
-		var sshErr *subprocess.SSHError
-		if errors.As(err, &sshErr) {
-			return nil, err
-		}
-		return nil, nil
+		return nil, err
 	}
-
-	var mounts []struct {
-		EntryName     string `json:"entry_name"`
-		HostPath      string `json:"host_path"`
-		ContainerPath string `json:"container_path"`
-		VolumeOptions string `json:"volume_options"`
-	}
-	if err := json.Unmarshal(result.StdoutBytes(), &mounts); err != nil {
-		return nil, nil
-	}
-	sort.Slice(mounts, func(i, j int) bool { return mounts[i].ContainerPath < mounts[j].ContainerPath })
 
 	var out []interface{}
-	for _, m := range mounts {
-		task := StorageMountTask{App: app, ContainerDir: m.ContainerPath, VolumeOptions: m.VolumeOptions}
-		if m.EntryName == "" || strings.HasPrefix(m.EntryName, "legacy-") {
-			task.HostDir = m.HostPath
+	for _, a := range attachments {
+		task := StorageMountTask{
+			App:           app,
+			ContainerDir:  a.ContainerPath,
+			Subpath:       a.Subpath,
+			Readonly:      a.Readonly,
+			VolumeChown:   a.VolumeChown,
+			VolumeOptions: a.VolumeOptions,
+		}
+		if a.EntryName == "" || strings.HasPrefix(a.EntryName, "legacy-") {
+			task.HostDir = a.HostPath
 		} else {
-			task.EntryName = m.EntryName
+			task.EntryName = a.EntryName
+		}
+		if !isDefaultPhases(a.Phases) {
+			task.Phases = a.Phases
+		}
+		if a.ProcessType != "" && a.ProcessType != storageDefaultProcessType {
+			task.ProcessType = a.ProcessType
 		}
 		out = append(out, task)
 	}
 	return out, nil
 }
 
-// findMount returns the existing attachment matching either the named-entry
-// form (entry_name + container_path) or the legacy form (host_path +
-// container_path), or nil if none exists. A transport-level failure
-// (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit
-// (e.g. app does not exist) is treated as "no mount."
-func findMount(app, entryName, hostDir, containerDir string) (*existingMount, error) {
+// reportAttachment is one storage attachment reconstructed from
+// `storage:report <app> --format json`. Unlike the deploy-phase-filtered
+// storage:list view, it carries every mount-time attribute the dokku
+// Attachment model exposes.
+type reportAttachment struct {
+	EntryName     string
+	HostPath      string
+	ContainerPath string
+	Phases        []string
+	ProcessType   string
+	Subpath       string
+	VolumeOptions string
+	VolumeChown   string
+	Readonly      bool
+}
+
+// readStorageAttachments reads every storage attachment on an app via
+// `storage:report <app> --format json`. That report (unlike storage:list)
+// exposes all attachment attributes and is not filtered to the deploy phase.
+// dokku emits each attachment as a set of flat indexed keys
+// (attachment.<N>.<field>); this regroups them by index and returns the
+// attachments sorted by (container_path, process_type, entry_name) for stable
+// output.
+//
+// A transport-level failure (*subprocess.SSHError) is propagated; a dokku-level
+// non-zero exit (e.g. app does not exist) or a JSON parse failure is treated as
+// "no attachments."
+func readStorageAttachments(app string) ([]reportAttachment, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args: []string{
-			"--quiet",
-			"storage:list",
-			app,
-			"--format",
-			"json",
-		},
+		Args:    []string{"--quiet", "storage:report", app, "--format", "json"},
 	})
 	if err != nil {
 		var sshErr *subprocess.SSHError
@@ -407,26 +428,105 @@ func findMount(app, entryName, hostDir, containerDir string) (*existingMount, er
 		return nil, nil
 	}
 
-	var mounts []struct {
-		EntryName     string `json:"entry_name"`
-		HostPath      string `json:"host_path"`
-		ContainerPath string `json:"container_path"`
-		VolumeOptions string `json:"volume_options"`
-	}
-
-	if err := json.Unmarshal(result.StdoutBytes(), &mounts); err != nil {
+	payload := map[string]string{}
+	if err := json.Unmarshal(result.StdoutBytes(), &payload); err != nil {
 		return nil, nil
 	}
 
-	for _, mount := range mounts {
-		if mount.ContainerPath != containerDir {
+	// Enumerate attachment indices via the always-present container-path key.
+	// Keys look like "attachment.1.container-path"; the legacy-prefixed
+	// duplicates ("storage-attachment.1.container-path") are skipped since they
+	// do not start with the bare "attachment." prefix.
+	var indices []int
+	for key := range payload {
+		rest := strings.TrimPrefix(key, "attachment.")
+		if rest == key {
 			continue
 		}
-		if entryName != "" && mount.EntryName == entryName {
-			return &existingMount{EntryName: mount.EntryName, VolumeOptions: mount.VolumeOptions}, nil
+		dot := strings.IndexByte(rest, '.')
+		if dot < 0 || rest[dot+1:] != "container-path" {
+			continue
 		}
-		if hostDir != "" && mount.HostPath == hostDir {
-			return &existingMount{EntryName: mount.EntryName, VolumeOptions: mount.VolumeOptions}, nil
+		n, err := strconv.Atoi(rest[:dot])
+		if err != nil {
+			continue
+		}
+		indices = append(indices, n)
+	}
+	sort.Ints(indices)
+
+	field := func(n int, name string) string {
+		return payload[fmt.Sprintf("attachment.%d.%s", n, name)]
+	}
+
+	attachments := make([]reportAttachment, 0, len(indices))
+	for _, n := range indices {
+		a := reportAttachment{
+			EntryName:     field(n, "entry-name"),
+			HostPath:      field(n, "host-path"),
+			ContainerPath: field(n, "container-path"),
+			ProcessType:   field(n, "process-type"),
+			Subpath:       field(n, "subpath"),
+			VolumeOptions: field(n, "volume-options"),
+			VolumeChown:   field(n, "volume-chown"),
+			Readonly:      field(n, "readonly") == "true",
+		}
+		if phases := field(n, "phases"); phases != "" {
+			a.Phases = strings.Split(phases, ",")
+		}
+		attachments = append(attachments, a)
+	}
+
+	sort.Slice(attachments, func(i, j int) bool {
+		a, b := attachments[i], attachments[j]
+		if a.ContainerPath != b.ContainerPath {
+			return a.ContainerPath < b.ContainerPath
+		}
+		if a.ProcessType != b.ProcessType {
+			return a.ProcessType < b.ProcessType
+		}
+		return a.EntryName < b.EntryName
+	})
+	return attachments, nil
+}
+
+// isDefaultPhases reports whether phases is exactly dokku's default set
+// {deploy, run} (in any order). Export omits the phases field in that case so
+// the recipe defers to the default, matching the "empty means both phases"
+// contract on StorageMountTask.Phases.
+func isDefaultPhases(phases []string) bool {
+	if len(phases) != 2 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, phase := range phases {
+		seen[phase] = true
+	}
+	return seen["deploy"] && seen["run"]
+}
+
+// findMount returns the existing attachment matching either the named-entry
+// form (entry_name + container_path) or the legacy form (host_path +
+// container_path), or nil if none exists. It reads storage:report (via
+// readStorageAttachments) so attachments on any phase are visible - storage:list
+// only reports the deploy phase, which would hide run-only mounts. A
+// transport-level failure (`*subprocess.SSHError`) is propagated; a dokku-level
+// non-zero exit (e.g. app does not exist) is treated as "no mount."
+func findMount(app, entryName, hostDir, containerDir string) (*existingMount, error) {
+	attachments, err := readStorageAttachments(app)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, a := range attachments {
+		if a.ContainerPath != containerDir {
+			continue
+		}
+		if entryName != "" && a.EntryName == entryName {
+			return &existingMount{EntryName: a.EntryName, VolumeOptions: a.VolumeOptions}, nil
+		}
+		if hostDir != "" && a.HostPath == hostDir {
+			return &existingMount{EntryName: a.EntryName, VolumeOptions: a.VolumeOptions}, nil
 		}
 	}
 	return nil, nil
