@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -200,6 +201,41 @@ func sshKeyMatches(entry sshKeyEntry, pub ssh.PublicKey) bool {
 		}
 	}
 	return strings.TrimSpace(entry.Fingerprint) == ssh.FingerprintSHA256(pub)
+}
+
+// ExportGlobal reconstructs the server's SSH keys from ssh-keys:list, which
+// exposes both the name and the public-key body, so each key is reproduced
+// faithfully.
+func (t SshKeyTask) ExportGlobal() ([]interface{}, error) {
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "ssh-keys:list", "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var entries []struct {
+		Name      string `json:"name"`
+		PublicKey string `json:"public-key"`
+	}
+	if err := json.Unmarshal(response.StdoutBytes(), &entries); err != nil {
+		return nil, nil
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+	var out []interface{}
+	for _, e := range entries {
+		if e.Name == "" || e.PublicKey == "" {
+			continue
+		}
+		out = append(out, SshKeyTask{Name: e.Name, Key: e.PublicKey})
+	}
+	return out, nil
 }
 
 // init registers the SshKeyTask with the task registry

@@ -30,6 +30,7 @@ type GlobalExporter interface {
 // emitted into the leading global play. Adding a global resource means
 // implementing GlobalExporter on its task and adding its type-key here.
 var globalExportOrder = []string{
+	"dokku_ssh_key",
 	"dokku_storage_entry",
 }
 
