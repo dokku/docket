@@ -93,10 +93,27 @@ func (t HttpAuthDomainTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the HttpAuthDomainTask's inputs without contacting the server.
+func (t HttpAuthDomainTask) Validate() error {
+	if t.App == "" {
+		return fmt.Errorf("'app' is required")
+	}
+	if t.State == StatePresent && len(t.Domains) == 0 {
+		return fmt.Errorf("'domains' must not be empty for state 'present'")
+	}
+	if t.State == StateAbsent && len(t.Domains) == 0 {
+		return fmt.Errorf("'domains' must not be empty for state 'absent'")
+	}
+	if t.State == StateSet && len(t.Domains) == 0 {
+		return fmt.Errorf("'domains' must not be empty for state 'set'")
+	}
+	return nil
+}
+
 // Plan reports the drift the HttpAuthDomainTask would produce.
 func (t HttpAuthDomainTask) Plan() PlanResult {
-	if t.App == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planHttpAuthDomainsPresent(t) },
@@ -108,9 +125,6 @@ func (t HttpAuthDomainTask) Plan() PlanResult {
 
 // planHttpAuthDomainsPresent reports drift for the present-state domain add.
 func planHttpAuthDomainsPresent(t HttpAuthDomainTask) PlanResult {
-	if len(t.Domains) == 0 {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'domains' must not be empty for state 'present'")}
-	}
 	current, err := getHttpAuthDomains(t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -151,9 +165,6 @@ func planHttpAuthDomainsPresent(t HttpAuthDomainTask) PlanResult {
 
 // planHttpAuthDomainsAbsent reports drift for the absent-state domain remove.
 func planHttpAuthDomainsAbsent(t HttpAuthDomainTask) PlanResult {
-	if len(t.Domains) == 0 {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'domains' must not be empty for state 'absent'")}
-	}
 	current, err := getHttpAuthDomains(t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -190,9 +201,6 @@ func planHttpAuthDomainsAbsent(t HttpAuthDomainTask) PlanResult {
 
 // planHttpAuthDomainsSet reports drift for the set-state full replacement.
 func planHttpAuthDomainsSet(t HttpAuthDomainTask) PlanResult {
-	if len(t.Domains) == 0 {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'domains' must not be empty for state 'set'")}
-	}
 	current, err := getHttpAuthDomains(t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}

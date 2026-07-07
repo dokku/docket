@@ -131,22 +131,32 @@ func (t ServiceBackupTask) hasAuth() bool {
 	return t.AwsAccessKeyID != "" || t.AwsSecretAccessKey != ""
 }
 
+// Validate checks the ServiceBackupTask's inputs without contacting the server.
+func (t ServiceBackupTask) Validate() error {
+	if t.State == StatePresent {
+		if t.Schedule != "" && t.Bucket == "" {
+			return fmt.Errorf("'bucket' is required when 'schedule' is set")
+		}
+		if t.Bucket != "" && t.Schedule == "" {
+			return fmt.Errorf("'schedule' is required when 'bucket' is set")
+		}
+		if t.hasAuth() && (t.AwsAccessKeyID == "" || t.AwsSecretAccessKey == "") {
+			return fmt.Errorf("'aws_access_key_id' and 'aws_secret_access_key' are both required to configure backup auth")
+		}
+		if t.Schedule == "" && !t.hasAuth() && t.EncryptionPassphrase == "" {
+			return fmt.Errorf("at least one of 'schedule', aws credentials, or 'encryption_passphrase' is required when state is 'present'")
+		}
+	}
+	return nil
+}
+
 // Plan reports the drift the ServiceBackupTask would produce.
 func (t ServiceBackupTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if t.Schedule != "" && t.Bucket == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'bucket' is required when 'schedule' is set")}
-			}
-			if t.Bucket != "" && t.Schedule == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'schedule' is required when 'bucket' is set")}
-			}
-			if t.hasAuth() && (t.AwsAccessKeyID == "" || t.AwsSecretAccessKey == "") {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'aws_access_key_id' and 'aws_secret_access_key' are both required to configure backup auth")}
-			}
-			if t.Schedule == "" && !t.hasAuth() && t.EncryptionPassphrase == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("at least one of 'schedule', aws credentials, or 'encryption_passphrase' is required when state is 'present'")}
-			}
 			exists, err := serviceExists(t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

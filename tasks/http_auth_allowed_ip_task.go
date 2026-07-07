@@ -85,16 +85,24 @@ func (t HttpAuthAllowedIpTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the HttpAuthAllowedIpTask's inputs without contacting the server.
+func (t HttpAuthAllowedIpTask) Validate() error {
+	if t.App == "" {
+		return fmt.Errorf("'app' is required")
+	}
+	if t.State == StatePresent && len(t.AllowedIps) == 0 {
+		return fmt.Errorf("'allowed_ips' must not be empty for state 'present'")
+	}
+	return nil
+}
+
 // Plan reports the drift the HttpAuthAllowedIpTask would produce.
 func (t HttpAuthAllowedIpTask) Plan() PlanResult {
-	if t.App == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if len(t.AllowedIps) == 0 {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'allowed_ips' must not be empty for state 'present'")}
-			}
 			current, err := getHttpAuthAllowedIps(t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

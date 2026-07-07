@@ -117,23 +117,34 @@ func (t SchedulerK3sChartTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// Plan reports the drift the SchedulerK3sChartTask would produce.
-func (t SchedulerK3sChartTask) Plan() PlanResult {
+// Validate checks the SchedulerK3sChartTask's inputs without contacting the server.
+func (t SchedulerK3sChartTask) Validate() error {
 	if t.Chart == "" {
-		return PlanResult{Status: PlanStatusError, Error: errors.New("chart is required")}
+		return errors.New("chart is required")
 	}
 	if len(t.Values) == 0 {
 		state := t.State
 		if state == "" {
 			state = StatePresent
 		}
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'values' must not be empty for state '%s'", state)}
+		return fmt.Errorf("'values' must not be empty for state '%s'", state)
+	}
+	if _, err := flattenChartValues(t.Values); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Plan reports the drift the SchedulerK3sChartTask would produce.
+func (t SchedulerK3sChartTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 
-	desired, err := flattenChartValues(t.Values)
-	if err != nil {
-		return PlanResult{Status: PlanStatusError, Error: err}
-	}
+	// Validate() already flattened the values (and returned any error), so
+	// the flattened map is reused here for the apply; the error is
+	// guaranteed nil.
+	desired, _ := flattenChartValues(t.Values)
 
 	currentFn := func() (map[string]string, error) {
 		return getSchedulerK3sChartValues(t.Chart)

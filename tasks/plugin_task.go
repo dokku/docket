@@ -88,16 +88,24 @@ func (t PluginTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the PluginTask's inputs without contacting the server.
+func (t PluginTask) Validate() error {
+	if t.Name == "" {
+		return fmt.Errorf("'name' is required")
+	}
+	if t.State == StatePresent && t.URL == "" {
+		return fmt.Errorf("'url' is required when state is 'present'")
+	}
+	return nil
+}
+
 // Plan reports the drift the PluginTask would produce.
 func (t PluginTask) Plan() PlanResult {
-	if t.Name == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'name' is required")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if t.URL == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'url' is required when state is 'present'")}
-			}
 			installed, err := pluginInstalled(t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

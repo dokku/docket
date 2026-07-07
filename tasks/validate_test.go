@@ -338,6 +338,50 @@ func TestValidateInvalidTaskInputSkippedWithPlaceholder(t *testing.T) {
 	}
 }
 
+func TestValidateInvalidTaskInputNestedItem(t *testing.T) {
+	// http_auth_user validates each user in the list; a present user without
+	// a password is a conditional error the offline validator now catches.
+	data := []byte(`---
+- tasks:
+    - dokku_http_auth_user:
+        app: my-app
+        state: present
+        users:
+            - username: alice
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'password' is required") {
+		t.Errorf("expected message to mention required password, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputForbiddenWhenAbsent(t *testing.T) {
+	// service_property forbids a value when clearing (state absent); this is
+	// the "must not be set" shape, which the placeholder guard protects from
+	// false positives but concrete recipes still enforce.
+	data := []byte(`---
+- tasks:
+    - dokku_service_property:
+        service: postgres
+        name: my-db
+        property: some-property
+        value: nope
+        state: absent
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "must not be set") {
+		t.Errorf("expected message to mention value must not be set, got: %q", p.Message)
+	}
+}
+
 func TestValidateNearestTaskName(t *testing.T) {
 	tests := []struct {
 		input  string

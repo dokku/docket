@@ -78,13 +78,21 @@ func (t HttpAuthTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// Plan reports the drift the HttpAuthTask would produce.
-func (t HttpAuthTask) Plan() PlanResult {
+// Validate checks the HttpAuthTask's inputs without contacting the server.
+func (t HttpAuthTask) Validate() error {
 	if t.State == StatePresent && t.Username == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("username is required when state is present")}
+		return fmt.Errorf("username is required when state is present")
 	}
 	if t.State == StatePresent && t.Password == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("password is required when state is present")}
+		return fmt.Errorf("password is required when state is present")
+	}
+	return nil
+}
+
+// Plan reports the drift the HttpAuthTask would produce.
+func (t HttpAuthTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

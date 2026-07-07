@@ -125,26 +125,36 @@ func (t HttpAuthUserTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// Plan reports the drift the HttpAuthUserTask would produce.
-func (t HttpAuthUserTask) Plan() PlanResult {
+// Validate checks the HttpAuthUserTask's inputs without contacting the server.
+func (t HttpAuthUserTask) Validate() error {
 	if t.App == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
+		return fmt.Errorf("'app' is required")
 	}
 	for _, u := range t.Users {
 		if u.Username == "" {
-			return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'username' is required for each user")}
+			return fmt.Errorf("'username' is required for each user")
 		}
+	}
+	if t.State == StatePresent {
+		if len(t.Users) == 0 {
+			return fmt.Errorf("'users' must not be empty for state 'present'")
+		}
+		for _, u := range t.Users {
+			if u.Password == "" {
+				return fmt.Errorf("'password' is required for user %q when state is present", u.Username)
+			}
+		}
+	}
+	return nil
+}
+
+// Plan reports the drift the HttpAuthUserTask would produce.
+func (t HttpAuthUserTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if len(t.Users) == 0 {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'users' must not be empty for state 'present'")}
-			}
-			for _, u := range t.Users {
-				if u.Password == "" {
-					return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'password' is required for user %q when state is present", u.Username)}
-				}
-			}
 			current, err := getHttpAuthUsers(t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}

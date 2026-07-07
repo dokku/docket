@@ -102,10 +102,18 @@ func (t PortsTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the PortsTask's inputs without contacting the server.
+func (t PortsTask) Validate() error {
+	if len(t.PortMappings) == 0 {
+		return errors.New("no port mappings provided")
+	}
+	return nil
+}
+
 // Plan reports the drift the PortsTask would produce.
 func (t PortsTask) Plan() PlanResult {
-	if len(t.PortMappings) == 0 {
-		return PlanResult{Status: PlanStatusError, Error: errors.New("no port mappings provided")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

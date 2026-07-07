@@ -73,20 +73,30 @@ func (t SshKeyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the SshKeyTask's inputs without contacting the server.
+func (t SshKeyTask) Validate() error {
+	if t.Name == "" {
+		return fmt.Errorf("'name' is required")
+	}
+	if t.State == StatePresent {
+		if t.Key == "" {
+			return fmt.Errorf("'key' is required when state is 'present'")
+		}
+		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(t.Key)); err != nil {
+			return fmt.Errorf("invalid public key: %v", err)
+		}
+	}
+	return nil
+}
+
 // Plan reports the drift the SshKeyTask would produce.
 func (t SshKeyTask) Plan() PlanResult {
-	if t.Name == "" {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'name' is required")}
+	if err := t.Validate(); err != nil {
+		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if t.Key == "" {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'key' is required when state is 'present'")}
-			}
-			pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(t.Key))
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("invalid public key: %v", err)}
-			}
+			pub, _, _, _, _ := ssh.ParseAuthorizedKey([]byte(t.Key))
 			keys, err := sshKeysList()
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
