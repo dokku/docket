@@ -3,6 +3,8 @@ package tasks
 import (
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 func TestStorageMountTaskInvalidState(t *testing.T) {
@@ -126,7 +128,7 @@ func TestStorageMountLegacyFirstMountWithVolumeOptions(t *testing.T) {
 }
 
 func TestStorageMountNamedRemediationFromLegacy(t *testing.T) {
-	// Recipe uses host_dir; storage:list discovered the auto-named
+	// Recipe uses host_dir; storage:report discovered the auto-named
 	// entry. Drift remediation must upsert via the named-entry CLI.
 	task := StorageMountTask{
 		App:          "test-app",
@@ -173,6 +175,220 @@ func TestStorageMountNamedUnmount(t *testing.T) {
 	want := []string{"--quiet", "storage:unmount", "test-app", "legacy-abc123def4", "--container-dir", "/app/storage"}
 	if !equalStrings(args, want) {
 		t.Errorf("namedUnmountArgs mismatch:\n  got: %v\n want: %v", args, want)
+	}
+}
+
+// exportMounts runs ExportApp against a canned storage:report payload and
+// returns the reconstructed tasks, so the export reconstruction can be asserted
+// without a live server.
+func exportMounts(t *testing.T, app, report string) []StorageMountTask {
+	t.Helper()
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet storage:report " + app + " --format json": report,
+	}))()
+
+	bodies, err := StorageMountTask{}.ExportApp(app)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	out := make([]StorageMountTask, len(bodies))
+	for i, b := range bodies {
+		mt, ok := b.(StorageMountTask)
+		if !ok {
+			t.Fatalf("export body %d is %T, want StorageMountTask", i, b)
+		}
+		out[i] = mt
+	}
+	return out
+}
+
+func TestStorageMountExportNamedEntryFullFidelity(t *testing.T) {
+	report := `{
+		"attachment.1.entry-name": "data",
+		"attachment.1.host-path": "/var/lib/dokku/data/storage/data",
+		"attachment.1.container-path": "/app/storage",
+		"attachment.1.phases": "deploy,run",
+		"attachment.1.process-type": "web",
+		"attachment.1.subpath": "sub",
+		"attachment.1.readonly": "true",
+		"attachment.1.volume-options": "noexec,nosuid",
+		"attachment.1.volume-chown": "herokuish",
+		"deploy-mounts": "/var/lib/dokku/data/storage/data:/app/storage"
+	}`
+	tasks := exportMounts(t, "node-js-app", report)
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	got := tasks[0]
+	checks := []struct {
+		name      string
+		got, want string
+	}{
+		{"app", got.App, "node-js-app"},
+		{"entry_name", got.EntryName, "data"},
+		{"host_dir", got.HostDir, ""},
+		{"container_dir", got.ContainerDir, "/app/storage"},
+		{"process_type", got.ProcessType, "web"},
+		{"subpath", got.Subpath, "sub"},
+		{"volume_chown", got.VolumeChown, "herokuish"},
+		{"volume_options", got.VolumeOptions, "noexec,nosuid"},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+	if !got.Readonly {
+		t.Error("expected readonly true, got false")
+	}
+	// phases {deploy,run} is the dokku default, so it is omitted.
+	if len(got.Phases) != 0 {
+		t.Errorf("expected default phases to be omitted, got %v", got.Phases)
+	}
+}
+
+func TestStorageMountExportSinglePhaseAndDefaultProcessType(t *testing.T) {
+	report := `{
+		"attachment.1.entry-name": "logs",
+		"attachment.1.host-path": "/var/lib/dokku/data/storage/logs",
+		"attachment.1.container-path": "/app/logs",
+		"attachment.1.phases": "run",
+		"attachment.1.process-type": "_default_",
+		"attachment.1.readonly": "false"
+	}`
+	tasks := exportMounts(t, "node-js-app", report)
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	got := tasks[0]
+	if !equalStrings(got.Phases, []string{"run"}) {
+		t.Errorf("expected phases [run], got %v", got.Phases)
+	}
+	if got.ProcessType != "" {
+		t.Errorf("expected default process_type to be omitted, got %q", got.ProcessType)
+	}
+	if got.Readonly {
+		t.Errorf("expected readonly false, got true")
+	}
+	if got.EntryName != "logs" || got.HostDir != "" {
+		t.Errorf("expected named-entry form, got entry_name=%q host_dir=%q", got.EntryName, got.HostDir)
+	}
+}
+
+func TestStorageMountExportLegacyEntryUsesHostDir(t *testing.T) {
+	report := `{
+		"attachment.1.entry-name": "legacy-abc123def4",
+		"attachment.1.host-path": "/var/data",
+		"attachment.1.container-path": "/app/storage",
+		"attachment.1.phases": "deploy,run"
+	}`
+	tasks := exportMounts(t, "node-js-app", report)
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	got := tasks[0]
+	if got.HostDir != "/var/data" {
+		t.Errorf("expected host_dir /var/data, got %q", got.HostDir)
+	}
+	if got.EntryName != "" {
+		t.Errorf("legacy entry must not surface entry_name, got %q", got.EntryName)
+	}
+}
+
+func TestStorageMountExportSortsByContainerPath(t *testing.T) {
+	// Indices are intentionally out of container-path order to prove the
+	// exporter sorts deterministically rather than trusting report order.
+	report := `{
+		"attachment.1.entry-name": "data",
+		"attachment.1.host-path": "/h/data",
+		"attachment.1.container-path": "/app/z",
+		"attachment.1.phases": "deploy,run",
+		"attachment.2.entry-name": "cache",
+		"attachment.2.host-path": "/h/cache",
+		"attachment.2.container-path": "/app/a",
+		"attachment.2.phases": "deploy,run"
+	}`
+	tasks := exportMounts(t, "node-js-app", report)
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+	}
+	if tasks[0].ContainerDir != "/app/a" || tasks[1].ContainerDir != "/app/z" {
+		t.Errorf("expected container dirs sorted [/app/a /app/z], got [%s %s]",
+			tasks[0].ContainerDir, tasks[1].ContainerDir)
+	}
+}
+
+func TestStorageMountExportRecipeEmitsFields(t *testing.T) {
+	// End-to-end through ExportRecipe: the reconstructed fields must survive
+	// YAML marshaling in the user-facing recipe (bool readonly, single-phase
+	// list, process_type).
+	report := `{
+		"attachment.1.entry-name": "data",
+		"attachment.1.host-path": "/h/data",
+		"attachment.1.container-path": "/app/storage",
+		"attachment.1.phases": "deploy",
+		"attachment.1.process-type": "web",
+		"attachment.1.readonly": "true"
+	}`
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list": "node-js-app",
+		"--quiet storage:report node-js-app --format json": report,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{Apps: []string{"node-js-app"}})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+	out := string(recipe)
+	for _, want := range []string{
+		"dokku_storage_mount",
+		"entry_name: data",
+		"container_dir: /app/storage",
+		"process_type: web",
+		"readonly: true",
+		"- deploy",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "- run") {
+		t.Errorf("deploy-only mount must not emit the run phase:\n%s", out)
+	}
+}
+
+func TestStorageMountPlanFindsRunOnlyMount(t *testing.T) {
+	// storage:list hides run-only mounts (it reports the deploy phase only);
+	// findMount now reads storage:report, so a run-only mount is discovered and
+	// the recipe reports InSync instead of a perpetual create.
+	report := `{
+		"attachment.1.entry-name": "data",
+		"attachment.1.host-path": "/h/data",
+		"attachment.1.container-path": "/app/x",
+		"attachment.1.phases": "run",
+		"attachment.1.readonly": "false"
+	}`
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet storage:report node-js-app --format json": report,
+	}))()
+
+	task := StorageMountTask{
+		App:          "node-js-app",
+		EntryName:    "data",
+		ContainerDir: "/app/x",
+		Phases:       []string{"run"},
+		State:        StatePresent,
+	}
+	plan := task.Plan()
+	if plan.Error != nil {
+		t.Fatalf("Plan returned error: %v", plan.Error)
+	}
+	if !plan.InSync {
+		t.Errorf("expected run-only mount to be InSync, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
 

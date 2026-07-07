@@ -247,3 +247,75 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 		t.Fatalf("failed to unmount named entry with options: %v", r.Error)
 	}
 }
+
+// TestIntegrationStorageMountExportRoundTrip mounts a named entry with the full
+// set of mount-time attributes and verifies the exporter reconstructs every one
+// of them from storage:report, such that re-planning the exported body reports
+// no drift.
+func TestIntegrationStorageMountExportRoundTrip(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-mount-export"
+	entryName := "docket-test-mount-export-entry"
+	containerDir := "/app/exported"
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
+	if r := entry.Execute(); r.Error != nil {
+		t.Fatalf("failed to create entry: %v", r.Error)
+	}
+	defer func() {
+		destroy := StorageEntryTask{Name: entryName, State: StateAbsent}
+		destroy.Execute()
+	}()
+
+	mount := StorageMountTask{
+		App:          appName,
+		EntryName:    entryName,
+		ContainerDir: containerDir,
+		ProcessType:  "web",
+		Subpath:      "nested",
+		Readonly:     true,
+		State:        StatePresent,
+	}
+	if r := mount.Execute(); r.Error != nil {
+		t.Fatalf("failed to mount named entry: %v", r.Error)
+	}
+
+	bodies, err := StorageMountTask{}.ExportApp(appName)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported mount, got %d", len(bodies))
+	}
+	got := bodies[0].(StorageMountTask)
+	if got.EntryName != entryName {
+		t.Errorf("expected entry_name %q, got %q", entryName, got.EntryName)
+	}
+	if got.ContainerDir != containerDir {
+		t.Errorf("expected container_dir %q, got %q", containerDir, got.ContainerDir)
+	}
+	if got.ProcessType != "web" {
+		t.Errorf("expected process_type web, got %q", got.ProcessType)
+	}
+	if got.Subpath != "nested" {
+		t.Errorf("expected subpath nested, got %q", got.Subpath)
+	}
+	if !got.Readonly {
+		t.Error("expected readonly true, got false")
+	}
+	// phases default to {deploy, run}, so the exporter omits the field.
+	if len(got.Phases) != 0 {
+		t.Errorf("expected default phases to be omitted, got %v", got.Phases)
+	}
+
+	// The exporter omits state; set it so the body can be planned directly.
+	got.State = StatePresent
+	if plan := got.Plan(); !plan.InSync {
+		t.Errorf("exported mount should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
