@@ -1,23 +1,30 @@
 package tasks
 
 import (
-	"strings"
+	"encoding/json"
 
 	"github.com/dokku/docket/subprocess"
 )
 
-// maintenanceEnabled probes whether maintenance mode is enabled for an app via
-// `dokku --quiet maintenance:report <app> --maintenance-enabled`. Output is
-// "true"/"false".
+// maintenanceEnabled probes whether maintenance mode is enabled for an app by
+// reading the `enabled` key from `maintenance:report --format json` (the plugin
+// strips the `maintenance-` prefix from JSON report keys). A probe failure
+// returns an error, which planToggle treats as drift.
 func maintenanceEnabled(ctx ToggleContext) (bool, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"--quiet", "maintenance:report", ctx.App, "--maintenance-enabled"},
+		Args:    []string{"maintenance:report", ctx.App, "--format", "json"},
 	})
 	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(result.StdoutContents()) == "true", nil
+	var report struct {
+		Enabled string `json:"enabled"`
+	}
+	if err := json.Unmarshal(result.StdoutBytes(), &report); err != nil {
+		return false, err
+	}
+	return report.Enabled == "true", nil
 }
 
 // MaintenanceTask enables or disables maintenance mode for a given dokku application
