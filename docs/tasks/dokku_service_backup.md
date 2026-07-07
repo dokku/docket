@@ -10,7 +10,7 @@ Manages the S3 backup schedule, authentication, and encryption for a dokku servi
 
 ## Export support
 
-Not supported - service export is not yet implemented; tracked in a follow-up issue.
+Not supported - service export is not yet implemented; tracked in issue #279.
 
 ## Parameters
 

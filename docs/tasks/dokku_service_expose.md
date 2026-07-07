@@ -10,7 +10,7 @@ Exposes or unexposes a dokku service on host ports
 
 ## Export support
 
-Not supported - service export is not yet implemented; tracked in a follow-up issue.
+Not supported - service export is not yet implemented; tracked in issue #279.
 
 ## Parameters
 

@@ -1,6 +1,6 @@
 # Command reference
 
-docket has six commands. Running `docket` with no subcommand prints the list:
+docket has seven commands. Running `docket` with no subcommand prints the list:
 
 | Command | What it does |
 |---------|--------------|
@@ -9,6 +9,7 @@ docket has six commands. Running `docket` with no subcommand prints the list:
 | [`docket fmt`](#docket-fmt) | Canonically format a recipe. |
 | [`docket plan`](#docket-plan) | Preview what `apply` would change. |
 | [`docket apply`](#docket-apply) | Run the recipe, making changes as needed. |
+| [`docket export`](#docket-export) | Read a live server and write a recipe describing it. |
 | [`docket version`](#docket-version) | Print the binary's version. |
 
 `apply`, `plan`, `validate`, and `fmt` all accept either YAML or JSON5 recipes. When `--tasks` is
@@ -246,6 +247,50 @@ Summary: 4 tasks · 1 changed · 1 ok · 2 skipped · 0 errors  (took 1.1s)
 Filters apply in this order: `--start-at-task` selects first, then `--tags` / `--skip-tags`, then
 per-task `when:` at execution time. The name search walks every play in source order, narrowed by
 `--play`. An unmatched name exits 1 with the available names listed.
+
+## docket export
+
+`docket export` reads a live Dokku server and writes a recipe describing it - the inverse of
+`apply`. It enumerates the apps on the server and reconstructs each one's declarative state, so you
+can capture an existing server as a recipe instead of hand-writing one. This is the starting point
+for a [migration](migration.md).
+
+Because a faithful recipe would otherwise embed secrets, export writes **two files**: the recipe,
+and a companion **vars-file** holding the sensitive values (every `config` value, plus any field a
+task marks sensitive). The recipe references those values through per-play `inputs:` and
+`{{ .name }}` templates, so the pair is applied together:
+
+```bash
+# Export the local server to tasks.yml + tasks.vars.yml.
+docket export
+
+# Export a remote server over SSH.
+docket export --host deploy@dokku.example.com
+
+# Apply the exported pair somewhere else.
+docket apply --tasks tasks.yml --vars-file tasks.vars.yml
+```
+
+The correctness contract is idempotency: applying an exported pair back to the same server reports
+no drift (`plan` shows every task `[ok]`).
+
+| Flag | Effect |
+|------|--------|
+| `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. |
+| `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). |
+| `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). |
+| `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in. |
+| `--app <name>` | Restrict the export to the named app. Repeatable. |
+| `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
+| `--sudo` | Wrap the remote `dokku` call in `sudo -n`. |
+| `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
+
+The output format follows the `--output` extension (`.json` / `.json5` writes JSON5, anything else
+YAML), and the vars-file matches. Which task types export is a per-task property: each task's
+reference page carries an **Export support** section stating whether it is supported, partial (for
+example a value that is lifted into the vars-file), or not exportable (write-only credentials such
+as `dokku_git_auth`, or datastore services). Resources that cannot be read back are reported as
+warnings and left out of the recipe.
 
 ## docket version
 

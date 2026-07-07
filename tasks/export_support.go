@@ -53,4 +53,4 @@ func TaskExportSupport(t Task) (ExportSupport, bool) {
 // whose export is deferred to a follow-up issue (it needs a per-service-type
 // `<service>:list` primitive that does not exist yet). Each service task's
 // ExportSupport() references this so the wording stays consistent.
-const serviceExportCaveat = "service export is not yet implemented; tracked in a follow-up issue"
+const serviceExportCaveat = "service export is not yet implemented; tracked in issue #279"

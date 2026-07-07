@@ -10,7 +10,7 @@ Manages a property for a given dokku service
 
 ## Export support
 
-Not supported - service export is not yet implemented; tracked in a follow-up issue.
+Not supported - service export is not yet implemented; tracked in issue #279.
 
 ## Parameters
 
