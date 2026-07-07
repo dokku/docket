@@ -34,6 +34,7 @@ var globalExportOrder = []string{
 	"dokku_ssh_key",
 	"dokku_storage_entry",
 	"dokku_scheduler_k3s_profile",
+	"dokku_scheduler_k3s_chart",
 }
 
 // appExportOrder is the fixed order in which app-scoped task types are emitted
@@ -60,6 +61,7 @@ var appExportOrder = []string{
 	"dokku_http_auth_allowed_ip",
 	"dokku_http_auth_domain",
 	"dokku_acl_app",
+	"dokku_letsencrypt",
 	// property-plugin tasks (reconstructed from <plugin>:report by exportProperties)
 	"dokku_app_json_property",
 	"dokku_apps_property",

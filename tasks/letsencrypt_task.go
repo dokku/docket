@@ -124,6 +124,19 @@ func (t LetsencryptTask) Plan() PlanResult {
 	})
 }
 
+// ExportApp emits a dokku_letsencrypt task when letsencrypt is active for the
+// app (it is inactive by default, so a normal app needs no task).
+func (t LetsencryptTask) ExportApp(app string) ([]interface{}, error) {
+	active, err := letsencryptActive(app)
+	if err != nil {
+		return nil, err
+	}
+	if !active {
+		return nil, nil
+	}
+	return []interface{}{LetsencryptTask{App: app, State: StatePresent}}, nil
+}
+
 // letsencryptActive reports whether letsencrypt is currently active for an app.
 // Mirrors the upstream `dokku letsencrypt:active <app>` output ("true"/"false").
 func letsencryptActive(app string) (bool, error) {

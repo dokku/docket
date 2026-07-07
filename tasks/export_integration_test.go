@@ -84,11 +84,10 @@ func TestIntegrationExportReconstructsApp(t *testing.T) {
 }
 
 // TestIntegrationExportSchedulerK3sProfile verifies the global profile exporter
-// against a real dokku with the scheduler-k3s plugin. Gated on the plugin so it
-// skips where scheduler-k3s is not installed.
+// against a real dokku. scheduler-k3s is a core plugin and profiles are stored
+// on disk (no cluster or deploy needed), so only dokku itself is required.
 func TestIntegrationExportSchedulerK3sProfile(t *testing.T) {
 	skipIfNoDokkuT(t)
-	skipIfPluginMissingT(t, "scheduler-k3s")
 
 	name := "docket-test-export-profile"
 	cleanup := SchedulerK3sProfileTask{Name: name, Role: "worker", State: StateAbsent}
@@ -122,5 +121,66 @@ func TestIntegrationExportSchedulerK3sProfile(t *testing.T) {
 	found.State = StatePresent
 	if plan := found.Plan(); !plan.InSync {
 		t.Errorf("exported profile should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationExportSchedulerK3sChart verifies the global chart-values
+// exporter. scheduler-k3s is a core plugin and chart values are stored on disk
+// (no cluster or deploy needed), so only dokku itself is required.
+func TestIntegrationExportSchedulerK3sChart(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	chart := "ingress-nginx"
+	cleanup := SchedulerK3sChartTask{Chart: chart, Values: map[string]any{"docket-test-key": ""}, State: StateAbsent}
+	cleanup.Execute()
+	defer cleanup.Execute()
+
+	set := SchedulerK3sChartTask{Chart: chart, Values: map[string]any{"docket-test-key": "docket-test-value"}, State: StatePresent}
+	if r := set.Execute(); r.Error != nil {
+		t.Fatalf("set chart value: %v", r.Error)
+	}
+
+	bodies, err := SchedulerK3sChartTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	var found *SchedulerK3sChartTask
+	for i := range bodies {
+		if c, ok := bodies[i].(SchedulerK3sChartTask); ok && c.Chart == chart {
+			found = &c
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported charts do not include %q", chart)
+	}
+	if found.Values["docket-test-key"] != "docket-test-value" {
+		t.Errorf("exported chart value mismatch: %+v", found.Values)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported chart should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationExportLetsencrypt verifies the letsencrypt exporter reads the
+// active state. Gated on the letsencrypt plugin (not a dokku core plugin).
+// Enabling letsencrypt triggers a real ACME issuance, so this only asserts the
+// inactive path: a fresh app is not active, so no task is emitted.
+func TestIntegrationExportLetsencrypt(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "letsencrypt")
+
+	app := "docket-test-export-letsencrypt"
+	destroyApp(app)
+	createApp(app)
+	defer destroyApp(app)
+
+	bodies, err := LetsencryptTask{}.ExportApp(app)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 0 {
+		t.Errorf("expected no letsencrypt task for an inactive app, got %d", len(bodies))
 	}
 }
