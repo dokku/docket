@@ -57,7 +57,7 @@ func (t MaintenanceCustomPageTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t MaintenanceCustomPageTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "maintenance:report exposes only a custom-page-sha256 checksum, not the HTML; a faithful export needs an upstream export command (dokku/dokku-maintenance#28), otherwise the content is supplied as a required input (docket#284)"}
+	return ExportSupport{Status: ExportPartial, Caveat: "maintenance:report exposes only a custom-page-sha256 checksum, not the HTML, so the page content cannot be read back; export detects that a custom page is set and lifts it into a required content input the user supplies before apply. Multi-file tarball pages collapse to that single content input, so extra assets are not captured. A faithful export awaits an upstream export command (dokku/dokku-maintenance#28)"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -342,6 +342,29 @@ func maintenanceCustomPageState(app string) (checksum string, reported bool, err
 		return "", false, nil
 	}
 	return *report.CustomPageSHA256, true, nil
+}
+
+// ExportApp emits a dokku_maintenance_custom_page task when the app has a custom
+// page installed. maintenance:report exposes only the custom-page-sha256
+// checksum, never the HTML, so the content cannot be read back; the engine lifts
+// it into a required input the user supplies before applying (see
+// processMaintenanceCustomPage). A custom page is detected purely by a non-empty
+// checksum, so nothing is emitted when no page is set or when the plugin is too
+// old to report the checksum. A transport-level SSH failure propagates as a
+// warning; a dokku-level or parse failure is treated as "nothing to export".
+func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) {
+	checksum, reported, err := maintenanceCustomPageState(app)
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if !reported || checksum == "" {
+		return nil, nil
+	}
+	return []interface{}{MaintenanceCustomPageTask{App: app}}, nil
 }
 
 // init registers the MaintenanceCustomPageTask with the task registry

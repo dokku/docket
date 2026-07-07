@@ -57,6 +57,7 @@ var appExportOrder = []string{
 	"dokku_proxy_toggle",
 	"dokku_domains_toggle",
 	"dokku_maintenance",
+	"dokku_maintenance_custom_page",
 	"dokku_http_auth_user",
 	"dokku_http_auth_allowed_ip",
 	"dokku_http_auth_domain",
@@ -251,6 +252,8 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 		return res.processConfig(app, b, opts)
 	case HttpAuthUserTask:
 		return res.processHttpAuthUser(app, b, opts)
+	case MaintenanceCustomPageTask:
+		return res.processMaintenanceCustomPage(app, b, opts)
 	default:
 		return res.processSensitiveScalars(app, body, opts)
 	}
@@ -338,6 +341,25 @@ func (res *ExportResult) processHttpAuthUser(app string, b HttpAuthUserTask, opt
 		})
 	}
 	b.Users = users
+	return b, inputs
+}
+
+// processMaintenanceCustomPage lifts the custom page HTML into a required input,
+// since maintenance:report exposes only a checksum, never the page content. The
+// recipe therefore always needs the HTML supplied in the vars-file before apply,
+// so the value is blanked unconditionally (like http-auth passwords). Unlike a
+// secret, the page is public HTML, so the input is not marked sensitive.
+func (res *ExportResult) processMaintenanceCustomPage(app string, b MaintenanceCustomPageTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if opts.Inline {
+		return b, nil
+	}
+	name := res.uniqueVarName(app, "maintenance_custom_page")
+	b.Content = "{{ ." + name + " }}"
+	res.Vars[name] = "" // page HTML is not readable; the user fills this in
+	inputs := []map[string]interface{}{{
+		"name":     name,
+		"required": true,
+	}}
 	return b, inputs
 }
 

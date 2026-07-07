@@ -185,3 +185,68 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 		t.Errorf("expected Changed=false on idempotent remove")
 	}
 }
+
+func TestIntegrationExportMaintenanceCustomPageRoundTrip(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "maintenance")
+
+	appName := "docket-test-maintenance-custom-page-export"
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	// The export detects the page via the reported checksum. If the installed
+	// plugin does not report it, there is nothing to detect, so skip.
+	if _, reported, err := maintenanceCustomPageState(appName); err != nil {
+		t.Fatalf("maintenanceCustomPageState failed: %v", err)
+	} else if !reported {
+		t.Skip("skipping: installed dokku-maintenance does not report custom-page-sha256")
+	}
+
+	// An app with no custom page exports nothing.
+	if bodies, err := (MaintenanceCustomPageTask{}).ExportApp(appName); err != nil {
+		t.Fatalf("ExportApp with no custom page failed: %v", err)
+	} else if len(bodies) != 0 {
+		t.Fatalf("expected no export bodies for an app without a custom page, got %d", len(bodies))
+	}
+
+	content := "<html><body>exported down for maintenance</body></html>\n"
+	set := MaintenanceCustomPageTask{App: appName, Content: content, State: StatePresent}
+	if result := set.Execute(); result.Error != nil {
+		t.Fatalf("failed to set custom page: %v", result.Error)
+	}
+
+	// Export reconstructs the task from the reported checksum. The content is
+	// not readable, so the exported body carries an empty Content; the engine is
+	// what lifts it into a required input.
+	bodies, err := (MaintenanceCustomPageTask{}).ExportApp(appName)
+	if err != nil {
+		t.Fatalf("ExportApp failed: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected exactly one export body, got %d", len(bodies))
+	}
+	got, ok := bodies[0].(MaintenanceCustomPageTask)
+	if !ok {
+		t.Fatalf("export body is %T, want MaintenanceCustomPageTask", bodies[0])
+	}
+	if got.App != appName {
+		t.Errorf("exported App = %q, want %q", got.App, appName)
+	}
+	if got.Content != "" {
+		t.Errorf("exported Content = %q, want empty (content is not readable)", got.Content)
+	}
+
+	// export -> apply idempotency: once the user supplies the same HTML the
+	// input would carry, re-planning reports no drift.
+	got.Content = content
+	got.State = StatePresent
+	plan := got.Plan()
+	if plan.Error != nil {
+		t.Fatalf("Plan after export failed: %v", plan.Error)
+	}
+	if !plan.InSync {
+		t.Errorf("expected re-plan to be InSync after supplying the exported content, got status %v (reason: %s)", plan.Status, plan.Reason)
+	}
+}
