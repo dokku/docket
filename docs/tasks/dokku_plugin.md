@@ -6,7 +6,7 @@ Installs or uninstalls a third-party dokku plugin. Installation is a root-level 
 
 ## Export support
 
-Not supported - plugin:list does not expose the install source URL a third-party plugin needs to be reinstalled (docket#286, dokku/dokku#8798).
+Supported.
 
 ## Parameters
 

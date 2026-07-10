@@ -1,7 +1,10 @@
 package tasks
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -52,7 +55,7 @@ func (t PluginTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t PluginTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: "plugin:list does not expose the install source URL a third-party plugin needs to be reinstalled (docket#286, dokku/dokku#8798)"}
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the plugin task
@@ -154,6 +157,63 @@ func (t PluginTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// pluginListEntry is one record of `dokku plugin:list --format json`. Only the
+// fields the exporter needs are decoded; version, enabled, and description are
+// ignored.
+type pluginListEntry struct {
+	Name       string `json:"name"`
+	Core       bool   `json:"core"`
+	SourceURL  string `json:"source_url"`
+	Committish string `json:"committish"`
+	Branch     string `json:"branch"`
+}
+
+// ExportGlobal reconstructs the server's third-party plugins from
+// `plugin:list --format json`, which exposes each plugin's install source URL,
+// followed branch, and checked-out commit. Core plugins ship with dokku (and
+// plugin:uninstall rejects them), and plugins without a git source (a tarball or
+// local path) cannot be reinstalled declaratively, so both are skipped.
+func (t PluginTask) ExportGlobal() ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var entries []pluginListEntry
+	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
+		return nil, nil
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+	var out []interface{}
+	for _, e := range entries {
+		if e.Core || e.SourceURL == "" {
+			continue
+		}
+		// Prefer the followed branch so the export mirrors the install intent; a
+		// detached checkout (a pinned commit or tag) reports no branch, so fall
+		// back to the exact commit.
+		committish := e.Branch
+		if committish == "" {
+			committish = e.Committish
+		}
+		out = append(out, PluginTask{
+			Name:       e.Name,
+			URL:        e.SourceURL,
+			Committish: committish,
+			State:      StatePresent,
+		})
+	}
+	return out, nil
 }
 
 // pluginInstalled reports whether a plugin is installed by parsing

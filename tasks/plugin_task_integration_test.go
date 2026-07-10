@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
@@ -82,5 +83,86 @@ func TestIntegrationPlugin(t *testing.T) {
 	}
 	if result.Changed {
 		t.Errorf("expected Changed=false on idempotent uninstall")
+	}
+}
+
+func TestIntegrationExportPlugin(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	// A dokku predating plugin:list --format json ignores the flag and prints
+	// stdout text with a zero exit, so skip unless the output parses as a JSON
+	// array rather than guarding on a non-zero exit.
+	probe, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
+	})
+	if err != nil {
+		t.Skipf("plugin:list --format json not available: %v", err)
+	}
+	var probed []pluginListEntry
+	if err := json.Unmarshal(probe.StdoutBytes(), &probed); err != nil {
+		t.Skipf("plugin:list --format json unsupported on this dokku: %v", err)
+	}
+
+	pluginName := "smoke-test-plugin"
+	pluginURL := "https://github.com/dokku/smoke-test-plugin.git"
+	pluginCommittish := "v0.9.0"
+
+	uninstallPlugin := func() {
+		subprocess.CallExecCommand(subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", "plugin:uninstall", pluginName},
+		})
+	}
+
+	uninstallPlugin()
+	defer uninstallPlugin()
+
+	installTask := PluginTask{Name: pluginName, URL: pluginURL, Committish: pluginCommittish, State: StatePresent}
+	if result := installTask.Execute(); result.Error != nil {
+		t.Fatalf("failed to install plugin: %v", result.Error)
+	}
+
+	bodies, err := PluginTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+
+	var found *PluginTask
+	for _, b := range bodies {
+		task, ok := b.(PluginTask)
+		if !ok {
+			t.Fatalf("ExportGlobal returned %T, want PluginTask", b)
+		}
+		if task.Name == pluginName {
+			task := task
+			found = &task
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("ExportGlobal did not include %q; got %+v", pluginName, bodies)
+	}
+
+	if found.URL != pluginURL {
+		t.Errorf("exported url = %q, want %q", found.URL, pluginURL)
+	}
+	// The plugin was pinned to a tag (a detached checkout), so the export records
+	// the exact commit rather than a branch.
+	if found.Committish == "" {
+		t.Errorf("expected a non-empty committish for the pinned plugin")
+	}
+	if found.State != StatePresent {
+		t.Errorf("exported state = %q, want %q", found.State, StatePresent)
+	}
+
+	// The exported task round-trips: re-planning it against the same server is a
+	// no-op because the plugin is already installed.
+	plan := found.Plan()
+	if plan.Error != nil {
+		t.Fatalf("re-plan of exported task failed: %v", plan.Error)
+	}
+	if !plan.InSync {
+		t.Errorf("exported task should be in sync after export, got %+v", plan)
 	}
 }
