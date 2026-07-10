@@ -38,6 +38,10 @@ var globalExportOrder = []string{
 	// (dokku_network_property, emitted in the app plays) bind to.
 	"dokku_network",
 	"dokku_ssh_key",
+	// global SSL certificate: requires the dokku-global-cert plugin, installed
+	// by the dokku_plugin tasks emitted first. dokku_certs also appears in
+	// appExportOrder, where it emits the per-app scope.
+	"dokku_certs",
 	"dokku_storage_entry",
 	"dokku_scheduler_k3s_profile",
 	"dokku_scheduler_k3s_chart",

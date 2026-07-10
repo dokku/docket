@@ -119,6 +119,52 @@ func TestIntegrationExportCerts(t *testing.T) {
 	}
 }
 
+// TestIntegrationExportGlobalCerts verifies the global certificate exporter:
+// global-cert:show streams the cert/key back (dokku-global-cert 0.4.x+), so the
+// exported task round-trips with no drift. Requires the dokku-global-cert plugin.
+func TestIntegrationExportGlobalCerts(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "global-cert")
+
+	certPath, keyPath := generateSelfSignedCert(t, "global-export.example.com")
+
+	// best-effort cleanup before and after
+	cleanup := func() {
+		(CertsTask{Global: true, State: StateAbsent}).Execute()
+	}
+	cleanup()
+	defer cleanup()
+
+	if r := (CertsTask{Global: true, Cert: certPath, Key: keyPath, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("add global cert: %v", r.Error)
+	}
+
+	bodies, err := CertsTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 certs task, got %d", len(bodies))
+	}
+	c := bodies[0].(CertsTask)
+	if !c.Global {
+		t.Errorf("exported global cert task should set global: true")
+	}
+	if c.App != "" {
+		t.Errorf("exported global cert task should not set app, got %q", c.App)
+	}
+	if !strings.Contains(c.CertContent, "BEGIN CERTIFICATE") {
+		t.Errorf("exported cert_content missing PEM: %q", c.CertContent)
+	}
+	if !strings.Contains(c.KeyContent, "BEGIN") {
+		t.Errorf("exported key_content missing PEM: %q", c.KeyContent)
+	}
+	c.State = StatePresent
+	if plan := c.Plan(); !plan.InSync {
+		t.Errorf("exported global certs should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
 // TestIntegrationExportSchedulerK3sProfile verifies the global profile exporter
 // against a real dokku. scheduler-k3s is a core plugin and profiles are stored
 // on disk (no cluster or deploy needed), so only dokku itself is required.

@@ -10,7 +10,7 @@ Manages SSL certificates for a dokku app or globally.
 
 ## Export support
 
-Partial - app certs are exported via certs:show; the global cert has no show command in the dokku-global-cert plugin, so it is not exported (docket#283).
+Partial - app and global certificate PEM material is exported (via certs:show and global-cert:show) and written to the companion vars-file.
 
 ## Parameters
 
