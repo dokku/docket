@@ -56,7 +56,7 @@ func (t ServicePropertyTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServicePropertyTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: "no datastore plugin exposes a machine-readable report of the properties set via <service>:set, so they cannot be read back (tracked upstream in dokku/dokku-datastore#98)"}
+	return ExportSupport{Status: ExportUnsupported, Caveat: "no datastore plugin exposes a machine-readable report of the properties set via `<service>:set`, so they cannot be read back (tracked upstream in dokku/dokku-datastore#98)"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
