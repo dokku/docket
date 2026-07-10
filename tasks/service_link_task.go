@@ -41,7 +41,31 @@ func (t ServiceLinkTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServiceLinkTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ExportApp reconstructs an app's datastore service links: it enumerates
+// services (listServices) and emits a dokku_service_link for each service the
+// app appears in (serviceLinkedApps). The link, not dokku_config, is the source
+// of truth for the injected `<ALIAS>_URL`, so config export drops those values
+// (see linkedServiceDSNs).
+func (t ServiceLinkTask) ExportApp(app string) ([]interface{}, error) {
+	services, err := listServices()
+	if err != nil {
+		return nil, err
+	}
+	var out []interface{}
+	for _, s := range services {
+		apps, err := serviceLinkedApps(s.Type, s.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !apps[app] {
+			continue
+		}
+		out = append(out, ServiceLinkTask{App: app, Service: s.Type, Name: s.Name, State: StatePresent})
+	}
+	return out, nil
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.

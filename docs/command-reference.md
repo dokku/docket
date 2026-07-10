@@ -292,8 +292,8 @@ The output format follows the `--output` extension (`.json` / `.json5` writes JS
 YAML), and the vars-file matches. Which task types export is a per-task property: each task's
 reference page carries an **Export support** section stating whether it is supported, partial (for
 example a value that is lifted into the vars-file), or not exportable (write-only credentials such
-as `dokku_git_auth`, or datastore services). Resources that cannot be read back are reported as
-warnings and left out of the recipe.
+as `dokku_git_auth`, or `dokku_service_property`, which no datastore plugin can read back).
+Resources that cannot be read back are reported as warnings and left out of the recipe.
 
 ## docket version
 

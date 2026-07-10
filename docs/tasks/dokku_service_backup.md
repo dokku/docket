@@ -10,7 +10,7 @@ Manages the S3 backup schedule, authentication, and encryption for a dokku servi
 
 ## Export support
 
-Not supported - service export is not yet implemented; tracked in issue #279.
+Partial - the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are write-only and must be re-supplied before the recipe can back up.
 
 ## Parameters
 

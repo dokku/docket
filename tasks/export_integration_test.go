@@ -363,6 +363,244 @@ func TestIntegrationSchedulerK3sAutoscalingAuthExport(t *testing.T) {
 	}
 }
 
+// TestIntegrationExportServiceCreate verifies the datastore service exporter
+// discovers a live service (via the service-list plugin trigger) and
+// reconstructs a dokku_service_create that re-plans with no drift. Gated on the
+// redis datastore plugin.
+func TestIntegrationExportServiceCreate(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+
+	serviceType := "redis"
+	serviceName := "docket-test-export-svc-create"
+	destroyService(serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("create service: %v", r.Error)
+	}
+	defer destroyService(serviceType, serviceName)
+
+	bodies, err := ServiceCreateTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	var found *ServiceCreateTask
+	for i := range bodies {
+		if c, ok := bodies[i].(ServiceCreateTask); ok && c.Service == serviceType && c.Name == serviceName {
+			found = &c
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported services do not include %s:%s: %+v", serviceType, serviceName, bodies)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported service create should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationExportServiceExpose verifies the exposed-ports exporter reads
+// the host ports back (parsing dokku's `container->host` format) so the exported
+// task re-plans with no drift. Gated on the redis datastore plugin.
+func TestIntegrationExportServiceExpose(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+
+	serviceType := "redis"
+	serviceName := "docket-test-export-svc-expose"
+	hostPort := "16379"
+	destroyService(serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("create service: %v", r.Error)
+	}
+	defer destroyService(serviceType, serviceName)
+	if r := (ServiceExposeTask{Service: serviceType, Name: serviceName, Ports: []string{hostPort}, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("expose service: %v", r.Error)
+	}
+
+	bodies, err := ServiceExposeTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	var found *ServiceExposeTask
+	for i := range bodies {
+		if e, ok := bodies[i].(ServiceExposeTask); ok && e.Service == serviceType && e.Name == serviceName {
+			found = &e
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported exposes do not include %s:%s: %+v", serviceType, serviceName, bodies)
+	}
+	if len(found.Ports) != 1 || found.Ports[0] != hostPort {
+		t.Errorf("exported expose ports = %v, want [%s]", found.Ports, hostPort)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported service expose should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationExportServiceLink verifies the app-scoped link exporter emits a
+// dokku_service_link for a linked service, and that the config exporter drops
+// the `<ALIAS>_URL` the link injects (so the link stays the single source of
+// truth). Gated on the redis datastore plugin and docker links.
+func TestIntegrationExportServiceLink(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+	skipIfDockerLinkUnsupportedT(t)
+
+	appName := "docket-test-export-svc-link-app"
+	serviceType := "redis"
+	serviceName := "docket-test-export-svc-link"
+	destroyApp(appName)
+	destroyService(serviceType, serviceName)
+	createApp(appName)
+	defer destroyApp(appName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("create service: %v", r.Error)
+	}
+	defer func() {
+		(ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StateAbsent}).Execute()
+		destroyService(serviceType, serviceName)
+	}()
+	if r := (ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("link service: %v", r.Error)
+	}
+
+	bodies, err := ServiceLinkTask{}.ExportApp(appName)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	var found *ServiceLinkTask
+	for i := range bodies {
+		if l, ok := bodies[i].(ServiceLinkTask); ok && l.Service == serviceType && l.Name == serviceName {
+			found = &l
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported links do not include %s:%s for %s: %+v", serviceType, serviceName, appName, bodies)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported service link should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+
+	// The link injects REDIS_URL into the app's config; config export must drop
+	// it, since the link recreates it on apply with the new server's creds.
+	cfgBodies, err := ConfigTask{}.ExportApp(appName)
+	if err != nil {
+		t.Fatalf("config ExportApp: %v", err)
+	}
+	for _, b := range cfgBodies {
+		c := b.(ConfigTask)
+		if _, ok := c.Config["REDIS_URL"]; ok {
+			t.Errorf("REDIS_URL (a linked-service DSN) should be excluded from config export: %+v", c.Config)
+		}
+	}
+}
+
+// TestIntegrationExportServiceBackup verifies the backup exporter reconstructs
+// the schedule/bucket/use_iam from the cron file such that the exported task
+// re-plans with no drift; the write-only credentials are not read back. Gated on
+// the redis datastore plugin, and skipped if it does not implement backups.
+func TestIntegrationExportServiceBackup(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+
+	serviceType := "redis"
+	serviceName := "docket-test-export-svc-backup"
+	destroyService(serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("create service: %v", r.Error)
+	}
+	defer destroyService(serviceType, serviceName)
+
+	schedule := "0 3 * * *"
+	bucket := "docket-test-bucket"
+	if r := (ServiceBackupTask{Service: serviceType, Name: serviceName, Schedule: schedule, Bucket: bucket, UseIam: true, State: StatePresent}).Execute(); r.Error != nil {
+		// not every datastore plugin implements backup-schedule
+		t.Skipf("skipping: could not schedule backup (%v)", r.Error)
+	}
+
+	bodies, err := ServiceBackupTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	var found *ServiceBackupTask
+	for i := range bodies {
+		if b, ok := bodies[i].(ServiceBackupTask); ok && b.Service == serviceType && b.Name == serviceName {
+			found = &b
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported backups do not include %s:%s: %+v", serviceType, serviceName, bodies)
+	}
+	if found.Schedule != schedule || found.Bucket != bucket || !found.UseIam {
+		t.Errorf("exported backup mismatch: %+v", *found)
+	}
+	if found.AwsSecretAccessKey != "" || found.EncryptionPassphrase != "" {
+		t.Errorf("backup export should not include write-only credentials: %+v", *found)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported service backup should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationExportAclService verifies the service-ACL exporter reads the
+// members back so the exported task re-plans with no drift. Gated on both the
+// redis datastore plugin and dokku-acl (the latter is not installed in the main
+// CI job, so this skips there).
+func TestIntegrationExportAclService(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+	skipIfPluginMissingT(t, "acl")
+
+	serviceType := "redis"
+	serviceName := "docket-test-export-acl-svc"
+	user := "docket-test-acl-user"
+	destroyService(serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("create service: %v", r.Error)
+	}
+	defer destroyService(serviceType, serviceName)
+
+	if r := (AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{user}, State: StatePresent}).Execute(); r.Error != nil {
+		t.Skipf("skipping: could not add acl user (%v)", r.Error)
+	}
+
+	bodies, err := AclServiceTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	var found *AclServiceTask
+	for i := range bodies {
+		if a, ok := bodies[i].(AclServiceTask); ok && a.Type == serviceType && a.Service == serviceName {
+			found = &a
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported acls do not include %s:%s: %+v", serviceType, serviceName, bodies)
+	}
+	foundUser := false
+	for _, u := range found.Users {
+		if u == user {
+			foundUser = true
+		}
+	}
+	if !foundUser {
+		t.Errorf("exported acl users %v missing %q", found.Users, user)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported acl service should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
 // TestIntegrationExportLetsencrypt verifies the letsencrypt exporter reads the
 // active state. Gated on the letsencrypt plugin (not a dokku core plugin).
 // Enabling letsencrypt triggers a real ACME issuance, so this only asserts the

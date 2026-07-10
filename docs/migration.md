@@ -18,10 +18,10 @@ covered below.
 | Apps (`dokku_app`) | Database / service contents |
 | Config vars (`dokku_config`) | Persistent volume files |
 | Domains and ports (`dokku_domains`, `dokku_ports`) | DNS records |
-| Service *existence* (`dokku_service_create`) | letsencrypt-issued certificates |
+| Service structure (`dokku_service_create`, `dokku_service_expose`, `dokku_service_link`, backup schedule, `dokku_acl_service`) | letsencrypt-issued certificates |
 | Storage *mounts* (`dokku_storage_mount`) | Secret values not in the recipe |
 | Manual certs inlined via `dokku_certs` `cert_content` / `key_content` | Host-level OS configuration |
-| Buildpacks, scheduler and proxy config | |
+| Buildpacks, scheduler and proxy config | Datastore backup credentials and `dokku_service_property` values |
 | SSH keys (`dokku_ssh_key`) | |
 | App code (`dokku_git_sync`, `dokku_git_from_image`, `dokku_git_from_archive`) | |
 
@@ -49,14 +49,17 @@ docket export --host deploy@old-server
 
 This enumerates the apps and reconstructs their declarative state. It also reconstructs any
 git-installed third-party plugins into [`dokku_plugin`](tasks/dokku_plugin.md) tasks in a leading
-global play; core plugins and plugins installed from a tarball or local path are omitted. Sensitive
-values (config and other secrets) are lifted into `tasks.vars.yml`; the recipe references them
-through inputs, so the pair is applied together with `--vars-file`. If you already maintain a recipe
-as the source of truth for the old server, skip this and use it directly.
+global play; core plugins and plugins installed from a tarball or local path are omitted. Datastore
+services are reconstructed into that same global play - the service itself, its exposed ports, its
+backup schedule, and its dokku-acl access list - with each app's service links emitted into the
+app's own play. Sensitive values (config and other secrets) are lifted into `tasks.vars.yml`; the
+recipe references them through inputs, so the pair is applied together with `--vars-file`. If you
+already maintain a recipe as the source of truth for the old server, skip this and use it directly.
 
 Some state cannot be read back and is left out with a warning - notably write-only credentials
-(`dokku_git_auth`, `dokku_registry_auth`) and datastore service data, which you add by hand. Each
-task's [reference page](tasks/README.md) has an Export support section noting its limits.
+(`dokku_git_auth`, `dokku_registry_auth`, and datastore backup credentials), datastore service data,
+and service properties (`dokku_service_property`), which you add by hand. Each task's
+[reference page](tasks/README.md) has an Export support section noting its limits.
 
 ## Step 2: Apply the recipe to the new server
 
@@ -84,7 +87,9 @@ code onto the new server with whichever deploy source your recipe uses:
 
 [`dokku_service_create`](tasks/dokku_service_create.md) makes an *empty* service, and
 [`dokku_service_backup`](tasks/dokku_service_backup.md) only configures the S3 backup schedule and
-auth - there is no restore task. Move the actual contents with Dokku's native export/import:
+auth - there is no restore task. Export carries the schedule, bucket, and `use_iam` flag but not the
+AWS credentials or encryption passphrase (they cannot be read back), so re-add those before the
+schedule can run. Move the actual contents with Dokku's native export/import:
 
 ```bash
 # On the old server

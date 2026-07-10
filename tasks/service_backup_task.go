@@ -76,7 +76,77 @@ func (t ServiceBackupTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServiceBackupTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+	return ExportSupport{Status: ExportPartial, Caveat: "the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are write-only and must be re-supplied before the recipe can back up"}
+}
+
+// ExportGlobal reconstructs the backup schedule of every datastore service on
+// the server. Discovery is via listServices; the schedule, bucket, and use_iam
+// flag are parsed from `<service>:backup-schedule-cat <name>`. The AWS
+// credentials and encryption passphrase have no read command, so they are
+// omitted (a partial export) and must be re-supplied before the recipe backs
+// up. Services without a schedule are skipped.
+func (t ServiceBackupTask) ExportGlobal() ([]interface{}, error) {
+	services, err := listServices()
+	if err != nil {
+		return nil, err
+	}
+	var out []interface{}
+	for _, s := range services {
+		content, scheduled, err := serviceBackupScheduled(s.Type, s.Name)
+		if err != nil {
+			return nil, err
+		}
+		if !scheduled {
+			continue
+		}
+		schedule, bucket, useIam, ok := parseBackupSchedule(content, s.Type)
+		if !ok {
+			continue
+		}
+		out = append(out, ServiceBackupTask{
+			Service:  s.Type,
+			Name:     s.Name,
+			Schedule: schedule,
+			Bucket:   bucket,
+			UseIam:   useIam,
+			State:    StatePresent,
+		})
+	}
+	return out, nil
+}
+
+// parseBackupSchedule extracts the cron schedule, bucket, and use-iam flag from
+// the cron file `<service>:backup-schedule-cat` prints, whose single line is:
+//
+//	<schedule...> dokku <bin> <type>:backup <name> <bucket> [--use-iam]
+//
+// The schedule is not always five fields (`@daily` and friends are valid cron
+// expressions), so the parse anchors on the `<type>:backup` token rather than
+// fixed offsets. Returns ok=false when the line does not match this shape.
+func parseBackupSchedule(content, service string) (schedule, bucket string, useIam, ok bool) {
+	fields := strings.Fields(content)
+	marker := fmt.Sprintf("%s:backup", service)
+	idx := -1
+	for i, f := range fields {
+		if f == marker {
+			idx = i
+			break
+		}
+	}
+	// The `dokku <bin>` prefix must precede the marker, and `<name> <bucket>`
+	// must follow it.
+	if idx < 2 || idx+2 >= len(fields) {
+		return "", "", false, false
+	}
+	schedule = strings.Join(fields[:idx-2], " ")
+	bucket = fields[idx+2]
+	if schedule == "" || bucket == "" {
+		return "", "", false, false
+	}
+	if idx+3 < len(fields) && fields[idx+3] == "--use-iam" {
+		useIam = true
+	}
+	return schedule, bucket, useIam, true
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.

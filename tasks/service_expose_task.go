@@ -44,7 +44,30 @@ func (t ServiceExposeTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServiceExposeTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ExportGlobal reconstructs the exposed-ports state of every datastore service
+// on the server. Discovery is via listServices; the exposed host ports are read
+// from `<service>:info <name> --exposed-ports`. Services with no exposed ports
+// are skipped.
+func (t ServiceExposeTask) ExportGlobal() ([]interface{}, error) {
+	services, err := listServices()
+	if err != nil {
+		return nil, err
+	}
+	var out []interface{}
+	for _, s := range services {
+		ports, err := serviceExposedPortList(s.Type, s.Name)
+		if err != nil {
+			return nil, err
+		}
+		if len(ports) == 0 {
+			continue
+		}
+		out = append(out, ServiceExposeTask{Service: s.Type, Name: s.Name, Ports: ports, State: StatePresent})
+	}
+	return out, nil
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -181,11 +204,15 @@ func (t ServiceExposeTask) Plan() PlanResult {
 	})
 }
 
-// serviceExposedPorts returns the set of host ports a dokku service is
-// currently exposed on. A transport-level failure (`*subprocess.SSHError`)
-// is propagated; a dokku-level non-zero exit (e.g. service not exposed) is
-// treated as "no ports exposed."
-func serviceExposedPorts(service, name string) (map[string]bool, error) {
+// serviceExposedPortList returns the ordered host ports a dokku service is
+// currently exposed on, read from `<service>:info <name> --exposed-ports`. That
+// command reports `container->host` pairs (e.g. `5432->5432`, or `5432->127.0.0.1:5433`
+// when bound to a specific interface), so only the host side after the first
+// `->` is kept - which is what `<service>:expose` takes and what the task's
+// Ports field holds. A transport-level failure (`*subprocess.SSHError`) is
+// propagated; a dokku-level non-zero exit (e.g. service not exposed) is treated
+// as "no ports exposed."
+func serviceExposedPortList(service, name string) ([]string, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
@@ -200,14 +227,35 @@ func serviceExposedPorts(service, name string) (map[string]bool, error) {
 		if errors.As(err, &sshErr) {
 			return nil, err
 		}
-		return map[string]bool{}, nil
+		return nil, nil
 	}
 
-	ports := map[string]bool{}
-	for _, p := range strings.Fields(result.StdoutContents()) {
-		if p == "-" {
+	var ports []string
+	for _, field := range strings.Fields(result.StdoutContents()) {
+		if field == "-" {
 			continue
 		}
+		host := field
+		if i := strings.Index(field, "->"); i >= 0 {
+			host = field[i+len("->"):]
+		}
+		if host != "" {
+			ports = append(ports, host)
+		}
+	}
+	return ports, nil
+}
+
+// serviceExposedPorts returns the set of host ports a dokku service is currently
+// exposed on, derived from serviceExposedPortList for order-insensitive
+// comparison against the desired ports in Plan.
+func serviceExposedPorts(service, name string) (map[string]bool, error) {
+	list, err := serviceExposedPortList(service, name)
+	if err != nil {
+		return nil, err
+	}
+	ports := map[string]bool{}
+	for _, p := range list {
 		ports[p] = true
 	}
 	return ports, nil

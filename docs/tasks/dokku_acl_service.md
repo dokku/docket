@@ -10,7 +10,7 @@ Manages the dokku-acl access list for a dokku service
 
 ## Export support
 
-Not supported - service export is not yet implemented; tracked in issue #279.
+Supported.
 
 ## Parameters
 

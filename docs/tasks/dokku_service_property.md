@@ -10,7 +10,7 @@ Manages a property for a given dokku service
 
 ## Export support
 
-Not supported - service export is not yet implemented; tracked in issue #279.
+Not supported - no datastore plugin exposes a machine-readable report of the properties set via <service>:set, so they cannot be read back (tracked upstream in dokku/dokku-datastore#98).
 
 ## Parameters
 

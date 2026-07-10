@@ -10,7 +10,7 @@ Links or unlinks a dokku service to an app
 
 ## Export support
 
-Not supported - service export is not yet implemented; tracked in issue #279.
+Supported.
 
 ## Parameters
 
