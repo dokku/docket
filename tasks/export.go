@@ -34,6 +34,9 @@ var globalExportOrder = []string{
 	// plugins first: installing a third-party plugin is a prerequisite for the
 	// resources that follow.
 	"dokku_plugin",
+	// networks next: a foundational resource that app network attachments
+	// (dokku_network_property, emitted in the app plays) bind to.
+	"dokku_network",
 	"dokku_ssh_key",
 	"dokku_storage_entry",
 	"dokku_scheduler_k3s_profile",

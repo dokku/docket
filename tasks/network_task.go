@@ -1,6 +1,10 @@
 package tasks
 
 import (
+	"encoding/json"
+	"errors"
+	"sort"
+
 	"github.com/dokku/docket/subprocess"
 )
 
@@ -34,7 +38,7 @@ func (t NetworkTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t NetworkTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: "network:list cannot distinguish dokku-created networks from Docker built-ins and other apps' networks (docket#285, dokku/dokku#8797)"}
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns a list of NetworkTaskExamples as yaml
@@ -111,6 +115,53 @@ func (t NetworkTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// networkListEntry is the subset of `dokku network:list --format json` the
+// exporter reads. dokku serializes its DockerNetwork struct with capitalized
+// keys, and DokkuManaged (added in dokku 0.39) is true only for networks
+// created by network:create, so it distinguishes them from Docker built-ins
+// (bridge/host/none) and networks created by other tooling (e.g. compose
+// *_default networks).
+type networkListEntry struct {
+	Name         string `json:"Name"`
+	DokkuManaged bool   `json:"DokkuManaged"`
+}
+
+// ExportGlobal reconstructs the server's dokku-created networks from
+// `network:list --format json`, emitting a dokku_network task for each network
+// reporting DokkuManaged. Networks docket did not create - Docker built-ins and
+// networks from other tooling - report DokkuManaged false and are skipped. A
+// dokku predating the DokkuManaged field reports it absent (decoding to false)
+// for every network, so nothing is exported rather than every network being
+// re-emitted.
+func (t NetworkTask) ExportGlobal() ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "network:list", "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var entries []networkListEntry
+	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
+		return nil, nil
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+	var out []interface{}
+	for _, e := range entries {
+		if e.Name == "" || !e.DokkuManaged {
+			continue
+		}
+		out = append(out, NetworkTask{Name: e.Name})
+	}
+	return out, nil
 }
 
 // networkExists checks if a Docker network exists. Returns (false,
