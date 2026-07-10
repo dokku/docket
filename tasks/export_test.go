@@ -40,6 +40,79 @@ func TestAppExportOrderIsValid(t *testing.T) {
 	}
 }
 
+func TestGlobalExportOrderIsValid(t *testing.T) {
+	for _, key := range globalExportOrder {
+		proto, ok := RegisteredTasks[key]
+		if !ok {
+			t.Errorf("globalExportOrder has unknown task key %q", key)
+			continue
+		}
+		if _, ok := proto.(GlobalExporter); !ok {
+			t.Errorf("task %q in globalExportOrder does not implement GlobalExporter", key)
+		}
+	}
+}
+
+func TestExportPluginsBecomeTasks(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet plugin:list --format json": `[
+			{"name":"00_dokku-standard","core":true,"source_url":"","committish":"","branch":""},
+			{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"c0ffee1234","branch":"master"},
+			{"name":"acl","core":false,"source_url":"https://github.com/dokku/dokku-acl.git","committish":"def4567890abcdef","branch":""},
+			{"name":"tarball-plugin","core":false,"source_url":"","committish":"","branch":""}
+		]`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	// Plugin URLs are readable, so nothing is lifted into the vars map.
+	if res.HasVars() {
+		t.Errorf("expected no lifted vars, got %v", res.Vars)
+	}
+
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+	out := string(recipe)
+
+	// The two git-installed third-party plugins are reconstructed, with the URL
+	// inline and the committish following the branch (redis) or the exact commit
+	// for a detached checkout (acl).
+	for _, want := range []string{
+		"name: global",
+		"dokku_plugin",
+		"name: redis",
+		"https://github.com/dokku/dokku-redis.git",
+		"committish: master",
+		"name: acl",
+		"https://github.com/dokku/dokku-acl.git",
+		"committish: def4567890abcdef",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+
+	// Core plugins and non-git (tarball/local) installs are skipped.
+	for _, unwanted := range []string{"00_dokku-standard", "tarball-plugin"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("recipe should not contain %q:\n%s", unwanted, out)
+		}
+	}
+
+	// The URL is emitted inline, never lifted into a (sensitive) input.
+	if strings.Contains(out, "{{") {
+		t.Errorf("recipe should not template the plugin url:\n%s", out)
+	}
+	if strings.Contains(out, "sensitive: true") {
+		t.Errorf("plugin url should not be marked sensitive:\n%s", out)
+	}
+}
+
 func TestExportRecipeFileMode(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 

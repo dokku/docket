@@ -47,10 +47,12 @@ plus a companion vars-file describing it:
 docket export --host deploy@old-server
 ```
 
-This enumerates the apps and reconstructs their declarative state. Sensitive values (config and
-other secrets) are lifted into `tasks.vars.yml`; the recipe references them through inputs, so the
-pair is applied together with `--vars-file`. If you already maintain a recipe as the source of
-truth for the old server, skip this and use it directly.
+This enumerates the apps and reconstructs their declarative state. It also reconstructs any
+git-installed third-party plugins into [`dokku_plugin`](tasks/dokku_plugin.md) tasks in a leading
+global play; core plugins and plugins installed from a tarball or local path are omitted. Sensitive
+values (config and other secrets) are lifted into `tasks.vars.yml`; the recipe references them
+through inputs, so the pair is applied together with `--vars-file`. If you already maintain a recipe
+as the source of truth for the old server, skip this and use it directly.
 
 Some state cannot be read back and is left out with a warning - notably write-only credentials
 (`dokku_git_auth`, `dokku_registry_auth`) and datastore service data, which you add by hand. Each
