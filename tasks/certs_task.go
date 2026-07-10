@@ -274,7 +274,10 @@ func buildCertTarball(certPEM, keyPEM string) ([]byte, error) {
 func certsEnabled(t CertsTask) (bool, error) {
 	args := []string{"--quiet", "certs:report", t.App, "--ssl-enabled"}
 	if t.Global {
-		args = []string{"--quiet", "global-cert:report", "--global-cert-enabled"}
+		// The `--global` scope is required: dokku-global-cert standardized
+		// global-cert:report so a bare info flag now reports per-app; `--global`
+		// targets the global certificate itself, which returns "true"/"false".
+		args = []string{"--quiet", "global-cert:report", "--global", "--global-cert-enabled"}
 	}
 
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
