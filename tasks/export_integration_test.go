@@ -199,6 +199,170 @@ func TestIntegrationExportSchedulerK3sChart(t *testing.T) {
 	}
 }
 
+// TestIntegrationSchedulerK3sAnnotationsExport verifies the annotations
+// exporter reconstructs an app's annotations such that re-planning the exported
+// body reports no drift. Named with the TestIntegrationSchedulerK3s prefix so
+// the scheduler-k3s-test CI job's -run filter picks it up, and gated like the
+// other scheduler-k3s task tests.
+func TestIntegrationSchedulerK3sAnnotationsExport(t *testing.T) {
+	skipUnlessSchedulerK3sT(t)
+
+	app := "docket-test-export-k3s-annotations"
+	destroyApp(app)
+	createApp(app)
+	defer destroyApp(app)
+
+	cleanup := SchedulerK3sAnnotationsTask{
+		App:          app,
+		ResourceType: "deployment",
+		Annotations:  map[string]string{"prometheus.io/scrape": "", "prometheus.io/port": ""},
+		State:        StateAbsent,
+	}
+	defer cleanup.Execute()
+
+	set := SchedulerK3sAnnotationsTask{
+		App:          app,
+		ResourceType: "deployment",
+		Annotations:  map[string]string{"prometheus.io/scrape": "true", "prometheus.io/port": "9090"},
+		State:        StatePresent,
+	}
+	if r := set.Execute(); r.Error != nil {
+		t.Fatalf("set annotations: %v", r.Error)
+	}
+
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(app)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	var found *SchedulerK3sAnnotationsTask
+	for i := range bodies {
+		if a, ok := bodies[i].(SchedulerK3sAnnotationsTask); ok && a.ProcessType == "" && a.ResourceType == "deployment" {
+			found = &a
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported annotations do not include the deployment scope: %+v", bodies)
+	}
+	if found.Annotations["prometheus.io/scrape"] != "true" || found.Annotations["prometheus.io/port"] != "9090" {
+		t.Errorf("exported annotations mismatch: %+v", found.Annotations)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported annotations should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationSchedulerK3sLabelsExport verifies the labels exporter
+// reconstructs an app's labels such that re-planning the exported body reports
+// no drift. Named with the TestIntegrationSchedulerK3s prefix so the
+// scheduler-k3s-test CI job's -run filter picks it up, and gated like the other
+// scheduler-k3s task tests.
+func TestIntegrationSchedulerK3sLabelsExport(t *testing.T) {
+	skipUnlessSchedulerK3sT(t)
+
+	app := "docket-test-export-k3s-labels"
+	destroyApp(app)
+	createApp(app)
+	defer destroyApp(app)
+
+	cleanup := SchedulerK3sLabelsTask{
+		App:          app,
+		ProcessType:  "web",
+		ResourceType: "deployment",
+		Labels:       map[string]string{"tier": "", "app.kubernetes.io/component": ""},
+		State:        StateAbsent,
+	}
+	defer cleanup.Execute()
+
+	set := SchedulerK3sLabelsTask{
+		App:          app,
+		ProcessType:  "web",
+		ResourceType: "deployment",
+		Labels:       map[string]string{"tier": "edge", "app.kubernetes.io/component": "api"},
+		State:        StatePresent,
+	}
+	if r := set.Execute(); r.Error != nil {
+		t.Fatalf("set labels: %v", r.Error)
+	}
+
+	bodies, err := SchedulerK3sLabelsTask{}.ExportApp(app)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	var found *SchedulerK3sLabelsTask
+	for i := range bodies {
+		if l, ok := bodies[i].(SchedulerK3sLabelsTask); ok && l.ProcessType == "web" && l.ResourceType == "deployment" {
+			found = &l
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported labels do not include the web/deployment scope: %+v", bodies)
+	}
+	if found.Labels["tier"] != "edge" || found.Labels["app.kubernetes.io/component"] != "api" {
+		t.Errorf("exported labels mismatch: %+v", found.Labels)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported labels should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationSchedulerK3sAutoscalingAuthExport verifies the trigger-auth
+// exporter reads the real metadata values back (the dokku#8806 JSON contract)
+// so re-planning the exported body reports no drift. Named with the
+// TestIntegrationSchedulerK3s prefix so the scheduler-k3s-test CI job's -run
+// filter picks it up, and gated like the other scheduler-k3s task tests.
+func TestIntegrationSchedulerK3sAutoscalingAuthExport(t *testing.T) {
+	skipUnlessSchedulerK3sT(t)
+
+	app := "docket-test-export-k3s-autoscaling-auth"
+	destroyApp(app)
+	createApp(app)
+	defer destroyApp(app)
+
+	cleanup := SchedulerK3sAutoscalingAuthTask{
+		App:      app,
+		Trigger:  "aws-secret-manager",
+		Metadata: map[string]string{"awsRegion": "", "secretName": ""},
+		State:    StateAbsent,
+	}
+	defer cleanup.Execute()
+
+	set := SchedulerK3sAutoscalingAuthTask{
+		App:      app,
+		Trigger:  "aws-secret-manager",
+		Metadata: map[string]string{"awsRegion": "us-east-1", "secretName": "my-secret"},
+		State:    StatePresent,
+	}
+	if r := set.Execute(); r.Error != nil {
+		t.Fatalf("set autoscaling-auth: %v", r.Error)
+	}
+
+	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportApp(app)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	var found *SchedulerK3sAutoscalingAuthTask
+	for i := range bodies {
+		if a, ok := bodies[i].(SchedulerK3sAutoscalingAuthTask); ok && a.Trigger == "aws-secret-manager" {
+			found = &a
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported trigger auth does not include aws-secret-manager: %+v", bodies)
+	}
+	if found.Metadata["awsRegion"] != "us-east-1" || found.Metadata["secretName"] != "my-secret" {
+		t.Errorf("exported metadata mismatch: %+v", found.Metadata)
+	}
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported trigger auth should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
 // TestIntegrationExportLetsencrypt verifies the letsencrypt exporter reads the
 // active state. Gated on the letsencrypt plugin (not a dokku core plugin).
 // Enabling letsencrypt triggers a real ACME issuance, so this only asserts the

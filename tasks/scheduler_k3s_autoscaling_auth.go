@@ -171,10 +171,11 @@ func schedulerK3sAutoscalingAuthClearCommand(spec schedulerK3sAutoscalingAuthSpe
 
 // getSchedulerK3sAutoscalingAuth reads the metadata currently stored for the
 // spec's trigger. It calls
-// `dokku scheduler-k3s:autoscaling-auth:report <app|--global> --format json
-// --include-metadata`, which returns a flat map where the entry for the
-// trigger itself is the sentinel value "configured" and metadata entries are
-// keyed `<trigger>-<key>`. We strip the prefix and skip the sentinel.
+// `dokku scheduler-k3s:autoscaling-auth:report <app|--global> --format json`,
+// which returns a flat map keyed `<trigger>.<metadata_key>` carrying the real
+// metadata values (dokku only masks stdout and single-flag output, never the
+// JSON payload). We keep the entries under our trigger and strip the
+// `<trigger>.` prefix to recover the original metadata keys.
 func getSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec) (map[string]string, error) {
 	args := []string{"--quiet", "scheduler-k3s:autoscaling-auth:report"}
 	if spec.Global {
@@ -182,7 +183,7 @@ func getSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec) (map[s
 	} else {
 		args = append(args, spec.App)
 	}
-	args = append(args, "--include-metadata", "--format", "json")
+	args = append(args, "--format", "json")
 
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
@@ -192,21 +193,85 @@ func getSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec) (map[s
 		return nil, err
 	}
 
+	return parseSchedulerK3sAutoscalingAuthReport(result.StdoutBytes(), spec.Trigger)
+}
+
+// parseSchedulerK3sAutoscalingAuthReport decodes the flat
+// `scheduler-k3s:autoscaling-auth:report --format json` payload and returns the
+// metadata for a single trigger keyed by the original metadata key. The
+// composed keys are `<trigger>.<metadata_key>`; the trigger is dokku's first
+// segment and never contains a dot, but a metadata key may, so we strip the
+// `<trigger>.` prefix rather than splitting. Kept separate from the subprocess
+// call so the parse path is unit-testable without a fake executor.
+func parseSchedulerK3sAutoscalingAuthReport(raw []byte, trigger string) (map[string]string, error) {
 	payload := map[string]string{}
-	if err := json.Unmarshal(result.StdoutBytes(), &payload); err != nil {
+	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("parse scheduler-k3s:autoscaling-auth:report json: %w", err)
 	}
 
-	prefix := spec.Trigger + "-"
+	prefix := trigger + "."
 	metadata := map[string]string{}
 	for composedKey, value := range payload {
-		if composedKey == spec.Trigger {
-			continue
-		}
 		if !strings.HasPrefix(composedKey, prefix) {
 			continue
 		}
 		metadata[strings.TrimPrefix(composedKey, prefix)] = value
 	}
 	return metadata, nil
+}
+
+// exportSchedulerK3sAutoscalingAuth reconstructs the trigger-auth task bodies
+// for one scope (a single app, or the global scope when global is true) from
+// `scheduler-k3s:autoscaling-auth:report --format json`. The flat payload is
+// grouped by trigger and build turns each (trigger, metadata) group into a task
+// body. Non-SSH errors and unparseable output are swallowed (return nil) so a
+// host without scheduler-k3s state does not fail the whole export, mirroring
+// the profile and chart exporters.
+func exportSchedulerK3sAutoscalingAuth(app string, global bool, build func(trigger string, metadata map[string]string) interface{}) ([]interface{}, error) {
+	target := app
+	if global {
+		target = "--global"
+	}
+
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "scheduler-k3s:autoscaling-auth:report", target, "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	payload := map[string]string{}
+	if err := json.Unmarshal(result.StdoutBytes(), &payload); err != nil {
+		return nil, nil
+	}
+
+	byTrigger := map[string]map[string]string{}
+	for composed, value := range payload {
+		parts := strings.SplitN(composed, ".", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			continue
+		}
+		trigger, key := parts[0], parts[1]
+		if byTrigger[trigger] == nil {
+			byTrigger[trigger] = map[string]string{}
+		}
+		byTrigger[trigger][key] = value
+	}
+
+	triggers := make([]string, 0, len(byTrigger))
+	for trigger := range byTrigger {
+		triggers = append(triggers, trigger)
+	}
+	sort.Strings(triggers)
+
+	var out []interface{}
+	for _, trigger := range triggers {
+		out = append(out, build(trigger, byTrigger[trigger]))
+	}
+	return out, nil
 }

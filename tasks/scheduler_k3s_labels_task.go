@@ -47,7 +47,7 @@ func (t SchedulerK3sLabelsTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t SchedulerK3sLabelsTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: "scheduler-k3s exposes no report for labels, so the current state cannot be read back (docket#287, dokku/dokku#8800)"}
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the scheduler-k3s labels task
@@ -132,6 +132,32 @@ func (t SchedulerK3sLabelsTask) spec() schedulerK3sScopedPairsSpec {
 		ResourceType: t.ResourceType,
 		Pairs:        t.Labels,
 	}
+}
+
+// ExportApp reconstructs the app's labels, one task per
+// (process_type, resource_type) scope, from scheduler-k3s:labels:report.
+func (t SchedulerK3sLabelsTask) ExportApp(app string) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs("labels", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
+		return SchedulerK3sLabelsTask{
+			App:          app,
+			ProcessType:  processType,
+			ResourceType: resourceType,
+			Labels:       pairs,
+		}
+	})
+}
+
+// ExportGlobal reconstructs the global-scope labels, one task per
+// (process_type, resource_type) scope, from scheduler-k3s:labels:report.
+func (t SchedulerK3sLabelsTask) ExportGlobal() ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs("labels", "", true, func(processType, resourceType string, pairs map[string]string) interface{} {
+		return SchedulerK3sLabelsTask{
+			Global:       true,
+			ProcessType:  processType,
+			ResourceType: resourceType,
+			Labels:       pairs,
+		}
+	})
 }
 
 // init registers the SchedulerK3sLabelsTask with the task registry

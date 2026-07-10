@@ -262,7 +262,10 @@ func validateDockerOptionsTask(t DockerOptionsTask) error {
 // (phase, process type). The JSON payload carries one entry per
 // `<phase>` and one per `<phase>.<process_type>` for any process-scoped
 // option, plus legacy `docker-options-*` duplicates emitted during the
-// 0.38.x deprecation window which we discard.
+// 0.38.x deprecation window which we discard. dokku 0.38.22+ additionally
+// emits parallel `<key>-list` companions whose values are JSON arrays
+// (dokku/dokku#8799); the payload is decoded loosely so those array values do
+// not break parsing.
 func getDockerOptions(app string) (map[dockerOptionsScope]string, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
@@ -272,7 +275,7 @@ func getDockerOptions(app string) (map[dockerOptionsScope]string, error) {
 		return nil, err
 	}
 
-	payload := map[string]string{}
+	payload := map[string]interface{}{}
 	if err := json.Unmarshal(result.StdoutBytes(), &payload); err != nil {
 		return nil, fmt.Errorf("parse docker-options:report json: %w", err)
 	}
@@ -282,18 +285,25 @@ func getDockerOptions(app string) (map[dockerOptionsScope]string, error) {
 
 // parseDockerOptionsPayload turns the report JSON map into scope-keyed
 // options. Legacy plugin-prefixed keys and any unknown keys are dropped so
-// that future report additions do not surface as drift.
-func parseDockerOptionsPayload(payload map[string]string) map[dockerOptionsScope]string {
+// that future report additions do not surface as drift. Only string-valued
+// shorthand keys are consumed; the `<key>-list` structured-list companions
+// added in dokku 0.38.22 (dokku/dokku#8799) carry array values and are skipped
+// here, leaving the space-joined string keys as the source of truth.
+func parseDockerOptionsPayload(payload map[string]interface{}) map[dockerOptionsScope]string {
 	out := map[dockerOptionsScope]string{}
 	for key, value := range payload {
 		if strings.HasPrefix(key, "docker-options-") {
+			continue
+		}
+		str, ok := value.(string)
+		if !ok {
 			continue
 		}
 		phase, processType, ok := splitDockerOptionsKey(key)
 		if !ok {
 			continue
 		}
-		out[dockerOptionsScope{Phase: phase, ProcessType: processType}] = value
+		out[dockerOptionsScope{Phase: phase, ProcessType: processType}] = str
 	}
 	return out
 }

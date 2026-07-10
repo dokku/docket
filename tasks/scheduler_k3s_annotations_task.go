@@ -49,7 +49,7 @@ func (t SchedulerK3sAnnotationsTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t SchedulerK3sAnnotationsTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: "scheduler-k3s exposes no report for annotations, so the current state cannot be read back (docket#287, dokku/dokku#8800)"}
+	return ExportSupport{Status: ExportSupported}
 }
 
 // Examples returns the examples for the scheduler-k3s annotations task
@@ -134,6 +134,32 @@ func (t SchedulerK3sAnnotationsTask) spec() schedulerK3sScopedPairsSpec {
 		ResourceType: t.ResourceType,
 		Pairs:        t.Annotations,
 	}
+}
+
+// ExportApp reconstructs the app's annotations, one task per
+// (process_type, resource_type) scope, from scheduler-k3s:annotations:report.
+func (t SchedulerK3sAnnotationsTask) ExportApp(app string) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs("annotations", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
+		return SchedulerK3sAnnotationsTask{
+			App:          app,
+			ProcessType:  processType,
+			ResourceType: resourceType,
+			Annotations:  pairs,
+		}
+	})
+}
+
+// ExportGlobal reconstructs the global-scope annotations, one task per
+// (process_type, resource_type) scope, from scheduler-k3s:annotations:report.
+func (t SchedulerK3sAnnotationsTask) ExportGlobal() ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs("annotations", "", true, func(processType, resourceType string, pairs map[string]string) interface{} {
+		return SchedulerK3sAnnotationsTask{
+			Global:       true,
+			ProcessType:  processType,
+			ResourceType: resourceType,
+			Annotations:  pairs,
+		}
+	})
 }
 
 // init registers the SchedulerK3sAnnotationsTask with the task registry
