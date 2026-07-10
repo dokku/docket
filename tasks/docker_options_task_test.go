@@ -116,25 +116,31 @@ func TestDockerOptionsCommandArgs(t *testing.T) {
 }
 
 func TestParseDockerOptionsPayload(t *testing.T) {
-	payload := map[string]string{
-		"build":                       "",
-		"deploy":                      "-v /a:/a",
-		"run":                         "",
-		"deploy.web":                  "--memory=512m",
-		"deploy.worker":               "--cpus=1",
-		"docker-options-build":        "",
-		"docker-options-deploy":       "-v /a:/a",
-		"docker-options-deploy.web":   "--memory=512m",
-		"some-unrelated-key":          "ignored",
+	payload := map[string]interface{}{
+		"build":                     "",
+		"deploy":                    "-v /a:/a",
+		"run":                       "",
+		"deploy.web":                "--memory=512m",
+		"deploy.worker":             "--cpus=1",
+		"docker-options-build":      "",
+		"docker-options-deploy":     "-v /a:/a",
+		"docker-options-deploy.web": "--memory=512m",
+		"some-unrelated-key":        "ignored",
+		// dokku 0.38.22+ structured-list companions (dokku/dokku#8799): array
+		// values that must be skipped in favor of the string keys above.
+		"build-list":      []interface{}{},
+		"deploy-list":     []interface{}{"-v /a:/a"},
+		"run-list":        []interface{}{},
+		"deploy.web-list": []interface{}{"--memory=512m"},
 	}
 	got := parseDockerOptionsPayload(payload)
 
 	want := map[dockerOptionsScope]string{
-		{Phase: "build"}:                            "",
-		{Phase: "deploy"}:                           "-v /a:/a",
-		{Phase: "run"}:                              "",
-		{Phase: "deploy", ProcessType: "web"}:       "--memory=512m",
-		{Phase: "deploy", ProcessType: "worker"}:    "--cpus=1",
+		{Phase: "build"}:                         "",
+		{Phase: "deploy"}:                        "-v /a:/a",
+		{Phase: "run"}:                           "",
+		{Phase: "deploy", ProcessType: "web"}:    "--memory=512m",
+		{Phase: "deploy", ProcessType: "worker"}: "--cpus=1",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries, want %d (got: %#v)", len(got), len(want), got)
