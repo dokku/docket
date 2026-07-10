@@ -3,9 +3,12 @@ package tasks
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 func TestCertsTaskInvalidState(t *testing.T) {
@@ -217,5 +220,29 @@ func TestGetTasksCertsTaskParsedCorrectly(t *testing.T) {
 	}
 	if certsTask.State != StatePresent {
 		t.Errorf("State = %q, want %q", certsTask.State, StatePresent)
+	}
+}
+
+// TestCertsEnabledGlobalUsesGlobalScope locks the global certsEnabled probe to
+// the `--global` report scope. dokku-global-cert standardized
+// global-cert:report so a bare `--global-cert-enabled` flag now reports
+// per-app; only `--global` targets the global certificate itself.
+func TestCertsEnabledGlobalUsesGlobalScope(t *testing.T) {
+	var gotArgs []string
+	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		gotArgs = in.Args
+		return subprocess.ExecCommandResponse{Stdout: "true"}, nil
+	})()
+
+	enabled, err := certsEnabled(CertsTask{Global: true})
+	if err != nil {
+		t.Fatalf("certsEnabled: %v", err)
+	}
+	if !enabled {
+		t.Errorf("expected enabled=true when report returns \"true\"")
+	}
+	want := "--quiet global-cert:report --global --global-cert-enabled"
+	if got := strings.Join(gotArgs, " "); got != want {
+		t.Errorf("global certsEnabled args = %q, want %q", got, want)
 	}
 }
