@@ -117,8 +117,10 @@ func TestDockerOptionsCommandArgs(t *testing.T) {
 
 func TestParseDockerOptionsPayload(t *testing.T) {
 	payload := map[string]interface{}{
+		// Space-joined shorthand keys are ignored in favor of the structured
+		// -list companions below.
 		"build":                     "",
-		"deploy":                    "-v /a:/a",
+		"deploy":                    "-v /a:/a --label com.example.description=my app",
 		"run":                       "",
 		"deploy.web":                "--memory=512m",
 		"deploy.worker":             "--cpus=1",
@@ -126,28 +128,41 @@ func TestParseDockerOptionsPayload(t *testing.T) {
 		"docker-options-deploy":     "-v /a:/a",
 		"docker-options-deploy.web": "--memory=512m",
 		"some-unrelated-key":        "ignored",
-		// dokku 0.38.22+ structured-list companions (dokku/dokku#8799): array
-		// values that must be skipped in favor of the string keys above.
-		"build-list":      []interface{}{},
-		"deploy-list":     []interface{}{"-v /a:/a"},
-		"run-list":        []interface{}{},
-		"deploy.web-list": []interface{}{"--memory=512m"},
+		// dokku 0.38.22+ structured-list companions (dokku/dokku#8799): one
+		// array element per stored option, consumed as discrete entries. A
+		// value with a space stays a single element (no whitespace splitting).
+		"build-list":         []interface{}{},
+		"deploy-list":        []interface{}{"-v /a:/a", "--label 'com.example.description=my app'"},
+		"run-list":           []interface{}{},
+		"deploy.web-list":    []interface{}{"--memory=512m"},
+		"deploy.worker-list": []interface{}{"--cpus=1"},
 	}
 	got := parseDockerOptionsPayload(payload)
 
-	want := map[dockerOptionsScope]string{
-		{Phase: "build"}:                         "",
-		{Phase: "deploy"}:                        "-v /a:/a",
-		{Phase: "run"}:                           "",
-		{Phase: "deploy", ProcessType: "web"}:    "--memory=512m",
-		{Phase: "deploy", ProcessType: "worker"}: "--cpus=1",
+	want := map[dockerOptionsScope][]string{
+		{Phase: "build"}:                         {},
+		{Phase: "deploy"}:                        {"-v /a:/a", "--label 'com.example.description=my app'"},
+		{Phase: "run"}:                           {},
+		{Phase: "deploy", ProcessType: "web"}:    {"--memory=512m"},
+		{Phase: "deploy", ProcessType: "worker"}: {"--cpus=1"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries, want %d (got: %#v)", len(got), len(want), got)
 	}
 	for scope, expected := range want {
-		if got[scope] != expected {
-			t.Errorf("scope %+v: got %q, want %q", scope, got[scope], expected)
+		gotOptions, ok := got[scope]
+		if !ok {
+			t.Errorf("scope %+v: missing from result", scope)
+			continue
+		}
+		if len(gotOptions) != len(expected) {
+			t.Errorf("scope %+v: got %#v, want %#v", scope, gotOptions, expected)
+			continue
+		}
+		for i := range expected {
+			if gotOptions[i] != expected[i] {
+				t.Errorf("scope %+v: element %d got %q, want %q", scope, i, gotOptions[i], expected[i])
+			}
 		}
 	}
 }
@@ -178,23 +193,26 @@ func TestSplitDockerOptionsKey(t *testing.T) {
 
 func TestOptionPresent(t *testing.T) {
 	tests := []struct {
-		existing string
+		name     string
+		existing []string
 		option   string
 		want     bool
 	}{
-		{"", "-v /a:/a", false},
-		{"-v /a:/a", "-v /a:/a", true},
-		{"-v /a:/a -p 80:80", "-p 80:80", true},
-		{"-v /a:/a -p 80:80", "-v /a:/a", true},
-		{"-v /a:/aa", "-v /a:/a", false}, // exact token match, not substring
-		{"-v /a:/a", "-v /a:/aa", false}, // exact token match
-		{"-p 80:80 -v /a:/a", "-v /a:/a", true},
-		{"-p 8080:80", "-p 80:80", false}, // distinct tokens
+		{"empty list", nil, "-v /a:/a", false},
+		{"single match", []string{"-v /a:/a"}, "-v /a:/a", true},
+		{"match second entry", []string{"-v /a:/a", "-p 80:80"}, "-p 80:80", true},
+		{"match first entry", []string{"-v /a:/a", "-p 80:80"}, "-v /a:/a", true},
+		{"no substring match", []string{"-v /a:/aa"}, "-v /a:/a", false},
+		{"distinct entries", []string{"-p 8080:80"}, "-p 80:80", false},
+		// A discrete entry whose value contains a space matches only as a whole,
+		// never by any single whitespace-separated token.
+		{"space value whole match", []string{"--label 'com.example.description=my app'"}, "--label 'com.example.description=my app'", true},
+		{"space value token no match", []string{"--label 'com.example.description=my app'"}, "--label", false},
 	}
 	for _, tt := range tests {
 		got := optionPresent(tt.existing, tt.option)
 		if got != tt.want {
-			t.Errorf("optionPresent(%q, %q) = %v, want %v", tt.existing, tt.option, got, tt.want)
+			t.Errorf("%s: optionPresent(%#v, %q) = %v, want %v", tt.name, tt.existing, tt.option, got, tt.want)
 		}
 	}
 }
