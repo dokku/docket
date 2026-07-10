@@ -199,10 +199,12 @@ func TestIntegrationExportSchedulerK3sChart(t *testing.T) {
 	}
 }
 
-// TestIntegrationExportSchedulerK3sAnnotations verifies the annotations
+// TestIntegrationSchedulerK3sAnnotationsExport verifies the annotations
 // exporter reconstructs an app's annotations such that re-planning the exported
-// body reports no drift. Gated like the other scheduler-k3s task tests.
-func TestIntegrationExportSchedulerK3sAnnotations(t *testing.T) {
+// body reports no drift. Named with the TestIntegrationSchedulerK3s prefix so
+// the scheduler-k3s-test CI job's -run filter picks it up, and gated like the
+// other scheduler-k3s task tests.
+func TestIntegrationSchedulerK3sAnnotationsExport(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	app := "docket-test-export-k3s-annotations"
@@ -251,10 +253,12 @@ func TestIntegrationExportSchedulerK3sAnnotations(t *testing.T) {
 	}
 }
 
-// TestIntegrationExportSchedulerK3sLabels verifies the labels exporter
+// TestIntegrationSchedulerK3sLabelsExport verifies the labels exporter
 // reconstructs an app's labels such that re-planning the exported body reports
-// no drift. Gated like the other scheduler-k3s task tests.
-func TestIntegrationExportSchedulerK3sLabels(t *testing.T) {
+// no drift. Named with the TestIntegrationSchedulerK3s prefix so the
+// scheduler-k3s-test CI job's -run filter picks it up, and gated like the other
+// scheduler-k3s task tests.
+func TestIntegrationSchedulerK3sLabelsExport(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	app := "docket-test-export-k3s-labels"
@@ -305,11 +309,12 @@ func TestIntegrationExportSchedulerK3sLabels(t *testing.T) {
 	}
 }
 
-// TestIntegrationExportSchedulerK3sAutoscalingAuth verifies the trigger-auth
+// TestIntegrationSchedulerK3sAutoscalingAuthExport verifies the trigger-auth
 // exporter reads the real metadata values back (the dokku#8806 JSON contract)
-// so re-planning the exported body reports no drift. Gated like the other
-// scheduler-k3s task tests.
-func TestIntegrationExportSchedulerK3sAutoscalingAuth(t *testing.T) {
+// so re-planning the exported body reports no drift. Named with the
+// TestIntegrationSchedulerK3s prefix so the scheduler-k3s-test CI job's -run
+// filter picks it up, and gated like the other scheduler-k3s task tests.
+func TestIntegrationSchedulerK3sAutoscalingAuthExport(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	app := "docket-test-export-k3s-autoscaling-auth"
