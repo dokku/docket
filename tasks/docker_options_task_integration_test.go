@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -82,6 +83,63 @@ func TestIntegrationDockerOptions(t *testing.T) {
 	}
 	if result.Changed {
 		t.Errorf("expected Changed=false on idempotent remove")
+	}
+}
+
+// TestIntegrationDockerOptionsExportRoundTrip verifies the exporter recovers
+// each stored option as a discrete task from the structured -list report keys
+// (dokku/dokku#8799), including an option whose value contains a space, and
+// that re-planning the exported bodies reports no drift.
+func TestIntegrationDockerOptionsExportRoundTrip(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-docker-options-export"
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	phase := "deploy"
+	plainOption := "-v /tmp/docket-test:/tmp/docket-test"
+	// A value containing a space: the space-joined report string cannot split
+	// this back, but the -list companion carries it as one element.
+	spacedOption := "--label 'com.example.description=my app'"
+
+	for _, option := range []string{plainOption, spacedOption} {
+		add := DockerOptionsTask{App: appName, Phase: phase, Option: option, State: StatePresent}
+		if r := add.Execute(); r.Error != nil {
+			t.Fatalf("failed to add option %q: %v", option, r.Error)
+		}
+	}
+
+	bodies, err := DockerOptionsTask{}.ExportApp(appName)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+
+	// The space-bearing option must surface as exactly one task, not tokenized
+	// into separate tasks per whitespace-separated word.
+	var spaced []DockerOptionsTask
+	for _, body := range bodies {
+		task, ok := body.(DockerOptionsTask)
+		if !ok {
+			t.Fatalf("exported body is not a DockerOptionsTask: %T", body)
+		}
+		if strings.Contains(task.Option, "com.example.description=my app") {
+			spaced = append(spaced, task)
+		}
+	}
+	if len(spaced) != 1 {
+		t.Fatalf("expected exactly one exported task carrying the space value, got %d: %+v", len(spaced), bodies)
+	}
+
+	// Every exported body must re-plan without drift, proving the round-trip.
+	for _, body := range bodies {
+		task := body.(DockerOptionsTask)
+		task.State = StatePresent
+		if plan := task.Plan(); !plan.InSync {
+			t.Errorf("exported task %+v should report no drift, got status %v reason %q", task, plan.Status, plan.Reason)
+		}
 	}
 }
 

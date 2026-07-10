@@ -57,13 +57,14 @@ func (t DockerOptionsTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t DockerOptionsTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "docker-options:report space-joins each phase's options, so options whose values contain spaces cannot be split back into individual entries (dokku/dokku#8799)"}
+	return ExportSupport{Status: ExportSupported}
 }
 
 // ExportApp reconstructs the app's docker options as one task per individual
-// option, per (phase, process type). The report space-joins a phase's options,
-// so this splits on whitespace; options whose values contain spaces cannot be
-// recovered faithfully (dokku/dokku#8799).
+// option, per (phase, process type). Options are read from the structured
+// `<phase>-list` report keys (dokku/dokku#8799), so each stored option -
+// including values that contain spaces - is emitted as a discrete task without
+// whitespace splitting.
 func (t DockerOptionsTask) ExportApp(app string) ([]interface{}, error) {
 	scoped, err := getDockerOptions(app)
 	if err != nil {
@@ -87,7 +88,7 @@ func (t DockerOptionsTask) ExportApp(app string) ([]interface{}, error) {
 
 	var out []interface{}
 	for _, scope := range scopes {
-		for _, option := range strings.Fields(scoped[scope]) {
+		for _, option := range scoped[scope] {
 			out = append(out, DockerOptionsTask{
 				App:         app,
 				Phase:       scope.Phase,
@@ -259,14 +260,13 @@ func validateDockerOptionsTask(t DockerOptionsTask) error {
 }
 
 // getDockerOptions reads the docker-options JSON report and indexes it by
-// (phase, process type). The JSON payload carries one entry per
-// `<phase>` and one per `<phase>.<process_type>` for any process-scoped
-// option, plus legacy `docker-options-*` duplicates emitted during the
-// 0.38.x deprecation window which we discard. dokku 0.38.22+ additionally
-// emits parallel `<key>-list` companions whose values are JSON arrays
-// (dokku/dokku#8799); the payload is decoded loosely so those array values do
-// not break parsing.
-func getDockerOptions(app string) (map[dockerOptionsScope]string, error) {
+// (phase, process type). dokku 0.38.22+ emits structured `<phase>-list` and
+// `<phase>.<process_type>-list` companion keys whose values are JSON arrays
+// with one element per stored option (dokku/dokku#8799); these are the source
+// of truth here, so options are recovered as discrete entries even when their
+// values contain spaces. The space-joined shorthand keys and the legacy
+// `docker-options-*` duplicates are ignored.
+func getDockerOptions(app string) (map[dockerOptionsScope][]string, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "docker-options:report", app, "--format", "json"},
@@ -283,27 +283,39 @@ func getDockerOptions(app string) (map[dockerOptionsScope]string, error) {
 	return parseDockerOptionsPayload(payload), nil
 }
 
-// parseDockerOptionsPayload turns the report JSON map into scope-keyed
-// options. Legacy plugin-prefixed keys and any unknown keys are dropped so
-// that future report additions do not surface as drift. Only string-valued
-// shorthand keys are consumed; the `<key>-list` structured-list companions
-// added in dokku 0.38.22 (dokku/dokku#8799) carry array values and are skipped
-// here, leaving the space-joined string keys as the source of truth.
-func parseDockerOptionsPayload(payload map[string]interface{}) map[dockerOptionsScope]string {
-	out := map[dockerOptionsScope]string{}
+// parseDockerOptionsPayload turns the report JSON map into scope-keyed option
+// lists. Only the structured `<key>-list` companions (dokku/dokku#8799) are
+// consumed: each carries a JSON array with one element per stored option, so
+// options are indexed as discrete entries in dokku's stored order. The
+// space-joined shorthand keys are ignored (a non `-list` suffix), and a
+// `docker-options-` prefix is dropped defensively - dokku ships no
+// `docker-options-*-list` companion today, matching the "drop unknown keys so
+// future report additions do not surface as drift" posture.
+func parseDockerOptionsPayload(payload map[string]interface{}) map[dockerOptionsScope][]string {
+	out := map[dockerOptionsScope][]string{}
 	for key, value := range payload {
-		if strings.HasPrefix(key, "docker-options-") {
-			continue
-		}
-		str, ok := value.(string)
+		shorthand, ok := strings.CutSuffix(key, "-list")
 		if !ok {
 			continue
 		}
-		phase, processType, ok := splitDockerOptionsKey(key)
+		if strings.HasPrefix(shorthand, "docker-options-") {
+			continue
+		}
+		items, ok := value.([]interface{})
 		if !ok {
 			continue
 		}
-		out[dockerOptionsScope{Phase: phase, ProcessType: processType}] = str
+		phase, processType, ok := splitDockerOptionsKey(shorthand)
+		if !ok {
+			continue
+		}
+		options := make([]string, 0, len(items))
+		for _, item := range items {
+			if str, ok := item.(string); ok {
+				options = append(options, str)
+			}
+		}
+		out[dockerOptionsScope{Phase: phase, ProcessType: processType}] = options
 	}
 	return out
 }
@@ -324,22 +336,13 @@ func splitDockerOptionsKey(key string) (phase, processType string, ok bool) {
 	return phase, processType, true
 }
 
-// optionPresent returns true if option appears as a contiguous token sequence in existing
-func optionPresent(existing, option string) bool {
-	optionTokens := strings.Fields(option)
-	if len(optionTokens) == 0 {
-		return false
-	}
-	existingTokens := strings.Fields(existing)
-	for i := 0; i+len(optionTokens) <= len(existingTokens); i++ {
-		match := true
-		for j, tok := range optionTokens {
-			if existingTokens[i+j] != tok {
-				match = false
-				break
-			}
-		}
-		if match {
+// optionPresent returns true if option appears as a discrete stored entry in
+// existing. Options are compared by exact string equality because dokku's
+// `<phase>-list` report keys expose each option as a discrete element
+// (dokku/dokku#8799); no token splitting is required.
+func optionPresent(existing []string, option string) bool {
+	for _, entry := range existing {
+		if entry == option {
 			return true
 		}
 	}
