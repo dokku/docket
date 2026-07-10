@@ -58,7 +58,7 @@ func (t CertsTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t CertsTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "app certs are exported via certs:show; the global cert has no show command in the dokku-global-cert plugin, so it is not exported (docket#283)"}
+	return ExportSupport{Status: ExportPartial, Caveat: "app and global certificate PEM material is exported (via certs:show and global-cert:show) and written to the companion vars-file"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -291,12 +291,26 @@ func certsEnabled(t CertsTask) (bool, error) {
 	return strings.TrimSpace(result.StdoutContents()) == "true", nil
 }
 
-// ExportApp reconstructs an app's SSL certificate. certs:show streams the cert
-// and key PEM, which are sensitive and lifted into the vars-file by the engine.
-// The global cert (dokku-global-cert plugin) has no show command, so it is not
-// exported (docket#283).
+// ExportApp reconstructs an app's SSL certificate via certs:show. The cert and
+// key PEM are sensitive and lifted into the vars-file by the engine.
 func (t CertsTask) ExportApp(app string) ([]interface{}, error) {
-	enabled, err := certsEnabled(CertsTask{App: app})
+	return exportCert(CertsTask{App: app})
+}
+
+// ExportGlobal reconstructs the global SSL certificate via global-cert:show
+// (dokku-global-cert 0.4.x+). The cert and key PEM are sensitive and lifted into
+// the vars-file by the engine.
+func (t CertsTask) ExportGlobal() ([]interface{}, error) {
+	return exportCert(CertsTask{Global: true})
+}
+
+// exportCert probes whether a certificate is installed for the given scope (app
+// or global) and, if so, reads its PEM back via certs:show / global-cert:show.
+// A transport failure aborts the export; any other probe error (for example the
+// dokku-global-cert plugin not being installed) is swallowed so the scope is
+// skipped silently.
+func exportCert(t CertsTask) ([]interface{}, error) {
+	enabled, err := certsEnabled(t)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -308,25 +322,31 @@ func (t CertsTask) ExportApp(app string) ([]interface{}, error) {
 		return nil, nil
 	}
 
-	crt, err := certsShow(app, "crt")
+	crt, err := certsShow(t, "crt")
 	if err != nil {
 		return nil, err
 	}
-	key, err := certsShow(app, "key")
+	key, err := certsShow(t, "key")
 	if err != nil {
 		return nil, err
 	}
 	if crt == "" || key == "" {
 		return nil, nil
 	}
-	return []interface{}{CertsTask{App: app, CertContent: crt, KeyContent: key}}, nil
+	return []interface{}{CertsTask{App: t.App, Global: t.Global, CertContent: crt, KeyContent: key}}, nil
 }
 
-// certsShow returns the app's server.crt or server.key PEM via certs:show.
-func certsShow(app, kind string) (string, error) {
+// certsShow returns the scope's server.crt or server.key PEM. The per-app scope
+// uses core certs:show; the global scope uses global-cert:show (dokku-global-cert
+// 0.4.x+), mirroring the app/global branch in certsEnabled.
+func certsShow(t CertsTask, kind string) (string, error) {
+	args := []string{"--quiet", "certs:show", t.App, kind}
+	if t.Global {
+		args = []string{"--quiet", "global-cert:show", kind}
+	}
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"--quiet", "certs:show", app, kind},
+		Args:    args,
 	})
 	if err != nil {
 		return "", err

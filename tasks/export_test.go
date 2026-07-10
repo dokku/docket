@@ -317,3 +317,69 @@ func TestExportRecipeAppFilter(t *testing.T) {
 		t.Errorf("filtered export should not include app-one:\n%s", recipe)
 	}
 }
+
+func TestExportGlobalCertBecomesGlobalTask(t *testing.T) {
+	certPEM := "-----BEGIN CERTIFICATE-----\nMIIFAKECERT\n-----END CERTIFICATE-----"
+	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIIFAKEKEY\n-----END PRIVATE KEY-----"
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet global-cert:report --global --global-cert-enabled": "true",
+		"--quiet global-cert:show crt":                              certPEM,
+		"--quiet global-cert:show key":                              keyPEM,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	// global-cert:show streams the real PEM, so it is lifted into the vars map
+	// under the global scope (not blanked like an unreadable secret).
+	if got := res.Vars["global_cert_content"]; got != certPEM {
+		t.Errorf("vars[global_cert_content] = %q, want the cert PEM", got)
+	}
+	if got := res.Vars["global_key_content"]; got != keyPEM {
+		t.Errorf("vars[global_key_content] = %q, want the key PEM", got)
+	}
+
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	for _, want := range []string{
+		"name: global",
+		"dokku_certs",
+		"global: true",
+		"{{ .global_cert_content }}",
+		"{{ .global_key_content }}",
+		"name: global_cert_content",
+		"name: global_key_content",
+		"sensitive: true",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+	// The PEM is lifted into the vars-file, never left inline in the recipe body.
+	if strings.Contains(out, "MIIFAKECERT") || strings.Contains(out, "MIIFAKEKEY") {
+		t.Errorf("recipe leaked the certificate PEM:\n%s", out)
+	}
+}
+
+func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet global-cert:report --global --global-cert-enabled": "false",
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	if res.HasVars() {
+		t.Errorf("expected no lifted vars when no global cert is set, got %v", res.Vars)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	if strings.Contains(string(recipe), "dokku_certs") {
+		t.Errorf("recipe should not contain a certs task when the global cert is disabled:\n%s", recipe)
+	}
+}
