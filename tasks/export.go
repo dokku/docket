@@ -47,6 +47,13 @@ var globalExportOrder = []string{
 	"dokku_scheduler_k3s_annotations",
 	"dokku_scheduler_k3s_labels",
 	"dokku_scheduler_k3s_autoscaling_auth",
+	// datastore services: create must precede expose/backup/acl, which all
+	// operate on an existing service instance. The datastore plugins they rely
+	// on are installed by the dokku_plugin tasks emitted first.
+	"dokku_service_create",
+	"dokku_service_expose",
+	"dokku_service_backup",
+	"dokku_acl_service",
 }
 
 // appExportOrder is the fixed order in which app-scoped task types are emitted
@@ -110,6 +117,9 @@ var appExportOrder = []string{
 	"dokku_scheduler_k3s_labels",
 	"dokku_scheduler_k3s_autoscaling_auth",
 	"dokku_traefik_property",
+	// service links bind an already-created datastore service (from the leading
+	// global play) to the app.
+	"dokku_service_link",
 	// deploy source last: only one of these emits per app
 	"dokku_git_sync",
 	"dokku_git_from_image",

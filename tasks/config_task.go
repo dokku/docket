@@ -214,10 +214,30 @@ func planConfigUnset(t ConfigTask) PlanResult {
 // the current values, or nil when there are none. Restart mirrors the task
 // default so the emitted recipe matches apply's behaviour; the engine lifts
 // the values into the companion vars-file.
+//
+// Config vars injected by a datastore service link (the `<ALIAS>_URL` a link
+// sets to the service DSN) are dropped: dokku_service_link recreates them on
+// apply with the new server's credentials, so re-exporting the stale value
+// would clobber the fresh one. The exclusion happens here, before the engine
+// lifts values, so those DSNs never reach the vars-file.
 func (t ConfigTask) ExportApp(app string) ([]interface{}, error) {
 	config, err := getConfig(ConfigTask{App: app})
 	if err != nil {
 		return nil, err
+	}
+	if len(config) == 0 {
+		return nil, nil
+	}
+	dsns, err := linkedServiceDSNs(app)
+	if err != nil {
+		return nil, err
+	}
+	if len(dsns) > 0 {
+		for k, v := range config {
+			if dsns[v] {
+				delete(config, k)
+			}
+		}
 	}
 	if len(config) == 0 {
 		return nil, nil

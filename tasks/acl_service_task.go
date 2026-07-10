@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -43,7 +44,44 @@ func (t AclServiceTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t AclServiceTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ExportGlobal reconstructs the dokku-acl access list of every datastore
+// service on the server. Discovery is via listServices; the members are read
+// from `acl:list-service <type> <name>` (reusing getAclServiceUsers). Note the
+// field inversion versus the other service tasks: Service holds the instance
+// name and Type the datastore type. Services with no ACL entries - and every
+// service when the dokku-acl plugin is absent - are skipped.
+func (t AclServiceTask) ExportGlobal() ([]interface{}, error) {
+	services, err := listServices()
+	if err != nil {
+		return nil, err
+	}
+	var out []interface{}
+	for _, s := range services {
+		users, err := getAclServiceUsers(s.Type, s.Name)
+		if err != nil {
+			var sshErr *subprocess.SSHError
+			if errors.As(err, &sshErr) {
+				return nil, err
+			}
+			// acl:list-service fails when the dokku-acl plugin is not installed;
+			// treat that (and any other dokku-level failure) as "no ACL" so
+			// export stays quiet on servers without dokku-acl.
+			continue
+		}
+		if len(users) == 0 {
+			continue
+		}
+		out = append(out, AclServiceTask{
+			Service: s.Name,
+			Type:    s.Type,
+			Users:   sortedSetKeys(users),
+			State:   StatePresent,
+		})
+	}
+	return out, nil
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.

@@ -38,7 +38,23 @@ func (t ServiceCreateTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServiceCreateTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ExportGlobal reconstructs every datastore service instance on the server as a
+// dokku_service_create task. Discovery is via listServices (the `service-list`
+// plugin trigger); like dokku_storage_mount, only the resource's existence is
+// exported - the service's data is migrated separately.
+func (t ServiceCreateTask) ExportGlobal() ([]interface{}, error) {
+	services, err := listServices()
+	if err != nil {
+		return nil, err
+	}
+	var out []interface{}
+	for _, s := range services {
+		out = append(out, ServiceCreateTask{Service: s.Type, Name: s.Name, State: StatePresent})
+	}
+	return out, nil
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.

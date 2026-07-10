@@ -48,9 +48,3 @@ func TaskExportSupport(t Task) (ExportSupport, bool) {
 	}
 	return ExportSupport{}, false
 }
-
-// serviceExportCaveat is the shared caveat for the datastore/service tasks,
-// whose export is deferred to a follow-up issue (it needs a per-service-type
-// `<service>:list` primitive that does not exist yet). Each service task's
-// ExportSupport() references this so the wording stays consistent.
-const serviceExportCaveat = "service export is not yet implemented; tracked in issue #279"

@@ -14,8 +14,10 @@ import (
 // per-service report JSON, and the `<service>:info` flags do not correspond
 // one-to-one to settable keys (e.g. restart-policy, shm-size, and image are
 // settable but not readable via info). The plan therefore reports drift
-// unconditionally. Once a no-change read is available, this task should
-// switch to probing instead of always reporting Changed=true.
+// unconditionally, and docket export cannot reconstruct these properties. Once
+// a machine-readable service property report exists (requested upstream in
+// dokku/dokku-datastore#98), this task should switch to probing instead of
+// always reporting Changed=true, and its export can move off unsupported.
 type ServicePropertyTask struct {
 	// Service is the type of service to configure (e.g. redis, postgres, mysql)
 	Service string `required:"true" yaml:"service" description:"Type of service to configure (e.g. redis, postgres, mysql)"`
@@ -54,7 +56,7 @@ func (t ServicePropertyTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServicePropertyTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: serviceExportCaveat}
+	return ExportSupport{Status: ExportUnsupported, Caveat: "no datastore plugin exposes a machine-readable report of the properties set via `<service>:set`, so they cannot be read back (tracked upstream in dokku/dokku-datastore#98)"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
