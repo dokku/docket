@@ -41,6 +41,12 @@ var globalExportOrder = []string{
 	"dokku_storage_entry",
 	"dokku_scheduler_k3s_profile",
 	"dokku_scheduler_k3s_chart",
+	// scheduler-k3s annotations/labels/trigger-auth can be set globally as well
+	// as per-app; the global scope is emitted here and the per-app scope in
+	// appExportOrder.
+	"dokku_scheduler_k3s_annotations",
+	"dokku_scheduler_k3s_labels",
+	"dokku_scheduler_k3s_autoscaling_auth",
 }
 
 // appExportOrder is the fixed order in which app-scoped task types are emitted
@@ -98,6 +104,11 @@ var appExportOrder = []string{
 	"dokku_scheduler_property",
 	"dokku_scheduler_docker_local_property",
 	"dokku_scheduler_k3s_property",
+	// scheduler-k3s annotations/labels/trigger-auth also emit a global-scope
+	// task in globalExportOrder; here they emit the per-app scope.
+	"dokku_scheduler_k3s_annotations",
+	"dokku_scheduler_k3s_labels",
+	"dokku_scheduler_k3s_autoscaling_auth",
 	"dokku_traefik_property",
 	// deploy source last: only one of these emits per app
 	"dokku_git_sync",
@@ -260,6 +271,8 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 		return res.processHttpAuthUser(app, b, opts)
 	case MaintenanceCustomPageTask:
 		return res.processMaintenanceCustomPage(app, b, opts)
+	case SchedulerK3sAutoscalingAuthTask:
+		return res.processSchedulerK3sAutoscalingAuth(app, b, opts)
 	default:
 		return res.processSensitiveScalars(app, body, opts)
 	}
@@ -410,6 +423,52 @@ func (res *ExportResult) processConfig(app string, b ConfigTask, opts ExportOpti
 	}
 
 	b.Config = newConfig
+	return b, inputs
+}
+
+// processSchedulerK3sAutoscalingAuth lifts each KEDA trigger authentication
+// metadata value into the vars map (file mode) or blanks it (inline + redact),
+// since trigger-auth metadata are credentials. This mirrors processConfig; the
+// values are keyed by trigger and metadata key so they stay unique across
+// triggers and scopes.
+func (res *ExportResult) processSchedulerK3sAutoscalingAuth(app string, b SchedulerK3sAutoscalingAuthTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if len(b.Metadata) == 0 {
+		return b, nil
+	}
+
+	keys := make([]string, 0, len(b.Metadata))
+	for k := range b.Metadata {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	newMetadata := make(map[string]string, len(b.Metadata))
+	var inputs []map[string]interface{}
+
+	for _, k := range keys {
+		value := b.Metadata[k]
+		if opts.Inline {
+			if opts.Redact {
+				value = ""
+			}
+			newMetadata[k] = value
+			continue
+		}
+		name := res.uniqueVarName(app, b.Trigger+"_"+k)
+		newMetadata[k] = "{{ ." + name + " }}"
+		if opts.Redact {
+			res.Vars[name] = ""
+		} else {
+			res.Vars[name] = value
+		}
+		inputs = append(inputs, map[string]interface{}{
+			"name":      name,
+			"required":  true,
+			"sensitive": true,
+		})
+	}
+
+	b.Metadata = newMetadata
 	return b, inputs
 }
 

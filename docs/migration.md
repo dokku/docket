@@ -31,7 +31,7 @@ once DNS points at it.
 
 ## Before you start
 
-Provision the new server first. docket needs [Dokku >= 0.38.15 and dokku-letsencrypt >=
+Provision the new server first. docket needs [Dokku >= 0.38.22 and dokku-letsencrypt >=
 0.25.0](getting-started.md#prerequisites), plus any datastore plugins your services rely on
 (dokku-postgres, dokku-redis, dokku-mysql, and so on) already installed. The
 [`dokku_plugin`](tasks/dokku_plugin.md) task can install third-party plugins as part of the

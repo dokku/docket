@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -153,4 +154,88 @@ func renderedSchedulerK3sProcessType(processType string) string {
 // user-facing messages: "labels" -> "label", "annotations" -> "annotation".
 func singularizeSchedulerK3sKind(kind string) string {
 	return strings.TrimSuffix(kind, "s")
+}
+
+// schedulerK3sReportProcessTypeToTask is the inverse of
+// renderedSchedulerK3sProcessType: it maps a report-rendered process type back
+// to the value the task carries. The rendered global sentinel "global" becomes
+// an empty ProcessType (the task's default/global-process form); real process
+// types pass through unchanged. Like the forward mapping, this shares dokku's
+// pathological ambiguity - a real process literally named "global" is
+// indistinguishable from the sentinel and round-trips to an empty ProcessType.
+func schedulerK3sReportProcessTypeToTask(rendered string) string {
+	if rendered == "global" {
+		return ""
+	}
+	return rendered
+}
+
+// exportSchedulerK3sScopedPairs reconstructs the annotations or labels task
+// bodies for one scope (a single app, or the global scope when global is true)
+// from `scheduler-k3s:<kind>:report --format json`. The report is called
+// without --process-type/--resource-type filters so it returns every scope; the
+// flat `<processType>.<resourceType>.<key>` payload is grouped into one task
+// body per (process_type, resource_type) pair and build turns each group into
+// the task struct. Non-SSH errors and unparseable output are swallowed (return
+// nil) so a host without scheduler-k3s state does not fail the whole export,
+// mirroring the profile and chart exporters.
+func exportSchedulerK3sScopedPairs(kind, app string, global bool, build func(processType, resourceType string, pairs map[string]string) interface{}) ([]interface{}, error) {
+	target := app
+	if global {
+		target = "--global"
+	}
+
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "scheduler-k3s:" + kind + ":report", target, "--format", "json"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	payload := map[string]string{}
+	if err := json.Unmarshal(result.StdoutBytes(), &payload); err != nil {
+		return nil, nil
+	}
+
+	type scope struct{ processType, resourceType string }
+	groups := map[scope]map[string]string{}
+	for composed, value := range payload {
+		// processType and resourceType never contain dots, but an annotation or
+		// label key frequently does (e.g. "prometheus.io/scrape"), so split off
+		// exactly the first two segments and keep the remainder as the key.
+		parts := strings.SplitN(composed, ".", 3)
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+			continue
+		}
+		s := scope{
+			processType:  schedulerK3sReportProcessTypeToTask(parts[0]),
+			resourceType: parts[1],
+		}
+		if groups[s] == nil {
+			groups[s] = map[string]string{}
+		}
+		groups[s][parts[2]] = value
+	}
+
+	scopes := make([]scope, 0, len(groups))
+	for s := range groups {
+		scopes = append(scopes, s)
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].resourceType != scopes[j].resourceType {
+			return scopes[i].resourceType < scopes[j].resourceType
+		}
+		return scopes[i].processType < scopes[j].processType
+	})
+
+	var out []interface{}
+	for _, s := range scopes {
+		out = append(out, build(s.processType, s.resourceType, groups[s]))
+	}
+	return out, nil
 }

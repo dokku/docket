@@ -45,7 +45,7 @@ func (t SchedulerK3sAutoscalingAuthTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t SchedulerK3sAutoscalingAuthTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportUnsupported, Caveat: "scheduler-k3s exposes no report for KEDA trigger authentication, so the current state cannot be read back (docket#287, dokku/dokku#8800)"}
+	return ExportSupport{Status: ExportPartial, Caveat: "trigger authentication metadata values are secrets, so they are written to the companion vars-file"}
 }
 
 // Examples returns the examples for the scheduler-k3s autoscaling-auth task
@@ -117,6 +117,31 @@ func (t SchedulerK3sAutoscalingAuthTask) spec() schedulerK3sAutoscalingAuthSpec 
 		Trigger:  t.Trigger,
 		Metadata: t.Metadata,
 	}
+}
+
+// ExportApp reconstructs the app's trigger authentication metadata, one task
+// per trigger, from scheduler-k3s:autoscaling-auth:report. The metadata values
+// are secrets; the export engine lifts them into the companion vars-file.
+func (t SchedulerK3sAutoscalingAuthTask) ExportApp(app string) ([]interface{}, error) {
+	return exportSchedulerK3sAutoscalingAuth(app, false, func(trigger string, metadata map[string]string) interface{} {
+		return SchedulerK3sAutoscalingAuthTask{
+			App:      app,
+			Trigger:  trigger,
+			Metadata: metadata,
+		}
+	})
+}
+
+// ExportGlobal reconstructs the global-scope trigger authentication metadata,
+// one task per trigger, from scheduler-k3s:autoscaling-auth:report.
+func (t SchedulerK3sAutoscalingAuthTask) ExportGlobal() ([]interface{}, error) {
+	return exportSchedulerK3sAutoscalingAuth("", true, func(trigger string, metadata map[string]string) interface{} {
+		return SchedulerK3sAutoscalingAuthTask{
+			Global:   true,
+			Trigger:  trigger,
+			Metadata: metadata,
+		}
+	})
 }
 
 // init registers the SchedulerK3sAutoscalingAuthTask with the task registry
