@@ -54,6 +54,7 @@ import (
 
 	execute "github.com/alexellis/go-execute/v2"
 	"github.com/fatih/color"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // SSHError wraps a transport-level failure of the ssh subprocess
@@ -159,14 +160,19 @@ func controlPath(host string, pid int) string {
 	return filepath.Join(os.TempDir(), "docket-"+hex.EncodeToString(sum[:])[:16]+".sock")
 }
 
-// buildSshArgv assembles the full argv for the `ssh` subprocess. The
-// remote command is passed as separate argv elements; OpenSSH handles
-// quoting so callers must not pre-quote.
+// buildSshArgv assembles the full argv for the `ssh` subprocess. OpenSSH
+// does not preserve argv boundaries for the remote command: it space-joins
+// the remote tokens into a single string that the remote login shell
+// re-parses. So each remote token is POSIX-shell-quoted here (via
+// syntax.Quote with syntax.LangPOSIX) to survive that re-parse intact on
+// any POSIX shell. An argument that cannot be represented for a POSIX
+// shell (a non-printable byte such as a tab, newline, or null) yields an
+// error rather than a corrupted remote command.
 //
 // Reads two env vars at build time: DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1
 // adds `-o StrictHostKeyChecking=accept-new`; DOKKU_SUDO=1 wraps the
 // remote command in `sudo -n`.
-func buildSshArgv(target sshTarget, remote []string) []string {
+func buildSshArgv(target sshTarget, remote []string) ([]string, error) {
 	argv := []string{
 		"-o", "ControlMaster=auto",
 		"-o", "ControlPath=" + controlPath(target.UserHost(), os.Getpid()),
@@ -183,8 +189,14 @@ func buildSshArgv(target sshTarget, remote []string) []string {
 	if os.Getenv("DOKKU_SUDO") == "1" {
 		argv = append(argv, "sudo", "-n")
 	}
-	argv = append(argv, remote...)
-	return argv
+	for _, arg := range remote {
+		quoted, err := syntax.Quote(arg, syntax.LangPOSIX)
+		if err != nil {
+			return nil, fmt.Errorf("cannot send argument %q to remote shell: %w", arg, err)
+		}
+		argv = append(argv, quoted)
+	}
+	return argv, nil
 }
 
 // sshLookPathOnce caches the result of looking up the `ssh` binary so
@@ -302,7 +314,10 @@ func CallSshCommandWithContext(ctx context.Context, host string, input ExecComma
 	}
 
 	remote := append([]string{input.Command}, input.Args...)
-	argv := buildSshArgv(target, remote)
+	argv, err := buildSshArgv(target, remote)
+	if err != nil {
+		return ExecCommandResponse{}, &SSHError{Host: target.UserHost(), Command: remote, Err: err}
+	}
 
 	cmd := execute.ExecTask{
 		Command:            "ssh",

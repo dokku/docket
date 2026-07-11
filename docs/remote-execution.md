@@ -34,6 +34,16 @@ the key yourself:
 ssh-keyscan dokku.example.com >> ~/.ssh/known_hosts
 ```
 
+## Argument quoting
+
+OpenSSH joins the words of a remote command into a single string that the remote login shell
+re-parses, so docket shell-quotes each `dokku` argument before sending it. Values containing spaces
+or shell metacharacters - a `start-cmd` like `npm run start`, an nginx `access-log-format` with
+`$remote_addr`, or a backup schedule like `0 3 * * *` - reach the remote `dokku` verbatim, exactly
+as they would when running locally. An argument that cannot be represented for a POSIX shell (one
+containing a tab, newline, or null byte) is rejected with an `ssh:` error rather than sent in a
+corrupted form.
+
 ## Reading errors
 
 Errors are categorized so you can tell which side failed. SSH-level failures (refused connection,
