@@ -113,7 +113,10 @@ func TestBuildSshArgvDefault(t *testing.T) {
 	t.Setenv("DOKKU_SUDO", "")
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv := buildSshArgv(target, []string{"dokku", "apps:list"})
+	argv, err := buildSshArgv(target, []string{"dokku", "apps:list"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
 
 	wantOpts := []string{
 		"ControlMaster=auto",
@@ -156,7 +159,10 @@ func TestBuildSshArgvNonStandardPort(t *testing.T) {
 	t.Setenv("DOKKU_SUDO", "")
 
 	target := sshTarget{User: "alice", Host: "host", Port: "2222"}
-	argv := buildSshArgv(target, []string{"dokku", "version"})
+	argv, err := buildSshArgv(target, []string{"dokku", "version"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
 	if !containsExact(argv, "-p") {
 		t.Errorf("argv missing -p flag: %v", argv)
 	}
@@ -170,7 +176,10 @@ func TestBuildSshArgvAcceptNewHostKeys(t *testing.T) {
 	t.Setenv("DOKKU_SUDO", "")
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv := buildSshArgv(target, []string{"dokku", "version"})
+	argv, err := buildSshArgv(target, []string{"dokku", "version"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
 	joined := strings.Join(argv, " ")
 	if !strings.Contains(joined, "StrictHostKeyChecking=accept-new") {
 		t.Errorf("argv missing StrictHostKeyChecking=accept-new: %v", argv)
@@ -182,7 +191,10 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 	t.Setenv("DOKKU_SUDO", "1")
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv := buildSshArgv(target, []string{"dokku", "version"})
+	argv, err := buildSshArgv(target, []string{"dokku", "version"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
 
 	// sudo must appear after `--`, not before (we never run `sudo ssh`).
 	dashIdx := indexOf(argv, "--")
@@ -200,7 +212,10 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 
 func TestBuildSshArgvDoubleDashSeparator(t *testing.T) {
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv := buildSshArgv(target, []string{"dokku", "config:set", "--no-restart"})
+	argv, err := buildSshArgv(target, []string{"dokku", "config:set", "--no-restart"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
 	dashIdx := indexOf(argv, "--")
 	if dashIdx < 0 {
 		t.Fatalf("argv missing -- separator: %v", argv)
@@ -208,6 +223,74 @@ func TestBuildSshArgvDoubleDashSeparator(t *testing.T) {
 	post := argv[dashIdx+1:]
 	if len(post) < 3 || post[0] != "dokku" || post[1] != "config:set" || post[2] != "--no-restart" {
 		t.Errorf("remote command not preserved across --: %v", post)
+	}
+}
+
+func TestBuildSshArgvQuotesRemoteArgs(t *testing.T) {
+	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
+	t.Setenv("DOKKU_SUDO", "")
+
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(target, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
+	dashIdx := indexOf(argv, "--")
+	if dashIdx < 0 {
+		t.Fatalf("argv missing -- separator: %v", argv)
+	}
+	post := argv[dashIdx+1:]
+	// Metacharacter-free tokens stay bare; the value with a space is
+	// single-quoted so OpenSSH's space-joined string re-parses to one
+	// argument on the remote login shell.
+	want := []string{"dokku", "ps:set", "app", "start-cmd", "'npm run start'"}
+	if !equalStrings(post, want) {
+		t.Errorf("post-`--` argv = %v, want %v", post, want)
+	}
+}
+
+func TestBuildSshArgvQuotesInjection(t *testing.T) {
+	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
+	t.Setenv("DOKKU_SUDO", "")
+
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(target, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
+	// The payload must survive as a single quoted token so the remote shell
+	// cannot execute the `;` or expand `~`.
+	if !containsExact(argv, "'x; rm -rf ~'") {
+		t.Errorf("injection payload not single-quoted as one token: %v", argv)
+	}
+	if containsExact(argv, "x; rm -rf ~") {
+		t.Errorf("injection payload present unquoted: %v", argv)
+	}
+}
+
+func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
+	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
+	t.Setenv("DOKKU_SUDO", "")
+
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	// A newline has no POSIX-shell escape, so we refuse to build the remote
+	// command rather than corrupt it.
+	if _, err := buildSshArgv(target, []string{"dokku", "config:set", "app", "a\nb"}); err == nil {
+		t.Fatal("expected error for argument containing a newline")
+	}
+
+	// The same failure surfaces through the dispatcher as a transport-level
+	// *SSHError so plan/apply render it with the `ssh:` prefix.
+	_, err := CallSshCommand("alice@host", ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"config:set", "app", "a\nb"},
+	})
+	if err == nil {
+		t.Fatal("expected error from CallSshCommand for unquotable argument")
+	}
+	var sshErr *SSHError
+	if !errors.As(err, &sshErr) {
+		t.Fatalf("expected *SSHError, got %T (%v)", err, err)
 	}
 }
 
@@ -377,4 +460,16 @@ func indexOf(haystack []string, needle string) int {
 		}
 	}
 	return -1
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

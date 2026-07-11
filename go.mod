@@ -15,6 +15,7 @@ require (
 	github.com/posener/complete v1.2.3
 	github.com/spf13/pflag v1.0.10
 	gopkg.in/yaml.v3 v3.0.1
+	mvdan.cc/sh/v3 v3.13.1
 )
 
 require (

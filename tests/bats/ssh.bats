@@ -96,3 +96,35 @@ EOF
   assert_output --partial "(host: $DOCKET_TEST_REMOTE_HOST)"
   refute_output --partial "(host: bogus-should-not-be-used)"
 }
+
+@test "ssh transmits argument values with spaces verbatim" {
+  # A value with spaces exercises the transport quoting: OpenSSH space-joins
+  # the remote argv and the remote login shell re-parses it, so without
+  # quoting "npm run start" would reach dokku as three arguments.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: ensure docket-test-ssh
+      dokku_app:
+        app: docket-test-ssh
+    - name: set the start command
+      dokku_ps_property:
+        app: docket-test-ssh
+        property: start-cmd
+        value: npm run start
+EOF
+  DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+
+  # The value round-tripped intact, so a re-plan reports no drift instead of
+  # looping forever on a truncated "npm" (the "never converges" symptom).
+  DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "(in sync)"
+  refute_output --partial "[~]"
+
+  # And the raw value stored on the server is exactly what we set.
+  run ssh -o BatchMode=yes "$DOCKET_TEST_REMOTE_HOST" "dokku ps:report docket-test-ssh --format json"
+  assert_success
+  assert_output --partial "npm run start"
+}
