@@ -87,6 +87,24 @@ func (t SchedulerK3sAutoscalingAuthTask) Examples() ([]Doc, error) {
 	})
 }
 
+// SensitiveValues returns the trigger-authentication metadata values so they
+// are masked in user-facing output. Every metadata value is a secret
+// regardless of its key (the same shape as dokku_config), and the tag-based
+// walker cannot reach a map on this task, so the values are collected here.
+// The absent state leaves the values empty; those are dropped by the masker.
+// Server-probed values (a drifted or surviving value) are registered
+// separately at plan time, since they are not known from the task struct.
+func (t SchedulerK3sAutoscalingAuthTask) SensitiveValues() []string {
+	out := make([]string, 0, len(t.Metadata))
+	for _, v := range t.Metadata {
+		if v == "" {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
 // Execute sets or clears the scheduler-k3s autoscaling trigger authentication metadata
 func (t SchedulerK3sAutoscalingAuthTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
