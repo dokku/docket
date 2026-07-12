@@ -52,6 +52,55 @@ func TestFormatterPlayHeaderWithHostEmptyDelegates(t *testing.T) {
 	}
 }
 
+func TestFormatterTaskLineMasksSensitiveName(t *testing.T) {
+	// A loop over a sensitive value expands the task name to
+	// `<name> (item=<secret>)`; the name must be masked (#312).
+	subprocess.SetGlobalSensitive([]string{"hunter2"})
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	f, ui := newTestFormatter(false)
+	f.TaskLine(MarkerChanged, "create auth users (item=hunter2)", "")
+	got := ui.OutputWriter.String()
+	if strings.Contains(got, "hunter2") {
+		t.Errorf("task name leaked secret: %q", got)
+	}
+	if !strings.Contains(got, "***") {
+		t.Errorf("expected mask placeholder in %q", got)
+	}
+}
+
+func TestFormatterPlaySkippedMasksWhenSource(t *testing.T) {
+	// A play predicate that interpolates a sensitive input has the secret
+	// substituted into the recipe text; the echoed when: source must be
+	// masked (#335).
+	subprocess.SetGlobalSensitive([]string{"tok_abc123"})
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	f, ui := newTestFormatter(false)
+	f.PlaySkipped("deploy", `"tok_abc123" == "expected"`)
+	got := ui.OutputWriter.String()
+	if strings.Contains(got, "tok_abc123") {
+		t.Errorf("when source leaked secret: %q", got)
+	}
+	if !strings.Contains(got, "***") {
+		t.Errorf("expected mask placeholder in %q", got)
+	}
+}
+
+func TestFormatterPlaySkippedMasksWhenEvalError(t *testing.T) {
+	// apply/plan route play-level when-eval errors through PlaySkipped as
+	// `<when> (error: <err>)`; the same masking must cover them (#335).
+	subprocess.SetGlobalSensitive([]string{"tok_abc123"})
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	f, ui := newTestFormatter(false)
+	f.PlaySkipped("deploy", `"tok_abc123" == foo (error: unknown name foo)`)
+	got := ui.OutputWriter.String()
+	if strings.Contains(got, "tok_abc123") {
+		t.Errorf("when eval error leaked secret: %q", got)
+	}
+}
+
 func TestFormatterErrorContinuationDokkuPrefix(t *testing.T) {
 	f, ui := newTestFormatter(false)
 	f.ErrorContinuation(errors.New("app foo does not exist"))

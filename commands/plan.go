@@ -177,11 +177,18 @@ func (c *PlanCommand) Run(args []string) int {
 		}
 	}
 
+	// Register the sensitive CLI/vars-file input values before the recipe is
+	// parsed and rendered, so a template or parse error that interpolated one
+	// of them is masked. Task-declared sensitive values are added once the
+	// recipe parses (below).
+	subprocess.SetGlobalSensitive(sensitiveValues)
+	defer subprocess.SetGlobalSensitive(nil)
+
 	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
 
 	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, context, userSet)
 	if err != nil {
-		c.Ui.Error(fmt.Sprintf("task error: %v", err))
+		c.Ui.Error(subprocess.MaskString(fmt.Sprintf("task error: %v", err)))
 		return 1
 	}
 
@@ -208,9 +215,7 @@ func (c *PlanCommand) Run(args []string) int {
 		})
 	}
 
-	sensitiveValues = append(sensitiveValues, tasks.CollectPlaySensitiveValues(plays)...)
-	subprocess.SetGlobalSensitive(sensitiveValues)
-	defer subprocess.SetGlobalSensitive(nil)
+	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
 
 	if resolvedHost != "" {
 		defer subprocess.CloseSshControlMaster(resolvedHost)

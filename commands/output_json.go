@@ -32,7 +32,7 @@ func (e *JSONEmitter) PlayStart(name, host string) {
 	ev := map[string]interface{}{
 		"version": jsonSchemaVersion,
 		"type":    "play_start",
-		"name":    name,
+		"name":    subprocess.MaskString(name),
 		"ts":      nowRFC3339(),
 	}
 	if host != "" {
@@ -43,17 +43,22 @@ func (e *JSONEmitter) PlayStart(name, host string) {
 
 // PlaySkipped emits a `play_skipped` event for a play that was filtered
 // out by its `when:` predicate. The reason field carries the raw expr
-// source so consumers can correlate the skip with the recipe.
+// source so consumers can correlate the skip with the recipe. The name,
+// when, and reason are masked against the global sensitive value set: a
+// play predicate can sigil-interpolate a sensitive input, so whenSrc (and
+// the same string wrapped with an eval error by apply/plan) may contain
+// the literal secret.
 func (e *JSONEmitter) PlaySkipped(name, whenSrc string) {
 	ev := map[string]interface{}{
 		"version": jsonSchemaVersion,
 		"type":    "play_skipped",
-		"name":    name,
+		"name":    subprocess.MaskString(name),
 		"ts":      nowRFC3339(),
 	}
 	if whenSrc != "" {
-		ev["when"] = whenSrc
-		ev["reason"] = "when: " + whenSrc
+		masked := subprocess.MaskString(whenSrc)
+		ev["when"] = masked
+		ev["reason"] = "when: " + masked
 	}
 	e.write(ev)
 }
@@ -64,8 +69,8 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	out := map[string]interface{}{
 		"version":       jsonSchemaVersion,
 		"type":          "task",
-		"play":          ev.Play,
-		"name":          ev.Name,
+		"play":          subprocess.MaskString(ev.Play),
+		"name":          subprocess.MaskString(ev.Name),
 		"changed":       ev.State.Changed,
 		"state":         string(ev.State.State),
 		"desired_state": string(ev.State.DesiredState),
@@ -79,7 +84,7 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	case ev.Skipped:
 		out["status"] = "skipped"
 		if ev.SkipReason != "" {
-			out["skip_reason"] = ev.SkipReason
+			out["skip_reason"] = subprocess.MaskString(ev.SkipReason)
 		}
 	case ev.State.Error != nil:
 		out["status"] = "error"
@@ -123,8 +128,8 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 	out := map[string]interface{}{
 		"version":       jsonSchemaVersion,
 		"type":          "task",
-		"play":          ev.Play,
-		"name":          ev.Name,
+		"play":          subprocess.MaskString(ev.Play),
+		"name":          subprocess.MaskString(ev.Name),
 		"would_change":  !ev.Result.InSync && ev.Result.Error == nil && !ev.Skipped && ev.WhenError == nil,
 		"state":         string(ev.Result.DesiredState),
 		"desired_state": string(ev.Result.DesiredState),
@@ -180,8 +185,8 @@ func (e *JSONEmitter) TaskWarning(play, name, message string) {
 	e.write(map[string]interface{}{
 		"version": jsonSchemaVersion,
 		"type":    "warning",
-		"play":    play,
-		"name":    name,
+		"play":    subprocess.MaskString(play),
+		"name":    subprocess.MaskString(name),
 		"reason":  "deprecated",
 		"message": subprocess.MaskString(message),
 		"ts":      nowRFC3339(),

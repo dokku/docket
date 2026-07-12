@@ -154,6 +154,49 @@ func TestCollectSensitiveValuesAcrossTasks(t *testing.T) {
 	}
 }
 
+func TestCollectSensitiveValuesWalksGroupChildren(t *testing.T) {
+	// A block/rescue/always group carries no task of its own (Task == nil);
+	// its children hold the sensitive values and must still be collected.
+	m := OrderedStringEnvelopeMap{}
+	m.Set("group", &TaskEnvelope{
+		Name: "group",
+		Block: []*TaskEnvelope{
+			{Name: "b", Task: &fakeTask{Secret: "blockSecret"}},
+		},
+		Rescue: []*TaskEnvelope{
+			{Name: "r", Task: &taggedSliceTask{Tokens: []string{"rescueSecret"}}},
+		},
+		Always: []*TaskEnvelope{
+			{Name: "a", Task: &taggedMapTask{Headers: map[string]string{"X": "alwaysSecret"}}},
+		},
+	})
+	got := CollectSensitiveValues(m)
+	if !sortedEqual(got, []string{"blockSecret", "rescueSecret", "alwaysSecret"}) {
+		t.Errorf("got %v, want block/rescue/always secrets", got)
+	}
+}
+
+func TestCollectSensitiveValuesWalksNestedGroups(t *testing.T) {
+	// Groups nest: a group inside another group's block. The deepest child's
+	// secret must surface regardless of nesting depth.
+	m := OrderedStringEnvelopeMap{}
+	m.Set("outer", &TaskEnvelope{
+		Name: "outer",
+		Block: []*TaskEnvelope{
+			{
+				Name: "inner-group",
+				Block: []*TaskEnvelope{
+					{Name: "leaf", Task: &fakeTask{Secret: "deepSecret"}},
+				},
+			},
+		},
+	})
+	got := CollectSensitiveValues(m)
+	if !sortedEqual(got, []string{"deepSecret"}) {
+		t.Errorf("got %v, want [deepSecret]", got)
+	}
+}
+
 func TestConfigTaskSensitiveValuesReturnsMapValuesAndBase64(t *testing.T) {
 	ct := &ConfigTask{
 		App:    "myapp",

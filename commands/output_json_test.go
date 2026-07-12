@@ -387,6 +387,51 @@ func TestJSONEmitterMasksSensitiveValues(t *testing.T) {
 	}
 }
 
+func TestJSONEmitterMasksTaskNameAndPlay(t *testing.T) {
+	// A loop over a sensitive value expands the task name; the name and play
+	// fields must be masked in JSON too (#312).
+	subprocess.SetGlobalSensitive([]string{"hunter2"})
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	e, ui := emitterTestUI()
+	e.ApplyTask(ApplyTaskEvent{
+		Play: "play-hunter2",
+		Name: "create auth users (item=hunter2)",
+		State: tasks.TaskOutputState{
+			Changed:      true,
+			State:        tasks.StatePresent,
+			DesiredState: tasks.StatePresent,
+		},
+	})
+	ev := decodeOnly(t, ui.OutputWriter.String())
+	if got := ev["name"].(string); strings.Contains(got, "hunter2") {
+		t.Errorf("name leaked secret: %q", got)
+	}
+	if got := ev["play"].(string); strings.Contains(got, "hunter2") {
+		t.Errorf("play leaked secret: %q", got)
+	}
+}
+
+func TestJSONEmitterPlaySkippedMasksWhen(t *testing.T) {
+	// The play_skipped when/reason fields carry the raw predicate source; a
+	// secret interpolated into it must be masked (#335).
+	subprocess.SetGlobalSensitive([]string{"tok_abc123"})
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	e, ui := emitterTestUI()
+	e.PlaySkipped("deploy", `"tok_abc123" == "expected"`)
+	ev := decodeOnly(t, ui.OutputWriter.String())
+	if got := ev["when"].(string); strings.Contains(got, "tok_abc123") {
+		t.Errorf("when leaked secret: %q", got)
+	}
+	if got := ev["reason"].(string); strings.Contains(got, "tok_abc123") {
+		t.Errorf("reason leaked secret: %q", got)
+	}
+	if !strings.Contains(ev["when"].(string), "***") {
+		t.Errorf("expected mask placeholder in when, got %q", ev["when"])
+	}
+}
+
 func TestJSONEmitterEveryEventHasVersion1(t *testing.T) {
 	e, ui := emitterTestUI()
 	e.PlayStart("tasks", "")

@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"reflect"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 // SensitiveOverride is implemented by tasks whose sensitive values cannot be
@@ -24,16 +26,39 @@ type SensitiveOverride interface {
 //   - the task implements SensitiveOverride and the method returns it.
 //
 // String, []string, and map[string]string fields are supported. Nested
-// structs and pointers are walked recursively. Empty values are dropped by
-// the subprocess masker, not here.
+// structs and pointers are walked recursively. block/rescue/always group
+// envelopes carry no task of their own, so their child envelopes are walked
+// recursively to any depth. Empty values are dropped by the subprocess masker,
+// not here.
 func CollectSensitiveValues(tasks OrderedStringEnvelopeMap) []string {
 	var out []string
 	for _, name := range tasks.Keys() {
-		env := tasks.GetEnvelope(name)
-		if env == nil || env.Task == nil {
-			continue
-		}
+		out = append(out, sensitiveValuesFromEnvelope(tasks.GetEnvelope(name))...)
+	}
+	return out
+}
+
+// sensitiveValuesFromEnvelope returns the masked-value set for one envelope.
+// A leaf envelope contributes its task's values; a block/rescue/always group
+// (Task == nil) contributes the union of its children, recursing so a secret
+// declared only inside a nested group still surfaces. Mirrors the group
+// recursion in CollectEnvelopeNames.
+func sensitiveValuesFromEnvelope(env *TaskEnvelope) []string {
+	if env == nil {
+		return nil
+	}
+	var out []string
+	if env.Task != nil {
 		out = append(out, sensitiveValuesFromTask(env.Task)...)
+	}
+	for _, child := range env.Block {
+		out = append(out, sensitiveValuesFromEnvelope(child)...)
+	}
+	for _, child := range env.Rescue {
+		out = append(out, sensitiveValuesFromEnvelope(child)...)
+	}
+	for _, child := range env.Always {
+		out = append(out, sensitiveValuesFromEnvelope(child)...)
 	}
 	return out
 }
@@ -50,6 +75,23 @@ func CollectPlaySensitiveValues(plays []*Play) []string {
 		out = append(out, CollectSensitiveValues(play.Tasks)...)
 	}
 	return out
+}
+
+// registerSensitiveMapValues adds every non-empty value of m to the global
+// mask registry at plan time. It is for values that are secret but only become
+// known after a server probe - the pre-run collection in commands/apply.go and
+// commands/plan.go walks task structs, so it cannot see them (e.g. a
+// scheduler-k3s trigger's surviving metadata read back from the server). The
+// keys are not masked; only the values.
+func registerSensitiveMapValues(m map[string]string) {
+	if len(m) == 0 {
+		return
+	}
+	values := make([]string, 0, len(m))
+	for _, v := range m {
+		values = append(values, v)
+	}
+	subprocess.AddGlobalSensitive(values...)
 }
 
 // sensitiveValuesFromTask returns the masked-value set for a single task.

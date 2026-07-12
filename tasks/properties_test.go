@@ -27,6 +27,93 @@ func TestGetPropertyArgsGlobal(t *testing.T) {
 	}
 }
 
+func TestPlanPropertyMasksSensitiveDriftValue(t *testing.T) {
+	subprocess.SetGlobalSensitive(nil)
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	keys := map[string]PropertyKeys{
+		"secret-prop": {PerApp: "", Global: "global-secret-prop", Sensitive: true},
+	}
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet myplugin:report --global --format json": `{"global-secret-prop":"oldsecret"}`,
+	}))()
+
+	res := planProperty(StatePresent, "", true, "secret-prop", "newsecret", "myplugin:set", keys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+
+	// The probed old value and the desired new value are both secrets and must
+	// be registered so the drift reason and command echo mask them.
+	if masked := subprocess.MaskString(res.Reason); strings.Contains(masked, "oldsecret") {
+		t.Errorf("drift reason leaked probed secret: %q -> %q", res.Reason, masked)
+	}
+	if !strings.Contains(res.Reason, "oldsecret") {
+		t.Fatalf("expected reason to embed the probed value pre-masking, got %q", res.Reason)
+	}
+	if masked := subprocess.MaskString(res.Reason); !strings.Contains(masked, "***") {
+		t.Errorf("expected mask placeholder in masked reason, got %q", masked)
+	}
+	for _, cmd := range res.Commands {
+		if masked := subprocess.MaskString(cmd); strings.Contains(masked, "newsecret") {
+			t.Errorf("command leaked desired secret after masking: %q -> %q", cmd, masked)
+		}
+	}
+}
+
+func TestPlanPropertyAbsentMasksSensitiveOldValue(t *testing.T) {
+	subprocess.SetGlobalSensitive(nil)
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	keys := map[string]PropertyKeys{
+		"secret-prop": {PerApp: "", Global: "global-secret-prop", Sensitive: true},
+	}
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet myplugin:report --global --format json": `{"global-secret-prop":"livesecret"}`,
+	}))()
+
+	// The absent path leaks the current server secret even without a sensitive
+	// recipe value (the value must be empty for absent).
+	res := planProperty(StateAbsent, "", true, "secret-prop", "", "myplugin:set", keys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if masked := subprocess.MaskString(res.Reason); strings.Contains(masked, "livesecret") {
+		t.Errorf("unset reason leaked server secret: %q -> %q", res.Reason, masked)
+	}
+}
+
+func TestPlanPropertyDoesNotMaskBenignDriftValue(t *testing.T) {
+	subprocess.SetGlobalSensitive(nil)
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	keys := map[string]PropertyKeys{
+		"timeout": {PerApp: "", Global: "global-timeout"},
+	}
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet myplugin:report --global --format json": `{"global-timeout":"60s"}`,
+	}))()
+
+	res := planProperty(StatePresent, "", true, "timeout", "90s", "myplugin:set", keys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	// A non-sensitive property keeps its old value visible for a useful diff.
+	if masked := subprocess.MaskString(res.Reason); !strings.Contains(masked, "60s") {
+		t.Errorf("benign old value should not be masked, got %q", masked)
+	}
+}
+
+func TestSecretPropertiesAreMarkedSensitive(t *testing.T) {
+	// Guard the marks that close #336 so they are not accidentally dropped.
+	if !traefikPropertyKeys["basic-auth-password"].Sensitive {
+		t.Error("traefik basic-auth-password must be marked Sensitive")
+	}
+	if !schedulerK3sPropertyKeys["token"].Sensitive {
+		t.Error("scheduler-k3s token must be marked Sensitive")
+	}
+}
+
 func captureLog(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buf := &bytes.Buffer{}
