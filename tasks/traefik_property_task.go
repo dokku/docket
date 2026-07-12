@@ -85,7 +85,7 @@ var traefikPropertyKeys = map[string]PropertyKeys{
 	"api-entry-point":         {PerApp: "", Global: "global-api-entry-point"},
 	"api-entry-point-address": {PerApp: "", Global: "global-api-entry-point-address"},
 	"api-vhost":               {PerApp: "", Global: "global-api-vhost"},
-	"basic-auth-password":     {PerApp: "", Global: "global-basic-auth-password"},
+	"basic-auth-password":     {PerApp: "", Global: "global-basic-auth-password", Sensitive: true},
 	"basic-auth-username":     {PerApp: "", Global: "global-basic-auth-username"},
 	"challenge-mode":          {PerApp: "", Global: "global-challenge-mode"},
 	"dashboard-enabled":       {PerApp: "", Global: "global-dashboard-enabled"},

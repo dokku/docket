@@ -19,9 +19,16 @@ import (
 // Values point at the canonical bare-key shape (no <plugin>- prefix). The
 // legacy <plugin>-prefixed keys remain emitted during the 0.38.x deprecation
 // window but are ignored by the lookup.
+//
+// Sensitive marks a property whose value is a secret (e.g. a password or a
+// cluster token). When set, planProperty registers both the desired value and
+// the server-probed current value with the masker, so the `(was %q)` drift
+// reason and the command echo are masked. It is a per-property flag because a
+// plugin usually has a mix of secret and benign properties.
 type PropertyKeys struct {
-	PerApp string
-	Global string
+	PerApp    string
+	Global    string
+	Sensitive bool
 }
 
 // pluginFromSubcommand returns the plugin component of a colon-separated
@@ -252,6 +259,16 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 		target = "--global"
 	}
 
+	// A property flagged Sensitive carries a secret value. Register the desired
+	// value now so the command echo is masked; empties are dropped. The
+	// server-probed current value is registered after each probe below, since
+	// it is not known from the recipe (a hand-written recipe never tags it, and
+	// the `(was %q)` drift reason would otherwise leak the live server secret).
+	sensitive := keys[property].Sensitive
+	if sensitive {
+		subprocess.AddGlobalSensitive(value)
+	}
+
 	return DispatchPlan(state, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			// Dynamic property families have no probe key; treat as drift
@@ -264,6 +281,9 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 			// (matches pre-probe behavior for unsupported plugins) but
 			// surface SSH transport failures so the user sees `! ssh:`.
 			current, probeErr := getProperty(subcommand, app, global, property, keys)
+			if sensitive {
+				subprocess.AddGlobalSensitive(current)
+			}
 			if probeErr != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(probeErr, &sshErr) {
@@ -302,6 +322,9 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 			}
 
 			current, probeErr := getProperty(subcommand, app, global, property, keys)
+			if sensitive {
+				subprocess.AddGlobalSensitive(current)
+			}
 			if probeErr != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(probeErr, &sshErr) {

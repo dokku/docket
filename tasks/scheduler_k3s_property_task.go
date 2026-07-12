@@ -109,7 +109,7 @@ var schedulerK3sPropertyKeys = map[string]PropertyKeys{
 	"network-interface":      {PerApp: "", Global: "global-network-interface"},
 	"rollback-on-failure":    {PerApp: "rollback-on-failure", Global: "global-rollback-on-failure"},
 	"shm-size":               {PerApp: "shm-size", Global: "global-shm-size"},
-	"token":                  {PerApp: "", Global: "global-token"},
+	"token":                  {PerApp: "", Global: "global-token", Sensitive: true},
 }
 
 // Validate checks the SchedulerK3sPropertyTask's inputs without contacting the server.
