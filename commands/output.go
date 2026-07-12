@@ -223,7 +223,7 @@ func (f *Formatter) Verbose() bool { return f.verbose }
 // listing. Used once per play; until #208 lands, callers emit one
 // header per run.
 func (f *Formatter) PlayHeader(name string) {
-	f.ui.Output(fmt.Sprintf("==> Play: %s", name))
+	f.ui.Output(fmt.Sprintf("==> Play: %s", subprocess.MaskString(name)))
 }
 
 // PlayHeaderWithHost is like PlayHeader but appends a `(host: <name>)`
@@ -235,7 +235,7 @@ func (f *Formatter) PlayHeaderWithHost(name, host string) {
 		f.PlayHeader(name)
 		return
 	}
-	f.ui.Output(fmt.Sprintf("==> Play: %s  (host: %s)", name, host))
+	f.ui.Output(fmt.Sprintf("==> Play: %s  (host: %s)", subprocess.MaskString(name), host))
 }
 
 // PlayStart satisfies EventEmitter; delegates to PlayHeaderWithHost.
@@ -246,13 +246,18 @@ func (f *Formatter) PlayStart(name, host string) {
 // PlaySkipped renders a `==> Play: <name>  (skipped: when "<src>")`
 // line for a play whose `when:` predicate evaluated to false. whenSrc
 // is the raw expr source; the formatter quotes it back so the user can
-// see which predicate caused the skip.
+// see which predicate caused the skip. Both the name and whenSrc are
+// masked against the global sensitive value set: a play predicate can
+// sigil-interpolate a sensitive input, so whenSrc (and the same string
+// wrapped with an eval error by apply/plan) may contain the literal
+// secret.
 func (f *Formatter) PlaySkipped(name, whenSrc string) {
+	name = subprocess.MaskString(name)
 	if whenSrc == "" {
 		f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped)", name))
 		return
 	}
-	f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped: when %q)", name, whenSrc))
+	f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped: when %q)", name, subprocess.MaskString(whenSrc)))
 }
 
 // ApplyTask renders one apply task line plus optional continuations,
@@ -388,12 +393,13 @@ func PrefixErrorMessage(err error) string {
 // appended after two spaces (matching the legacy plan-line layout).
 //
 // Errored task lines are routed through Ui.Error so they land on stderr
-// and inherit the cli-skeleton error styling. The suffix is masked
-// against the global sensitive value set so error contexts that include
-// stderr can't leak secrets.
+// and inherit the cli-skeleton error styling. Both the name and the
+// suffix are masked against the global sensitive value set: the name can
+// carry a secret via a loop expansion (`… (item=<value>)`), and the
+// suffix can carry a secret via a plan reason or stderr context.
 func (f *Formatter) TaskLine(m Marker, name, suffix string) {
 	marker := f.paintMarker(m)
-	line := marker + name
+	line := marker + subprocess.MaskString(name)
 	if suffix != "" {
 		line = line + "  " + subprocess.MaskString(suffix)
 	}

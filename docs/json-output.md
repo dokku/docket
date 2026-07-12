@@ -6,7 +6,10 @@ consume the result programmatically instead of scraping text.
 
 Every event carries a `version` integer, pinned at `1`. Consumers should branch on `version` so a
 future schema change does not silently break them. Values marked sensitive - inputs declared
-`sensitive: true`, or task fields tagged `sensitive:"true"` - are masked as `***`.
+`sensitive: true`, or task fields tagged `sensitive:"true"` - are masked as `***`. Masking covers
+every string field a secret can reach, including `name` and `play` (a loop over a sensitive value
+expands the task name) and the `when` / `reason` fields on `play_skipped` (a play predicate can
+interpolate a sensitive input).
 
 ## Events
 
