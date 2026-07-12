@@ -25,6 +25,43 @@ var (
 // from input values declared `sensitive: true` and from task struct fields
 // tagged `sensitive:"true"` before any subprocess runs, then defer a clear.
 func SetGlobalSensitive(values []string) {
+	cleaned := cleanSensitive(values)
+
+	sensitiveMu.Lock()
+	defer sensitiveMu.Unlock()
+	if len(cleaned) == 0 {
+		sensitiveValues = nil
+		return
+	}
+	sensitiveValues = cleaned
+}
+
+// AddGlobalSensitive appends values to the sensitive registry, keeping the
+// entries already registered. Use it when a value that must be masked only
+// becomes known after the registry was first populated - typically a secret
+// read back from the server during Plan() (a drifted property's old value, or
+// scheduler-k3s trigger metadata), which the pre-run collection in
+// commands/apply.go and commands/plan.go cannot see. Values are de-duplicated
+// against the existing set, empties are dropped, and the whole registry is
+// re-sorted length-descending. A no-op when values contribute nothing new.
+func AddGlobalSensitive(values ...string) {
+	if len(values) == 0 {
+		return
+	}
+	sensitiveMu.Lock()
+	defer sensitiveMu.Unlock()
+	merged := cleanSensitive(append(append([]string{}, sensitiveValues...), values...))
+	if len(merged) == 0 {
+		sensitiveValues = nil
+		return
+	}
+	sensitiveValues = merged
+}
+
+// cleanSensitive drops empty and duplicate entries and returns the values
+// sorted by length descending so a longer secret is masked before any shorter
+// secret that is a substring of it would be.
+func cleanSensitive(values []string) []string {
 	cleaned := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, v := range values {
@@ -37,19 +74,10 @@ func SetGlobalSensitive(values []string) {
 		seen[v] = struct{}{}
 		cleaned = append(cleaned, v)
 	}
-	// Sort by length descending so longer matches are masked before any
-	// shorter substring of them would be.
 	sort.SliceStable(cleaned, func(i, j int) bool {
 		return len(cleaned[i]) > len(cleaned[j])
 	})
-
-	sensitiveMu.Lock()
-	defer sensitiveMu.Unlock()
-	if len(cleaned) == 0 {
-		sensitiveValues = nil
-		return
-	}
-	sensitiveValues = cleaned
+	return cleaned
 }
 
 // GlobalSensitive returns a snapshot of the current sensitive value set.
