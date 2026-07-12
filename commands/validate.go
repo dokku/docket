@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
 
 	"github.com/josegonzalez/cli-skeleton/command"
@@ -158,11 +159,23 @@ func (c *ValidateCommand) Run(args []string) int {
 	}
 
 	overrides := map[string]bool{}
+	var sensitiveValues []string
 	for name, argument := range c.arguments {
 		if argument.HasValue() {
 			overrides[name] = true
 		}
+		if argument.Sensitive {
+			if v := argument.StringValue(); v != "" {
+				sensitiveValues = append(sensitiveValues, v)
+			}
+		}
 	}
+
+	// Register the sensitive input values so a problem message that quotes an
+	// interpolated secret (e.g. a template render error) is masked. validate is
+	// offline, so only input-derived values are available to collect.
+	subprocess.SetGlobalSensitive(sensitiveValues)
+	defer subprocess.SetGlobalSensitive(nil)
 
 	problems := tasks.Validate(data, tasks.ValidateOptions{
 		Strict:         c.strict,
@@ -200,13 +213,13 @@ func (c *ValidateCommand) emitJSONProblem(p tasks.Problem) {
 		"version": 1,
 		"type":    "validate_problem",
 		"code":    p.Code,
-		"message": p.Message,
+		"message": subprocess.MaskString(p.Message),
 	}
 	if p.Play != "" {
-		event["play"] = p.Play
+		event["play"] = subprocess.MaskString(p.Play)
 	}
 	if p.Task != "" {
-		event["task"] = p.Task
+		event["task"] = subprocess.MaskString(p.Task)
 	}
 	if p.Line > 0 {
 		event["line"] = p.Line
@@ -215,7 +228,7 @@ func (c *ValidateCommand) emitJSONProblem(p tasks.Problem) {
 		event["column"] = p.Column
 	}
 	if p.Hint != "" {
-		event["hint"] = p.Hint
+		event["hint"] = subprocess.MaskString(p.Hint)
 	}
 	b, err := json.Marshal(event)
 	if err != nil {
@@ -249,10 +262,10 @@ func (c *ValidateCommand) renderHumanProblems(problems []tasks.Problem) {
 
 	for _, play := range playOrder {
 		if play != "" {
-			c.Ui.Info(fmt.Sprintf("  %s", play))
+			c.Ui.Info(fmt.Sprintf("  %s", subprocess.MaskString(play)))
 		}
 		for _, p := range grouped[play] {
-			c.Ui.Info(fmt.Sprintf("    ! %s", formatProblem(p)))
+			c.Ui.Info(fmt.Sprintf("    ! %s", subprocess.MaskString(formatProblem(p))))
 		}
 		c.Ui.Info("")
 	}
