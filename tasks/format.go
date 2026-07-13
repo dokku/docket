@@ -256,9 +256,17 @@ func insertBlankLinesBetweenSequenceEntries(lines []string) []string {
 
 	for _, line := range lines {
 		switch {
+		case isCommentLine(line):
+			// A comment line is emitted verbatim without touching the
+			// trackers: it is the head comment of the entry that
+			// follows, so the inter-entry blank line must land above
+			// it (handled by spliceSeparatorBlank), and a top-level
+			// comment must not suppress the next play's separator.
+			out = append(out, line)
+			continue
 		case strings.HasPrefix(line, "- "):
 			if seenTopDash {
-				out = append(out, "")
+				out = spliceSeparatorBlank(out, 0)
 			}
 			seenTopDash = true
 			seenTaskDash = false
@@ -276,7 +284,7 @@ func insertBlankLinesBetweenSequenceEntries(lines []string) []string {
 			continue
 		case strings.HasPrefix(line, "    - ") && inTasksBlock:
 			if seenTaskDash {
-				out = append(out, "")
+				out = spliceSeparatorBlank(out, 4)
 			}
 			seenTaskDash = true
 			out = append(out, line)
@@ -297,6 +305,49 @@ func insertBlankLinesBetweenSequenceEntries(lines []string) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+// spliceSeparatorBlank inserts a single blank line into out to separate the
+// previous sequence entry from the next one. The blank is placed above the
+// contiguous run of the next entry's head-comment lines already appended to
+// out, so a comment stays attached to the entry it documents.
+//
+// dashIndent is the column of the upcoming entry's "- " dash (0 for a
+// top-level play, 4 for a task). Only comment lines whose "#" sits at
+// exactly that column are treated as head comments; a more deeply indented
+// "#" line is block-scalar content (e.g. a "# ..." line inside script: |),
+// not a YAML comment, and must not be crossed - doing so would splice a
+// blank line into the middle of the block scalar and corrupt it.
+func spliceSeparatorBlank(out []string, dashIndent int) []string {
+	at := len(out)
+	for at > 0 && isCommentAtColumn(out[at-1], dashIndent) {
+		at--
+	}
+	res := make([]string, 0, len(out)+1)
+	res = append(res, out[:at]...)
+	res = append(res, "")
+	res = append(res, out[at:]...)
+	return res
+}
+
+// isCommentLine reports whether line, ignoring leading whitespace, is a YAML
+// comment (or block-scalar content that happens to start with "#").
+func isCommentLine(line string) bool {
+	return strings.HasPrefix(strings.TrimLeft(line, " \t"), "#")
+}
+
+// isCommentAtColumn reports whether line is a comment whose "#" sits at
+// exactly column col (col leading spaces followed immediately by "#").
+func isCommentAtColumn(line string, col int) bool {
+	if len(line) <= col {
+		return false
+	}
+	for i := 0; i < col; i++ {
+		if line[i] != ' ' {
+			return false
+		}
+	}
+	return line[col] == '#'
 }
 
 // equivalentNodes compares two YAML AST trees structurally. Mapping

@@ -255,6 +255,79 @@ func TestFormatRejectsBrokenYAML(t *testing.T) {
 	}
 }
 
+func TestFormatKeepsTaskHeadCommentAttached(t *testing.T) {
+	in := `---
+- tasks:
+    - dokku_app:
+        app: a
+    # comment for b
+    - dokku_app:
+        app: b
+`
+	body := string(mustFormat(t, in))
+	// The blank separator must sit above the comment, keeping it attached to
+	// the task it documents.
+	if !strings.Contains(body, "\n\n    # comment for b\n") {
+		t.Errorf("expected a blank line above the head comment:\n%s", body)
+	}
+	if strings.Contains(body, "# comment for b\n\n") {
+		t.Errorf("blank line was inserted between the comment and its task:\n%s", body)
+	}
+	// Idempotent: fmt --check right after fmt must pass.
+	if again := string(mustFormat(t, body)); again != body {
+		t.Errorf("formatter is not idempotent:\nfirst:\n%s\nsecond:\n%s", body, again)
+	}
+}
+
+func TestFormatKeepsPlayHeadCommentAttached(t *testing.T) {
+	in := `---
+- name: play1
+  tasks:
+    - dokku_app:
+        app: a
+# comment for play2
+- name: play2
+  tasks:
+    - dokku_app:
+        app: b
+`
+	body := string(mustFormat(t, in))
+	if !strings.Contains(body, "\n\n# comment for play2\n") {
+		t.Errorf("expected a blank line above the play head comment:\n%s", body)
+	}
+	if strings.Contains(body, "# comment for play2\n\n") {
+		t.Errorf("blank line was inserted between the comment and its play:\n%s", body)
+	}
+	if again := string(mustFormat(t, body)); again != body {
+		t.Errorf("formatter is not idempotent:\nfirst:\n%s\nsecond:\n%s", body, again)
+	}
+}
+
+func TestFormatDoesNotSplitBlockScalarWithHashLine(t *testing.T) {
+	// A block scalar whose last line starts with "#" is content, not a YAML
+	// comment; the inter-task blank must go between the two tasks, never
+	// inside the block scalar.
+	in := `---
+- tasks:
+    - dokku_command:
+        command: |
+          echo hi
+          # not a yaml comment
+    - dokku_app:
+        app: b
+`
+	body := string(mustFormat(t, in))
+	if strings.Contains(body, "echo hi\n\n") {
+		t.Errorf("blank line was spliced into the block scalar:\n%s", body)
+	}
+	if !strings.Contains(body, "# not a yaml comment") {
+		t.Errorf("block scalar content was lost:\n%s", body)
+	}
+	if again := string(mustFormat(t, body)); again != body {
+		t.Errorf("formatter is not idempotent:\nfirst:\n%s\nsecond:\n%s", body, again)
+	}
+}
+
 func mustFormat(t *testing.T, in string) []byte {
 	t.Helper()
 	out, err := Format([]byte(in))
