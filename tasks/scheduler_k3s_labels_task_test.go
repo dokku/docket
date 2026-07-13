@@ -110,3 +110,31 @@ func TestSchedulerK3sLabelsTaskEmptyLabelKey(t *testing.T) {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
+
+func TestSchedulerK3sLabelsTaskPresentEmptyValueRejected(t *testing.T) {
+	task := SchedulerK3sLabelsTask{
+		App:          "test-app",
+		ResourceType: "deployment",
+		Labels:       map[string]string{"tier": ""},
+		State:        StatePresent,
+	}
+	err := task.Validate()
+	if err == nil {
+		t.Fatal("expected error when a present-state label value is empty")
+	}
+	if !strings.Contains(err.Error(), "label values must not be empty for state 'present'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSchedulerK3sLabelsTaskAbsentEmptyValueAllowed(t *testing.T) {
+	task := SchedulerK3sLabelsTask{
+		App:          "test-app",
+		ResourceType: "deployment",
+		Labels:       map[string]string{"tier": ""},
+		State:        StateAbsent,
+	}
+	if err := task.Validate(); err != nil {
+		t.Fatalf("absent-state empty value should be allowed (clears the key), got %v", err)
+	}
+}

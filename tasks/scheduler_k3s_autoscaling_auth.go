@@ -24,7 +24,7 @@ type schedulerK3sAutoscalingAuthSpec struct {
 // validateSchedulerK3sAutoscalingAuth checks the common fields prior to any
 // subprocess call. Both present and absent states require Metadata: present
 // sets the listed keys, absent names which keys to clear.
-func validateSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec) error {
+func validateSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec, state State) error {
 	if err := validateAppGlobalExclusive(spec.App, spec.Global); err != nil {
 		return err
 	}
@@ -34,9 +34,18 @@ func validateSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec) e
 	if len(spec.Metadata) == 0 {
 		return errors.New("'metadata' must not be empty")
 	}
-	for key := range spec.Metadata {
+	effective := state
+	if effective == "" {
+		effective = StatePresent
+	}
+	for key, value := range spec.Metadata {
 		if key == "" {
 			return errors.New("metadata keys must not be empty")
+		}
+		// dokku clears a metadata key set to an empty value, so a present-state
+		// empty value can never converge (issue #358); clear via state 'absent'.
+		if effective == StatePresent && value == "" {
+			return errors.New("metadata values must not be empty for state 'present'; use state 'absent' to clear a key")
 		}
 	}
 	return nil

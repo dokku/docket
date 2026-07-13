@@ -57,6 +57,22 @@ EOF
   assert_output --partial "'users' must not be empty"
 }
 
+@test "docket validate exits 1 on a present-state empty pair value" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_labels:
+        app: docket-test-validate
+        resource_type: deployment
+        labels:
+          tier: ""
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "label values must not be empty for state 'present'"
+}
+
 @test "docket validate --json emits invalid_task_input" {
   write_tasks_file <<EOF
 ---

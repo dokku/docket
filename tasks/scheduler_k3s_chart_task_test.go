@@ -62,6 +62,32 @@ func TestSchedulerK3sChartTaskAbsentWithoutValues(t *testing.T) {
 	}
 }
 
+func TestSchedulerK3sChartTaskPresentEmptyValueRejected(t *testing.T) {
+	task := SchedulerK3sChartTask{
+		Chart:  "ingress-nginx",
+		Values: map[string]any{"controller.replicaCount": ""},
+		State:  StatePresent,
+	}
+	err := task.Validate()
+	if err == nil {
+		t.Fatal("expected error when a present-state chart value is empty")
+	}
+	if !strings.Contains(err.Error(), "must not be empty for state 'present'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSchedulerK3sChartTaskAbsentEmptyValueAllowed(t *testing.T) {
+	task := SchedulerK3sChartTask{
+		Chart:  "ingress-nginx",
+		Values: map[string]any{"controller.replicaCount": ""},
+		State:  StateAbsent,
+	}
+	if err := task.Validate(); err != nil {
+		t.Fatalf("absent-state empty value should be allowed (clears the value), got %v", err)
+	}
+}
+
 func TestSchedulerK3sChartTaskRejectsListValue(t *testing.T) {
 	task := SchedulerK3sChartTask{
 		Chart:  "ingress-nginx",
