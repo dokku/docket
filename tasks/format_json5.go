@@ -78,6 +78,13 @@ type json5Node struct {
 	// FootComments are trailing comments inside a container after the
 	// last member / element but before the closing brace / bracket.
 	FootComments []string
+
+	// AfterComments are comments that follow the value entirely. Only the
+	// root node uses this (comments after the closing bracket / brace, or
+	// after a scalar root). Kept distinct from FootComments so a container
+	// root's foot comments are emitted once inside the brackets and its
+	// after-value comments once afterwards, rather than both being doubled.
+	AfterComments []string
 }
 
 // json5Kind enumerates AST node variants.
@@ -656,7 +663,10 @@ func parseJSON5(src []byte) (*json5Node, error) {
 	}
 	footComments := p.consumeComments()
 	if root != nil {
-		root.FootComments = append(root.FootComments, footComments...)
+		// These sit after the root value entirely; keep them separate from
+		// a container root's inside-the-bracket foot comments so the emitter
+		// does not print both slices twice.
+		root.AfterComments = footComments
 	}
 	if p.peek().Kind != tokEOF {
 		return nil, fmt.Errorf("unexpected token %q after root value", p.peek().Raw)
@@ -808,8 +818,11 @@ const json5Indent = "  "
 
 func emitJSON5(buf *bytes.Buffer, node *json5Node, depth int) {
 	emitJSON5HeadComments(buf, node.HeadComments, depth)
+	// A container's foot comments are emitted inside its brackets by
+	// emitJSON5Value; only the root's after-value comments are emitted here,
+	// so they are never printed twice.
 	emitJSON5Value(buf, node, depth)
-	emitJSON5FootComments(buf, node.FootComments, depth)
+	emitJSON5FootComments(buf, node.AfterComments, depth)
 	if buf.Len() == 0 || buf.Bytes()[buf.Len()-1] != '\n' {
 		buf.WriteByte('\n')
 	}

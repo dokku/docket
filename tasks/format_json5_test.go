@@ -266,3 +266,56 @@ func TestFormatJSON5DecodesUnicodeKey(t *testing.T) {
 		t.Errorf("output still carries the raw unicode escape in the key:\n%s", out)
 	}
 }
+
+func TestFormatJSON5RootAfterCommentNotDoubled(t *testing.T) {
+	in := []byte("[\n  { name: \"a\" },\n]\n// trailing note\n")
+	out, err := FormatJSON5(in)
+	if err != nil {
+		t.Fatalf("FormatJSON5: %v", err)
+	}
+	body := string(out)
+	if got := strings.Count(body, "// trailing note"); got != 1 {
+		t.Errorf("after-root comment appears %d times, want 1:\n%s", got, body)
+	}
+	// It must sit after the closing bracket, not inside the array.
+	if strings.Index(body, "// trailing note") < strings.LastIndex(body, "]") {
+		t.Errorf("after-root comment placed inside the array:\n%s", body)
+	}
+	// Idempotent across passes (the doubling bug quadrupled it each run).
+	again, err := FormatJSON5(out)
+	if err != nil {
+		t.Fatalf("FormatJSON5 second pass: %v", err)
+	}
+	if string(again) != body {
+		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", body, again)
+	}
+}
+
+func TestFormatJSON5RootInsideAndAfterComments(t *testing.T) {
+	in := []byte("[\n  { name: \"a\" },\n  // inside foot\n]\n// after root\n")
+	out, err := FormatJSON5(in)
+	if err != nil {
+		t.Fatalf("FormatJSON5: %v", err)
+	}
+	body := string(out)
+	if c := strings.Count(body, "// inside foot"); c != 1 {
+		t.Errorf("inside foot comment appears %d times, want 1:\n%s", c, body)
+	}
+	if c := strings.Count(body, "// after root"); c != 1 {
+		t.Errorf("after-root comment appears %d times, want 1:\n%s", c, body)
+	}
+	// inside foot before the closing bracket, after-root after it.
+	idxInside := strings.Index(body, "// inside foot")
+	idxBracket := strings.LastIndex(body, "]")
+	idxAfter := strings.Index(body, "// after root")
+	if !(idxInside < idxBracket && idxBracket < idxAfter) {
+		t.Errorf("comment positions wrong (inside=%d bracket=%d after=%d):\n%s", idxInside, idxBracket, idxAfter, body)
+	}
+	again, err := FormatJSON5(out)
+	if err != nil {
+		t.Fatalf("FormatJSON5 second pass: %v", err)
+	}
+	if string(again) != body {
+		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", body, again)
+	}
+}
