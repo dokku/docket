@@ -3,6 +3,7 @@ package tasks
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"strings"
 
 	yaml "gopkg.in/yaml.v3"
@@ -57,13 +58,22 @@ var envelopeKeySet = func() map[string]bool {
 //     canonical AST trees are structurally equivalent (defends against
 //     yaml.v3 emitter edge cases with anchors / complex flow scalars).
 func Format(data []byte) ([]byte, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
+	err := dec.Decode(&root)
+	if err != nil && err != io.EOF {
 		return nil, fmt.Errorf("yaml parse error: %w", err)
 	}
 
 	doc := documentBody(&root)
-	if doc != nil && doc.Kind == yaml.SequenceNode {
+	if err == io.EOF || isEmptyDocument(doc) {
+		// Empty or comment-only file: there is nothing to canonicalize.
+		// Return the input untouched so `docket fmt` is a no-op and
+		// `fmt --check` passes rather than failing the round-trip guard.
+		return data, nil
+	}
+
+	if doc.Kind == yaml.SequenceNode {
 		canonicalizeRecipe(doc)
 	}
 
@@ -416,6 +426,16 @@ func equivalentNodes(a, b *yaml.Node) bool {
 		return true
 	}
 	return true
+}
+
+// isEmptyDocument reports whether a decoded document body carries nothing to
+// format: either no body node at all (a truly empty stream) or a null scalar,
+// which is what a comment-only file with an explicit `---` marker decodes to.
+func isEmptyDocument(body *yaml.Node) bool {
+	if body == nil {
+		return true
+	}
+	return body.Kind == yaml.ScalarNode && body.Tag == "!!null"
 }
 
 // hasDocumentMarker reports whether the byte slice begins with a YAML

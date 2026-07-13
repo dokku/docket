@@ -328,6 +328,23 @@ func TestFormatDoesNotSplitBlockScalarWithHashLine(t *testing.T) {
 	}
 }
 
+func TestFormatEmptyOrCommentOnlyIsNoOp(t *testing.T) {
+	cases := []string{
+		"",
+		"# just a note\n",
+		"---\n# only a comment\n",
+	}
+	for _, in := range cases {
+		out, err := Format([]byte(in))
+		if err != nil {
+			t.Fatalf("Format(%q) errored: %v", in, err)
+		}
+		if string(out) != in {
+			t.Errorf("Format(%q) = %q, want the input returned unchanged", in, out)
+		}
+	}
+}
+
 func mustFormat(t *testing.T, in string) []byte {
 	t.Helper()
 	out, err := Format([]byte(in))
