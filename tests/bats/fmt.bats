@@ -128,3 +128,48 @@ EOF
   "$(docket_bin)" fmt - <tasks.orig >tasks.expected
   cmp tasks.yml tasks.expected
 }
+
+@test "docket fmt rejects a multi-document file" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF'
+---
+- tasks:
+    - dokku_app:
+        app: a
+---
+- tasks:
+    - dokku_app:
+        app: b
+EOF
+  run "$(docket_bin)" fmt
+  assert_failure
+  assert_output --partial "multiple YAML documents"
+}
+
+@test "docket fmt on an empty file is a no-op" {
+  cd "$BATS_TEST_TMPDIR"
+  : >tasks.yml
+  run "$(docket_bin)" fmt
+  assert_success
+  run "$(docket_bin)" fmt --check
+  assert_success
+  assert [ ! -s tasks.yml ]
+}
+
+@test "docket fmt is idempotent with per-task head comments" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF'
+---
+- tasks:
+    - dokku_app:
+        app: a
+    # configure the second app
+    - dokku_app:
+        app: b
+EOF
+  "$(docket_bin)" fmt
+  run "$(docket_bin)" fmt --check
+  assert_success
+  run grep -c "configure the second app" tasks.yml
+  assert_output "1"
+}
