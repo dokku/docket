@@ -109,6 +109,10 @@ The diff is a standard unified diff (`--- / +++ / @@` headers) and applies with 
 `patch -p0` once colors are stripped. Before writing, `fmt` re-parses its own output and aborts if
 the result does not match the input, so a formatting bug can never corrupt a recipe.
 
+`fmt` operates on single-document recipes. An empty or comment-only file is left untouched, and a
+YAML file containing more than one document (separated by `---`) is rejected rather than having its
+trailing documents silently dropped.
+
 ## docket plan
 
 `docket plan` reads each task's current state from the live server and reports what `apply` would
