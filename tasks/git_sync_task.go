@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -87,7 +88,7 @@ func (t GitSyncTask) Execute() TaskOutputState {
 func (t GitSyncTask) Plan() PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			match, err := checkAppSyncState(t.App, t.Remote, t.GitRef)
+			match, err := checkAppSyncState(t.App, t.Remote, t.GitRef, t.SkipDeployBranch)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -127,11 +128,16 @@ func (t GitSyncTask) Plan() PlanResult {
 	})
 }
 
-// checkAppSyncState checks if the app is already synced from the
-// expected remote and ref. A transport-level failure
-// (`*subprocess.SSHError`) is propagated; any other error is treated
-// as "no match" so the planner proposes a re-sync.
-func checkAppSyncState(app, expectedRemote, expectedRef string) (bool, error) {
+// checkAppSyncState checks if the app is already synced from the expected
+// remote and ref. dokku records the deploy source as "<remote>#<resolved SHA>"
+// (and only after a build), so the stored SHA cannot be compared against a
+// branch or tag name. Instead the remote portion of the metadata is compared,
+// and the ref is compared against the deploy-branch git:sync persists from it
+// (unless the caller opted out with skip_deploy_branch, or pinned no ref, in
+// which case a matching remote is the most that can be verified offline). A
+// transport-level failure (`*subprocess.SSHError`) is propagated; any other
+// error is treated as "no match" so the planner proposes a re-sync.
+func checkAppSyncState(app, expectedRemote, expectedRef string, skipDeployBranch bool) (bool, error) {
 	source, err := getAppDeploySource(app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
@@ -140,14 +146,59 @@ func checkAppSyncState(app, expectedRemote, expectedRef string) (bool, error) {
 		}
 		return false, nil
 	}
+	if source.Source != "git-sync" {
+		return false, nil
+	}
 
-	expectedMetadata := fmt.Sprintf("%s#%s", expectedRemote, expectedRef)
-	return source.Source == "git-sync" && source.SourceMetadata == expectedMetadata, nil
+	remote := source.SourceMetadata
+	if i := strings.LastIndex(source.SourceMetadata, "#"); i >= 0 {
+		remote = source.SourceMetadata[:i]
+	}
+	if remote != expectedRemote {
+		return false, nil
+	}
+
+	if expectedRef == "" || skipDeployBranch {
+		return true, nil
+	}
+
+	deployBranch, err := getGitDeployBranch(app)
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return false, err
+		}
+		return false, nil
+	}
+	return deployBranch == expectedRef, nil
 }
 
-// ExportApp reconstructs a git-sync deploy source from apps:report. The
-// metadata is "<remote>#<ref>"; it only emits when the app was last deployed
-// via git:sync.
+// getGitDeployBranch returns the deploy-branch dokku has stored for the app,
+// read from `git:report --format json` (JSON key `deploy-branch`). git:sync
+// sets it from the synced ref by default, so it is the offline signal for which
+// ref the app currently tracks.
+func getGitDeployBranch(app string) (string, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"git:report", app, "--format", "json"},
+	})
+	if err != nil {
+		return "", err
+	}
+	var report struct {
+		DeployBranch string `json:"deploy-branch"`
+	}
+	if err := json.Unmarshal(result.StdoutBytes(), &report); err != nil {
+		return "", err
+	}
+	return report.DeployBranch, nil
+}
+
+// ExportApp reconstructs a git-sync deploy source from apps:report. The metadata
+// records "<remote>#<resolved SHA>", so the remote is taken from the portion
+// before the last "#" and the ref from the deploy-branch git:sync persisted -
+// not the SHA, which the probe cannot match against a branch or tag. It only
+// emits when the app was last deployed via git:sync.
 func (t GitSyncTask) ExportApp(app string) ([]interface{}, error) {
 	source, err := getAppDeploySource(app)
 	if err != nil {
@@ -156,9 +207,13 @@ func (t GitSyncTask) ExportApp(app string) ([]interface{}, error) {
 	if source.Source != "git-sync" {
 		return nil, nil
 	}
-	remote, ref := source.SourceMetadata, ""
+	remote := source.SourceMetadata
 	if i := strings.LastIndex(source.SourceMetadata, "#"); i >= 0 {
-		remote, ref = source.SourceMetadata[:i], source.SourceMetadata[i+1:]
+		remote = source.SourceMetadata[:i]
+	}
+	ref, err := getGitDeployBranch(app)
+	if err != nil {
+		return nil, err
 	}
 	return []interface{}{GitSyncTask{App: app, Remote: remote, GitRef: ref}}, nil
 }
