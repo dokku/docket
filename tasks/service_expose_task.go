@@ -3,6 +3,7 @@ package tasks
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -132,15 +133,14 @@ func (t ServiceExposeTask) Plan() PlanResult {
 			if !exists {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
 			}
-			current, err := serviceExposedPorts(t.Service, t.Name)
+			current, err := serviceExposedPortList(t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			desired := map[string]bool{}
-			for _, p := range t.Ports {
-				desired[p] = true
-			}
-			if portSetEqual(current, desired) {
+			// dokku maps expose arguments positionally to the plugin's container
+			// ports, so the comparison must be order-sensitive: a reorder of the
+			// same ports is a real change (issue #332).
+			if slices.Equal(current, t.Ports) {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
 			inputs := []subprocess.ExecCommandInput{}
@@ -179,7 +179,7 @@ func (t ServiceExposeTask) Plan() PlanResult {
 			if !exists {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
 			}
-			current, err := serviceExposedPorts(t.Service, t.Name)
+			current, err := serviceExposedPortList(t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -244,34 +244,6 @@ func serviceExposedPortList(service, name string) ([]string, error) {
 		}
 	}
 	return ports, nil
-}
-
-// serviceExposedPorts returns the set of host ports a dokku service is currently
-// exposed on, derived from serviceExposedPortList for order-insensitive
-// comparison against the desired ports in Plan.
-func serviceExposedPorts(service, name string) (map[string]bool, error) {
-	list, err := serviceExposedPortList(service, name)
-	if err != nil {
-		return nil, err
-	}
-	ports := map[string]bool{}
-	for _, p := range list {
-		ports[p] = true
-	}
-	return ports, nil
-}
-
-// portSetEqual reports whether two port sets contain the same elements.
-func portSetEqual(a, b map[string]bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if !b[k] {
-			return false
-		}
-	}
-	return true
 }
 
 // init registers the ServiceExposeTask with the task registry

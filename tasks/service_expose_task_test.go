@@ -1,8 +1,10 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/dokku/docket/subprocess"
 	_ "github.com/gliderlabs/sigil/builtin"
 )
 
@@ -67,23 +69,71 @@ func TestGetTasksServiceExposeTaskParsedCorrectly(t *testing.T) {
 	}
 }
 
-func TestServiceExposePortSetEqual(t *testing.T) {
-	cases := []struct {
-		name string
-		a    map[string]bool
-		b    map[string]bool
-		want bool
-	}{
-		{"empty", map[string]bool{}, map[string]bool{}, true},
-		{"same", map[string]bool{"5432": true}, map[string]bool{"5432": true}, true},
-		{"different-len", map[string]bool{"5432": true}, map[string]bool{}, false},
-		{"different-members", map[string]bool{"5432": true}, map[string]bool{"6379": true}, false},
+func TestServiceExposeSameOrderInSync(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet redis:info my-svc --exposed-ports": "1111->1111 2222->2222",
+	}))()
+
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := portSetEqual(tc.a, tc.b); got != tc.want {
-				t.Errorf("portSetEqual(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
-			}
-		})
+	if !plan.InSync {
+		t.Fatalf("expected in-sync when ports match in order, got %#v", plan)
+	}
+}
+
+func TestServiceExposeReorderReportsDrift(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet redis:info my-svc --exposed-ports": "1111->1111 2222->2222",
+	}))()
+
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"2222", "1111"}, State: StatePresent}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when the same ports are reordered (dokku maps them positionally)")
+	}
+	if plan.Status != PlanStatusModify {
+		t.Errorf("expected Modify status when already exposed, got %q", plan.Status)
+	}
+	foundUnexpose := false
+	foundOrderedExpose := false
+	for _, m := range plan.Mutations {
+		if m == "redis:unexpose my-svc" {
+			foundUnexpose = true
+		}
+		if m == "redis:expose my-svc 2222 1111" {
+			foundOrderedExpose = true
+		}
+	}
+	if !foundUnexpose {
+		t.Errorf("expected an unexpose before re-expose, got %v", plan.Mutations)
+	}
+	if !foundOrderedExpose {
+		t.Errorf("expected re-expose in the desired order, got %v", plan.Mutations)
+	}
+}
+
+func TestServiceExposeCreatesWhenNotExposed(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet redis:info my-svc --exposed-ports": "",
+	}))()
+
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when the service is not exposed")
+	}
+	if plan.Status != PlanStatusCreate {
+		t.Errorf("expected Create status when not yet exposed, got %q", plan.Status)
+	}
+	for _, m := range plan.Mutations {
+		if strings.Contains(m, "unexpose") {
+			t.Errorf("did not expect an unexpose when nothing is exposed, got %v", plan.Mutations)
+		}
 	}
 }
