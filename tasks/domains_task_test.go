@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dokku/docket/subprocess"
 	_ "github.com/gliderlabs/sigil/builtin"
 )
 
@@ -51,6 +52,94 @@ func TestDomainsTaskClearNoDomains(t *testing.T) {
 	// Should fail because dokku isn't running, but NOT because of missing domains
 	if result.Error != nil && strings.Contains(result.Error.Error(), "must not be empty") {
 		t.Error("clear state should not require domains")
+	}
+}
+
+// assertNoGlobalPositional fails when any planned command carries the literal
+// "--global" token, which the *-global domains subcommands would write as a
+// real domain (issue #309).
+func assertNoGlobalPositional(t *testing.T, commands []string) {
+	t.Helper()
+	if len(commands) == 0 {
+		t.Fatal("expected at least one planned command")
+	}
+	for _, cmd := range commands {
+		for _, field := range strings.Fields(cmd) {
+			if field == "--global" {
+				t.Errorf("planned command must not pass --global as a positional: %q", cmd)
+			}
+		}
+	}
+}
+
+func TestDomainsGlobalSetOmitsGlobalPositional(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"domains:report --global --domains-global-vhosts": "",
+	}))()
+
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when the global vhost is unset")
+	}
+	assertNoGlobalPositional(t, plan.Commands)
+	if !strings.Contains(plan.Commands[0], "domains:set-global") {
+		t.Errorf("expected domains:set-global command, got %q", plan.Commands[0])
+	}
+	if !strings.Contains(plan.Commands[0], "global.example.com") {
+		t.Errorf("expected the desired domain in the command, got %q", plan.Commands[0])
+	}
+}
+
+func TestDomainsGlobalSetConvergesWhenReportMatches(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"domains:report --global --domains-global-vhosts": "global.example.com",
+	}))()
+
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if !plan.InSync {
+		t.Fatalf("expected in-sync once the global vhost matches, got %#v", plan)
+	}
+}
+
+func TestDomainsGlobalAddOmitsGlobalPositional(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"domains:report --global --domains-global-vhosts": "",
+	}))()
+
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StatePresent}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when the global vhost is unset")
+	}
+	assertNoGlobalPositional(t, plan.Commands)
+	if !strings.Contains(plan.Commands[0], "domains:add-global") {
+		t.Errorf("expected domains:add-global command, got %q", plan.Commands[0])
+	}
+}
+
+func TestDomainsGlobalClearOmitsGlobalPositional(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"domains:report --global --domains-global-vhosts": "old.example.com",
+	}))()
+
+	plan := DomainsTask{Global: true, State: StateClear}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when a global vhost is present")
+	}
+	assertNoGlobalPositional(t, plan.Commands)
+	if !strings.Contains(plan.Commands[0], "domains:clear-global") {
+		t.Errorf("expected domains:clear-global command, got %q", plan.Commands[0])
 	}
 }
 

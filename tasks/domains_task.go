@@ -133,7 +133,7 @@ func planDomainsPresent(t DomainsTask) PlanResult {
 	appName := t.App
 	if t.Global {
 		subcommand = "domains:add-global"
-		appName = "--global"
+		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, toAdd)
 	return PlanResult{
@@ -167,7 +167,7 @@ func planDomainsAbsent(t DomainsTask) PlanResult {
 	appName := t.App
 	if t.Global {
 		subcommand = "domains:remove-global"
-		appName = "--global"
+		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, toRemove)
 	return PlanResult{
@@ -208,7 +208,7 @@ func planDomainsSet(t DomainsTask) PlanResult {
 	appName := t.App
 	if t.Global {
 		subcommand = "domains:set-global"
-		appName = "--global"
+		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, t.Domains)
 	return PlanResult{
@@ -238,7 +238,7 @@ func planDomainsClear(t DomainsTask) PlanResult {
 	appName := t.App
 	if t.Global {
 		subcommand = "domains:clear-global"
-		appName = "--global"
+		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, nil)
 	return PlanResult{
@@ -252,9 +252,14 @@ func planDomainsClear(t DomainsTask) PlanResult {
 }
 
 // dokkuArgsInputs returns the subprocess inputs that run `dokku --quiet
-// <subcommand> <target> <extra...>`.
+// <subcommand> [<target>] <extra...>`. An empty target is omitted, which is
+// what the domains `*-global` subcommands require: they take no positional app
+// slot, so passing the literal "--global" there would be written as a domain.
 func dokkuArgsInputs(subcommand, target string, extra []string) []subprocess.ExecCommandInput {
-	args := []string{"--quiet", subcommand, target}
+	args := []string{"--quiet", subcommand}
+	if target != "" {
+		args = append(args, target)
+	}
 	args = append(args, extra...)
 	return []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 }
