@@ -73,6 +73,18 @@ func Format(data []byte) ([]byte, error) {
 		return data, nil
 	}
 
+	// docket recipes are single-document. Reject a file with more than one
+	// document rather than silently formatting the first and truncating the
+	// rest. A trailing empty document (a bare `---`) is ignored.
+	var extra yaml.Node
+	if extraErr := dec.Decode(&extra); extraErr == nil {
+		if !isEmptyDocument(documentBody(&extra)) {
+			return nil, fmt.Errorf("fmt supports single-document recipes only; the file contains multiple YAML documents separated by ---")
+		}
+	} else if extraErr != io.EOF {
+		return nil, fmt.Errorf("yaml parse error: %w", extraErr)
+	}
+
 	if doc.Kind == yaml.SequenceNode {
 		canonicalizeRecipe(doc)
 	}

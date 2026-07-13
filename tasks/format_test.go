@@ -328,6 +328,34 @@ func TestFormatDoesNotSplitBlockScalarWithHashLine(t *testing.T) {
 	}
 }
 
+func TestFormatRejectsMultiDocument(t *testing.T) {
+	in := `---
+- tasks:
+    - dokku_app:
+        app: a
+---
+- tasks:
+    - dokku_app:
+        app: b
+`
+	_, err := Format([]byte(in))
+	if err == nil {
+		t.Fatal("expected an error for a multi-document file, got nil")
+	}
+	if !strings.Contains(err.Error(), "multiple YAML documents") {
+		t.Errorf("error should mention multiple documents, got: %v", err)
+	}
+}
+
+func TestFormatAllowsTrailingDocumentMarker(t *testing.T) {
+	// A single recipe followed by a bare `---` (an empty trailing document)
+	// must not be rejected as multi-document.
+	in := "---\n- tasks:\n    - dokku_app:\n        app: a\n---\n"
+	if _, err := Format([]byte(in)); err != nil {
+		t.Errorf("trailing bare --- should not be rejected: %v", err)
+	}
+}
+
 func TestFormatEmptyOrCommentOnlyIsNoOp(t *testing.T) {
 	cases := []string{
 		"",
