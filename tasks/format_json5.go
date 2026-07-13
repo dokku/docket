@@ -267,6 +267,11 @@ func normaliseJSON5Scalar(raw string) string {
 	return strings.TrimPrefix(raw, "+")
 }
 
+// decodeJSON5String decodes a quoted JSON5 string token (single or double
+// quoted) into its actual character content, resolving every JSON5 escape
+// to the character it denotes. ok is false on a malformed escape (bad hex,
+// lone surrogate, truncated sequence); callers treat that as "leave the
+// original quoting untouched" so a formatting bug can never corrupt a recipe.
 func decodeJSON5String(raw string) (string, bool) {
 	if len(raw) < 2 {
 		return "", false
@@ -294,16 +299,108 @@ func decodeJSON5String(raw string) (string, bool) {
 			b.WriteByte('\t')
 		case 'r':
 			b.WriteByte('\r')
+		case 'b':
+			b.WriteByte('\b')
+		case 'f':
+			b.WriteByte('\f')
+		case 'v':
+			b.WriteByte('\v')
+		case '0':
+			// JSON5 NUL escape. A following decimal digit would form an
+			// (unsupported) octal-looking sequence, so refuse it.
+			if i+1 < len(body) && body[i+1] >= '0' && body[i+1] <= '9' {
+				return "", false
+			}
+			b.WriteByte(0)
+		case 'x':
+			if i+2 >= len(body) {
+				return "", false
+			}
+			hi, ok1 := hexDigitValue(body[i+1])
+			lo, ok2 := hexDigitValue(body[i+2])
+			if !ok1 || !ok2 {
+				return "", false
+			}
+			b.WriteByte(hi<<4 | lo)
+			i += 2
+		case 'u':
+			r, adv, ok := decodeJSON5Unicode(body, i)
+			if !ok {
+				return "", false
+			}
+			b.WriteRune(r)
+			i += adv
 		case '"', '\'', '\\', '/':
 			b.WriteByte(body[i])
 		case '\n':
-			// JSON5 line continuation; keep nothing.
+			// Line continuation; emit nothing.
+		case '\r':
+			// Line continuation, possibly a CRLF pair.
+			if i+1 < len(body) && body[i+1] == '\n' {
+				i++
+			}
 		default:
-			b.WriteByte('\\')
+			// Any other escaped character represents itself in JSON5.
 			b.WriteByte(body[i])
 		}
 	}
 	return b.String(), true
+}
+
+// decodeJSON5Unicode decodes a \uXXXX escape whose 'u' is at body[i]
+// (the leading backslash already consumed). A high surrogate immediately
+// followed by \uYYYY that is a valid low surrogate is combined into the
+// astral code point. adv is the number of bytes consumed after the 'u'.
+// ok is false for a lone/invalid surrogate or truncated sequence.
+func decodeJSON5Unicode(body string, i int) (r rune, adv int, ok bool) {
+	hi, ok := readHex4(body, i+1)
+	if !ok {
+		return 0, 0, false
+	}
+	if hi >= 0xD800 && hi <= 0xDBFF {
+		if i+6 < len(body) && body[i+5] == '\\' && body[i+6] == 'u' {
+			lo, ok := readHex4(body, i+7)
+			if ok && lo >= 0xDC00 && lo <= 0xDFFF {
+				combined := 0x10000 + (rune(hi-0xD800) << 10) + rune(lo-0xDC00)
+				return combined, 10, true
+			}
+		}
+		return 0, 0, false
+	}
+	if hi >= 0xDC00 && hi <= 0xDFFF {
+		return 0, 0, false
+	}
+	return rune(hi), 4, true
+}
+
+// readHex4 reads exactly four hex digits at body[start:] and returns their
+// value. ok is false when fewer than four digits remain or one is invalid.
+func readHex4(body string, start int) (int, bool) {
+	if start+3 >= len(body) {
+		return 0, false
+	}
+	v := 0
+	for k := 0; k < 4; k++ {
+		d, ok := hexDigitValue(body[start+k])
+		if !ok {
+			return 0, false
+		}
+		v = v<<4 | int(d)
+	}
+	return v, true
+}
+
+// hexDigitValue returns the numeric value of a single hex digit byte.
+func hexDigitValue(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
 }
 
 // ---------------------------------------------------------------------
@@ -864,9 +961,13 @@ func formatJSON5Key(key string) string {
 	return quoteJSON5String(key)
 }
 
-// quoteJSON5String wraps s in double quotes, escaping the canonical
-// JSON5 escape characters. Used when emitting object keys; string
-// values keep their original quote form via canonicaliseScalarRaw.
+// quoteJSON5String wraps s (already-decoded character content) in double
+// quotes, re-escaping only what must be escaped: the backslash and quote,
+// the common control characters as their short escapes, and any other
+// sub-U+0020 control as \uXXXX. Printable runes, including non-ASCII such
+// as é, are written verbatim as UTF-8. Used for object keys and for
+// single-quoted string values converted to double quotes by
+// canonicaliseScalarRaw.
 func quoteJSON5String(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -882,8 +983,16 @@ func quoteJSON5String(s string) string {
 			b.WriteString(`\t`)
 		case '\r':
 			b.WriteString(`\r`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
 		default:
-			b.WriteRune(r)
+			if r < 0x20 {
+				fmt.Fprintf(&b, `\u%04x`, r)
+			} else {
+				b.WriteRune(r)
+			}
 		}
 	}
 	b.WriteByte('"')
