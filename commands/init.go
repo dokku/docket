@@ -3,6 +3,7 @@ package commands
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -17,6 +18,7 @@ import (
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/posener/complete"
 	flag "github.com/spf13/pflag"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // InitCommand scaffolds a starter tasks.yml from an embedded template.
@@ -142,6 +144,15 @@ func (c *InitCommand) Run(args []string) int {
 		return 1
 	}
 
+	// Parse-check the rendered scaffold before writing it anywhere, so a
+	// scaffold that fails to parse is never left on disk (or streamed to
+	// stdout as a broken file).
+	taskCount, playCount, err := countTasks(rendered, format)
+	if err != nil {
+		c.Ui.Error(fmt.Sprintf("internal error: rendered scaffold did not parse: %v", err))
+		return 1
+	}
+
 	if toStdout {
 		if _, err := os.Stdout.Write(rendered); err != nil {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
@@ -152,12 +163,6 @@ func (c *InitCommand) Run(args []string) int {
 
 	if err := os.WriteFile(c.output, rendered, 0o644); err != nil {
 		c.Ui.Error(fmt.Sprintf("write error: %v", err))
-		return 1
-	}
-
-	taskCount, playCount, err := countTasks(rendered, format)
-	if err != nil {
-		c.Ui.Error(fmt.Sprintf("internal error: rendered scaffold did not parse: %v", err))
 		return 1
 	}
 
@@ -203,7 +208,15 @@ func renderInit(opts initOptions) ([]byte, error) {
 		return nil, fmt.Errorf("read template %s: %w", templateName, err)
 	}
 
-	tmpl, err := template.New(templateName).Delims("<<", ">>").Parse(string(raw))
+	// yamlStr / jsonStr emit a value as a correctly quoted-and-escaped
+	// scalar so a name with YAML- or JSON-special characters (@web,
+	// "foo: bar", an embedded quote) produces a valid scaffold instead of
+	// a broken one. yamlStr leaves simple names unquoted, matching the
+	// previous output for ordinary names.
+	tmpl, err := template.New(templateName).Delims("<<", ">>").Funcs(template.FuncMap{
+		"yamlStr": yamlScalar,
+		"jsonStr": jsonScalar,
+	}).Parse(string(raw))
 	if err != nil {
 		return nil, fmt.Errorf("parse template %s: %w", templateName, err)
 	}
@@ -222,6 +235,28 @@ func renderInit(opts initOptions) ([]byte, error) {
 	}
 	out.Write(body.Bytes())
 	return out.Bytes(), nil
+}
+
+// yamlScalar renders s as a YAML scalar, quoting and escaping only when
+// necessary so ordinary names stay unquoted. Used by the YAML init
+// templates so a name with YAML-special characters cannot break the
+// scaffold.
+func yamlScalar(s string) (string, error) {
+	b, err := yaml.Marshal(s)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(b), "\n"), nil
+}
+
+// jsonScalar renders s as a JSON string literal (valid JSON5), used by the
+// JSON5 init templates so an embedded quote or backslash is escaped.
+func jsonScalar(s string) (string, error) {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // selectInitTemplate returns the embedded template name for (format,

@@ -76,6 +76,28 @@ CFG
   assert_output --partial 'default: "git@example.com:owner/repo.git"'
 }
 
+@test "docket init --name with YAML-special characters writes a valid scaffold" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --name '@web'
+  assert_success
+  assert [ -f tasks.yml ]
+  run cat tasks.yml
+  assert_output --partial "default: '@web'"
+
+  run "$(docket_bin)" validate --tasks tasks.yml
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket init defaults an unquoted name for ordinary basenames" {
+  mkdir -p "$BATS_TEST_TMPDIR/plain-svc"
+  cd "$BATS_TEST_TMPDIR/plain-svc"
+  run "$(docket_bin)" init
+  assert_success
+  run cat tasks.yml
+  assert_output --partial "default: plain-svc"
+}
+
 @test "docket init --output - writes to stdout and creates no file" {
   cd "$BATS_TEST_TMPDIR"
   run "$(docket_bin)" init --output -

@@ -256,6 +256,82 @@ func TestInitDefaultPassesValidate(t *testing.T) {
 	}
 }
 
+func TestInitSpecialCharacterNamesParse(t *testing.T) {
+	// A --name with YAML/JSON-special characters used to render a scaffold
+	// that would not parse; the escaping helpers now emit a correctly
+	// quoted scalar for every format, so init's parse check (which uses
+	// UnmarshalRecipe) accepts the scaffold instead of writing a broken
+	// file (#355).
+	names := []string{"@web", "foo: bar", `has"quote`, "*star", "- dash", "#hash", "key: value: nested"}
+	for _, name := range names {
+		for _, tc := range []struct {
+			label  string
+			opts   initOptions
+			format string
+		}{
+			{"yaml", initOptions{Name: name}, tasks.FormatYAML},
+			{"yaml-minimal", initOptions{Name: name, Minimal: true}, tasks.FormatYAML},
+			{"json5", initOptions{Name: name, Format: tasks.FormatNameJSON5}, tasks.FormatNameJSON5},
+			{"json5-minimal", initOptions{Name: name, Minimal: true, Format: tasks.FormatNameJSON5}, tasks.FormatNameJSON5},
+		} {
+			out, err := renderInit(tc.opts)
+			if err != nil {
+				t.Fatalf("renderInit(%q, %s): %v", name, tc.label, err)
+			}
+			if _, err := tasks.UnmarshalRecipe(out, tc.format); err != nil {
+				t.Errorf("name %q (%s) scaffold should parse, got: %v\n%s", name, tc.label, err, out)
+			}
+		}
+	}
+}
+
+func TestInitYAMLSpecialNamesFullyValidate(t *testing.T) {
+	// The names the issue calls out (@web, a `: `-containing name) also
+	// round-trip through full validate, including the sigil render that
+	// substitutes the name into the task bodies (#355).
+	names := []string{"@web", "foo: bar", "*star", "- dash"}
+	for _, name := range names {
+		out, err := renderInit(initOptions{Name: name})
+		if err != nil {
+			t.Fatalf("renderInit(%q): %v", name, err)
+		}
+		if problems := tasks.Validate(out, tasks.ValidateOptions{}); len(problems) != 0 {
+			t.Errorf("name %q scaffold should validate, got %+v\n%s", name, problems, out)
+		}
+	}
+}
+
+func TestInitSimpleNameStaysUnquoted(t *testing.T) {
+	// The escaping helper must not quote ordinary names, keeping the
+	// scaffold output stable for the common case.
+	out, err := renderInit(initOptions{Name: "billing"})
+	if err != nil {
+		t.Fatalf("renderInit: %v", err)
+	}
+	if !strings.Contains(string(out), "default: billing") {
+		t.Errorf("simple name should stay unquoted:\n%s", out)
+	}
+}
+
+func TestInitSpecialCharacterNameWritesValidFile(t *testing.T) {
+	// End-to-end: a special-character --name writes a file that round-trips
+	// through validate, and the parse check (which now runs before the
+	// write) does not reject it (#355).
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	c := newTestInitCommand()
+	if exit := c.Run([]string{"--output", path, "--name", "@web", "--repo", "https://example.com/r.git"}); exit != 0 {
+		t.Fatalf("init --name @web exit = %d, want 0", exit)
+	}
+	out, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if problems := tasks.Validate(out, tasks.ValidateOptions{}); len(problems) != 0 {
+		t.Errorf("written scaffold should validate, got %+v\n%s", problems, out)
+	}
+}
+
 func TestInitMinimalPassesValidate(t *testing.T) {
 	out, err := renderInit(initOptions{Name: "demo", Minimal: true})
 	if err != nil {
