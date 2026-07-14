@@ -381,6 +381,68 @@ func TestGetTasksRejectsNullTaskBodyUnderLoop(t *testing.T) {
 	}
 }
 
+func TestGetTasksRejectsDuplicateTaskNames(t *testing.T) {
+	// Two tasks sharing a name used to silently drop all but the last
+	// when keyed into the ordered map; the loader now rejects them (#307).
+	data := []byte(`---
+- tasks:
+    - name: same
+      dokku_app:
+        app: first-app
+    - name: same
+      dokku_app:
+        app: second-app
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for duplicate task names, got nil")
+	}
+	if !strings.Contains(err.Error(), `duplicate task name "same"`) {
+		t.Errorf("expected duplicate-name error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsLoopSuffixCollision(t *testing.T) {
+	// Loop item names are trimmed for the (item=<value>) suffix, so two
+	// items that differ only by surrounding whitespace collapse to the
+	// same envelope name. The runtime guard rejects the collision instead
+	// of silently dropping an iteration (#307).
+	data := []byte(`---
+- tasks:
+    - name: dup
+      loop: ["a", " a "]
+      dokku_app:
+        app: "app-{{ .item }}"
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for colliding loop suffixes, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate task name") {
+		t.Errorf("expected duplicate-name error, got: %v", err)
+	}
+}
+
+func TestGetTasksAllowsDuplicateNameAcrossPlays(t *testing.T) {
+	// Each play has its own ordered map, so the same name in two plays is
+	// fine and must not be flagged.
+	data := []byte(`---
+- name: play-a
+  tasks:
+    - name: shared
+      dokku_app:
+        app: a
+- name: play-b
+  tasks:
+    - name: shared
+      dokku_app:
+        app: b
+`)
+	if _, err := GetPlays(data, map[string]interface{}{}, nil); err != nil {
+		t.Fatalf("same name across plays should be allowed, got: %v", err)
+	}
+}
+
 func TestGetTasksRejectsNonStringName(t *testing.T) {
 	// A non-string name (`name: 123`) used to be silently dropped and a
 	// random auto-name used; it now returns a typed parse error like the

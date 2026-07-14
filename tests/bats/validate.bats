@@ -87,6 +87,22 @@ EOF
   assert_output --partial '"code":"invalid_task_input"'
 }
 
+@test "docket validate exits 1 on duplicate task names" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: same
+      dokku_app:
+        app: first-app
+    - name: same
+      dokku_app:
+        app: second-app
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "duplicate task name"
+}
+
 @test "docket validate exits 1 on a null task body" {
   write_tasks_file <<EOF
 ---

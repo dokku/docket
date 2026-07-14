@@ -152,6 +152,31 @@ func TestValidateRejectsNullTaskBody(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsDuplicateTaskNames(t *testing.T) {
+	// validate flags duplicate task names offline so a recipe that would
+	// silently drop a task fails the CI lint (#307).
+	data := []byte(`---
+- tasks:
+    - name: same
+      dokku_app:
+        app: first-app
+    - name: same
+      dokku_app:
+        app: second-app
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "duplicate_task_name")
+	if p == nil {
+		t.Fatalf("expected duplicate_task_name problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"same"`) {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+	if !strings.Contains(p.Hint, "first declared") {
+		t.Errorf("expected first-declared hint, got: %q", p.Hint)
+	}
+}
+
 func TestValidateRejectsNonStringName(t *testing.T) {
 	// validate agrees with the loader that a non-string name is an error
 	// rather than treating `name: 123` as the string "123" (#342).

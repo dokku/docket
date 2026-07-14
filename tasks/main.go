@@ -559,6 +559,13 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 				return nil, err
 			}
 			for _, env := range envelopes {
+				if play.Tasks.GetEnvelope(env.Name) != nil {
+					// Duplicate literal names are already rejected at parse
+					// time; reaching here means two loop expansions produced
+					// the same suffixed name (#307), which would otherwise
+					// silently drop the earlier iteration.
+					return nil, fmt.Errorf("task parse error: duplicate task name %q in play %q", env.Name, play.Name)
+				}
 				if len(play.Tags) > 0 {
 					env.Tags = mergePlayTags(env.Tags, play.Tags)
 				}

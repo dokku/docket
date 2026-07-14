@@ -233,7 +233,46 @@ func parsePlay(play *yaml.Node, index int) *parsedPlay {
 	for i, task := range tasksNode.Content {
 		pp.Entries = append(pp.Entries, parseTaskEntry(task, i+1, pp.Label))
 	}
+	flagDuplicateTaskNames(pp)
 	return pp
+}
+
+// flagDuplicateTaskNames rejects two top-level entries in a play that
+// share a literal name. At runtime such entries collapse onto the same
+// ordered-map key, silently dropping the earlier task (#307). loop:
+// entries are skipped because their names gain a per-item suffix at
+// expansion time (loop-suffix collisions are caught by the runtime guard
+// in GetPlaysWithFormat instead). The problem is recorded on the
+// duplicate entry so both the loader and the validator surface it.
+func flagDuplicateTaskNames(pp *parsedPlay) {
+	seen := map[string]*parsedTaskEntry{}
+	for _, entry := range pp.Entries {
+		if entry.Name == "" || entry.LoopNode != nil {
+			continue
+		}
+		first, dup := seen[entry.Name]
+		if !dup {
+			seen[entry.Name] = entry
+			continue
+		}
+		hint := fmt.Sprintf("first declared on %s", first.Label)
+		if first.NameNode != nil {
+			hint = fmt.Sprintf("first declared on %s (line %d)", first.Label, first.NameNode.Line)
+		}
+		anchor := entry.NameNode
+		if anchor == nil {
+			anchor = entry.Node
+		}
+		entry.Problems = append(entry.Problems, Problem{
+			Code:    "duplicate_task_name",
+			Play:    pp.Label,
+			Task:    entry.Label,
+			Line:    anchor.Line,
+			Column:  anchor.Column,
+			Message: fmt.Sprintf("duplicate task name %q", entry.Name),
+			Hint:    hint,
+		})
+	}
 }
 
 // parseTaskEntry walks one task entry mapping into a parsedTaskEntry,
