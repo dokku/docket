@@ -520,6 +520,12 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 
 	baseAST, err := parseRecipeForLoader(baseRendered, format)
 	if err != nil {
+		// A parse failure here may be an input value that broke its
+		// surrounding scalar (#371); attribute it to the input so plan/apply
+		// fail with the same clear message validate reports.
+		if diag := diagnoseUnsafeInputValue(data, format, context); diag != nil {
+			return nil, problemToError(*diag)
+		}
 		return nil, err
 	}
 
@@ -579,6 +585,11 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 		}
 		perAST, err := parseRecipeForLoader(perRendered, format)
 		if err != nil {
+			// As above, but against the play-local context so a play-scoped
+			// input value is attributed too.
+			if diag := diagnoseUnsafeInputValue(data, format, playCtx); diag != nil {
+				return nil, problemToError(*diag)
+			}
 			return nil, err
 		}
 		if i >= len(perAST.Plays) {

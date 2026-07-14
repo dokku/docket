@@ -8,23 +8,23 @@
   tasks:
     - name: create app
       dokku_app:
-        app: "{{ .app }}"
+        app: "{{ .app | dq }}"
         state: present
 
     - name: configure env vars
       dokku_config:
-        app: "{{ .app }}"
+        app: "{{ .app | dq }}"
         config:
           APP_ENV: production
           LOG_LEVEL: info
 
     - name: configure domains
       dokku_domains:
-        app: "{{ .app }}"
-        domains: ["{{ .app }}.example.com"]
+        app: "{{ .app | dq }}"
+        domains: ["{{ .app | dq }}.example.com"]
         state: set
 
     - name: sync git repository
       dokku_git_sync:
-        app: "{{ .app }}"
-        remote: "{{ .repo }}"
+        app: "{{ .app | dq }}"
+        remote: "{{ .repo | dq }}"

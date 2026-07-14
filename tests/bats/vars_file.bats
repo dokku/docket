@@ -205,3 +205,36 @@ EOF
   assert_success
   dokku_clean_app docket-test-vars-apply
 }
+
+@test "docket apply escapes a config value containing a quote with dq" {
+  # A config value legitimately holds arbitrary characters (an app name does
+  # not), so this proves the dq escaping end to end: a value with an embedded
+  # double quote survives the render into a double-quoted body and is stored
+  # verbatim (#371). The quote is kept mid-value because dokku's config:get
+  # renders a trailing quote inconsistently across versions.
+  require_dokku
+  dokku_clean_app docket-test-dq
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: motd, required: true }
+  tasks:
+    - name: ensure docket-test-dq
+      dokku_app:
+        app: docket-test-dq
+    - name: set the motd
+      dokku_config:
+        app: docket-test-dq
+        config:
+          MOTD: "{{ .motd | dq }}"
+EOF
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<'EOF'
+motd: 'he said "hi" loudly'
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_success
+  run dokku config:get docket-test-dq MOTD
+  assert_success
+  assert_output --partial 'he said "hi" loudly'
+  dokku_clean_app docket-test-dq
+}
