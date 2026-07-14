@@ -15,8 +15,8 @@ Partial - the image reference is written to the companion vars-file.
 | `app` | string | yes |  |  | Name of the app |
 | `image` | string | yes |  |  | Docker image to deploy (sensitive) |
 | `build_dir` | string | no |  |  | Directory to build the git repository |
-| `git_username` | string | no |  |  | Username to use for the git repository |
-| `git_email` | string | no |  |  | Email to use for the git repository |
+| `git_username` | string | no |  |  | Username to use for the git repository (requires git_email) |
+| `git_email` | string | no |  |  | Email to use for the git repository (requires git_username) |
 | `state` | string | no | deployed | deployed | Desired state of the git repository |
 
 ## Examples

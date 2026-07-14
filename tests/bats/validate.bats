@@ -43,6 +43,20 @@ EOF
   assert_output --partial 'missing required field "app"'
 }
 
+@test "docket validate exits 1 on git_from_image email without username" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_git_from_image:
+        app: web
+        image: org/app:1.0
+        git_email: deploy@example.com
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'git_username' and 'git_email' must be set together"
+}
+
 @test "docket validate exits 1 on a conditional input error" {
   write_tasks_file <<EOF
 ---

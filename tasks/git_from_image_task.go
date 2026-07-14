@@ -22,10 +22,10 @@ type GitFromImageTask struct {
 	BuildDir string `required:"false" yaml:"build_dir,omitempty" description:"Directory to build the git repository"`
 
 	// GitUsername is the username to use for the git repository
-	GitUsername string `required:"false" yaml:"git_username,omitempty" description:"Username to use for the git repository"`
+	GitUsername string `required:"false" yaml:"git_username,omitempty" description:"Username to use for the git repository (requires git_email)"`
 
 	// GitEmail is the email to use for the git repository
-	GitEmail string `required:"false" yaml:"git_email,omitempty" description:"Email to use for the git repository"`
+	GitEmail string `required:"false" yaml:"git_email,omitempty" description:"Email to use for the git repository (requires git_username)"`
 
 	// State is the desired state of the git repository
 	State State `required:"false" yaml:"state,omitempty" default:"deployed" options:"deployed" description:"Desired state of the git repository"`
@@ -83,8 +83,29 @@ func (t GitFromImageTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
+// Validate checks the GitFromImageTask's inputs without contacting the server.
+func (t GitFromImageTask) Validate() error {
+	if t.App == "" {
+		return fmt.Errorf("'app' is required")
+	}
+	if t.Image == "" {
+		return fmt.Errorf("'image' is required")
+	}
+	// git:from-image takes <git-username> and <git-email> as an adjacent
+	// positional pair, so an email supplied without a username would be
+	// passed in the username slot. Require them together, matching
+	// GitFromArchiveTask.
+	if (t.GitUsername == "") != (t.GitEmail == "") {
+		return fmt.Errorf("'git_username' and 'git_email' must be set together")
+	}
+	return nil
+}
+
 // Plan reports the drift the GitFromImageTask would produce.
 func (t GitFromImageTask) Plan() PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StateDeployed: func() PlanResult {
 			match, err := checkAppSourceImage(t.App, t.Image)
@@ -99,11 +120,10 @@ func (t GitFromImageTask) Plan() PlanResult {
 				args = append(args, "--build-dir", t.BuildDir)
 			}
 			args = append(args, t.App, t.Image)
+			// Validate guarantees username and email are set together, so
+			// append them as a unit to keep them in their positional slots.
 			if t.GitUsername != "" {
-				args = append(args, t.GitUsername)
-			}
-			if t.GitEmail != "" {
-				args = append(args, t.GitEmail)
+				args = append(args, t.GitUsername, t.GitEmail)
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
