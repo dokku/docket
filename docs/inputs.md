@@ -39,6 +39,25 @@ template library, which wraps Go's `text/template`. Anything sigil supports is a
 body. Inputs themselves must not reference other variables - they are resolved first, in a separate
 phase, and then injected.
 
+## Input names
+
+Because an input is referenced as `{{ .name }}`, its `name` must be a valid template variable: a
+letter or underscore followed by letters, digits, or underscores. A name with any other character -
+a hyphen is the common case (`my-app`, `db-host`) - cannot be used with `{{ .name }}` because Go's
+`text/template` rejects it. Such a name is reported as `invalid_input_name` by `docket validate`
+(and rejected by `plan` / `apply`) rather than failing later with a cryptic template error. Rename
+the input to use underscores, for example `my_app`:
+
+```yaml
+---
+- inputs:
+    - name: my_app       # not my-app
+      default: web
+  tasks:
+    - dokku_app:
+        app: "{{ .my_app }}"
+```
+
 ## Overriding inputs
 
 Override an input on the command line by passing its name as a flag. Omit it to use the default:

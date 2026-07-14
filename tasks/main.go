@@ -505,6 +505,14 @@ func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bo
 // structural validity by construction; the first structural problem is
 // converted into the loader's fail-fast error.
 func GetPlaysWithFormat(data []byte, format string, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
+	// An input name that is not a valid template variable (e.g. a hyphen)
+	// makes the render below fail with a cryptic "bad character" error;
+	// reject it up front with the clearer invalid_input_name diagnostic so
+	// plan and apply fail offline with the same message validate reports.
+	if nameProblems := checkInputNames(data, format); len(nameProblems) > 0 {
+		return nil, problemToError(nameProblems[0])
+	}
+
 	baseRendered, err := renderRecipeBytes(data, context)
 	if err != nil {
 		return nil, err

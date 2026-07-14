@@ -401,6 +401,28 @@ func TestGetPlaysRejectsReservedInputName(t *testing.T) {
 	}
 }
 
+func TestGetPlaysRejectsInvalidInputName(t *testing.T) {
+	// A hyphenated input name breaks `{{ .name }}` rendering; the loader
+	// rejects it up front with a clear error so plan and apply fail offline
+	// with the same message validate reports, not a cryptic render error
+	// (#370).
+	data := []byte(`---
+- inputs:
+    - name: my-app
+      default: web
+  tasks:
+    - dokku_app:
+        app: "{{ .my-app }}"
+`)
+	_, err := GetPlays(data, map[string]interface{}{}, nil)
+	if err == nil {
+		t.Fatal("expected error for invalid input name, got nil")
+	}
+	if !strings.Contains(err.Error(), "is not a valid template variable name") {
+		t.Errorf("expected invalid-input-name error, got: %v", err)
+	}
+}
+
 func TestGetTasksRejectsDuplicateTaskNames(t *testing.T) {
 	// Two tasks sharing a name used to silently drop all but the last
 	// when keyed into the ordered map; the loader now rejects them (#307).
