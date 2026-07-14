@@ -57,12 +57,29 @@ default and no supplied value renders as an empty string; `docket validate --str
 that case so a recipe that cannot run without a runtime override fails the lint instead of deploying
 with a blank value.
 
-These input names are reserved for docket's own flags and cannot be used as input names:
+These input names collide with docket's own command flags and cannot be used as input names.
+Declaring one is reported as `reserved_input_name` by `docket validate` (and rejected by `plan` /
+`apply`) rather than silently shadowing the flag:
 
-- `help`
+- `accept-new-host-keys`
+- `detailed-exitcode`
+- `fail-fast`
+- `host`
+- `json`
+- `list-tasks`
+- `no-color`
+- `play`
+- `skip-tags`
+- `start-at-task`
+- `strict`
+- `sudo`
+- `tags`
 - `tasks`
-- `v`
-- `version`
+- `vars-file`
+- `verbose`
+
+`help`, `v`, and `version` are handled by the CLI framework rather than registered as flags, so
+they are usable as input names.
 
 ## Layered values with `--vars-file`
 

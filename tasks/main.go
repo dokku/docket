@@ -298,6 +298,36 @@ type InputValidator interface {
 // Global registry for Tasks.
 var RegisteredTasks map[string]Task
 
+// ReservedInputNames is the set of recipe input names that collide with a
+// built-in CLI flag on apply, plan, or validate. Declaring an input with
+// one of these names used to make pflag panic with "flag redefined"
+// before flag parsing even began; the loader and validator now reject it
+// as reserved_input_name instead, and registerInputFlags skips it so no
+// command panics. The set is the union of the built-in flags across the
+// input-accepting commands, so validate flags the same names apply and
+// plan would collide with. help / v / version are intentionally absent -
+// they are handled by the CLI framework, not registered on the flag set,
+// so they work as input names. A commands-package test keeps this set in
+// sync with the real flag sets.
+var ReservedInputNames = map[string]bool{
+	"tasks":                true,
+	"host":                 true,
+	"verbose":              true,
+	"json":                 true,
+	"no-color":             true,
+	"tags":                 true,
+	"skip-tags":            true,
+	"sudo":                 true,
+	"play":                 true,
+	"vars-file":            true,
+	"fail-fast":            true,
+	"list-tasks":           true,
+	"start-at-task":        true,
+	"accept-new-host-keys": true,
+	"detailed-exitcode":    true,
+	"strict":               true,
+}
+
 // envelopeAllowlistKeys are the cross-cutting envelope keys the loader
 // admits alongside the single task-type key. name / tags / when / loop
 // are activated by #205; register / changed_when / failed_when /

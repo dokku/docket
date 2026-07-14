@@ -381,6 +381,26 @@ func TestGetTasksRejectsNullTaskBodyUnderLoop(t *testing.T) {
 	}
 }
 
+func TestGetPlaysRejectsReservedInputName(t *testing.T) {
+	// An input named after a built-in flag is rejected by the loader with
+	// a clean error instead of panicking pflag (#302).
+	data := []byte(`---
+- inputs:
+    - name: no-color
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+`)
+	_, err := GetPlays(data, map[string]interface{}{}, nil)
+	if err == nil {
+		t.Fatal("expected error for reserved input name, got nil")
+	}
+	if !strings.Contains(err.Error(), "reserved for a built-in flag") {
+		t.Errorf("expected reserved-name error, got: %v", err)
+	}
+}
+
 func TestGetTasksRejectsDuplicateTaskNames(t *testing.T) {
 	// Two tasks sharing a name used to silently drop all but the last
 	// when keyed into the ordered map; the loader now rejects them (#307).

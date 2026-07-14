@@ -87,6 +87,40 @@ EOF
   assert_output --partial '"code":"invalid_task_input"'
 }
 
+@test "docket validate exits 1 on an input named after a built-in flag" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: no-color
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "reserved for a built-in flag"
+}
+
+@test "docket apply does not panic on an input named after a built-in flag" {
+  # An input named after a built-in flag used to make pflag panic before
+  # flag parsing began (#302). apply must now fail cleanly instead.
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: verbose
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "reserved for a built-in flag"
+  refute_output --partial "panic:"
+  refute_output --partial "flag redefined"
+}
+
 @test "docket validate exits 1 on duplicate task names" {
   write_tasks_file <<EOF
 ---

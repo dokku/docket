@@ -152,6 +152,46 @@ func TestValidateRejectsNullTaskBody(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsReservedInputName(t *testing.T) {
+	// An input named after a built-in flag (here no-color) used to panic
+	// the CLI; validate now rejects it offline (#302).
+	data := []byte(`---
+- inputs:
+    - name: no-color
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "reserved_input_name")
+	if p == nil {
+		t.Fatalf("expected reserved_input_name problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"no-color"`) {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+}
+
+func TestValidateAllowsHelpVersionInputNames(t *testing.T) {
+	// help / v / version are handled by the CLI framework, not registered
+	// on the flag set, so they remain valid input names (#302).
+	for _, name := range []string{"help", "v", "version"} {
+		data := []byte(`---
+- inputs:
+    - name: ` + name + `
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+`)
+		problems := Validate(data, ValidateOptions{})
+		if p := findProblem(problems, "reserved_input_name"); p != nil {
+			t.Errorf("input name %q should be allowed, got: %+v", name, *p)
+		}
+	}
+}
+
 func TestValidateRejectsDuplicateTaskNames(t *testing.T) {
 	// validate flags duplicate task names offline so a recipe that would
 	// silently drop a task fails the CI lint (#307).

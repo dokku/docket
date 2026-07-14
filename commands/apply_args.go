@@ -175,7 +175,12 @@ func registerInputFlags(f *flag.FlagSet, data []byte, format string) (map[string
 	}
 
 	for _, input := range inputs {
-		if input.Name == "tasks" {
+		// Skip any input whose name collides with a built-in flag. pflag
+		// panics with "flag redefined" if we register it, so the loader /
+		// validator reject it as reserved_input_name instead (#302); here
+		// we just avoid the panic and let the input fall back to its
+		// default. validate is the gate that surfaces the error.
+		if tasks.ReservedInputNames[input.Name] {
 			continue
 		}
 		arg := &Argument{Required: input.Required, Sensitive: input.Sensitive}

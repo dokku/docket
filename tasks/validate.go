@@ -865,6 +865,13 @@ func buildSigilContext(plays [][]inputWithNode) map[string]interface{} {
 			if in.Name == "" {
 				continue
 			}
+			// A reserved input name (e.g. no-color) is rejected as
+			// reserved_input_name by the parser; keep it out of the sigil
+			// context so a dash in the name cannot break the template
+			// render before that clearer diagnostic is reported (#302).
+			if ReservedInputNames[in.Name] {
+				continue
+			}
 			if in.Default != "" {
 				context[in.Name] = in.Default
 			} else if _, ok := context[in.Name]; !ok {

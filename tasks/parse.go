@@ -225,6 +225,8 @@ func parsePlay(play *yaml.Node, index int) *parsedPlay {
 		}
 	}
 
+	flagReservedInputNames(pp, play)
+
 	tasksNode := mappingValue(play, "tasks")
 	if tasksNode == nil {
 		return pp
@@ -282,6 +284,33 @@ func flagDuplicateTaskNames(pp *parsedPlay) {
 			Column:  anchor.Column,
 			Message: fmt.Sprintf("duplicate task name %q", entry.Name),
 			Hint:    hint,
+		})
+	}
+}
+
+// flagReservedInputNames rejects any input in the play whose name
+// collides with a built-in CLI flag (see ReservedInputNames). Such a name
+// used to make pflag panic before flag parsing began; both the loader and
+// the validator now reject it offline (#302).
+func flagReservedInputNames(pp *parsedPlay, play *yaml.Node) {
+	inputsNode := mappingValue(play, "inputs")
+	if inputsNode == nil || inputsNode.Kind != yaml.SequenceNode {
+		return
+	}
+	for _, in := range inputsNode.Content {
+		nameNode := mappingValue(in, "name")
+		if nameNode == nil || nameNode.Kind != yaml.ScalarNode {
+			continue
+		}
+		if !ReservedInputNames[nameNode.Value] {
+			continue
+		}
+		pp.Problems = append(pp.Problems, Problem{
+			Code:    "reserved_input_name",
+			Play:    pp.Label,
+			Line:    nameNode.Line,
+			Column:  nameNode.Column,
+			Message: fmt.Sprintf("input name %q is reserved for a built-in flag and cannot be used as an input name", nameNode.Value),
 		})
 	}
 }
