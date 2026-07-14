@@ -9,15 +9,9 @@ import (
 // proxyEnabled probes whether the proxy is enabled for an app via
 // `dokku --quiet proxy:report <app> --proxy-enabled`. Output is "true"/"false".
 func proxyEnabled(ctx ToggleContext) (bool, error) {
-	args := []string{"--quiet", "proxy:report"}
-	if ctx.AllowGlobal && ctx.Global {
-		args = append(args, "--global", "--proxy-enabled")
-	} else {
-		args = append(args, ctx.App, "--proxy-enabled")
-	}
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    args,
+		Args:    []string{"--quiet", "proxy:report", ctx.App, "--proxy-enabled"},
 	})
 	if err != nil {
 		return false, err
@@ -42,9 +36,6 @@ func (t ProxyToggleTask) ExportApp(app string) ([]interface{}, error) {
 type ProxyToggleTask struct {
 	// App is the name of the app
 	App string `required:"true" yaml:"app" description:"Name of the app"`
-
-	// Global is a flag indicating if the proxy should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the proxy should be applied globally"`
 
 	// State is the desired state of the proxy
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the proxy"`
@@ -98,14 +89,9 @@ func (t ProxyToggleTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// Validate checks the ProxyToggleTask's inputs without contacting the server.
-func (t ProxyToggleTask) Validate() error {
-	return validateToggleInput(t.App, t.Global, false)
-}
-
 // Plan reports the drift the ProxyToggleTask would produce.
 func (t ProxyToggleTask) Plan() PlanResult {
-	return planToggle(t.State, t.App, t.Global, false, "proxy:enable", "proxy:disable", proxyEnabled)
+	return planToggle(t.State, t.App, "proxy:enable", "proxy:disable", proxyEnabled)
 }
 
 // init registers the ProxyToggleTask with the task registry

@@ -7,18 +7,11 @@ import (
 )
 
 // domainsEnabled probes whether the domains plugin is enabled for an app
-// via `dokku --quiet domains:report <app> --domains-app-enabled`, or for
-// the global scope via `--domains-global-enabled`.
+// via `dokku --quiet domains:report <app> --domains-app-enabled`.
 func domainsEnabled(ctx ToggleContext) (bool, error) {
-	args := []string{"--quiet", "domains:report"}
-	if ctx.AllowGlobal && ctx.Global {
-		args = append(args, "--global", "--domains-global-enabled")
-	} else {
-		args = append(args, ctx.App, "--domains-app-enabled")
-	}
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    args,
+		Args:    []string{"--quiet", "domains:report", ctx.App, "--domains-app-enabled"},
 	})
 	if err != nil {
 		return false, err
@@ -43,9 +36,6 @@ func (t DomainsToggleTask) ExportApp(app string) ([]interface{}, error) {
 type DomainsToggleTask struct {
 	// App is the name of the app
 	App string `required:"true" yaml:"app" description:"Name of the app"`
-
-	// Global is a flag indicating if the domains plugin should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the domains plugin should be applied globally"`
 
 	// State is the desired state of the domains plugin
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the domains plugin"`
@@ -99,14 +89,9 @@ func (t DomainsToggleTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// Validate checks the DomainsToggleTask's inputs without contacting the server.
-func (t DomainsToggleTask) Validate() error {
-	return validateToggleInput(t.App, t.Global, false)
-}
-
 // Plan reports the drift the DomainsToggleTask would produce.
 func (t DomainsToggleTask) Plan() PlanResult {
-	return planToggle(t.State, t.App, t.Global, false, "domains:enable", "domains:disable", domainsEnabled)
+	return planToggle(t.State, t.App, "domains:enable", "domains:disable", domainsEnabled)
 }
 
 // init registers the DomainsToggleTask with the task registry

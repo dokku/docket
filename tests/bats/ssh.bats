@@ -82,6 +82,22 @@ EOF
   assert_output --partial "ssh:"
 }
 
+@test "ssh transport failure on a toggle task surfaces as a plan error" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: enable the proxy
+      dokku_proxy_toggle:
+        app: docket-test-ssh
+EOF
+  # A toggle task's probe also propagates *subprocess.SSHError, so an
+  # unreachable host is a plan error (exit 1) rather than spurious drift
+  # that would exit 0.
+  DOKKU_HOST="$USER@127.0.0.1:1" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "ssh:"
+}
+
 @test "--host flag overrides DOKKU_HOST env var" {
   write_tasks_file <<EOF
 ---
