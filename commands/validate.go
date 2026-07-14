@@ -130,7 +130,20 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	resolvedPath, resolvedFormat, err := resolveTaskFilePath(c.tasksFile)
+	taskFile, err := resolveTaskFileArg(c.tasksFile, flags.Args())
+	if err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "argument_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(err.Error())
+		}
+		return 1
+	}
+
+	resolvedPath, resolvedFormat, err := resolveTaskFilePath(taskFile)
 	if err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{

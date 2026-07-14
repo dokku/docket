@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 
 	_ "github.com/gliderlabs/sigil/builtin"
@@ -35,6 +36,56 @@ func TestServiceBackupTaskPartialAuthRejected(t *testing.T) {
 	result := task.Plan()
 	if result.Error == nil {
 		t.Fatal("Plan with only an access key id should return an error")
+	}
+}
+
+func TestServiceBackupTaskValidateAuthChain(t *testing.T) {
+	base := ServiceBackupTask{Service: "postgres", Name: "my-db", State: StatePresent, AwsAccessKeyID: "AKIA", AwsSecretAccessKey: "secret"}
+
+	tests := []struct {
+		name    string
+		mutate  func(*ServiceBackupTask)
+		wantErr string
+	}{
+		{
+			name:   "full chain is valid",
+			mutate: func(b *ServiceBackupTask) { b.AwsDefaultRegion = "us-east-1"; b.AwsSignatureVersion = "s3v4"; b.EndpointURL = "https://s3.example.com" },
+		},
+		{
+			name:   "region alone with keys is valid",
+			mutate: func(b *ServiceBackupTask) { b.AwsDefaultRegion = "us-east-1" },
+		},
+		{
+			name:    "endpoint without signature version is rejected",
+			mutate:  func(b *ServiceBackupTask) { b.AwsDefaultRegion = "us-east-1"; b.EndpointURL = "https://s3.example.com" },
+			wantErr: "'aws_signature_version' is required when 'endpoint_url' is set",
+		},
+		{
+			name:    "signature version without region is rejected",
+			mutate:  func(b *ServiceBackupTask) { b.AwsSignatureVersion = "s3v4" },
+			wantErr: "'aws_default_region' is required when 'aws_signature_version' is set",
+		},
+		{
+			name:    "endpoint without keys is rejected",
+			mutate:  func(b *ServiceBackupTask) { b.AwsAccessKeyID = ""; b.AwsSecretAccessKey = ""; b.EndpointURL = "https://s3.example.com" },
+			wantErr: "are required when 'aws_default_region', 'aws_signature_version', or 'endpoint_url' is set",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task := base
+			tt.mutate(&task)
+			err := task.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error %q, got: %v", tt.wantErr, err)
+			}
+		})
 	}
 }
 

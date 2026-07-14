@@ -107,7 +107,7 @@ EOF
       dokku_ports:
         app: docket-test-output-missing
         port_mappings:
-          - { scheme: http, host_port: 80, container_port: 5000 }
+          - { scheme: http, host: 80, container: 5000 }
         state: present
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE"
@@ -125,7 +125,7 @@ EOF
       dokku_ports:
         app: docket-test-output-missing
         port_mappings:
-          - { scheme: http, host_port: 80, container_port: 5000 }
+          - { scheme: http, host: 80, container: 5000 }
         state: present
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --json

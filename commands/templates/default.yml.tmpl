@@ -1,6 +1,6 @@
 - inputs:
     - name: app
-      default: <<.Name>>
+      default: <<yamlStr .Name>>
       description: "Application name"
     - name: repo
       <<if .Repo>>default: "<<.Repo>>"<<else>>required: true<<end>>

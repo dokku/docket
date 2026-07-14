@@ -149,16 +149,11 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 	// yaml.v3-only. The JSON5 parse runs after the sigil syntax check so
 	// a broken template surfaces as a template_error rather than a
 	// confusing json5 parse error.
-	if IsJSON5Format(opts.Format) {
-		converted, err := json5ToYAMLBytes(data)
-		if err != nil {
-			return []Problem{{
-				Code:    "json5_parse",
-				Message: err.Error(),
-			}}
-		}
-		data = converted
+	normalized, normalizeProblems := normalizeRecipeBytes(data, opts.Format)
+	if len(normalizeProblems) > 0 {
+		return normalizeProblems
 	}
+	data = normalized
 
 	var rawRoot yaml.Node
 	if err := yaml.Unmarshal(data, &rawRoot); err != nil {
@@ -205,42 +200,30 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 		return problems
 	}
 
-	var renderedRoot yaml.Node
-	if err := yaml.Unmarshal(rendered, &renderedRoot); err != nil {
-		line, col := parseYAMLErrorPosition(err.Error())
-		return []Problem{{
-			Code:    "yaml_parse",
-			Line:    line,
-			Column:  col,
-			Message: fmt.Sprintf("rendered recipe parse error: %v", err),
-		}}
-	}
+	// The shared structural parser walks the rendered tree once, collecting
+	// shape / envelope / task-type problems with source positions. The
+	// loader (GetPlaysWithFormat) runs the same parser, so apply, plan, and
+	// validate agree on structural validity by construction. The passes
+	// below this point are validate-only: they need placeholder-aware body
+	// decoding or offline-only cross-reference auditing.
+	ast := parseRecipe(rendered)
+	problems := append([]Problem(nil), ast.Problems...)
 
-	doc := documentBody(&renderedRoot)
-	if doc == nil || doc.Kind != yaml.SequenceNode {
-		return []Problem{{
-			Code:    "recipe_shape",
-			Message: "rendered recipe is not a yaml list of plays",
-		}}
-	}
-
-	var problems []Problem
 	// registerSeen tracks register names across the whole recipe so a
 	// duplicate `register: foo` in two different plays surfaces as a
 	// single register_duplicate problem. The registered map is run-wide
 	// at apply / plan time, so the validator's uniqueness check is
 	// recipe-wide too.
 	registerSeen := map[string]registerHit{}
-	for i, play := range doc.Content {
-		label := fmt.Sprintf("play #%d", i+1)
+	for i, play := range ast.Plays {
 		var inputs []inputWithNode
 		if i < len(playsInputs) {
 			inputs = playsInputs[i]
 		}
-		problems = append(problems, validatePlay(play, label, inputs, opts, registerSeen)...)
+		problems = append(problems, validatePlay(play, inputs, opts, registerSeen)...)
 	}
 
-	problems = append(problems, validateCLIReferences(doc, opts)...)
+	problems = append(problems, validateCLIReferences(ast.Doc, opts)...)
 
 	return problems
 }
@@ -256,7 +239,7 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 // here because their per-iteration suffix is only resolved at apply
 // time; the runtime check in commands/apply.go is authoritative.
 func validateCLIReferences(doc *yaml.Node, opts ValidateOptions) []Problem {
-	if !opts.Strict {
+	if doc == nil || !opts.Strict {
 		return nil
 	}
 	if opts.PlayName == "" && opts.StartAtTask == "" {
@@ -364,44 +347,24 @@ type registerHit struct {
 	Line int
 }
 
-// validatePlay walks one play (one MappingNode within the recipe sequence).
-func validatePlay(play *yaml.Node, label string, inputs []inputWithNode, opts ValidateOptions, registerSeen map[string]registerHit) []Problem {
-	var problems []Problem
-
-	if play.Kind != yaml.MappingNode {
-		return append(problems, Problem{
-			Code:    "recipe_shape",
-			Play:    label,
-			Line:    play.Line,
-			Column:  play.Column,
-			Message: "play must be a yaml mapping with inputs and/or tasks",
-		})
-	}
-
-	tasksNode := mappingValue(play, "tasks")
-
-	for i := 0; i < len(play.Content); i += 2 {
-		key := play.Content[i].Value
-		if !allowedPlayKeys[key] {
-			problems = append(problems, Problem{
-				Code:    "recipe_shape",
-				Play:    label,
-				Line:    play.Content[i].Line,
-				Column:  play.Content[i].Column,
-				Message: fmt.Sprintf("unexpected play key %q (expected: %s)", key, allowedPlayKeysList),
-			})
-		}
-	}
+// validatePlay runs the validate-only passes over one parsed play: the
+// play-level when: compile check, the strict input audit, expr predicate
+// compilation, register uniqueness, loop-var placement, and per-entry body
+// validation. The structural checks (play shape, allowed keys, envelope
+// typing, task-type resolution) were already collected by parseRecipe and
+// live on the parsedPlay / parsedTaskEntry problems.
+func validatePlay(play *parsedPlay, inputs []inputWithNode, opts ValidateOptions, registerSeen map[string]registerHit) []Problem {
+	problems := append([]Problem(nil), play.Problems...)
 
 	// Compile the play-level when: predicate so a typo surfaces at validate
 	// time. The play's when: sees the file-level merged context only - the
 	// play's own inputs are not visible to its own when - but for parse
 	// validation we only care that the source compiles.
-	if whenNode := mappingValue(play, "when"); whenNode != nil && whenNode.Kind == yaml.ScalarNode && whenNode.Value != "" {
+	if whenNode := mappingValue(play.Node, "when"); whenNode != nil && whenNode.Kind == yaml.ScalarNode && whenNode.Value != "" {
 		if _, err := CompilePredicate(whenNode.Value); err != nil {
 			problems = append(problems, Problem{
 				Code:    "expr_compile",
-				Play:    label,
+				Play:    play.Label,
 				Line:    whenNode.Line,
 				Column:  whenNode.Column,
 				Message: fmt.Sprintf("play when expression compile error: %v", err),
@@ -410,179 +373,48 @@ func validatePlay(play *yaml.Node, label string, inputs []inputWithNode, opts Va
 	}
 
 	if opts.Strict {
-		problems = append(problems, validateStrictInputs(inputs, opts.InputOverrides, label)...)
+		problems = append(problems, validateStrictInputs(inputs, opts.InputOverrides, play.Label)...)
 	}
 
-	// Stub checks: present so future PRs (#205/#208/#211/#212) can wire
-	// real bodies without touching the call site.
-	problems = append(problems, validateBlockStructure(tasksNode, label)...)
-	problems = append(problems, validateExprPredicates(tasksNode, label)...)
-	problems = append(problems, validateRegisterReferences(tasksNode, label, registerSeen)...)
-	problems = append(problems, validateTargetReferences(tasksNode, label)...)
+	problems = append(problems, validateExprPredicates(play.TasksNode, play.Label)...)
+	problems = append(problems, validateRegisterReferences(play.TasksNode, play.Label, registerSeen)...)
+	problems = append(problems, validateTargetReferences(play.TasksNode, play.Label)...)
 
-	if tasksNode == nil {
-		return problems
-	}
-	if tasksNode.Kind != yaml.SequenceNode {
-		return append(problems, Problem{
-			Code:    "recipe_shape",
-			Play:    label,
-			Line:    tasksNode.Line,
-			Column:  tasksNode.Column,
-			Message: "tasks must be a yaml list",
-		})
-	}
-
-	for i, task := range tasksNode.Content {
-		problems = append(problems, validateTaskEntry(task, label, i+1)...)
+	for _, entry := range play.Entries {
+		problems = append(problems, validateEntry(entry, play.Label)...)
 	}
 
 	return problems
 }
 
-// validateTaskEntry covers checks 3-5: envelope shape, registered task type,
-// and required-field decode. For group entries (those carrying `block:`),
-// it recurses through every child of block / rescue / always so nested
-// entries surface the same diagnostics.
-func validateTaskEntry(task *yaml.Node, playLabel string, idx int) []Problem {
-	var problems []Problem
-	taskLabel := fmt.Sprintf("task #%d", idx)
+// validateEntry emits one parsed entry's structural problems followed by
+// its body validation (required fields plus the task's InputValidator),
+// recursing through group children so nested entries surface the same
+// diagnostics. Entries whose structure was rejected skip body validation:
+// the structural problem is the primary finding and the body checks
+// depend on a resolved task type.
+func validateEntry(entry *parsedTaskEntry, playLabel string) []Problem {
+	problems := append([]Problem(nil), entry.Problems...)
 
-	if task.Kind != yaml.MappingNode {
-		return []Problem{{
-			Code:    "task_entry_shape",
-			Play:    playLabel,
-			Task:    taskLabel,
-			Line:    task.Line,
-			Column:  task.Column,
-			Message: "task entry must be a yaml mapping",
-		}}
-	}
-
-	var (
-		taskTypeKey  string
-		taskTypeNode *yaml.Node
-		taskBodyNode *yaml.Node
-		taskTypeKeys []string
-		nameValue    string
-	)
-
-	for i := 0; i < len(task.Content); i += 2 {
-		keyNode := task.Content[i]
-		valueNode := task.Content[i+1]
-		key := keyNode.Value
-
-		if key == "name" {
-			if valueNode.Kind == yaml.ScalarNode {
-				nameValue = valueNode.Value
+	if entry.IsGroup {
+		for _, group := range [][]*parsedTaskEntry{entry.Block, entry.Rescue, entry.Always} {
+			for _, child := range group {
+				problems = append(problems, validateEntry(child, playLabel)...)
 			}
-			continue
 		}
-
-		if activeEnvelopeKeys[key] {
-			continue
-		}
-
-		if dependentIssue, reserved := reservedEnvelopeKeys[key]; reserved {
-			problems = append(problems, Problem{
-				Code:    "envelope_key_unsupported",
-				Play:    playLabel,
-				Task:    taskLabel,
-				Line:    keyNode.Line,
-				Column:  keyNode.Column,
-				Message: fmt.Sprintf("envelope key %q is reserved but not yet supported", key),
-				Hint:    fmt.Sprintf("activates with %s", dependentIssue),
-			})
-			continue
-		}
-
-		taskTypeKeys = append(taskTypeKeys, key)
-		taskTypeKey = key
-		taskTypeNode = keyNode
-		taskBodyNode = valueNode
-	}
-
-	if nameValue != "" {
-		taskLabel = fmt.Sprintf("task #%d %q", idx, nameValue)
-	}
-
-	blockNode := mappingValue(task, "block")
-	rescueNode := mappingValue(task, "rescue")
-	alwaysNode := mappingValue(task, "always")
-
-	if blockNode != nil || rescueNode != nil || alwaysNode != nil {
-		problems = append(problems, validateGroupEntry(task, blockNode, rescueNode, alwaysNode, taskTypeKeys, taskTypeNode, playLabel, taskLabel)...)
 		return problems
 	}
 
-	if len(taskTypeKeys) == 0 {
-		return append(problems, Problem{
-			Code:    "task_entry_shape",
-			Play:    playLabel,
-			Task:    taskLabel,
-			Line:    task.Line,
-			Column:  task.Column,
-			Message: "task entry must contain exactly one task-type key",
-		})
-	}
-	if len(taskTypeKeys) > 1 {
-		return append(problems, Problem{
-			Code:    "task_entry_shape",
-			Play:    playLabel,
-			Task:    taskLabel,
-			Line:    task.Line,
-			Column:  task.Column,
-			Message: fmt.Sprintf("task entry has %d task-type keys (%s); exactly one is allowed", len(taskTypeKeys), strings.Join(taskTypeKeys, ", ")),
-		})
+	if !entry.Valid || entry.TypeKey == "" {
+		return problems
 	}
 
-	registered, ok := RegisteredTasks[taskTypeKey]
+	registered, ok := RegisteredTasks[entry.TypeKey]
 	if !ok {
-		hint := ""
-		if suggestion := nearestTaskName(taskTypeKey); suggestion != "" {
-			hint = fmt.Sprintf("did you mean %q?", suggestion)
-		}
-		return append(problems, Problem{
-			Code:    "unknown_task_type",
-			Play:    playLabel,
-			Task:    taskLabel,
-			Line:    taskTypeNode.Line,
-			Column:  taskTypeNode.Column,
-			Message: fmt.Sprintf("unknown task type %q", taskTypeKey),
-			Hint:    hint,
-		})
+		return problems
 	}
 
-	problems = append(problems, validateTaskBody(registered, taskTypeKey, taskBodyNode, playLabel, taskLabel)...)
-	return problems
-}
-
-// validateGroupEntry recurses through block / rescue / always children
-// of a try/catch/finally group (#211) entry so each nested entry
-// receives the per-task validation (envelope shape, registered task
-// type, required-field decode). The group's structural diagnostics
-// (empty block, orphan rescue/always, block alongside a task-type
-// key) live in validateBlockStructure so they are emitted exactly
-// once per recipe walk.
-func validateGroupEntry(task *yaml.Node, blockNode, rescueNode, alwaysNode *yaml.Node, taskTypeKeys []string, taskTypeNode *yaml.Node, playLabel, taskLabel string) []Problem {
-	var problems []Problem
-
-	if blockNode != nil && blockNode.Kind == yaml.SequenceNode {
-		for i, child := range blockNode.Content {
-			problems = append(problems, validateTaskEntry(child, playLabel, i+1)...)
-		}
-	}
-	if rescueNode != nil && rescueNode.Kind == yaml.SequenceNode {
-		for i, child := range rescueNode.Content {
-			problems = append(problems, validateTaskEntry(child, playLabel, i+1)...)
-		}
-	}
-	if alwaysNode != nil && alwaysNode.Kind == yaml.SequenceNode {
-		for i, child := range alwaysNode.Content {
-			problems = append(problems, validateTaskEntry(child, playLabel, i+1)...)
-		}
-	}
-
+	problems = append(problems, validateTaskBody(registered, entry.TypeKey, entry.BodyNode, playLabel, entry.Label)...)
 	return problems
 }
 
@@ -725,83 +557,6 @@ func validateStrictInputs(inputs []inputWithNode, overrides map[string]bool, lab
 			Message: fmt.Sprintf("input %q is required and has no default; pass --%s to override", in.Name, in.Name),
 		})
 	}
-	return problems
-}
-
-// validateBlockStructure walks every task entry under tasksNode and
-// flags malformed try/catch/finally groups: empty `block:`, `rescue:` /
-// `always:` without a sibling `block:`, a group entry that also carries
-// a task-type key, and non-sequence clause values. Per-child structural
-// checks are handled by validateTaskEntry through its recursion into
-// group children, so this helper only emits the group-level diagnostics.
-func validateBlockStructure(tasksNode *yaml.Node, playLabel string) []Problem {
-	if tasksNode == nil || tasksNode.Kind != yaml.SequenceNode {
-		return nil
-	}
-	var problems []Problem
-	walkGroupEntries(tasksNode, playLabel, func(task *yaml.Node, label string) {
-		blockNode := mappingValue(task, "block")
-		rescueNode := mappingValue(task, "rescue")
-		alwaysNode := mappingValue(task, "always")
-		if blockNode == nil && rescueNode == nil && alwaysNode == nil {
-			return
-		}
-		if blockNode == nil {
-			clauseNode := rescueNode
-			clauseName := "rescue"
-			if rescueNode == nil {
-				clauseNode = alwaysNode
-				clauseName = "always"
-			}
-			problems = append(problems, Problem{
-				Code:    "block_orphan_clause",
-				Play:    playLabel,
-				Task:    label,
-				Line:    clauseNode.Line,
-				Column:  clauseNode.Column,
-				Message: fmt.Sprintf("%s: requires a block: in the same task entry", clauseName),
-			})
-			return
-		}
-		if blockNode.Kind != yaml.SequenceNode {
-			problems = append(problems, Problem{
-				Code:    "block_shape",
-				Play:    playLabel,
-				Task:    label,
-				Line:    blockNode.Line,
-				Column:  blockNode.Column,
-				Message: "block: must be a yaml list of task entries",
-			})
-			return
-		}
-		if len(blockNode.Content) == 0 {
-			problems = append(problems, Problem{
-				Code:    "block_empty",
-				Play:    playLabel,
-				Task:    label,
-				Line:    blockNode.Line,
-				Column:  blockNode.Column,
-				Message: "block: must contain at least one child task",
-			})
-		}
-		for i := 0; i < len(task.Content); i += 2 {
-			key := task.Content[i].Value
-			keyNode := task.Content[i]
-			if activeEnvelopeKeys[key] || key == "name" {
-				continue
-			}
-			if _, registered := RegisteredTasks[key]; registered {
-				problems = append(problems, Problem{
-					Code:    "block_with_task_type",
-					Play:    playLabel,
-					Task:    label,
-					Line:    keyNode.Line,
-					Column:  keyNode.Column,
-					Message: fmt.Sprintf("block: group entry cannot also carry task-type key %q", key),
-				})
-			}
-		}
-	})
 	return problems
 }
 
@@ -1110,6 +865,13 @@ func buildSigilContext(plays [][]inputWithNode) map[string]interface{} {
 			if in.Name == "" {
 				continue
 			}
+			// A reserved input name (e.g. no-color) is rejected as
+			// reserved_input_name by the parser; keep it out of the sigil
+			// context so a dash in the name cannot break the template
+			// render before that clearer diagnostic is reported (#302).
+			if ReservedInputNames[in.Name] {
+				continue
+			}
 			if in.Default != "" {
 				context[in.Name] = in.Default
 			} else if _, ok := context[in.Name]; !ok {
@@ -1154,25 +916,6 @@ func scalarChild(node *yaml.Node, key string) string {
 		return ""
 	}
 	return v.Value
-}
-
-// nearestTaskName returns the registered task name with the lowest Levenshtein
-// distance to candidate, but only if that distance is at most 2. Returning ""
-// means "no useful suggestion".
-func nearestTaskName(candidate string) string {
-	best := ""
-	bestDist := 3
-	for name := range RegisteredTasks {
-		d := levenshtein(candidate, name)
-		if d < bestDist {
-			bestDist = d
-			best = name
-		}
-	}
-	if bestDist <= 2 {
-		return best
-	}
-	return ""
 }
 
 // levenshtein returns the edit distance between a and b. Small strings only;

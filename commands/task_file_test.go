@@ -26,6 +26,64 @@ func TestDetectTaskFileFormat(t *testing.T) {
 	}
 }
 
+func TestResolveTaskFileArg(t *testing.T) {
+	tests := []struct {
+		name       string
+		explicit   string
+		positional []string
+		want       string
+		wantErr    string
+	}{
+		{name: "neither given", want: ""},
+		{name: "flag only", explicit: "flag.yml", want: "flag.yml"},
+		{name: "positional only", positional: []string{"pos.yml"}, want: "pos.yml"},
+		{name: "both given is an error", explicit: "flag.yml", positional: []string{"pos.yml"}, wantErr: "both --tasks and a positional"},
+		{name: "multiple positionals is an error", positional: []string{"a.yml", "b.yml"}, wantErr: "only one task file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveTaskFileArg(tt.explicit, tt.positional)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error %q, got: %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveTaskFileFromArgsPositional(t *testing.T) {
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "staging.yml")
+	if err := os.WriteFile(recipe, []byte("---\n- tasks: []\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	vars := filepath.Join(dir, "prod.yml")
+	if err := os.WriteFile(vars, []byte("app: api\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// A --vars-file value that looks like a recipe must not be picked as
+	// the positional; the real positional recipe path should win.
+	got, _ := resolveTaskFileFromArgs([]string{"docket", "validate", "--vars-file", vars, recipe})
+	if got != recipe {
+		t.Errorf("expected positional %q, got %q", recipe, got)
+	}
+
+	// --tasks still takes precedence for preregistration.
+	got, _ = resolveTaskFileFromArgs([]string{"docket", "validate", "--tasks", recipe})
+	if got != recipe {
+		t.Errorf("expected --tasks %q, got %q", recipe, got)
+	}
+}
+
 func TestResolveTaskFilePathExplicit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "custom.json")

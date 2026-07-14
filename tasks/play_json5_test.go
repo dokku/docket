@@ -178,3 +178,43 @@ func TestValidateRejectsMalformedJSON5(t *testing.T) {
 		t.Errorf("first problem code = %q, want json5_parse", problems[0].Code)
 	}
 }
+
+func TestValidateRejectsDuplicateJSON5Key(t *testing.T) {
+	// A JSON5 task entry with two identical task-type keys is silently
+	// deduped by json5.Unmarshal; validate now rejects it the same way it
+	// rejects a duplicate YAML key (#318).
+	data := []byte(`[
+  {
+    tasks: [
+      { dokku_app: { app: "a" }, dokku_app: { app: "b" } },
+    ],
+  },
+]`)
+	problems := Validate(data, ValidateOptions{Format: FormatNameJSON5})
+	p := findProblem(problems, "duplicate_key")
+	if p == nil {
+		t.Fatalf("expected duplicate_key problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"dokku_app"`) {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+}
+
+func TestUnmarshalRecipeRejectsDuplicateJSON5KeyViaLoader(t *testing.T) {
+	// The loader shares the same normalization step, so apply / plan reject
+	// the duplicate key too instead of silently dropping the first body.
+	data := []byte(`[
+  {
+    tasks: [
+      { dokku_app: { app: "a" }, dokku_app: { app: "b" } },
+    ],
+  },
+]`)
+	_, err := GetPlaysWithFormat(data, FormatNameJSON5, map[string]interface{}{}, nil)
+	if err == nil {
+		t.Fatal("expected loader error for duplicate JSON5 key, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate key") {
+		t.Errorf("expected duplicate-key error, got: %v", err)
+	}
+}

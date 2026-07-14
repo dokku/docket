@@ -104,8 +104,26 @@ func (t PortsTask) Execute() TaskOutputState {
 
 // Validate checks the PortsTask's inputs without contacting the server.
 func (t PortsTask) Validate() error {
+	if t.App == "" {
+		return errors.New("'app' is required")
+	}
 	if len(t.PortMappings) == 0 {
 		return errors.New("no port mappings provided")
+	}
+	// Each mapping renders as scheme:host:container, so an unknown or
+	// misspelled key (silently ignored by the YAML decode) or a missing
+	// port would otherwise reach dokku as a malformed argument. Enforce
+	// the per-item required fields the docs mark required.
+	for i, m := range t.PortMappings {
+		if m.Scheme == "" {
+			return fmt.Errorf("'scheme' is required for port_mappings[%d]", i)
+		}
+		if m.Host < 1 || m.Host > 65535 {
+			return fmt.Errorf("'host' must be a port between 1 and 65535 for port_mappings[%d]", i)
+		}
+		if m.Container < 1 || m.Container > 65535 {
+			return fmt.Errorf("'container' must be a port between 1 and 65535 for port_mappings[%d]", i)
+		}
 	}
 	return nil
 }

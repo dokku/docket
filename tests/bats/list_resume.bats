@@ -60,6 +60,21 @@ EOF
   assert_failure # never created
 }
 
+@test "--list-tasks reports a null task body without panicking" {
+  # apply --list-tasks is offline; a null task body used to panic the
+  # loader (#306). It must now surface a clean parse error instead.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: x
+      dokku_app:
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "body must not be empty"
+  refute_output --partial "panic:"
+}
+
 @test "--list-tasks honors --tags filter" {
   write_tasks_file <<EOF
 ---

@@ -43,10 +43,10 @@ type ServiceBackupTask struct {
 	AwsDefaultRegion string `required:"false" yaml:"aws_default_region,omitempty" description:"AWS region used for backup auth"`
 
 	// AwsSignatureVersion is the AWS signature version used for backup auth.
-	AwsSignatureVersion string `required:"false" yaml:"aws_signature_version,omitempty" description:"AWS signature version used for backup auth"`
+	AwsSignatureVersion string `required:"false" yaml:"aws_signature_version,omitempty" description:"AWS signature version used for backup auth (requires aws_default_region)"`
 
 	// EndpointURL is the S3-compatible endpoint url used for backup auth.
-	EndpointURL string `required:"false" yaml:"endpoint_url,omitempty" description:"S3-compatible endpoint url used for backup auth"`
+	EndpointURL string `required:"false" yaml:"endpoint_url,omitempty" description:"S3-compatible endpoint url used for backup auth (requires aws_signature_version)"`
 
 	// EncryptionPassphrase is the passphrase used to encrypt future backups.
 	EncryptionPassphrase string `required:"false" sensitive:"true" yaml:"encryption_passphrase,omitempty" description:"Passphrase used to encrypt future backups"`
@@ -212,6 +212,21 @@ func (t ServiceBackupTask) Validate() error {
 		}
 		if t.hasAuth() && (t.AwsAccessKeyID == "" || t.AwsSecretAccessKey == "") {
 			return fmt.Errorf("'aws_access_key_id' and 'aws_secret_access_key' are both required to configure backup auth")
+		}
+		// backup-auth is a fixed positional argv:
+		//   <access-key> <secret> <region> <signature-version> <endpoint>
+		// dokku cannot receive a later positional without every earlier
+		// one, and the argv builder stops at the first empty field, so
+		// reject the combinations that would silently drop a trailing
+		// value rather than passing it.
+		if (t.AwsDefaultRegion != "" || t.AwsSignatureVersion != "" || t.EndpointURL != "") && !t.hasAuth() {
+			return fmt.Errorf("'aws_access_key_id' and 'aws_secret_access_key' are required when 'aws_default_region', 'aws_signature_version', or 'endpoint_url' is set")
+		}
+		if t.EndpointURL != "" && t.AwsSignatureVersion == "" {
+			return fmt.Errorf("'aws_signature_version' is required when 'endpoint_url' is set")
+		}
+		if t.AwsSignatureVersion != "" && t.AwsDefaultRegion == "" {
+			return fmt.Errorf("'aws_default_region' is required when 'aws_signature_version' is set")
 		}
 		if t.Schedule == "" && !t.hasAuth() && t.EncryptionPassphrase == "" {
 			return fmt.Errorf("at least one of 'schedule', aws credentials, or 'encryption_passphrase' is required when state is 'present'")

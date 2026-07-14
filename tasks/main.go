@@ -11,7 +11,6 @@ import (
 	"github.com/dokku/docket/subprocess"
 	sigil "github.com/gliderlabs/sigil"
 	"github.com/gobuffalo/flect"
-	defaults "github.com/mcuadros/go-defaults"
 	json5 "github.com/titanous/json5"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -299,6 +298,36 @@ type InputValidator interface {
 // Global registry for Tasks.
 var RegisteredTasks map[string]Task
 
+// ReservedInputNames is the set of recipe input names that collide with a
+// built-in CLI flag on apply, plan, or validate. Declaring an input with
+// one of these names used to make pflag panic with "flag redefined"
+// before flag parsing even began; the loader and validator now reject it
+// as reserved_input_name instead, and registerInputFlags skips it so no
+// command panics. The set is the union of the built-in flags across the
+// input-accepting commands, so validate flags the same names apply and
+// plan would collide with. help / v / version are intentionally absent -
+// they are handled by the CLI framework, not registered on the flag set,
+// so they work as input names. A commands-package test keeps this set in
+// sync with the real flag sets.
+var ReservedInputNames = map[string]bool{
+	"tasks":                true,
+	"host":                 true,
+	"verbose":              true,
+	"json":                 true,
+	"no-color":             true,
+	"tags":                 true,
+	"skip-tags":            true,
+	"sudo":                 true,
+	"play":                 true,
+	"vars-file":            true,
+	"fail-fast":            true,
+	"list-tasks":           true,
+	"start-at-task":        true,
+	"accept-new-host-keys": true,
+	"detailed-exitcode":    true,
+	"strict":               true,
+}
+
 // envelopeAllowlistKeys are the cross-cutting envelope keys the loader
 // admits alongside the single task-type key. name / tags / when / loop
 // are activated by #205; register / changed_when / failed_when /
@@ -470,31 +499,42 @@ func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bo
 }
 
 // GetPlaysWithFormat is the format-aware variant of GetPlays. format is
-// one of "yaml" / "json5"; the empty string is treated as YAML. The
-// per-format dispatch happens at every parse point inside the function
-// so sigil templates render uniformly across both surfaces.
+// one of "yaml" / "json5"; the empty string is treated as YAML. Parsing
+// goes through the shared structural parser (tasks/parse.go) that also
+// powers `docket validate`, so the loader and the validator agree on
+// structural validity by construction; the first structural problem is
+// converted into the loader's fail-fast error.
 func GetPlaysWithFormat(data []byte, format string, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
 	baseRendered, err := renderRecipeBytes(data, context)
 	if err != nil {
 		return nil, err
 	}
 
-	baseRecipe, err := UnmarshalRecipe(baseRendered, format)
+	baseAST, err := parseRecipeForLoader(baseRendered, format)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(baseRecipe) == 0 {
+	if len(baseAST.Plays) == 0 {
 		return nil, fmt.Errorf("parse error: no recipe found in tasks file")
 	}
 
-	plays := make([]*Play, 0, len(baseRecipe))
-	singleUnnamed := len(baseRecipe) == 1 && baseRecipe[0].Name == ""
-	for i, raw := range baseRecipe {
+	plays := make([]*Play, 0, len(baseAST.Plays))
+	singleUnnamed := len(baseAST.Plays) == 1 && baseAST.Plays[0].Name == ""
+	for i, rawPlay := range baseAST.Plays {
+		if len(rawPlay.Problems) > 0 {
+			return nil, problemToError(rawPlay.Problems[0])
+		}
+
+		meta, err := decodePlayMeta(rawPlay.Node)
+		if err != nil {
+			return nil, fmt.Errorf("play parse error: play #%d: %s", i+1, err)
+		}
+
 		play := &Play{
-			Name:   raw.Name,
-			When:   raw.When,
-			Inputs: raw.Inputs,
+			Name:   meta.Name,
+			When:   meta.When,
+			Inputs: meta.Inputs,
 		}
 		if play.Name == "" {
 			// Single-play recipes without a name keep the legacy
@@ -508,8 +548,8 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 			}
 		}
 
-		if raw.Tags != nil {
-			tags, err := decodeTags(raw.Tags)
+		if meta.Tags != nil {
+			tags, err := decodeTags(meta.Tags)
 			if err != nil {
 				return nil, fmt.Errorf("play parse error: play #%d %q: %s", i+1, play.Name, err)
 			}
@@ -525,22 +565,37 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 		}
 
 		playCtx := BuildPerPlayContext(context, play.Inputs, userSet)
-		perPlayRecipe, err := renderRecipeWithFormat(data, format, playCtx)
+		perRendered, err := renderRecipeBytes(data, playCtx)
 		if err != nil {
 			return nil, err
 		}
-		if i >= len(perPlayRecipe) {
+		perAST, err := parseRecipeForLoader(perRendered, format)
+		if err != nil {
+			return nil, err
+		}
+		if i >= len(perAST.Plays) {
 			return nil, fmt.Errorf("play parse error: play #%d %q: per-play render produced fewer plays than the structure pass", i+1, play.Name)
+		}
+		perPlay := perAST.Plays[i]
+		if len(perPlay.Problems) > 0 {
+			return nil, problemToError(perPlay.Problems[0])
 		}
 
 		exprCtx := buildExprContext(playCtx)
 		play.Tasks = OrderedStringEnvelopeMap{}
-		for j, t := range perPlayRecipe[i].Tasks {
-			envelopes, err := buildEnvelopesForEntry(j+1, t, playCtx, exprCtx)
+		for _, entry := range perPlay.Entries {
+			envelopes, err := buildEnvelopesFromEntry(entry, playCtx, exprCtx)
 			if err != nil {
 				return nil, err
 			}
 			for _, env := range envelopes {
+				if play.Tasks.GetEnvelope(env.Name) != nil {
+					// Duplicate literal names are already rejected at parse
+					// time; reaching here means two loop expansions produced
+					// the same suffixed name (#307), which would otherwise
+					// silently drop the earlier iteration.
+					return nil, fmt.Errorf("task parse error: duplicate task name %q in play %q", env.Name, play.Name)
+				}
 				if len(play.Tags) > 0 {
 					env.Tags = mergePlayTags(env.Tags, play.Tags)
 				}
@@ -552,6 +607,44 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 	}
 
 	return plays, nil
+}
+
+// parseRecipeForLoader normalizes data's surface syntax, runs the shared
+// structural parser, and fails fast on document-level problems. Play- and
+// entry-level problems are left on the AST so GetPlaysWithFormat can
+// surface them in the play order the legacy loader used.
+func parseRecipeForLoader(data []byte, format string) (*parsedRecipe, error) {
+	normalized, normalizeProblems := normalizeRecipeBytes(data, format)
+	if len(normalizeProblems) > 0 {
+		return nil, problemToError(normalizeProblems[0])
+	}
+	ast := parseRecipe(normalized)
+	if len(ast.Problems) > 0 {
+		return nil, problemToError(ast.Problems[0])
+	}
+	return ast, nil
+}
+
+// playMeta is the loader's play-metadata projection, decoded from the
+// play's mapping node. Task entries are parsed separately through the
+// shared structural parser, so this struct deliberately omits `tasks:`.
+type playMeta struct {
+	Name   string      `yaml:"name"`
+	Tags   interface{} `yaml:"tags"`
+	When   string      `yaml:"when"`
+	Inputs []Input     `yaml:"inputs"`
+}
+
+// decodePlayMeta decodes a play mapping node's metadata fields.
+func decodePlayMeta(node *yaml.Node) (playMeta, error) {
+	var meta playMeta
+	if node == nil {
+		return meta, nil
+	}
+	if err := node.Decode(&meta); err != nil {
+		return meta, err
+	}
+	return meta, nil
 }
 
 // renderRecipeBytes runs the loop-var-safe sigil render over data with the
@@ -569,21 +662,6 @@ func renderRecipeBytes(data []byte, context map[string]interface{}) ([]byte, err
 		return nil, fmt.Errorf("read error: %v", err.Error())
 	}
 	return unescapeLoopVars(rendered, captured), nil
-}
-
-// renderRecipe is the convenience wrapper that renders data with context
-// and unmarshals the result into a Recipe.
-func renderRecipe(data []byte, context map[string]interface{}) (Recipe, error) {
-	return renderRecipeWithFormat(data, FormatYAML, context)
-}
-
-// renderRecipeWithFormat is renderRecipe's format-aware variant.
-func renderRecipeWithFormat(data []byte, format string, context map[string]interface{}) (Recipe, error) {
-	rendered, err := renderRecipeBytes(data, context)
-	if err != nil {
-		return nil, err
-	}
-	return UnmarshalRecipe(rendered, format)
 }
 
 // BuildPerPlayContext layers the play's `inputs:` defaults above the
@@ -640,92 +718,26 @@ func mergePlayTags(envTags, playTags []string) []string {
 	return out
 }
 
-// buildEnvelopesForEntry walks a single task entry, partitions envelope
-// keys vs the task-type key, decodes the body, pre-compiles `when:`, and
-// expands `loop:` if present. Returns one or more envelopes ready for
-// insertion into the ordered map. When the entry carries `block:`, it is
-// decoded as a try/catch/finally group: child envelopes are produced
-// recursively from the block / rescue / always lists and the wrapping
-// envelope's Task is left nil.
-func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
-	envelope := &TaskEnvelope{}
-
-	var (
-		taskTypeKey  string
-		taskBody     interface{}
-		taskTypeKeys []string
-		unknownKeys  []string
-		blockRaw     interface{}
-		rescueRaw    interface{}
-		alwaysRaw    interface{}
-		hasBlock     bool
-		hasRescue    bool
-		hasAlways    bool
-	)
-
-	for key, value := range entry {
-		switch key {
-		case "name":
-			if s, ok := value.(string); ok {
-				envelope.Name = s
-			}
-		case "tags":
-			tags, err := decodeTags(value)
-			if err != nil {
-				return nil, fmt.Errorf("task parse error: task #%d: %s", index, err)
-			}
-			envelope.Tags = tags
-		case "when":
-			s, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("task parse error: task #%d: when must be a string expression, got %T", index, value)
-			}
-			envelope.When = s
-		case "loop":
-			envelope.Loop = value
-		case "register":
-			s, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("task parse error: task #%d: register must be a string, got %T", index, value)
-			}
-			envelope.Register = s
-		case "changed_when":
-			s, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("task parse error: task #%d: changed_when must be a string expression, got %T", index, value)
-			}
-			envelope.ChangedWhen = s
-		case "failed_when":
-			s, ok := value.(string)
-			if !ok {
-				return nil, fmt.Errorf("task parse error: task #%d: failed_when must be a string expression, got %T", index, value)
-			}
-			envelope.FailedWhen = s
-		case "ignore_errors":
-			b, ok := value.(bool)
-			if !ok {
-				return nil, fmt.Errorf("task parse error: task #%d: ignore_errors must be a bool, got %T", index, value)
-			}
-			envelope.IgnoreErrors = b
-		case "block":
-			blockRaw = value
-			hasBlock = true
-		case "rescue":
-			rescueRaw = value
-			hasRescue = true
-		case "always":
-			alwaysRaw = value
-			hasAlways = true
-		default:
-			if _, registered := RegisteredTasks[key]; registered {
-				taskTypeKeys = append(taskTypeKeys, key)
-				taskTypeKey = key
-				taskBody = value
-				continue
-			}
-			unknownKeys = append(unknownKeys, key)
-		}
+// buildEnvelopesFromEntry converts one parsed task entry into one or more
+// runtime envelopes: it pre-compiles predicates, expands `loop:`, decodes
+// the task body via decodeTaskBytes, and recurses through group children.
+// Structural problems the shared parser collected on the entry fail fast
+// here, so the loader rejects exactly what `docket validate` flags.
+func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+	if len(e.Problems) > 0 {
+		return nil, problemToError(e.Problems[0])
 	}
+
+	envelope := &TaskEnvelope{
+		Name:         e.Name,
+		Tags:         e.Tags,
+		When:         e.When,
+		Register:     e.Register,
+		ChangedWhen:  e.ChangedWhen,
+		FailedWhen:   e.FailedWhen,
+		IgnoreErrors: e.IgnoreErrors,
+	}
+	index := e.Index
 
 	if envelope.Name == "" {
 		generated, err := generateTaskName(index)
@@ -735,29 +747,12 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 		envelope.Name = generated
 	}
 
-	if len(unknownKeys) > 0 {
-		return nil, unknownKeyError(index, envelope.Name, unknownKeys)
-	}
-
-	isGroup := hasBlock
-	if hasRescue && !hasBlock {
-		return nil, fmt.Errorf("task parse error: task #%d %q has rescue: without block:", index, envelope.Name)
-	}
-	if hasAlways && !hasBlock {
-		return nil, fmt.Errorf("task parse error: task #%d %q has always: without block:", index, envelope.Name)
-	}
-
-	if isGroup {
-		if len(taskTypeKeys) > 0 {
-			return nil, fmt.Errorf("task parse error: task #%d %q is a block: group and cannot also carry task-type key %q", index, envelope.Name, taskTypeKeys[0])
+	if e.LoopNode != nil {
+		var loop interface{}
+		if err := e.LoopNode.Decode(&loop); err != nil {
+			return nil, fmt.Errorf("task parse error: task #%d %q: loop decode error: %s", index, envelope.Name, err)
 		}
-	} else {
-		if len(taskTypeKeys) == 0 {
-			return nil, fmt.Errorf("task parse error: task #%d %q was not a valid task - valid_tasks=%v", index, envelope.Name, registeredTaskNamesSorted())
-		}
-		if len(taskTypeKeys) > 1 {
-			return nil, fmt.Errorf("task parse error: task #%d %q has %d task-type keys (%s); exactly one is allowed", index, envelope.Name, len(taskTypeKeys), strings.Join(taskTypeKeys, ", "))
-		}
+		envelope.Loop = loop
 	}
 
 	if envelope.When != "" {
@@ -784,9 +779,9 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 		envelope.failedWhenProgram = prog
 	}
 
-	if isGroup {
+	if e.IsGroup {
 		if envelope.Loop != nil {
-			expanded, err := expandLoopGroup(envelope, blockRaw, rescueRaw, alwaysRaw, sigilContext, exprContext)
+			expanded, err := expandLoopGroup(envelope, e.BlockNode, e.RescueNode, e.AlwaysNode, sigilContext, exprContext)
 			if err != nil {
 				return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
 			}
@@ -794,7 +789,7 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 		}
 
 		envelope.TypeName = ""
-		blockChildren, err := decodeGroupClause(blockRaw, "block", envelope.Name, sigilContext, exprContext)
+		blockChildren, err := buildGroupClause(e.Block, "block", sigilContext, exprContext)
 		if err != nil {
 			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
 		}
@@ -803,34 +798,30 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 		}
 		envelope.Block = blockChildren
 
-		if hasRescue {
-			rescueChildren, err := decodeGroupClause(rescueRaw, "rescue", envelope.Name, sigilContext, exprContext)
-			if err != nil {
-				return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
-			}
-			envelope.Rescue = rescueChildren
+		rescueChildren, err := buildGroupClause(e.Rescue, "rescue", sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
 		}
-		if hasAlways {
-			alwaysChildren, err := decodeGroupClause(alwaysRaw, "always", envelope.Name, sigilContext, exprContext)
-			if err != nil {
-				return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
-			}
-			envelope.Always = alwaysChildren
+		envelope.Rescue = rescueChildren
+
+		alwaysChildren, err := buildGroupClause(e.Always, "always", sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
 		}
+		envelope.Always = alwaysChildren
 
 		return []*TaskEnvelope{envelope}, nil
 	}
 
-	envelope.TypeName = taskTypeKey
-	registered := RegisteredTasks[taskTypeKey]
+	envelope.TypeName = e.TypeKey
 
-	bodyBytes, err := yaml.Marshal(taskBody)
+	bodyBytes, err := yaml.Marshal(e.BodyNode)
 	if err != nil {
 		return nil, fmt.Errorf("task parse error: task #%d %q failed to marshal config to yaml - %s", index, envelope.Name, err)
 	}
 
 	if envelope.Loop != nil {
-		expanded, err := expandLoop(envelope, taskBody, registered, sigilContext, exprContext)
+		expanded, err := expandLoop(envelope, bodyBytes, e.TypeKey, sigilContext, exprContext)
 		if err != nil {
 			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
 		}
@@ -842,12 +833,10 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 		return expanded, nil
 	}
 
-	taskValue := reflect.New(reflect.TypeOf(registered))
-	if err := yaml.Unmarshal(bodyBytes, taskValue.Interface()); err != nil {
-		return nil, fmt.Errorf("task parse error: task #%d %q failed to decode to %s - %s", index, envelope.Name, taskTypeKey, err)
+	task, err := decodeTaskBytes(e.TypeKey, bodyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("task parse error: task #%d %q failed to decode to %s - %s", index, envelope.Name, e.TypeKey, err)
 	}
-	task := taskValue.Elem().Interface().(Task)
-	defaults.SetDefaults(task)
 	envelope.Task = task
 
 	if err := rejectLoopVarsInTask(index, envelope.Name, task); err != nil {
@@ -857,60 +846,19 @@ func buildEnvelopesForEntry(index int, entry map[string]interface{}, sigilContex
 	return []*TaskEnvelope{envelope}, nil
 }
 
-// decodeGroupClause decodes one of `block:` / `rescue:` / `always:` into
-// a flat slice of child envelopes. The clause value must be a sequence
-// of YAML mappings (`[]interface{}` of `map[string]interface{}` after
-// the YAML unmarshal); each mapping is recursed through
-// buildEnvelopesForEntry so child entries themselves may carry envelope
-// keys, loop expansions, or nested groups.
-func decodeGroupClause(raw interface{}, clause, parentName string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	rawList, ok := raw.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("%s: must be a list of task entries, got %T", clause, raw)
-	}
-	out := make([]*TaskEnvelope, 0, len(rawList))
-	for i, item := range rawList {
-		entry, ok := item.(map[string]interface{})
-		if !ok {
-			if mapped, mapOk := coerceStringKeyMap(item); mapOk {
-				entry = mapped
-			} else {
-				return nil, fmt.Errorf("%s[%d]: child entry must be a yaml mapping, got %T", clause, i, item)
-			}
-		}
-		childEnvelopes, err := buildEnvelopesForEntry(i+1, entry, sigilContext, exprContext)
+// buildGroupClause builds the child envelopes for one already-parsed
+// block / rescue / always clause, prefixing child errors with the clause
+// name and child position the way the legacy group decoder did.
+func buildGroupClause(children []*parsedTaskEntry, clause string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+	out := make([]*TaskEnvelope, 0, len(children))
+	for i, child := range children {
+		childEnvelopes, err := buildEnvelopesFromEntry(child, sigilContext, exprContext)
 		if err != nil {
 			return nil, fmt.Errorf("%s[%d]: %s", clause, i, err)
 		}
 		out = append(out, childEnvelopes...)
 	}
 	return out, nil
-}
-
-// coerceStringKeyMap converts a yaml-decoded map[interface{}]interface{}
-// into a map[string]interface{} so nested entries match the shape
-// buildEnvelopesForEntry expects. yaml.v3 produces map[string]interface{}
-// out of the box, but defensive code keeps the loader robust against
-// custom unmarshallers.
-func coerceStringKeyMap(item interface{}) (map[string]interface{}, bool) {
-	if entry, ok := item.(map[string]interface{}); ok {
-		return entry, true
-	}
-	if entry, ok := item.(map[interface{}]interface{}); ok {
-		out := make(map[string]interface{}, len(entry))
-		for k, v := range entry {
-			ks, ok := k.(string)
-			if !ok {
-				return nil, false
-			}
-			out[ks] = v
-		}
-		return out, true
-	}
-	return nil, false
 }
 
 // decodeTags coerces a yaml-parsed tags value into a []string. Supports
@@ -945,19 +893,6 @@ func generateTaskName(index int) (string, error) {
 	return fmt.Sprintf("task #%d %X", index, b), nil
 }
 
-// unknownKeyError builds a parse error for an entry with one or more
-// unknown keys, including a "did you mean" suggestion when the closest
-// match is within Levenshtein distance 2.
-func unknownKeyError(index int, name string, unknown []string) error {
-	primary := unknown[0]
-	suggestion := nearestEnvelopeOrTaskKey(primary)
-	hint := ""
-	if suggestion != "" {
-		hint = fmt.Sprintf(" - did you mean %q?", suggestion)
-	}
-	return fmt.Errorf("task parse error: task #%d %q has unknown envelope key %q (allowed: %s, or any registered task type)%s", index, name, primary, strings.Join(envelopeAllowlistKeys, ", "), hint)
-}
-
 // nearestEnvelopeOrTaskKey returns the envelope-allowlist or registered
 // task name with the lowest Levenshtein distance to candidate, but only
 // if that distance is at most 2.
@@ -982,24 +917,6 @@ func nearestEnvelopeOrTaskKey(candidate string) string {
 		return best
 	}
 	return ""
-}
-
-// registeredTaskNamesSorted returns the registered task names sorted
-// alphabetically. Used for error messages so the output is stable.
-func registeredTaskNamesSorted() []string {
-	names := make([]string, 0, len(RegisteredTasks))
-	for k := range RegisteredTasks {
-		names = append(names, k)
-	}
-	// Bubble-sort works fine for ~50 entries and avoids the import cost.
-	for i := 0; i < len(names); i++ {
-		for j := i + 1; j < len(names); j++ {
-			if names[j] < names[i] {
-				names[i], names[j] = names[j], names[i]
-			}
-		}
-	}
-	return names
 }
 
 // buildExprContext returns the file-level expr context. Today this is

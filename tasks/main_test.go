@@ -80,11 +80,10 @@ func TestGetTasksInvalidTaskType(t *testing.T) {
 		t.Fatal("GetTasks with invalid task type should return an error")
 	}
 
-	// An unknown task type lands in the unknown-envelope-key bucket and
-	// is reported with a "did you mean" hint pointing at the closest
-	// registered task name.
-	if !strings.Contains(err.Error(), "unknown envelope key") {
-		t.Errorf("expected 'unknown envelope key' error, got: %v", err)
+	// An unknown task type is reported with the validator's diagnostic
+	// (shared parser) including the source line.
+	if !strings.Contains(err.Error(), "unknown task type") {
+		t.Errorf("expected 'unknown task type' error, got: %v", err)
 	}
 }
 
@@ -343,6 +342,157 @@ func TestGetTasksTwoPropertiesNoName(t *testing.T) {
 	// same "exactly one task-type key" rule.
 	if !strings.Contains(err.Error(), "task-type keys") {
 		t.Errorf("expected 'task-type keys' error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsNullTaskBody(t *testing.T) {
+	// A task-type key with no body (`dokku_app:` and nothing after it)
+	// used to panic in defaults.SetDefaults on the loader path; it now
+	// returns a clean parse error (#306).
+	data := []byte(`---
+- tasks:
+    - name: x
+      dokku_app:
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for null task body, got nil")
+	}
+	if !strings.Contains(err.Error(), "dokku_app body must not be empty") {
+		t.Errorf("expected empty-body error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsNullTaskBodyUnderLoop(t *testing.T) {
+	// The loop path shares the same decode helper, so a null body under a
+	// loop is rejected the same way instead of panicking per iteration.
+	data := []byte(`---
+- tasks:
+    - name: x
+      loop: [a, b]
+      dokku_app:
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for null task body under loop, got nil")
+	}
+	if !strings.Contains(err.Error(), "dokku_app body must not be empty") {
+		t.Errorf("expected empty-body error, got: %v", err)
+	}
+}
+
+func TestGetPlaysRejectsReservedInputName(t *testing.T) {
+	// An input named after a built-in flag is rejected by the loader with
+	// a clean error instead of panicking pflag (#302).
+	data := []byte(`---
+- inputs:
+    - name: no-color
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+`)
+	_, err := GetPlays(data, map[string]interface{}{}, nil)
+	if err == nil {
+		t.Fatal("expected error for reserved input name, got nil")
+	}
+	if !strings.Contains(err.Error(), "reserved for a built-in flag") {
+		t.Errorf("expected reserved-name error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsDuplicateTaskNames(t *testing.T) {
+	// Two tasks sharing a name used to silently drop all but the last
+	// when keyed into the ordered map; the loader now rejects them (#307).
+	data := []byte(`---
+- tasks:
+    - name: same
+      dokku_app:
+        app: first-app
+    - name: same
+      dokku_app:
+        app: second-app
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for duplicate task names, got nil")
+	}
+	if !strings.Contains(err.Error(), `duplicate task name "same"`) {
+		t.Errorf("expected duplicate-name error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsLoopSuffixCollision(t *testing.T) {
+	// Loop item names are trimmed for the (item=<value>) suffix, so two
+	// items that differ only by surrounding whitespace collapse to the
+	// same envelope name. The runtime guard rejects the collision instead
+	// of silently dropping an iteration (#307).
+	data := []byte(`---
+- tasks:
+    - name: dup
+      loop: ["a", " a "]
+      dokku_app:
+        app: "app-{{ .item }}"
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for colliding loop suffixes, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate task name") {
+		t.Errorf("expected duplicate-name error, got: %v", err)
+	}
+}
+
+func TestGetTasksAllowsDuplicateNameAcrossPlays(t *testing.T) {
+	// Each play has its own ordered map, so the same name in two plays is
+	// fine and must not be flagged.
+	data := []byte(`---
+- name: play-a
+  tasks:
+    - name: shared
+      dokku_app:
+        app: a
+- name: play-b
+  tasks:
+    - name: shared
+      dokku_app:
+        app: b
+`)
+	if _, err := GetPlays(data, map[string]interface{}{}, nil); err != nil {
+		t.Fatalf("same name across plays should be allowed, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsNonStringName(t *testing.T) {
+	// A non-string name (`name: 123`) used to be silently dropped and a
+	// random auto-name used; it now returns a typed parse error like the
+	// other envelope keys (#342).
+	data := []byte(`---
+- tasks:
+    - name: 123
+      dokku_app:
+        app: x
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for non-string name, got nil")
+	}
+	if !strings.Contains(err.Error(), "name must be a string") {
+		t.Errorf("expected name-type error, got: %v", err)
+	}
+}
+
+func TestGetTasksAllowsEmptyMappingBody(t *testing.T) {
+	// An empty mapping `{}` is not a null body: it decodes to a zero
+	// struct so a missing required field surfaces at apply, not a parse
+	// error. The loader accepts it (validate reports the missing field).
+	data := []byte(`---
+- tasks:
+    - name: x
+      dokku_app: {}
+`)
+	if _, err := GetTasks(data, map[string]interface{}{}); err != nil {
+		t.Fatalf("empty mapping body should parse, got: %v", err)
 	}
 }
 
@@ -802,8 +952,8 @@ func TestGetTasksRejectsRescueWithoutBlock(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for rescue without block, got nil")
 	}
-	if !strings.Contains(err.Error(), "rescue: without block:") {
-		t.Errorf("expected 'rescue: without block:' error, got: %v", err)
+	if !strings.Contains(err.Error(), "rescue: requires a block: in the same task entry") {
+		t.Errorf("expected 'rescue: requires a block:' error, got: %v", err)
 	}
 }
 
@@ -821,7 +971,7 @@ func TestGetTasksRejectsBlockAlongsideTaskType(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for block alongside task-type, got nil")
 	}
-	if !strings.Contains(err.Error(), "is a block: group and cannot also carry task-type key") {
+	if !strings.Contains(err.Error(), "block: group entry cannot also carry task-type key") {
 		t.Errorf("expected block+task-type error, got: %v", err)
 	}
 }

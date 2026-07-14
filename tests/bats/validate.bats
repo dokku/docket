@@ -43,6 +43,51 @@ EOF
   assert_output --partial 'missing required field "app"'
 }
 
+@test "docket validate exits 1 on a port mapping missing its scheme" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ports:
+        app: web
+        port_mappings:
+          - host: 80
+            container: 5000
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'scheme' is required"
+}
+
+@test "docket validate exits 1 on git_from_image email without username" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_git_from_image:
+        app: web
+        image: org/app:1.0
+        git_email: deploy@example.com
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'git_username' and 'git_email' must be set together"
+}
+
+@test "docket validate exits 1 on service_backup endpoint without region" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_backup:
+        service: postgres
+        name: my-db
+        aws_access_key_id: AKIA
+        aws_secret_access_key: secret
+        endpoint_url: https://s3.example.com
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'aws_signature_version' is required when 'endpoint_url' is set"
+}
+
 @test "docket validate exits 1 on a conditional input error" {
   write_tasks_file <<EOF
 ---
@@ -87,6 +132,81 @@ EOF
   assert_output --partial '"code":"invalid_task_input"'
 }
 
+@test "docket validate exits 1 on an input named after a built-in flag" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: no-color
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "reserved for a built-in flag"
+}
+
+@test "docket apply does not panic on an input named after a built-in flag" {
+  # An input named after a built-in flag used to make pflag panic before
+  # flag parsing began (#302). apply must now fail cleanly instead.
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: verbose
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "reserved for a built-in flag"
+  refute_output --partial "panic:"
+  refute_output --partial "flag redefined"
+}
+
+@test "docket validate exits 1 on duplicate task names" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: same
+      dokku_app:
+        app: first-app
+    - name: same
+      dokku_app:
+        app: second-app
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "duplicate task name"
+}
+
+@test "docket validate exits 1 on a null task body" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: x
+      dokku_app:
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "body must not be empty"
+}
+
+@test "docket validate exits 1 on a non-string task name" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: 123
+      dokku_app:
+        app: x
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "name must be a string"
+}
+
 @test "docket validate exits 1 on broken sigil template" {
   write_tasks_file <<EOF
 ---
@@ -111,6 +231,56 @@ EOF
   assert_output --partial '"type":"validate_problem"'
   assert_output --partial '"code":"unknown_task_type"'
   assert_output --partial '"version":1'
+}
+
+@test "docket validate checks a positional file argument" {
+  mkdir -p "$BATS_TEST_TMPDIR/staging"
+  cat >"$BATS_TEST_TMPDIR/staging/tasks.yml" <<EOF
+---
+- tasks:
+    - dokku_appp:
+        app: broken
+EOF
+  # A valid default tasks.yml in the cwd must not mask the broken
+  # positional file (the bug: the positional was ignored, #331).
+  cat >"$BATS_TEST_TMPDIR/tasks.yml" <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: ok
+EOF
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" validate staging/tasks.yml
+  assert_failure
+  assert_output --partial "staging/tasks.yml"
+  assert_output --partial "unknown task type"
+}
+
+@test "docket validate rejects both --tasks and a positional file" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: ok
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "cannot specify both --tasks and a positional"
+}
+
+@test "docket apply --list-tasks honors a positional file argument" {
+  mkdir -p "$BATS_TEST_TMPDIR/staging"
+  cat >"$BATS_TEST_TMPDIR/staging/tasks.yml" <<EOF
+---
+- tasks:
+    - name: staging-only
+      dokku_app:
+        app: api
+EOF
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" apply --list-tasks staging/tasks.yml
+  assert_success
+  assert_output --partial "staging-only"
 }
 
 @test "docket validate --strict flags required input without default" {

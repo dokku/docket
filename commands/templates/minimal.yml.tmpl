@@ -1,5 +1,5 @@
 - tasks:
     - name: create app
       dokku_app:
-        app: <<.Name>>
+        app: <<yamlStr .Name>>
         state: present

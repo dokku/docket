@@ -127,6 +127,115 @@ func TestValidateUnknownTaskTypeNoSuggestion(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsNullTaskBody(t *testing.T) {
+	// A task-type key with a null body is reported as a single
+	// empty_task_body problem rather than the missing_required_field
+	// noise the old zero-struct decode produced (#306).
+	data := []byte(`---
+- tasks:
+    - name: x
+      dokku_app:
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "empty_task_body")
+	if p == nil {
+		t.Fatalf("expected empty_task_body problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "dokku_app body must not be empty") {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+	if p.Line == 0 {
+		t.Errorf("expected non-zero line, got: %d", p.Line)
+	}
+	if n := countProblems(problems, "missing_required_field"); n != 0 {
+		t.Errorf("null body should not also report missing_required_field, got %d", n)
+	}
+}
+
+func TestValidateRejectsReservedInputName(t *testing.T) {
+	// An input named after a built-in flag (here no-color) used to panic
+	// the CLI; validate now rejects it offline (#302).
+	data := []byte(`---
+- inputs:
+    - name: no-color
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "reserved_input_name")
+	if p == nil {
+		t.Fatalf("expected reserved_input_name problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"no-color"`) {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+}
+
+func TestValidateAllowsHelpVersionInputNames(t *testing.T) {
+	// help / v / version are handled by the CLI framework, not registered
+	// on the flag set, so they remain valid input names (#302).
+	for _, name := range []string{"help", "v", "version"} {
+		data := []byte(`---
+- inputs:
+    - name: ` + name + `
+      default: x
+  tasks:
+    - dokku_app:
+        app: my-app
+`)
+		problems := Validate(data, ValidateOptions{})
+		if p := findProblem(problems, "reserved_input_name"); p != nil {
+			t.Errorf("input name %q should be allowed, got: %+v", name, *p)
+		}
+	}
+}
+
+func TestValidateRejectsDuplicateTaskNames(t *testing.T) {
+	// validate flags duplicate task names offline so a recipe that would
+	// silently drop a task fails the CI lint (#307).
+	data := []byte(`---
+- tasks:
+    - name: same
+      dokku_app:
+        app: first-app
+    - name: same
+      dokku_app:
+        app: second-app
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "duplicate_task_name")
+	if p == nil {
+		t.Fatalf("expected duplicate_task_name problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"same"`) {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+	if !strings.Contains(p.Hint, "first declared") {
+		t.Errorf("expected first-declared hint, got: %q", p.Hint)
+	}
+}
+
+func TestValidateRejectsNonStringName(t *testing.T) {
+	// validate agrees with the loader that a non-string name is an error
+	// rather than treating `name: 123` as the string "123" (#342).
+	data := []byte(`---
+- tasks:
+    - name: 123
+      dokku_app:
+        app: x
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "envelope_key_type")
+	if p == nil {
+		t.Fatalf("expected envelope_key_type problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "name must be a string") {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+}
+
 func TestValidateMissingRequiredField(t *testing.T) {
 	data := []byte(`---
 - tasks:
@@ -439,9 +548,9 @@ func TestValidateNearestTaskName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := nearestTaskName(tt.input)
+			got := nearestEnvelopeOrTaskKey(tt.input)
 			if got != tt.expect {
-				t.Errorf("nearestTaskName(%q) = %q, want %q", tt.input, got, tt.expect)
+				t.Errorf("nearestEnvelopeOrTaskKey(%q) = %q, want %q", tt.input, got, tt.expect)
 			}
 		})
 	}

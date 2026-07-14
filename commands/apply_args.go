@@ -129,6 +129,8 @@ func getTaskYamlFilename(s []string) string {
 // path still fires with the familiar message. Format is keyed by file
 // extension; see detectTaskFileFormat.
 func resolveTaskFileFromArgs(s []string) (string, string) {
+	positional := ""
+	skipNext := false
 	for i, arg := range s {
 		if arg == "--tasks" {
 			if len(s) > i+1 {
@@ -139,6 +141,30 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 		if taskFile, found := strings.CutPrefix(arg, "--tasks="); found {
 			return taskFile, detectTaskFileFormat(taskFile)
 		}
+		// Best-effort positional detection so recipe input flags still
+		// preregister when the file is given as `docket validate x.yml`
+		// (the authoritative selection is flags.Args() in Run). A token
+		// counts only if it carries a task-file extension and is not the
+		// value of a preceding value-taking flag, so `--vars-file prod.yml`
+		// never wins.
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			if valueTakingFlags[arg] {
+				skipNext = true
+			}
+			continue
+		}
+		if positional == "" && hasTaskFileExtension(arg) {
+			positional = arg
+		}
+	}
+	if positional != "" {
+		if _, err := os.Stat(positional); err == nil {
+			return positional, detectTaskFileFormat(positional)
+		}
 	}
 	for _, candidate := range defaultTaskFileCandidates {
 		if _, err := os.Stat(candidate); err == nil {
@@ -146,6 +172,21 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 		}
 	}
 	return defaultTaskFileCandidates[0], detectTaskFileFormat(defaultTaskFileCandidates[0])
+}
+
+// valueTakingFlags are the built-in flags that consume the following argv
+// token as their value, used by resolveTaskFileFromArgs so a flag value
+// with a task-file extension is not mistaken for a positional recipe path.
+var valueTakingFlags = map[string]bool{
+	"--tasks":         true,
+	"--vars-file":     true,
+	"--host":          true,
+	"--tags":          true,
+	"--skip-tags":     true,
+	"--play":          true,
+	"--start-at-task": true,
+	"--output":        true,
+	"--color":         true,
 }
 
 func getInputVariables(data []byte, format string) (map[string]*tasks.Input, error) {
@@ -175,7 +216,12 @@ func registerInputFlags(f *flag.FlagSet, data []byte, format string) (map[string
 	}
 
 	for _, input := range inputs {
-		if input.Name == "tasks" {
+		// Skip any input whose name collides with a built-in flag. pflag
+		// panics with "flag redefined" if we register it, so the loader /
+		// validator reject it as reserved_input_name instead (#302); here
+		// we just avoid the panic and let the input fall back to its
+		// default. validate is the gate that surfaces the error.
+		if tasks.ReservedInputNames[input.Name] {
 			continue
 		}
 		arg := &Argument{Required: input.Required, Sensitive: input.Sensitive}

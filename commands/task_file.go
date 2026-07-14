@@ -38,6 +38,18 @@ func detectTaskFileFormat(path string) string {
 	}
 }
 
+// hasTaskFileExtension reports whether path carries one of the recipe
+// file extensions. Used to spot a positional recipe path in an argv the
+// flag parser has not yet processed.
+func hasTaskFileExtension(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yml", ".yaml", ".json", ".json5":
+		return true
+	default:
+		return false
+	}
+}
+
 // resolveTaskFilePath returns the path to use as the task file plus its
 // detected format. When explicit is non-empty it is used as-is and the
 // format is inferred from its extension; the file's existence is not
@@ -58,6 +70,26 @@ func resolveTaskFilePath(explicit string) (string, string, error) {
 		}
 	}
 	return "", "", fmt.Errorf("no task file found; looked for %s", strings.Join(defaultTaskFileCandidates, ", "))
+}
+
+// resolveTaskFileArg reconciles the --tasks flag value with any positional
+// file arguments left after flag parsing. A positional recipe path (e.g.
+// `docket validate staging/tasks.yml`) is honored the way `docket fmt`
+// honors one, so a CI lint that names the file checks that file rather
+// than silently falling back to ./tasks.yml. Passing both --tasks and a
+// positional, or more than one positional, is rejected. An empty return
+// with a nil error means "use the default probe" (neither was given).
+func resolveTaskFileArg(explicit string, positional []string) (string, error) {
+	if len(positional) == 0 {
+		return explicit, nil
+	}
+	if len(positional) > 1 {
+		return "", fmt.Errorf("only one task file may be specified, got %d", len(positional))
+	}
+	if explicit != "" {
+		return "", fmt.Errorf("cannot specify both --tasks and a positional task file argument")
+	}
+	return positional[0], nil
 }
 
 // taskFileAutocompleteGlob is the shared file glob for the --tasks flag
