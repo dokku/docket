@@ -124,3 +124,20 @@ CFG
   refute_output --partial "dokku_git_sync"
   refute_output --partial "inputs:"
 }
+
+@test "docket init --name sets the play name so --play resolves" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --name web --minimal
+  assert_success
+
+  run cat tasks.yml
+  assert_output --partial "name: web"
+
+  # The scaffolded play is named after --name (not the legacy auto-name
+  # "tasks"), so --play web resolves after init. --minimal avoids the
+  # default template's required repo input, which is enforced before the
+  # --list-tasks branch.
+  run "$(docket_bin)" plan --tasks tasks.yml --play web --list-tasks
+  assert_success
+  assert_output --partial "create app"
+}

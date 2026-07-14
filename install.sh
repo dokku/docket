@@ -10,7 +10,8 @@
 #   BIN_DIR  Destination directory (defaults to /usr/local/bin on Linux/macOS,
 #            $HOME/bin on Windows shells).
 #
-# Windows is supported through a POSIX shell: Git Bash, MSYS2, Cygwin, or WSL.
+# Windows is supported through a POSIX shell: Git Bash, MSYS2, or Cygwin. WSL reports itself as
+# Linux, so it installs the native Linux binary to /usr/local/bin rather than docket.exe.
 
 set -eu
 

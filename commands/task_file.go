@@ -3,9 +3,13 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Task file format identifiers used throughout the commands package and
@@ -27,15 +31,75 @@ var defaultTaskFileCandidates = []string{"tasks.yml", "tasks.yaml", "tasks.json"
 // detectTaskFileFormat returns "json5" when path's extension is .json or
 // .json5 (case-insensitive), and "yaml" otherwise. Unknown extensions
 // default to YAML so explicit paths like `--tasks recipe.txt` keep the
-// pre-#218 behaviour. HTTP URLs and other non-filesystem paths flow
-// through filepath.Ext just fine because they still carry an extension.
+// pre-#218 behaviour. For an http(s) URL the format is taken from the URL
+// path component so a trailing query string or fragment
+// (`tasks.json?ref=main`) does not get glued onto the extension.
 func detectTaskFileFormat(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
+	ext := filepath.Ext(path)
+	if isTaskFileURL(path) {
+		if u, err := url.Parse(path); err == nil {
+			ext = filepath.Ext(u.Path)
+		}
+	}
+	switch strings.ToLower(ext) {
 	case ".json", ".json5":
 		return taskFileFormatJSON5
 	default:
 		return taskFileFormatYAML
 	}
+}
+
+// taskFileFetchTimeout bounds a remote recipe fetch so a hung server does
+// not stall the whole command.
+const taskFileFetchTimeout = 30 * time.Second
+
+// maxTaskFileBytes caps the size of a fetched recipe so a runaway or
+// hostile response cannot exhaust memory. Recipes are small; 16 MiB is far
+// above any realistic task file.
+const maxTaskFileBytes = 16 << 20
+
+// isTaskFileURL reports whether path is an http(s) URL docket should fetch
+// over HTTP rather than read from the local filesystem.
+func isTaskFileURL(path string) bool {
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
+}
+
+// readTaskFileData returns the bytes of the recipe at path. An http(s) URL
+// is fetched over HTTP (apply and plan advertise a remote --tasks URL in
+// their help); any other value is read from disk so the familiar
+// os.ReadFile "no such file" error still surfaces for a mistyped path.
+func readTaskFileData(path string) ([]byte, error) {
+	if isTaskFileURL(path) {
+		return fetchTaskFileURL(path)
+	}
+	return os.ReadFile(path)
+}
+
+// fetchTaskFileURL GETs a recipe from an http(s) URL. A transport error, a
+// non-2xx response, or a body larger than maxTaskFileBytes is reported as
+// an error naming the URL so the read-error message stays actionable.
+func fetchTaskFileURL(rawURL string) ([]byte, error) {
+	client := &http.Client{Timeout: taskFileFetchTimeout}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetch %s: %w", rawURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetch %s: unexpected status %s", rawURL, resp.Status)
+	}
+
+	// Read one byte past the cap so an over-limit body is detected rather
+	// than silently truncated.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxTaskFileBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("fetch %s: %w", rawURL, err)
+	}
+	if len(data) > maxTaskFileBytes {
+		return nil, fmt.Errorf("fetch %s: recipe exceeds %d bytes", rawURL, maxTaskFileBytes)
+	}
+	return data, nil
 }
 
 // hasTaskFileExtension reports whether path carries one of the recipe

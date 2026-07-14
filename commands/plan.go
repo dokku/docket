@@ -71,7 +71,7 @@ func (c *PlanCommand) ParsedArguments(args []string) (map[string]command.Argumen
 
 func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
-	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory.")
+	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory. An http(s):// URL is fetched over HTTP.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
 	f.BoolVar(&c.detailedExitCode, "detailed-exitcode", false, "exit 0 when no drift is detected, 2 when drift is detected, 1 on error. Without this flag plan exits 0 regardless of drift.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
@@ -84,7 +84,7 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without contacting the server. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
 
 	taskFile, format := resolveTaskFileFromArgs(os.Args)
-	data, err := os.ReadFile(taskFile)
+	data, err := readTaskFileData(taskFile)
 	if err != nil {
 		return f
 	}
@@ -161,7 +161,7 @@ func (c *PlanCommand) Run(args []string) int {
 	c.tasksFile = resolvedPath
 	c.tasksFormat = resolvedFormat
 
-	data, err := os.ReadFile(c.tasksFile)
+	data, err := readTaskFileData(c.tasksFile)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1

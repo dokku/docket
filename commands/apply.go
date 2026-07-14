@@ -72,7 +72,7 @@ func (c *ApplyCommand) ParsedArguments(args []string) (map[string]command.Argume
 
 func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
-	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory.")
+	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory. An http(s):// URL is fetched over HTTP.")
 	f.BoolVar(&c.verbose, "verbose", false, "echo the resolved dokku command for each task as a continuation line. Values from inputs declared `sensitive: true` and from task struct fields tagged `sensitive:\"true\"` are masked as `***`. Ignored when --json is set; the JSON output already includes the resolved commands.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
@@ -87,7 +87,7 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.startAtTask, "start-at-task", "", "skip every task before the matched name; the matched task and successors run normally. Filter order: --start-at-task -> --tags/--skip-tags -> per-task when: at execution. The name search walks every play in source order, narrowed by --play.")
 
 	taskFile, format := resolveTaskFileFromArgs(os.Args)
-	data, err := os.ReadFile(taskFile)
+	data, err := readTaskFileData(taskFile)
 	if err != nil {
 		return f
 	}
@@ -152,7 +152,7 @@ func (c *ApplyCommand) Run(args []string) int {
 	c.tasksFile = resolvedPath
 	c.tasksFormat = resolvedFormat
 
-	data, err := os.ReadFile(c.tasksFile)
+	data, err := readTaskFileData(c.tasksFile)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1
