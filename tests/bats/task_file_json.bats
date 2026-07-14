@@ -51,6 +51,36 @@ EOF
   assert_output --partial '"code":"json5_parse"'
 }
 
+@test "docket validate reports duplicate_key on a duplicated JSON5 key" {
+  write_tasks_file tasks.json <<'EOF'
+[
+  {
+    tasks: [
+      { dokku_app: { app: "a" }, dokku_app: { app: "b" } },
+    ],
+  },
+]
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"duplicate_key"'
+}
+
+@test "docket apply --list-tasks rejects a duplicated JSON5 key" {
+  write_tasks_file tasks.json <<'EOF'
+[
+  {
+    tasks: [
+      { dokku_app: { app: "a" }, dokku_app: { app: "b" } },
+    ],
+  },
+]
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "duplicate key"
+}
+
 @test "docket apply --list-tasks works against tasks.json" {
   write_tasks_file tasks.json <<'EOF'
 [

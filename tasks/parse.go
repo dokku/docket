@@ -132,6 +132,17 @@ func normalizeRecipeBytes(data []byte, format string) ([]byte, []Problem) {
 			Message: err.Error(),
 		}}
 	}
+	// json5.Unmarshal deduped any duplicate keys during the conversion
+	// above; scan the original bytes so a copy-pasted key is rejected the
+	// way yaml.v3 rejects a duplicate YAML key (#318).
+	if dup := detectJSON5DuplicateKeys(data); dup != nil {
+		return nil, []Problem{{
+			Code:    "duplicate_key",
+			Line:    dup.Line,
+			Column:  dup.Column,
+			Message: fmt.Sprintf("duplicate key %q", dup.Key),
+		}}
+	}
 	return converted, nil
 }
 
