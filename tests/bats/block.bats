@@ -56,7 +56,7 @@ EOF
       block:
         - dokku_ports:
             app: nonexistent-block-target-zzz
-            port_mappings: [{ scheme: http, host_port: 80, container_port: 5000 }]
+            port_mappings: [{ scheme: http, host: 80, container: 5000 }]
             state: present
       rescue:
         - dokku_app: { app: docket-test-block-rescue, state: absent }
@@ -95,7 +95,7 @@ EOF
           ignore_errors: true
           dokku_ports:
             app: nonexistent-block-swallow-zzz
-            port_mappings: [{ scheme: http, host_port: 80, container_port: 5000 }]
+            port_mappings: [{ scheme: http, host: 80, container: 5000 }]
             state: present
         - dokku_app: { app: docket-test-block-swallowed-after }
       rescue:
