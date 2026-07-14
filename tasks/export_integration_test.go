@@ -165,6 +165,55 @@ func TestIntegrationExportGlobalCerts(t *testing.T) {
 	}
 }
 
+// TestIntegrationExportGitPropertyGlobal verifies the global property exporter
+// (#327) against a real dokku: a globally-set property is read back through
+// git:report --global and reconstructed as a global: true task that round-trips
+// with no drift. archive-max-files is a global-only key, so it exercises the
+// scope the per-app exporter cannot reach. git is a core plugin, so only dokku
+// itself is required.
+func TestIntegrationExportGitPropertyGlobal(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	cleanup := GitPropertyTask{Global: true, Property: "archive-max-files", State: StateAbsent}
+	cleanup.Execute()
+	defer cleanup.Execute()
+
+	set := GitPropertyTask{Global: true, Property: "archive-max-files", Value: "4242", State: StatePresent}
+	if r := set.Execute(); r.Error != nil {
+		t.Fatalf("set global git property: %v", r.Error)
+	}
+
+	bodies, err := GitPropertyTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	var found *GitPropertyTask
+	for i := range bodies {
+		if p, ok := bodies[i].(GitPropertyTask); ok && p.Property == "archive-max-files" {
+			found = &p
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("exported global git properties do not include archive-max-files: %+v", bodies)
+	}
+	if !found.Global {
+		t.Errorf("exported property should set global: true, got %+v", *found)
+	}
+	if found.App != "" {
+		t.Errorf("exported global property should not set app, got %q", found.App)
+	}
+	if found.Value != "4242" {
+		t.Errorf("exported value = %q, want 4242", found.Value)
+	}
+
+	// The exporter omits state; set it as the recipe loader would before planning.
+	found.State = StatePresent
+	if plan := found.Plan(); !plan.InSync {
+		t.Errorf("exported global property should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
 // TestIntegrationExportSchedulerK3sProfile verifies the global profile exporter
 // against a real dokku. scheduler-k3s is a core plugin and profiles are stored
 // on disk (no cluster or deploy needed), so only dokku itself is required.

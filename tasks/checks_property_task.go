@@ -99,6 +99,13 @@ func (t ChecksPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t ChecksPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("checks:set", checksPropertyKeys, func(property, value string) interface{} {
+		return ChecksPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the ChecksPropertyTask with the task registry
 func init() {
 	RegisterTask(&ChecksPropertyTask{})

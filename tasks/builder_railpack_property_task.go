@@ -100,6 +100,13 @@ func (t BuilderRailpackPropertyTask) ExportApp(app string) ([]interface{}, error
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t BuilderRailpackPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("builder-railpack:set", builderRailpackPropertyKeys, func(property, value string) interface{} {
+		return BuilderRailpackPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderRailpackPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderRailpackPropertyTask{})

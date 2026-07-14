@@ -51,6 +51,37 @@ var globalExportOrder = []string{
 	"dokku_scheduler_k3s_annotations",
 	"dokku_scheduler_k3s_labels",
 	"dokku_scheduler_k3s_autoscaling_auth",
+	// property-plugin global scope: globally-set (global: true) properties of each
+	// property plugin. These also appear in appExportOrder for the per-app scope;
+	// here they emit the global scope (for example scheduler-k3s bootstrap keys
+	// like token and ingress-class). Ordered as in appExportOrder.
+	"dokku_app_json_property",
+	"dokku_apps_property",
+	"dokku_builder_property",
+	"dokku_builder_dockerfile_property",
+	"dokku_builder_herokuish_property",
+	"dokku_builder_lambda_property",
+	"dokku_builder_nixpacks_property",
+	"dokku_builder_pack_property",
+	"dokku_builder_railpack_property",
+	"dokku_buildpacks_property",
+	"dokku_builds_property",
+	"dokku_caddy_property",
+	"dokku_checks_property",
+	"dokku_cron_property",
+	"dokku_git_property",
+	"dokku_haproxy_property",
+	"dokku_letsencrypt_property",
+	"dokku_logs_property",
+	"dokku_network_property",
+	"dokku_nginx_property",
+	"dokku_openresty_property",
+	"dokku_proxy_property",
+	"dokku_ps_property",
+	"dokku_registry_property",
+	"dokku_scheduler_property",
+	"dokku_scheduler_k3s_property",
+	"dokku_traefik_property",
 	// datastore services: create must precede expose/backup/acl, which all
 	// operate on an existing service instance. The datastore plugins they rely
 	// on are installed by the dokku_plugin tasks emitted first.
@@ -293,9 +324,49 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 		return res.processMaintenanceCustomPage(app, b, opts)
 	case SchedulerK3sAutoscalingAuthTask:
 		return res.processSchedulerK3sAutoscalingAuth(app, b, opts)
+	case SchedulerK3sPropertyTask:
+		return res.processPropertyValue(app, b, b.Property, b.Value, schedulerK3sPropertyKeys[b.Property].Sensitive, opts, func(v string) interface{} {
+			b.Value = v
+			return b
+		})
+	case TraefikPropertyTask:
+		return res.processPropertyValue(app, b, b.Property, b.Value, traefikPropertyKeys[b.Property].Sensitive, opts, func(v string) interface{} {
+			b.Value = v
+			return b
+		})
 	default:
 		return res.processSensitiveScalars(app, body, opts)
 	}
+}
+
+// processPropertyValue lifts a sensitive property value (for example the
+// scheduler-k3s cluster token or a traefik basic-auth password) into a required
+// sensitive input in file mode, blanks it under inline+redact, and otherwise
+// keeps it inline (like a config value). A non-sensitive property value is
+// returned unchanged, so only secret-flagged properties are ever lifted (#327).
+func (res *ExportResult) processPropertyValue(app string, body interface{}, property, value string, sensitive bool, opts ExportOptions, rebuild func(string) interface{}) (interface{}, []map[string]interface{}) {
+	if !sensitive || value == "" {
+		return body, nil
+	}
+	if opts.Inline {
+		if opts.Redact {
+			return rebuild(""), nil
+		}
+		return body, nil
+	}
+	name := res.uniqueVarName(app, property)
+	out := rebuild("{{ ." + name + " }}")
+	if opts.Redact {
+		res.Vars[name] = ""
+	} else {
+		res.Vars[name] = value
+	}
+	inputs := []map[string]interface{}{{
+		"name":      name,
+		"required":  true,
+		"sensitive": true,
+	}}
+	return out, inputs
 }
 
 // processSensitiveScalars lifts every non-empty string field tagged

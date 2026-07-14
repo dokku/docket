@@ -52,8 +52,10 @@ git-installed third-party plugins into [`dokku_plugin`](tasks/dokku_plugin.md) t
 global play; core plugins and plugins installed from a tarball or local path are omitted. Datastore
 services are reconstructed into that same global play - the service itself, its exposed ports, its
 backup schedule, and its dokku-acl access list - with each app's service links emitted into the
-app's own play. Sensitive values (config and other secrets) are lifted into `tasks.vars.yml`; the
-recipe references them through inputs, so the pair is applied together with `--vars-file`. If you
+app's own play. Globally-set plugin properties are reconstructed into that global play too - for
+example the scheduler-k3s bootstrap keys such as the cluster token, ingress class, and letsencrypt
+emails. Sensitive values (config, the k3s token, and other secrets) are lifted into `tasks.vars.yml`;
+the recipe references them through inputs, so the pair is applied together with `--vars-file`. If you
 already maintain a recipe as the source of truth for the old server, skip this and use it directly.
 
 Some state cannot be read back and is left out with a warning - notably write-only credentials

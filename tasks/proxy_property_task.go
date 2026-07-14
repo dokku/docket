@@ -110,6 +110,13 @@ func (t ProxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t ProxyPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("proxy:set", proxyPropertyKeys, func(property, value string) interface{} {
+		return ProxyPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the ProxyPropertyTask with the task registry
 func init() {
 	RegisterTask(&ProxyPropertyTask{})

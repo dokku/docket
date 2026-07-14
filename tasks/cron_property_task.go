@@ -102,6 +102,13 @@ func (t CronPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t CronPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("cron:set", cronPropertyKeys, func(property, value string) interface{} {
+		return CronPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the CronPropertyTask with the task registry
 func init() {
 	RegisterTask(&CronPropertyTask{})

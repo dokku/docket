@@ -109,6 +109,13 @@ func (t BuilderPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t BuilderPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("builder:set", builderPropertyKeys, func(property, value string) interface{} {
+		return BuilderPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderTask with the task registry
 func init() {
 	RegisterTask(&BuilderPropertyTask{})

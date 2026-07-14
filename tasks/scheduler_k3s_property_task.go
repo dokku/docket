@@ -135,6 +135,13 @@ func (t SchedulerK3sPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t SchedulerK3sPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("scheduler-k3s:set", schedulerK3sPropertyKeys, func(property, value string) interface{} {
+		return SchedulerK3sPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the SchedulerK3sPropertyTask with the task registry
 func init() {
 	RegisterTask(&SchedulerK3sPropertyTask{})

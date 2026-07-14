@@ -139,6 +139,44 @@ func exportProperties(app, subcommand string, keys map[string]PropertyKeys, fact
 	return out, nil
 }
 
+// exportGlobalProperties reconstructs the explicitly-set global properties of a
+// property plugin, mirroring exportProperties for the --global scope: it reads
+// `<plugin>:report --global --format json` once and, for each property whose
+// Global key is present and non-empty, emits a task body (built by factory). A
+// property with no global form (an empty Global key) is skipped, so
+// globally-scoped state (for example scheduler-k3s bootstrap keys) is captured
+// instead of silently dropped (#327).
+func exportGlobalProperties(subcommand string, keys map[string]PropertyKeys, factory func(property, value string) interface{}) ([]interface{}, error) {
+	plugin := pluginFromSubcommand(subcommand)
+	payload, err := readPropertyReport(plugin, "", true)
+	if err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return nil, nil
+	}
+
+	props := make([]string, 0, len(keys))
+	for prop := range keys {
+		props = append(props, prop)
+	}
+	sort.Strings(props)
+
+	var out []interface{}
+	for _, prop := range props {
+		key := keys[prop].Global
+		if key == "" {
+			continue
+		}
+		value, ok := payload[key]
+		if !ok || value == "" {
+			continue
+		}
+		out = append(out, factory(prop, value))
+	}
+	return out, nil
+}
+
 // readPropertyReport runs `dokku <plugin>:report [<app>|--global] --format json`
 // and returns the decoded payload, distinguishing a plugin that is not installed
 // (returns nil, nil - a quiet skip) from one that is installed but whose report

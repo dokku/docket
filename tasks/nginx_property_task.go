@@ -128,6 +128,13 @@ func (t NginxPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t NginxPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("nginx:set", nginxPropertyKeys, func(property, value string) interface{} {
+		return NginxPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // Validate checks the NginxPropertyTask's inputs without contacting the server.
 func (t NginxPropertyTask) Validate() error {
 	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "nginx:set", nginxPropertyKeys)

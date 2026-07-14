@@ -121,6 +121,13 @@ func (t LetsencryptPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t LetsencryptPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("letsencrypt:set", letsencryptPropertyKeys, func(property, value string) interface{} {
+		return LetsencryptPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the LetsencryptPropertyTask with the task registry
 func init() {
 	RegisterTask(&LetsencryptPropertyTask{})

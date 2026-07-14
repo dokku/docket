@@ -113,6 +113,13 @@ func (t NetworkPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t NetworkPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("network:set", networkPropertyKeys, func(property, value string) interface{} {
+		return NetworkPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the NetworkPropertyTask with the task registry
 func init() {
 	RegisterTask(&NetworkPropertyTask{})
