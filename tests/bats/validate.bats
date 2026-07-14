@@ -57,6 +57,22 @@ EOF
   assert_output --partial "'git_username' and 'git_email' must be set together"
 }
 
+@test "docket validate exits 1 on service_backup endpoint without region" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_backup:
+        service: postgres
+        name: my-db
+        aws_access_key_id: AKIA
+        aws_secret_access_key: secret
+        endpoint_url: https://s3.example.com
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'aws_signature_version' is required when 'endpoint_url' is set"
+}
+
 @test "docket validate exits 1 on a conditional input error" {
   write_tasks_file <<EOF
 ---

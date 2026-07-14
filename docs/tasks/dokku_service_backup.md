@@ -24,8 +24,8 @@ Partial - the backup schedule, bucket, and use_iam flag are exported; the AWS cr
 | `aws_access_key_id` | string | no |  |  | AWS access key id for backup auth (requires aws_secret_access_key) |
 | `aws_secret_access_key` | string | no |  |  | AWS secret access key for backup auth (requires aws_access_key_id) (sensitive) |
 | `aws_default_region` | string | no |  |  | AWS region used for backup auth |
-| `aws_signature_version` | string | no |  |  | AWS signature version used for backup auth |
-| `endpoint_url` | string | no |  |  | S3-compatible endpoint url used for backup auth |
+| `aws_signature_version` | string | no |  |  | AWS signature version used for backup auth (requires aws_default_region) |
+| `endpoint_url` | string | no |  |  | S3-compatible endpoint url used for backup auth (requires aws_signature_version) |
 | `encryption_passphrase` | string | no |  |  | Passphrase used to encrypt future backups (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the backup configuration |
 
