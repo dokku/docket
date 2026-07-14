@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/dokku/docket/subprocess"
@@ -9,81 +10,70 @@ import (
 // ToggleContext represents the context for a toggle operation
 type ToggleContext struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app"`
-
-	// Global is a flag indicating if the toggle should be applied globally
-	Global bool `required:"false" yaml:"global"`
-
-	// AllowGlobal is a flag indicating if the toggle should be applied globally
-	AllowGlobal bool `required:"false" yaml:"allow_global"`
+	App string
 }
 
 // ToggleProbe returns whether the toggle is currently in the "enabled"
 // (state: present) position. nil from a probe (or a non-nil error) is
-// treated as "drift, must mutate" so we still run the underlying command.
+// treated as "drift, must mutate" so we still run the underlying command,
+// except an SSH transport failure, which is surfaced as a plan error.
 type ToggleProbe func(ctx ToggleContext) (enabled bool, err error)
 
 // planToggle is the shared Plan() implementation for toggle tasks. The
 // probe reports whether the underlying plugin is currently in the
-// "enabled" position; when probe is nil or fails, planToggle reports drift
-// and the apply closure runs the underlying enable/disable command.
-// validateToggleInput checks a toggle task's inputs without probing the
-// server. planToggle and each toggle task's Validate() call it so plan and
-// validate report the same error.
-func validateToggleInput(app string, global, allowGlobal bool) error {
-	if allowGlobal && global && app != "" {
-		return fmt.Errorf("'app' must not be set when 'global' is set to true")
-	}
-	return nil
-}
-
-func planToggle(state State, app string, global bool, allowGlobal bool, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
-	if err := validateToggleInput(app, global, allowGlobal); err != nil {
-		return planErr(err)
-	}
-
-	target := app
-	if allowGlobal && global {
-		target = "--global"
-	}
-
-	ctx := ToggleContext{
-		AllowGlobal: allowGlobal,
-		App:         app,
-		Global:      global,
-	}
+// "enabled" position; when probe is nil or fails with a non-transport
+// error, planToggle reports drift and the apply closure runs the
+// underlying enable/disable command. An SSH transport failure short-
+// circuits to a plan error so an unreachable host is not mistaken for
+// drift.
+func planToggle(state State, app string, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
+	ctx := ToggleContext{App: app}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			if probe != nil {
-				if enabled, err := probe(ctx); err == nil && enabled {
+				enabled, err := probe(ctx)
+				if err != nil {
+					var sshErr *subprocess.SSHError
+					if errors.As(err, &sshErr) {
+						return PlanResult{Status: PlanStatusError, Error: err}
+					}
+					// non-SSH probe error: treat as drift, must mutate
+				} else if enabled {
 					return PlanResult{InSync: true, Status: PlanStatusOK}
 				}
 			}
-			inputs := toggleInputs(enableCmd, target)
+			inputs := toggleInputs(enableCmd, app)
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
-				Reason:    fmt.Sprintf("would run %s on %s", enableCmd, target),
-				Mutations: []string{fmt.Sprintf("%s %s", enableCmd, target)},
+				Reason:    fmt.Sprintf("would run %s on %s", enableCmd, app),
+				Mutations: []string{fmt.Sprintf("%s %s", enableCmd, app)},
 				Commands:  resolveCommands(inputs),
-				apply:     applyToggle(enableCmd, target, StatePresent),
+				apply:     applyToggle(enableCmd, app, StatePresent),
 			}
 		},
 		StateAbsent: func() PlanResult {
 			if probe != nil {
-				if enabled, err := probe(ctx); err == nil && !enabled {
+				enabled, err := probe(ctx)
+				if err != nil {
+					var sshErr *subprocess.SSHError
+					if errors.As(err, &sshErr) {
+						return PlanResult{Status: PlanStatusError, Error: err}
+					}
+					// non-SSH probe error: treat as drift, must mutate
+				} else if !enabled {
 					return PlanResult{InSync: true, Status: PlanStatusOK}
 				}
 			}
-			inputs := toggleInputs(disableCmd, target)
+			inputs := toggleInputs(disableCmd, app)
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
-				Reason:    fmt.Sprintf("would run %s on %s", disableCmd, target),
-				Mutations: []string{fmt.Sprintf("%s %s", disableCmd, target)},
+				Reason:    fmt.Sprintf("would run %s on %s", disableCmd, app),
+				Mutations: []string{fmt.Sprintf("%s %s", disableCmd, app)},
 				Commands:  resolveCommands(inputs),
-				apply:     applyToggle(disableCmd, target, StateAbsent),
+				apply:     applyToggle(disableCmd, app, StateAbsent),
 			}
 		},
 	})

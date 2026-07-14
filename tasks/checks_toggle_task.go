@@ -8,26 +8,15 @@ import (
 )
 
 // checksEnabled probes whether checks are enabled for an app by reading the
-// `disabled-list` key from `checks:report --format json` (the global scope
-// reads `global-disabled-list`). The dokku-checks plugin lists disabled
-// process types there; an empty list or "none" means every process has checks
-// enabled. The JSON report is used because dokku 0.38.21 renamed the
-// flag-based `--checks-disabled` probe to `--checks-disabled-list`; the report
-// key is stable across those versions.
+// `disabled-list` key from `checks:report <app> --format json`. The
+// dokku-checks plugin lists disabled process types there; an empty list or
+// "none" means every process has checks enabled. The JSON report is used
+// because dokku 0.38.21 renamed the flag-based `--checks-disabled` probe to
+// `--checks-disabled-list`; the report key is stable across those versions.
 func checksEnabled(ctx ToggleContext) (bool, error) {
-	args := []string{"checks:report"}
-	key := "disabled-list"
-	if ctx.AllowGlobal && ctx.Global {
-		args = append(args, "--global")
-		key = "global-disabled-list"
-	} else {
-		args = append(args, ctx.App)
-	}
-	args = append(args, "--format", "json")
-
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    args,
+		Args:    []string{"checks:report", ctx.App, "--format", "json"},
 	})
 	if err != nil {
 		return false, err
@@ -37,7 +26,7 @@ func checksEnabled(ctx ToggleContext) (bool, error) {
 	if err := json.Unmarshal(result.StdoutBytes(), &report); err != nil {
 		return false, err
 	}
-	disabled := strings.TrimSpace(report[key])
+	disabled := strings.TrimSpace(report["disabled-list"])
 	return disabled == "" || disabled == "none", nil
 }
 
@@ -58,9 +47,6 @@ func (t ChecksToggleTask) ExportApp(app string) ([]interface{}, error) {
 type ChecksToggleTask struct {
 	// App is the name of the app
 	App string `required:"true" yaml:"app" description:"Name of the app"`
-
-	// Global is a flag indicating if the checks plugin should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the checks plugin should be applied globally"`
 
 	// State is the desired state of the checks plugin
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the checks plugin"`
@@ -115,14 +101,9 @@ func (t ChecksToggleTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// Validate checks the ChecksToggleTask's inputs without contacting the server.
-func (t ChecksToggleTask) Validate() error {
-	return validateToggleInput(t.App, t.Global, false)
-}
-
 // Plan reports the drift the ChecksToggleTask would produce.
 func (t ChecksToggleTask) Plan() PlanResult {
-	return planToggle(t.State, t.App, t.Global, false, "checks:enable", "checks:disable", checksEnabled)
+	return planToggle(t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 
 // init registers the ChecksToggleTask with the task registry

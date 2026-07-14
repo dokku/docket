@@ -13,7 +13,6 @@ Supported.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `global` | bool | no |  |  | Flag indicating if the proxy should be applied globally |
 | `state` | string | no | present | present, absent | Desired state of the proxy |
 
 ## Examples

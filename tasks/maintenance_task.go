@@ -9,7 +9,8 @@ import (
 // maintenanceEnabled probes whether maintenance mode is enabled for an app by
 // reading the `enabled` key from `maintenance:report --format json` (the plugin
 // strips the `maintenance-` prefix from JSON report keys). A probe failure
-// returns an error, which planToggle treats as drift.
+// returns an error, which planToggle treats as drift unless it is an SSH
+// transport failure, which surfaces as a plan error.
 func maintenanceEnabled(ctx ToggleContext) (bool, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
@@ -102,14 +103,9 @@ func (t MaintenanceTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// Validate checks the MaintenanceTask's inputs without contacting the server.
-func (t MaintenanceTask) Validate() error {
-	return validateToggleInput(t.App, false, false)
-}
-
 // Plan reports the drift the MaintenanceTask would produce.
 func (t MaintenanceTask) Plan() PlanResult {
-	return planToggle(t.State, t.App, false, false, "maintenance:enable", "maintenance:disable", maintenanceEnabled)
+	return planToggle(t.State, t.App, "maintenance:enable", "maintenance:disable", maintenanceEnabled)
 }
 
 // init registers the MaintenanceTask with the task registry
