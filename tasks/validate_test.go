@@ -439,9 +439,9 @@ func TestValidateNearestTaskName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := nearestTaskName(tt.input)
+			got := nearestEnvelopeOrTaskKey(tt.input)
 			if got != tt.expect {
-				t.Errorf("nearestTaskName(%q) = %q, want %q", tt.input, got, tt.expect)
+				t.Errorf("nearestEnvelopeOrTaskKey(%q) = %q, want %q", tt.input, got, tt.expect)
 			}
 		})
 	}

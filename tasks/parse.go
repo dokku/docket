@@ -2,8 +2,10 @@ package tasks
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
+	defaults "github.com/mcuadros/go-defaults"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -154,7 +156,7 @@ func parseRecipe(data []byte) *parsedRecipe {
 	}
 
 	doc := documentBody(&root)
-	if doc == nil {
+	if doc == nil || (doc.Kind == yaml.ScalarNode && doc.Tag == "!!null") {
 		out.Problems = append(out.Problems, Problem{
 			Code:    "recipe_shape",
 			Message: "no recipe found in tasks file",
@@ -505,4 +507,77 @@ func entryProblems(e *parsedTaskEntry) []Problem {
 		}
 	}
 	return out
+}
+
+// parseTaskEntrySeq parses data (rendered YAML bytes) as a bare list of
+// task entries. Used by loop-group expansion, which re-renders a group
+// clause's YAML per iteration and needs the children parsed through the
+// same structural walk the recipe-level parse uses.
+func parseTaskEntrySeq(data []byte, playLabel string) ([]*parsedTaskEntry, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("decode error: %v", err)
+	}
+	seq := documentBody(&root)
+	if seq == nil {
+		return nil, nil
+	}
+	if seq.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("must be a list of task entries")
+	}
+	out := make([]*parsedTaskEntry, 0, len(seq.Content))
+	for i, child := range seq.Content {
+		out = append(out, parseTaskEntry(child, i+1, playLabel))
+	}
+	return out, nil
+}
+
+// problemToError renders a Problem as the loader's fail-fast error. The
+// historical `task parse error:` / `parse error:` prefixes are preserved
+// so operator-facing errors stay recognizable, now enriched with the
+// problem's source position and did-you-mean hint.
+func problemToError(p Problem) error {
+	var b strings.Builder
+	if p.Task != "" {
+		b.WriteString("task parse error: ")
+		b.WriteString(p.Task)
+		if p.Line > 0 {
+			fmt.Fprintf(&b, " (line %d)", p.Line)
+		}
+		b.WriteString(": ")
+	} else {
+		b.WriteString("parse error: ")
+		if p.Line > 0 {
+			fmt.Fprintf(&b, "line %d: ", p.Line)
+		}
+	}
+	b.WriteString(p.Message)
+	if p.Hint != "" {
+		fmt.Fprintf(&b, " - %s", p.Hint)
+	}
+	return fmt.Errorf("%s", b.String())
+}
+
+// decodeTaskBytes decodes a marshaled task body into a fresh instance of
+// the registered task type and applies its struct-tag defaults. The
+// concrete struct is allocated with reflect on the registered pointer's
+// element type, so a null body decodes to the zero struct instead of a
+// nil pointer (the historical loader allocation panicked in SetDefaults
+// on `dokku_app:` with no body). Shared by the loader's direct and loop
+// decode paths and by the validator's body checks.
+func decodeTaskBytes(typeKey string, body []byte) (Task, error) {
+	registered, ok := RegisteredTasks[typeKey]
+	if !ok {
+		return nil, fmt.Errorf("unknown task type %q", typeKey)
+	}
+	v := reflect.New(reflect.TypeOf(registered).Elem())
+	if err := yaml.Unmarshal(body, v.Interface()); err != nil {
+		return nil, err
+	}
+	defaults.SetDefaults(v.Interface())
+	task, ok := v.Interface().(Task)
+	if !ok {
+		return nil, fmt.Errorf("registered type for %q does not implement Task", typeKey)
+	}
+	return task, nil
 }

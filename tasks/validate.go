@@ -911,25 +911,6 @@ func scalarChild(node *yaml.Node, key string) string {
 	return v.Value
 }
 
-// nearestTaskName returns the registered task name with the lowest Levenshtein
-// distance to candidate, but only if that distance is at most 2. Returning ""
-// means "no useful suggestion".
-func nearestTaskName(candidate string) string {
-	best := ""
-	bestDist := 3
-	for name := range RegisteredTasks {
-		d := levenshtein(candidate, name)
-		if d < bestDist {
-			bestDist = d
-			best = name
-		}
-	}
-	if bestDist <= 2 {
-		return best
-	}
-	return ""
-}
-
 // levenshtein returns the edit distance between a and b. Small strings only;
 // a 2D allocation is fine.
 func levenshtein(a, b string) int {

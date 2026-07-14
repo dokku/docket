@@ -80,11 +80,10 @@ func TestGetTasksInvalidTaskType(t *testing.T) {
 		t.Fatal("GetTasks with invalid task type should return an error")
 	}
 
-	// An unknown task type lands in the unknown-envelope-key bucket and
-	// is reported with a "did you mean" hint pointing at the closest
-	// registered task name.
-	if !strings.Contains(err.Error(), "unknown envelope key") {
-		t.Errorf("expected 'unknown envelope key' error, got: %v", err)
+	// An unknown task type is reported with the validator's diagnostic
+	// (shared parser) including the source line.
+	if !strings.Contains(err.Error(), "unknown task type") {
+		t.Errorf("expected 'unknown task type' error, got: %v", err)
 	}
 }
 
@@ -802,8 +801,8 @@ func TestGetTasksRejectsRescueWithoutBlock(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for rescue without block, got nil")
 	}
-	if !strings.Contains(err.Error(), "rescue: without block:") {
-		t.Errorf("expected 'rescue: without block:' error, got: %v", err)
+	if !strings.Contains(err.Error(), "rescue: requires a block: in the same task entry") {
+		t.Errorf("expected 'rescue: requires a block:' error, got: %v", err)
 	}
 }
 
@@ -821,7 +820,7 @@ func TestGetTasksRejectsBlockAlongsideTaskType(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for block alongside task-type, got nil")
 	}
-	if !strings.Contains(err.Error(), "is a block: group and cannot also carry task-type key") {
+	if !strings.Contains(err.Error(), "block: group entry cannot also carry task-type key") {
 		t.Errorf("expected block+task-type error, got: %v", err)
 	}
 }

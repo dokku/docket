@@ -3,11 +3,9 @@ package tasks
 import (
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 
 	sigil "github.com/gliderlabs/sigil"
-	defaults "github.com/mcuadros/go-defaults"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -17,10 +15,10 @@ const loopItemNameLimit = 40
 
 // expandLoop produces one TaskEnvelope per iteration the envelope's loop
 // resolves to. The base envelope already carries the resolved Loop value
-// (literal list or expr source); body is the raw YAML body associated
-// with the registered task type, decoded once at the file level. context
-// is the file-level sigil context used to populate `.item` and `.index`
-// during the second-pass render.
+// (literal list or expr source); bodyBytes is the task body re-marshalled
+// from the parsed entry's body node. context is the file-level sigil
+// context used to populate `.item` and `.index` during the second-pass
+// render.
 //
 // The Loop value is resolved as follows:
 //
@@ -29,20 +27,15 @@ const loopItemNameLimit = 40
 //     given expr context (file-level inputs); the result must be a list.
 //   - anything else: returns an error.
 //
-// For each item, the body is YAML-marshalled, sigil-rendered with
-// `.item`/`.index` set, then YAML-unmarshalled into a fresh registered
-// task struct. The expanded envelope inherits Tags / When / Register
-// from the base; LoopItem / LoopIndex carry the iteration value so the
-// per-task `when:` evaluation can see them.
-func expandLoop(base *TaskEnvelope, body interface{}, registered Task, sigilContext map[string]interface{}, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+// For each item, the body is sigil-rendered with `.item`/`.index` set,
+// then decoded into a fresh registered task struct via decodeTaskBytes.
+// The expanded envelope inherits Tags / When / Register from the base;
+// LoopItem / LoopIndex carry the iteration value so the per-task `when:`
+// evaluation can see them.
+func expandLoop(base *TaskEnvelope, bodyBytes []byte, typeKey string, sigilContext map[string]interface{}, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
 	items, err := resolveLoopList(base.Loop, exprContext)
 	if err != nil {
 		return nil, err
-	}
-
-	bodyBytes, err := yaml.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal loop body: %w", err)
 	}
 
 	out := make([]*TaskEnvelope, 0, len(items))
@@ -63,12 +56,10 @@ func expandLoop(base *TaskEnvelope, body interface{}, registered Task, sigilCont
 			return nil, fmt.Errorf("loop iteration %d: read error: %w", i, err)
 		}
 
-		taskValue := reflect.New(reflect.TypeOf(registered))
-		if err := yaml.Unmarshal(renderedBytes, taskValue.Interface()); err != nil {
+		task, err := decodeTaskBytes(typeKey, renderedBytes)
+		if err != nil {
 			return nil, fmt.Errorf("loop iteration %d: decode error: %w", i, err)
 		}
-		task := taskValue.Elem().Interface().(Task)
-		defaults.SetDefaults(task)
 
 		expanded := *base
 		expanded.Task = task
@@ -85,35 +76,35 @@ func expandLoop(base *TaskEnvelope, body interface{}, registered Task, sigilCont
 
 // expandLoopGroup produces one group TaskEnvelope per iteration the
 // envelope's loop resolves to. The base envelope already carries the
-// resolved Loop value; blockBody / rescueBody / alwaysBody are the raw
-// YAML lists of nested task entries decoded once at the file level.
+// resolved Loop value; blockNode / rescueNode / alwaysNode are the raw
+// YAML sequence nodes of nested task entries from the parsed entry.
 //
-// For each iteration, the three lists are YAML-marshalled, sigil-rendered
-// with `.item` / `.index` set, then unmarshalled back into
-// []map[string]interface{} and recursed through buildEnvelopesForEntry
+// For each iteration, the three clause nodes are YAML-marshalled,
+// sigil-rendered with `.item` / `.index` set, then re-parsed through the
+// shared structural parser and recursed through buildEnvelopesFromEntry
 // so child envelopes inherit the iteration's `.item` / `.index` in
 // every nested task body. The expanded group envelope inherits Tags /
 // When / Register from the base; LoopItem / LoopIndex carry the
 // iteration value so the per-group `when:` evaluation can see them.
-func expandLoopGroup(base *TaskEnvelope, blockBody, rescueBody, alwaysBody interface{}, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml.Node, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
 	items, err := resolveLoopList(base.Loop, exprContext)
 	if err != nil {
 		return nil, err
 	}
 
-	blockBytes, err := yaml.Marshal(blockBody)
+	blockBytes, err := yaml.Marshal(blockNode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal block body: %w", err)
 	}
 	var rescueBytes, alwaysBytes []byte
-	if rescueBody != nil {
-		rescueBytes, err = yaml.Marshal(rescueBody)
+	if rescueNode != nil {
+		rescueBytes, err = yaml.Marshal(rescueNode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal rescue body: %w", err)
 		}
 	}
-	if alwaysBody != nil {
-		alwaysBytes, err = yaml.Marshal(alwaysBody)
+	if alwaysNode != nil {
+		alwaysBytes, err = yaml.Marshal(alwaysNode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal always body: %w", err)
 		}
@@ -183,14 +174,14 @@ func renderAndDecodeGroupClause(body []byte, clause string, iterCtx, sigilContex
 		return nil, fmt.Errorf("loop iteration %d %s: read error: %w", iter, clause, err)
 	}
 
-	var rawList []map[string]interface{}
-	if err := yaml.Unmarshal(renderedBytes, &rawList); err != nil {
-		return nil, fmt.Errorf("loop iteration %d %s: decode error: %w", iter, clause, err)
+	entries, err := parseTaskEntrySeq(renderedBytes, "")
+	if err != nil {
+		return nil, fmt.Errorf("loop iteration %d %s: %s", iter, clause, err)
 	}
 
-	out := make([]*TaskEnvelope, 0, len(rawList))
-	for i, entry := range rawList {
-		envelopes, err := buildEnvelopesForEntry(i+1, entry, sigilContext, exprContext)
+	out := make([]*TaskEnvelope, 0, len(entries))
+	for i, entry := range entries {
+		envelopes, err := buildEnvelopesFromEntry(entry, sigilContext, exprContext)
 		if err != nil {
 			return nil, fmt.Errorf("loop iteration %d %s[%d]: %s", iter, clause, i, err)
 		}
