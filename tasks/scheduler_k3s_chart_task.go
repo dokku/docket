@@ -122,15 +122,25 @@ func (t SchedulerK3sChartTask) Validate() error {
 	if t.Chart == "" {
 		return errors.New("chart is required")
 	}
+	state := t.State
+	if state == "" {
+		state = StatePresent
+	}
 	if len(t.Values) == 0 {
-		state := t.State
-		if state == "" {
-			state = StatePresent
-		}
 		return fmt.Errorf("'values' must not be empty for state '%s'", state)
 	}
-	if _, err := flattenChartValues(t.Values); err != nil {
+	flattened, err := flattenChartValues(t.Values)
+	if err != nil {
 		return err
+	}
+	// dokku clears a chart value set to an empty string, so a present-state
+	// empty value can never converge (issue #358); clearing uses state 'absent'.
+	if state == StatePresent {
+		for key, value := range flattened {
+			if value == "" {
+				return fmt.Errorf("chart value %q must not be empty for state 'present'; use state 'absent' to clear it", key)
+			}
+		}
 	}
 	return nil
 }

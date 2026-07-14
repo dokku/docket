@@ -59,10 +59,11 @@ EOF
 }
 
 @test "docket apply --verbose echoes every command for multi-command tasks" {
-  # dokku_buildpacks invokes `dokku buildpacks:add` once per buildpack URL,
-  # which exercises the per-task multi-command append path. The URLs are
-  # only recorded in the buildpacks file (no network fetch happens at
-  # add-time) so this stays a pure docket+dokku test.
+  # dokku_buildpacks sets the list with a single `buildpacks:set --replace`, but
+  # removing a multi-entry list issues one `buildpacks:remove` per buildpack,
+  # which exercises the per-task multi-command append path. The URLs are only
+  # recorded in the buildpacks file (no network fetch happens) so this stays a
+  # pure docket+dokku test.
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -75,18 +76,26 @@ EOF
         buildpacks:
           - https://github.com/heroku/heroku-buildpack-nodejs.git
           - https://github.com/heroku/heroku-buildpack-nginx.git
+    - name: remove buildpacks
+      dokku_buildpacks:
+        app: docket-test-output
+        state: absent
+        buildpacks:
+          - https://github.com/heroku/heroku-buildpack-nodejs.git
+          - https://github.com/heroku/heroku-buildpack-nginx.git
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --verbose
   assert_success
   assert_output --partial "→ dokku"
-  assert_output --partial "buildpacks:add"
+  assert_output --partial "buildpacks:set --replace"
+  assert_output --partial "buildpacks:remove"
   assert_output --partial "heroku-buildpack-nodejs"
   assert_output --partial "heroku-buildpack-nginx"
-  # One -> line per buildpack add.
+  # One -> line per buildpack removed.
   local arrow_count
-  arrow_count="$(printf '%s\n' "${output}" | grep -c "→ dokku.*buildpacks:add" || true)"
+  arrow_count="$(printf '%s\n' "${output}" | grep -c "→ dokku.*buildpacks:remove" || true)"
   if [ "${arrow_count}" -lt 2 ]; then
-    fail "expected at least 2 '→ dokku ... buildpacks:add' continuation lines, got ${arrow_count} in:${output}"
+    fail "expected at least 2 '→ dokku ... buildpacks:remove' continuation lines, got ${arrow_count} in:${output}"
   fi
 }
 

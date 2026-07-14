@@ -188,3 +188,31 @@ func TestSchedulerK3sAutoscalingAuthTaskEmptyMetadataKey(t *testing.T) {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
+
+func TestSchedulerK3sAutoscalingAuthTaskPresentEmptyValueRejected(t *testing.T) {
+	task := SchedulerK3sAutoscalingAuthTask{
+		App:      "test-app",
+		Trigger:  "aws-secret-manager",
+		Metadata: map[string]string{"secretName": ""},
+		State:    StatePresent,
+	}
+	err := task.Validate()
+	if err == nil {
+		t.Fatal("expected error when a present-state metadata value is empty")
+	}
+	if !strings.Contains(err.Error(), "metadata values must not be empty for state 'present'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthTaskAbsentEmptyValueAllowed(t *testing.T) {
+	task := SchedulerK3sAutoscalingAuthTask{
+		App:      "test-app",
+		Trigger:  "aws-secret-manager",
+		Metadata: map[string]string{"secretName": ""},
+		State:    StateAbsent,
+	}
+	if err := task.Validate(); err != nil {
+		t.Fatalf("absent-state empty value should be allowed (clears the key), got %v", err)
+	}
+}

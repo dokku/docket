@@ -168,8 +168,16 @@ func planSetResource(subcommand string, rctx ResourceContext) PlanResult {
 		}
 	}
 
+	// A clear-before-set only changes anything when the server still holds a
+	// resource outside the desired map that is not already empty; otherwise the
+	// clear is a no-op and must not force perpetual drift (issue #333). Fold the
+	// decision into an effective context so the plan Commands and the apply drop
+	// the redundant clear identically.
+	effective := rctx
+	effective.ClearBefore = rctx.ClearBefore && clearBeforeChanges(currentResources, rctx.Resources)
+
 	mutations := []string{}
-	if rctx.ClearBefore {
+	if effective.ClearBefore {
 		mutations = append(mutations, "clear before set")
 	}
 	for k, v := range rctx.Resources {
@@ -181,15 +189,36 @@ func planSetResource(subcommand string, rctx ResourceContext) PlanResult {
 	if len(mutations) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
-	inputs := resourceSetInputs(subcommand, rctx)
+	inputs := resourceSetInputs(subcommand, effective)
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d resource(s) to set", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(inputs),
-		apply:     applyResourceSet(subcommand, rctx),
+		apply:     applyResourceSet(subcommand, effective),
 	}
+}
+
+// resourceValueIsSet reports whether a resource report value represents an
+// actually-set limit/reservation. dokku reports an unset resource as "" or "0".
+func resourceValueIsSet(v string) bool {
+	return v != "" && v != "0"
+}
+
+// clearBeforeChanges reports whether a clear-before-set would actually remove
+// anything. The clear wipes every current resource that is not in the desired
+// map, so it is a no-op unless one of those keys still holds a set value.
+func clearBeforeChanges(current, desired map[string]string) bool {
+	for k, v := range current {
+		if _, ok := desired[k]; ok {
+			continue
+		}
+		if resourceValueIsSet(v) {
+			return true
+		}
+	}
+	return false
 }
 
 // planClearResource reports drift for an absent-state resource clear.
@@ -201,7 +230,7 @@ func planClearResource(subcommand string, rctx ResourceContext) PlanResult {
 
 	hasResources := false
 	for _, v := range currentResources {
-		if v != "" && v != "0" {
+		if resourceValueIsSet(v) {
 			hasResources = true
 			break
 		}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -106,36 +107,33 @@ func (t BuildpacksTask) Plan() PlanResult {
 }
 
 func planBuildpacksAdd(t BuildpacksTask) PlanResult {
-	current, err := getBuildpacks(t.App)
+	current, err := getOrderedBuildpacks(t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
-	toAdd := []string{}
-	mutations := []string{}
-	for _, bp := range t.Buildpacks {
-		if !current[bp] {
-			toAdd = append(toAdd, bp)
-			mutations = append(mutations, "add "+bp)
-		}
-	}
-	if len(toAdd) == 0 {
+	// Buildpack order determines build precedence, so the current and desired
+	// lists must match as ordered slices: a reorder or a partial set is real
+	// drift, not in sync (issue #356). Validate() already guarantees the desired
+	// list is non-empty for state present.
+	if slices.Equal(current, t.Buildpacks) {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
 		status = PlanStatusCreate
 	}
-	inputs := make([]subprocess.ExecCommandInput, 0, len(toAdd))
-	for _, bp := range toAdd {
-		inputs = append(inputs, subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    []string{"--quiet", "buildpacks:add", t.App, bp},
-		})
+	// dokku has no atomic ordered-set for the list; buildpacks:set --replace
+	// replaces the whole list in one call, applied in the given precedence order.
+	args := append([]string{"--quiet", "buildpacks:set", "--replace", t.App}, t.Buildpacks...)
+	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
+	mutations := make([]string, 0, len(t.Buildpacks))
+	for i, bp := range t.Buildpacks {
+		mutations = append(mutations, fmt.Sprintf("set %s (position %d)", bp, i))
 	}
 	return PlanResult{
 		InSync:    false,
 		Status:    status,
-		Reason:    fmt.Sprintf("%d buildpack(s) to add", len(toAdd)),
+		Reason:    fmt.Sprintf("set %d buildpack(s) in order", len(t.Buildpacks)),
 		Mutations: mutations,
 		Commands:  resolveCommands(inputs),
 		apply: func() TaskOutputState {
@@ -203,14 +201,9 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 }
 
 // ExportApp reads the app's buildpacks and returns a dokku_buildpacks task, or
-// nil when none are set. It reads the `list` key from buildpacks:report, which
-// preserves build-precedence order (getBuildpacks returns an unordered set, so
-// it cannot be used here).
+// nil when none are set.
 func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
-	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    []string{"--quiet", "buildpacks:report", app, "--format", "json"},
-	})
+	list, err := getOrderedBuildpacks(app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -218,12 +211,29 @@ func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
 		}
 		return nil, nil
 	}
+	if len(list) == 0 {
+		return nil, nil
+	}
+	return []interface{}{BuildpacksTask{App: app, Buildpacks: list, State: StatePresent}}, nil
+}
+
+// getOrderedBuildpacks fetches the app's buildpacks in build-precedence order
+// from the `list` key of buildpacks:report. Unlike getBuildpacks (an unordered
+// set) this preserves order, which the plan probe and export both require.
+func getOrderedBuildpacks(app string) ([]string, error) {
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "buildpacks:report", app, "--format", "json"},
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	var report struct {
 		List string `json:"list"`
 	}
 	if err := json.Unmarshal(response.StdoutBytes(), &report); err != nil {
-		return nil, nil
+		return nil, err
 	}
 	// The list key is a comma-separated string in build-precedence order.
 	var list []string
@@ -232,10 +242,7 @@ func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
 			list = append(list, bp)
 		}
 	}
-	if len(list) == 0 {
-		return nil, nil
-	}
-	return []interface{}{BuildpacksTask{App: app, Buildpacks: list, State: StatePresent}}, nil
+	return list, nil
 }
 
 // getBuildpacks fetches the current buildpacks list for an app

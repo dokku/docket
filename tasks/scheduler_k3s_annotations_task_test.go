@@ -110,3 +110,31 @@ func TestSchedulerK3sAnnotationsTaskEmptyAnnotationKey(t *testing.T) {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
+
+func TestSchedulerK3sAnnotationsTaskPresentEmptyValueRejected(t *testing.T) {
+	task := SchedulerK3sAnnotationsTask{
+		App:          "test-app",
+		ResourceType: "deployment",
+		Annotations:  map[string]string{"prometheus.io/scrape": ""},
+		State:        StatePresent,
+	}
+	err := task.Validate()
+	if err == nil {
+		t.Fatal("expected error when a present-state annotation value is empty")
+	}
+	if !strings.Contains(err.Error(), "annotation values must not be empty for state 'present'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestSchedulerK3sAnnotationsTaskAbsentEmptyValueAllowed(t *testing.T) {
+	task := SchedulerK3sAnnotationsTask{
+		App:          "test-app",
+		ResourceType: "deployment",
+		Annotations:  map[string]string{"prometheus.io/scrape": ""},
+		State:        StateAbsent,
+	}
+	if err := task.Validate(); err != nil {
+		t.Fatalf("absent-state empty value should be allowed (clears the key), got %v", err)
+	}
+}

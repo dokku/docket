@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -123,4 +124,69 @@ func TestIntegrationBuildpacks(t *testing.T) {
 		t.Errorf("expected Changed=false on idempotent clear")
 	}
 	assertListed(t, "after idempotent clear", map[string]bool{})
+}
+
+// TestIntegrationBuildpacksOrder verifies that a multi-buildpack list is applied
+// and reported in build-precedence order, that a matching ordered list is a
+// no-op, and that reordering is detected and converges (issue #356).
+func TestIntegrationBuildpacksOrder(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-buildpacks-order"
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	nodejs := "https://github.com/heroku/heroku-buildpack-nodejs.git"
+	nginx := "https://github.com/heroku/heroku-buildpack-nginx.git"
+
+	assertOrder := func(label string, want []string) {
+		t.Helper()
+		got, err := getOrderedBuildpacks(appName)
+		if err != nil {
+			t.Fatalf("%s: getOrderedBuildpacks failed: %v", label, err)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: buildpacks = %v, want %v", label, got, want)
+		}
+	}
+
+	setTask := BuildpacksTask{App: appName, Buildpacks: []string{nodejs, nginx}, State: StatePresent}
+	result := setTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to set ordered buildpacks: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected Changed=true on first ordered set")
+	}
+	assertOrder("after set", []string{nodejs, nginx})
+
+	result = setTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("idempotent set failed: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected Changed=false when the ordered list already matches")
+	}
+	assertOrder("after idempotent set", []string{nodejs, nginx})
+
+	reorderTask := BuildpacksTask{App: appName, Buildpacks: []string{nginx, nodejs}, State: StatePresent}
+	result = reorderTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to reorder buildpacks: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected Changed=true when buildpack order changes")
+	}
+	assertOrder("after reorder", []string{nginx, nodejs})
+
+	result = reorderTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("idempotent reorder failed: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected Changed=false after the reorder converged")
+	}
+	assertOrder("after idempotent reorder", []string{nginx, nodejs})
 }

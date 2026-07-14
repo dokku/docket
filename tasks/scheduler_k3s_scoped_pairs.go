@@ -35,17 +35,23 @@ func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state Sta
 	if spec.ResourceType == "" {
 		return errors.New("resource_type is required")
 	}
+	effective := state
+	if effective == "" {
+		effective = StatePresent
+	}
 	if len(spec.Pairs) == 0 {
-		effective := state
-		if effective == "" {
-			effective = StatePresent
-		}
 		return fmt.Errorf("'%s' must not be empty for state '%s'", spec.Kind, effective)
 	}
 	singular := singularizeSchedulerK3sKind(spec.Kind)
-	for key := range spec.Pairs {
+	for key, value := range spec.Pairs {
 		if key == "" {
 			return fmt.Errorf("%s keys must not be empty", singular)
+		}
+		// dokku interprets an empty value on the :set subcommand as a clear, so
+		// a present-state empty value can never be stored and would drift on
+		// every run (issue #358). Clearing is expressed with state 'absent'.
+		if effective == StatePresent && value == "" {
+			return fmt.Errorf("%s values must not be empty for state 'present'; use state 'absent' to clear a %s", singular, singular)
 		}
 	}
 	return nil

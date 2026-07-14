@@ -112,7 +112,7 @@ func (t SchedulerK3sAutoscalingAuthTask) Execute() TaskOutputState {
 
 // Validate checks the SchedulerK3sAutoscalingAuthTask's inputs without contacting the server.
 func (t SchedulerK3sAutoscalingAuthTask) Validate() error {
-	return validateSchedulerK3sAutoscalingAuth(t.spec())
+	return validateSchedulerK3sAutoscalingAuth(t.spec(), t.State)
 }
 
 // Plan reports the drift the SchedulerK3sAutoscalingAuthTask would produce.
