@@ -238,6 +238,145 @@ func TestPlanFailedWhenClearsError(t *testing.T) {
 	}
 }
 
+// TestPlanChangedWhenTrueRecomputesStatus pins #313: changed_when: 'true'
+// on an in-sync task must flip the marker and the JSON status to a
+// would-change verdict, not leave the stale [ok] / "status":"ok" the
+// probe returned.
+func TestPlanChangedWhenTrueRecomputesStatus(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{Changed: false}) // Plan() -> InSync, PlanStatusOK
+
+	path := writeMultiPlayTasks(t, `---
+- tasks:
+    - name: forced
+      changed_when: 'true'
+      dokku_stub: { key: a }
+`)
+
+	stdout, _, exit := runPlan(t, path)
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s", exit, stdout)
+	}
+	if strings.Contains(stdout, "[ok]") {
+		t.Errorf("changed_when:true must not render [ok]; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "[~]") {
+		t.Errorf("expected [~] marker for the forced change; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "1 would change") {
+		t.Errorf("summary should count 1 would change; got:\n%s", stdout)
+	}
+
+	jsonOut, _, exit := runPlan(t, path, "--json")
+	if exit != 0 {
+		t.Fatalf("json exit = %d, want 0; out=%s", exit, jsonOut)
+	}
+	sawTask := false
+	for _, ev := range decodeLines(t, jsonOut) {
+		if ev["type"] != "task" {
+			continue
+		}
+		sawTask = true
+		if ev["status"] != "~" {
+			t.Errorf("json status = %v, want ~", ev["status"])
+		}
+		if ev["would_change"] != true {
+			t.Errorf("json would_change = %v, want true", ev["would_change"])
+		}
+	}
+	if !sawTask {
+		t.Fatalf("no task event in json output:\n%s", jsonOut)
+	}
+}
+
+// TestPlanFailedWhenClearingErrorRecomputesStatus pins the #313 inverse:
+// failed_when clearing a probe error leaves a would-change line marked
+// [~], not the stale [!] the probe returned.
+func TestPlanFailedWhenClearingErrorRecomputesStatus(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{
+		PlanError: errors.New("App nonexistent does not exist"),
+		Stderr:    "App nonexistent does not exist",
+	})
+
+	path := writeMultiPlayTasks(t, `---
+- tasks:
+    - name: tolerant
+      failed_when: 'false'
+      dokku_stub: { key: a }
+`)
+
+	jsonOut, _, exit := runPlan(t, path, "--json")
+	if exit != 0 {
+		t.Fatalf("json exit = %d, want 0; out=%s", exit, jsonOut)
+	}
+	for _, ev := range decodeLines(t, jsonOut) {
+		if ev["type"] != "task" {
+			continue
+		}
+		if ev["status"] == "error" || ev["status"] == "!" {
+			t.Errorf("failed_when:false should clear the probe error; status = %v", ev["status"])
+		}
+	}
+}
+
+// TestPlanRejectsDuplicateRegisterName pins #314: apply/plan reject a
+// register name reused across tasks at load time (the same rule validate
+// enforces) instead of silently merging results.
+func TestPlanRejectsDuplicateRegisterName(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{Changed: true})
+	stubSet("b", StubFixture{Changed: false})
+
+	path := writeMultiPlayTasks(t, `---
+- tasks:
+    - name: first
+      register: dup
+      dokku_stub: { key: a }
+    - name: second
+      register: dup
+      dokku_stub: { key: b }
+`)
+	_, stderr, exit := runPlan(t, path)
+	if exit == 0 {
+		t.Fatalf("expected non-zero exit for a reused register name")
+	}
+	if !strings.Contains(stderr, "already declared") {
+		t.Errorf("expected an 'already declared' error; got stderr:\n%s", stderr)
+	}
+}
+
+// TestPlanSingleIterationLoopRegisterResultsIndex pins #330: a loop that
+// resolves to one iteration still exposes .Results[0], so a follow-up
+// predicate that reads it plans normally instead of failing with an
+// index-out-of-range error.
+func TestPlanSingleIterationLoopRegisterResultsIndex(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{Changed: true})
+	stubSet("b", StubFixture{Changed: false})
+
+	path := writeMultiPlayTasks(t, `---
+- tasks:
+    - name: deploy
+      loop: ["only"]
+      register: deploys
+      dokku_stub: { key: a }
+    - name: follow
+      when: 'registered.deploys.Results[0].Changed'
+      dokku_stub: { key: b }
+`)
+	stdout, stderr, exit := runPlan(t, path)
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if strings.Contains(stdout, "index out of range") || strings.Contains(stderr, "index out of range") {
+		t.Errorf("single-iteration loop register should expose Results[0]; got:\n%s\n%s", stdout, stderr)
+	}
+	if !strings.Contains(stdout, "follow") {
+		t.Errorf("follow-up task reading Results[0] should be planned; got:\n%s", stdout)
+	}
+}
+
 // TestMultiPlayWhenSkippedShowsInSummary: skipped plays count toward
 // the new "n play skipped" summary segment.
 func TestMultiPlayWhenSkippedShowsInSummary(t *testing.T) {

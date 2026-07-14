@@ -229,6 +229,64 @@ func TestEvalBoolRegisteredResultsIndex(t *testing.T) {
 	}
 }
 
+// TestTruthyEmptyTypedSlice pins #354: an empty typed slice/array/map
+// (not just []interface{}) coerces to false, matching the documented rule
+// that empty collections are false.
+func TestTruthyEmptyTypedSlice(t *testing.T) {
+	falsy := []interface{}{
+		[]string(nil),
+		[]string{},
+		[]TaskOutputState{},
+		[]int{},
+		map[string]string{},
+	}
+	for _, v := range falsy {
+		if truthy(v) {
+			t.Errorf("truthy(%#v) = true, want false", v)
+		}
+	}
+	truthyVals := []interface{}{
+		[]string{"dokku apps:create"},
+		[]TaskOutputState{{Changed: true}},
+		map[string]string{"a": "b"},
+	}
+	for _, v := range truthyVals {
+		if !truthy(v) {
+			t.Errorf("truthy(%#v) = false, want true", v)
+		}
+	}
+}
+
+// TestEvalBoolEmptyTypedSliceFalsy exercises #354 through a predicate:
+// registered.foo.Commands is a []string, empty for a task that ran no
+// subprocess, so `when: registered.foo.Commands` is falsy and the task
+// skips instead of running.
+func TestEvalBoolEmptyTypedSliceFalsy(t *testing.T) {
+	prog, err := CompilePredicate(`registered.foo.Commands`)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	registered := map[string]RegisteredValue{
+		"foo": {TaskOutputState: TaskOutputState{Commands: nil}},
+	}
+	got, err := EvalBool(prog, map[string]interface{}{"registered": registered})
+	if err != nil {
+		t.Fatalf("eval: %v", err)
+	}
+	if got {
+		t.Errorf("empty Commands should be falsy; got true")
+	}
+
+	registered["foo"] = RegisteredValue{TaskOutputState: TaskOutputState{Commands: []string{"dokku apps:create api"}}}
+	got, err = EvalBool(prog, map[string]interface{}{"registered": registered})
+	if err != nil {
+		t.Fatalf("eval: %v", err)
+	}
+	if !got {
+		t.Errorf("non-empty Commands should be truthy; got false")
+	}
+}
+
 // TestAggregateRegisteredAggregatesAcrossIterations pins the
 // loop-aggregation rules: Changed = any iteration changed, Error =
 // first non-nil error, last-iteration values for the rest.
@@ -262,7 +320,13 @@ func TestAggregateRegisteredEmptyAndSingle(t *testing.T) {
 	if !got.Changed || got.Stderr != "only" {
 		t.Errorf("single-element aggregate should mirror the input; got %+v", got)
 	}
-	if got.Results != nil {
-		t.Errorf("single-element aggregate should leave Results nil; got %v", got.Results)
+	// A loop that resolves to a single iteration still carries a Results
+	// list with one entry, so `.Results[0]` is available per the
+	// documented register+loop contract (#330).
+	if len(got.Results) != 1 {
+		t.Fatalf("single-element aggregate should carry one Results entry; got %d", len(got.Results))
+	}
+	if got.Results[0].Stderr != "only" || !got.Results[0].Changed {
+		t.Errorf("Results[0] should mirror the single iteration; got %+v", got.Results[0])
 	}
 }

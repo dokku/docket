@@ -28,15 +28,14 @@ type RegisteredValue struct {
 
 // AggregateRegistered builds a RegisteredValue from one or more
 // per-iteration TaskOutputStates. Callers use it to roll a loop's
-// expansions into a single registered value. Passing a single state
-// yields a RegisteredValue whose Results is nil and whose embedded
-// fields mirror the input directly.
+// expansions into a single registered value. Every loop expansion -
+// including one that resolves to a single iteration - yields a Results
+// list with one entry per iteration, so `.Results[0]` is always
+// available for a register+loop task (the documented contract in
+// docs/task-envelope.md). The empty input is the only nil-Results case.
 func AggregateRegistered(iter []TaskOutputState) RegisteredValue {
 	if len(iter) == 0 {
 		return RegisteredValue{}
-	}
-	if len(iter) == 1 {
-		return RegisteredValue{TaskOutputState: iter[0]}
 	}
 	last := iter[len(iter)-1]
 	out := RegisteredValue{

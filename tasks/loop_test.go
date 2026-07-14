@@ -174,6 +174,77 @@ func TestLoopVarOutsideLoopRejectedAtParse(t *testing.T) {
 	}
 }
 
+// TestLoopVarSubfieldOutsideLoopRejected pins the #321 under-match fix:
+// a sub-field (`{{ .item.name }}`) or pipelined loop-var reference from a
+// non-loop task is rejected at parse time, not passed through literally.
+func TestLoopVarSubfieldOutsideLoopRejected(t *testing.T) {
+	for _, ref := range []string{"{{ .item.name }}", "{{ .item | upper }}", "{{ .index }}-x"} {
+		data := []byte(`---
+- tasks:
+    - name: stray
+      dokku_app:
+        app: "` + ref + `"
+`)
+		_, err := GetTasks(data, map[string]interface{}{})
+		if err == nil {
+			t.Fatalf("%q: expected rejection outside a loop, got nil", ref)
+		}
+		if !strings.Contains(err.Error(), "is only available inside a loop body") {
+			t.Errorf("%q: got: %v", ref, err)
+		}
+	}
+}
+
+// TestInputNamedLikeLoopVarRenders pins the #321 over-match fix: an input
+// whose name merely starts with `item` / `index` (here `items`) is a
+// normal file-level input and must be substituted, not hidden from the
+// render as if it were a loop variable.
+func TestInputNamedLikeLoopVarRenders(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: deploy
+      dokku_app:
+        app: "{{ .items }}"
+`)
+	out, err := GetTasks(data, map[string]interface{}{"items": "resolved-app"})
+	if err != nil {
+		t.Fatalf("GetTasks: %v", err)
+	}
+	keys := out.Keys()
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(keys))
+	}
+	if got := out.GetEnvelope(keys[0]).Task.(*AppTask).App; got != "resolved-app" {
+		t.Errorf("app = %q, want resolved-app (input was not substituted)", got)
+	}
+}
+
+// TestLoopExactDuplicateItemsBothRun pins #320 with the issue's own
+// example: two identical scalar items each produce a surviving iteration.
+func TestLoopExactDuplicateItemsBothRun(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: create
+      loop: ["web", "web"]
+      dokku_app:
+        app: "app-{{ .index }}"
+`)
+	out, err := GetTasks(data, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("GetTasks: %v", err)
+	}
+	keys := out.Keys()
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 expansions for duplicate items, got %d (%v)", len(keys), keys)
+	}
+	if keys[0] == keys[1] {
+		t.Fatalf("expansion keys must be unique, both were %q", keys[0])
+	}
+	if a, b := out.GetEnvelope(keys[0]).Task.(*AppTask).App, out.GetEnvelope(keys[1]).Task.(*AppTask).App; a != "app-0" || b != "app-1" {
+		t.Errorf("apps = %q, %q; want app-0, app-1", a, b)
+	}
+}
+
 // TestLoopOnGroupExpandsEntireGroup pins #211: a `loop:` on a group
 // duplicates the whole group N times so each iteration's children
 // share that iteration's `.item` / `.index`.

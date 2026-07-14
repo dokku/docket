@@ -38,6 +38,7 @@ func expandLoop(base *TaskEnvelope, bodyBytes []byte, typeKey string, sigilConte
 		return nil, err
 	}
 
+	names := loopExpansionNames(base.Name, items)
 	out := make([]*TaskEnvelope, 0, len(items))
 	for i, item := range items {
 		iterCtx := make(map[string]interface{}, len(sigilContext)+2)
@@ -67,7 +68,7 @@ func expandLoop(base *TaskEnvelope, bodyBytes []byte, typeKey string, sigilConte
 		expanded.LoopItem = item
 		expanded.LoopIndex = i
 		expanded.IsLoopExpansion = true
-		expanded.Name = loopExpansionName(base.Name, item, i)
+		expanded.Name = names[i]
 
 		out = append(out, &expanded)
 	}
@@ -110,6 +111,7 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 		}
 	}
 
+	names := loopExpansionNames(base.Name, items)
 	out := make([]*TaskEnvelope, 0, len(items))
 	for i, item := range items {
 		iterCtx := make(map[string]interface{}, len(sigilContext)+2)
@@ -151,7 +153,7 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 		expanded.Block = blockChildren
 		expanded.Rescue = rescueChildren
 		expanded.Always = alwaysChildren
-		expanded.Name = loopExpansionName(base.Name, item, i)
+		expanded.Name = names[i]
 
 		out = append(out, &expanded)
 	}
@@ -226,6 +228,29 @@ func loopExpansionName(base string, item interface{}, index int) string {
 		return fmt.Sprintf("%s (item=#%d)", base, index)
 	}
 	return fmt.Sprintf("%s (item=%s)", base, rendered)
+}
+
+// loopExpansionNames derives the per-iteration task name for every item
+// in a loop, guaranteeing a unique map key per iteration. Distinct scalar
+// items keep the readable `<base> (item=<value>)` form; items that would
+// otherwise collide - duplicate scalars, or scalars equal only after
+// TrimSpace - get an ` #<index>` suffix so every iteration survives
+// instead of overwriting an earlier one or tripping the duplicate-name
+// guard (#320). Complex items already carry an index-based suffix and
+// never collide.
+func loopExpansionNames(base string, items []interface{}) []string {
+	names := make([]string, len(items))
+	counts := make(map[string]int, len(items))
+	for i, item := range items {
+		names[i] = loopExpansionName(base, item, i)
+		counts[names[i]]++
+	}
+	for i, name := range names {
+		if counts[name] > 1 {
+			names[i] = fmt.Sprintf("%s #%d", name, i)
+		}
+	}
+	return names
 }
 
 // renderItemForName returns a stringified item value safe for use in a

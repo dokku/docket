@@ -129,3 +129,22 @@ EOF
   assert_output --partial "register"
   assert_output --partial "already declared"
 }
+
+@test "register: duplicate name is rejected on plan, not just validate" {
+  # apply and plan load through the shared loader, which now runs the
+  # same register-uniqueness check validate does (#314), so a reused name
+  # fails at parse time offline instead of silently merging results.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - register: dup
+      dokku_app:
+        app: a
+    - register: dup
+      dokku_app:
+        app: b
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "already declared"
+}
