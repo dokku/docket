@@ -46,7 +46,10 @@ PY
     [ -s "$BATS_TEST_TMPDIR/port" ] && break
     sleep 0.1
   done
-  [ -s "$BATS_TEST_TMPDIR/port" ] || { echo "http server did not start"; return 1; }
+  [ -s "$BATS_TEST_TMPDIR/port" ] || {
+    echo "http server did not start"
+    return 1
+  }
   port="$(cat "$BATS_TEST_TMPDIR/port")"
 
   run "$(docket_bin)" plan --tasks "http://127.0.0.1:${port}/tasks.yml" --list-tasks
@@ -75,7 +78,10 @@ PY
     [ -s "$BATS_TEST_TMPDIR/port" ] && break
     sleep 0.1
   done
-  [ -s "$BATS_TEST_TMPDIR/port" ] || { echo "http server did not start"; return 1; }
+  [ -s "$BATS_TEST_TMPDIR/port" ] || {
+    echo "http server did not start"
+    return 1
+  }
   port="$(cat "$BATS_TEST_TMPDIR/port")"
 
   run "$(docket_bin)" plan --tasks "http://127.0.0.1:${port}/missing.yml" --list-tasks

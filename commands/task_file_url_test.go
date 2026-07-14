@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -156,5 +157,39 @@ func TestApplyURLRecipePreregistersInputFlags(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "1 changed") {
 		t.Errorf("expected the --app override to propagate (1 changed); output:\n%s", stdout)
+	}
+}
+
+// TestURLRecipeFetchedOncePerInvocation: FlagSet pre-registration and Run
+// share a single fetch of a --tasks URL, so the recipe is requested once
+// per command rather than twice.
+func TestURLRecipeFetchedOncePerInvocation(t *testing.T) {
+	defer stubReset()
+	stubSet("cache-key", StubFixture{})
+
+	var mu sync.Mutex
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`---
+- tasks:
+    - name: stub task
+      dokku_stub:
+        key: cache-key
+`))
+	}))
+	t.Cleanup(srv.Close)
+
+	_, stderr, exit := runPlan(t, srv.URL+"/tasks.yml")
+	if exit != 0 {
+		t.Fatalf("plan over URL exit = %d, want 0; stderr=%s", exit, stderr)
+	}
+	mu.Lock()
+	got := hits
+	mu.Unlock()
+	if got != 1 {
+		t.Errorf("recipe fetched %d times, want 1 (FlagSet and Run should share one fetch)", got)
 	}
 }

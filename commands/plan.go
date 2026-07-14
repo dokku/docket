@@ -32,6 +32,14 @@ type PlanCommand struct {
 	play              string
 	listTasks         bool
 	arguments         map[string]*Argument
+
+	// tasksData caches the recipe bytes read while building the FlagSet (to
+	// pre-register input flags). Run reuses them instead of reading the
+	// source a second time, so a --tasks URL is fetched once per
+	// invocation. tasksDataSource records where those bytes came from; the
+	// cache is honored only when Run resolves the same source.
+	tasksData       []byte
+	tasksDataSource string
 }
 
 func (c *PlanCommand) Name() string {
@@ -88,6 +96,8 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	if err != nil {
 		return f
 	}
+	c.tasksData = data
+	c.tasksDataSource = taskFile
 
 	arguments, err := registerInputFlags(f, data, format)
 	if err != nil {
@@ -161,10 +171,15 @@ func (c *PlanCommand) Run(args []string) int {
 	c.tasksFile = resolvedPath
 	c.tasksFormat = resolvedFormat
 
-	data, err := readTaskFileData(c.tasksFile)
-	if err != nil {
-		c.Ui.Error(fmt.Sprintf("read error: %v", err))
-		return 1
+	// Reuse the bytes FlagSet already read for this source (see tasksData);
+	// for a --tasks URL this avoids a second HTTP fetch of the same recipe.
+	data := c.tasksData
+	if data == nil || c.tasksDataSource != c.tasksFile {
+		data, err = readTaskFileData(c.tasksFile)
+		if err != nil {
+			c.Ui.Error(fmt.Sprintf("read error: %v", err))
+			return 1
+		}
 	}
 
 	context := make(map[string]interface{})
