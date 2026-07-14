@@ -412,6 +412,7 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 
 	result.Error = synth.Error
 	result.InSync = !synth.Changed && synth.Error == nil
+	result.Status = planStatusForVerdict(result)
 
 	out := planTaskOutcome{state: synth}
 	switch {
@@ -434,6 +435,30 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 		Timestamp: time.Now().UTC(),
 	})
 	return out
+}
+
+// planStatusForVerdict recomputes the drift marker after envelope
+// overrides (changed_when / failed_when) may have flipped the InSync /
+// Error verdict, so the marker and JSON status agree with it (#313). It
+// is called with result.Error / result.InSync already set to the
+// post-override verdict but result.Status still at the value Plan()
+// returned. A probe error is `!`; an in-sync task is `ok`; otherwise the
+// task would change and keeps its original create/destroy/modify marker,
+// defaulting to modify when the pre-override marker was ok/error/empty.
+func planStatusForVerdict(r tasks.PlanResult) tasks.PlanStatus {
+	switch {
+	case r.Error != nil:
+		return tasks.PlanStatusError
+	case r.InSync:
+		return tasks.PlanStatusOK
+	default:
+		switch r.Status {
+		case tasks.PlanStatusCreate, tasks.PlanStatusDestroy, tasks.PlanStatusModify:
+			return r.Status
+		default:
+			return tasks.PlanStatusModify
+		}
+	}
 }
 
 // planGroup plans a try/catch/finally group entry (#211). Block

@@ -368,17 +368,23 @@ const (
 	loopIndexPlaceholder = "{{ .index }}"
 )
 
-// loopVarSentinelPattern catches `{{ .item ... }}` and `{{ .index ... }}`
-// references (any whitespace, optional sub-field access, optional
-// pipelines) so they can be hidden from the file-level sigil pass and
-// restored before loop expansion runs the second pass. The sub-match
-// captures the full template token verbatim.
+// loopVarSentinelPattern catches `{{ ... .item ... }}` and
+// `{{ ... .index ... }}` references so they can be hidden from the
+// file-level sigil pass and restored before loop expansion runs the
+// second pass, and so they can be detected outside a loop and rejected.
 //
-// Sub-field access (`{{ .item.app }}`) is the motivating case: with a
-// scalar self-referencing placeholder, sigil errors when traversing a
-// field on a string. Hiding the whole `{{ ... }}` token sidesteps the
-// problem entirely.
-var loopVarSentinelPattern = regexp.MustCompile(`\{\{[^}]*?\.(item|index)([^}]*)\}\}`)
+// `.item` / `.index` must be a *root* path segment: the dot is preceded
+// by the `{{`, whitespace, or another non-identifier char (never by an
+// identifier char, so `{{ .foo.item }}` - field `item` on input `foo` -
+// is left alone), and `item` / `index` is followed by a non-identifier
+// char (so `{{ .items }}`, `{{ .item_name }}`, `{{ .index_url }}` - real
+// inputs that merely start with the same letters - are left alone).
+// Sub-field access (`{{ .item.app }}`) and pipelines (`{{ .item | f }}`)
+// still match, which is the motivating case: a scalar self-referencing
+// placeholder makes sigil error when traversing a field on a string, so
+// hiding the whole token sidesteps the problem. The sub-match captures
+// `item` / `index` so callers can name the offending variable.
+var loopVarSentinelPattern = regexp.MustCompile(`\{\{(?:[^}]*[^\p{L}\p{N}_.])?\.(item|index)(?:[^\p{L}\p{N}_}][^}]*)?\}\}`)
 
 // loopVarSentinelOpen / Close wrap escaped loop-var tokens during the
 // file-level sigil pass. The pair must be unique enough to never appear
@@ -535,6 +541,12 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 
 	plays := make([]*Play, 0, len(baseAST.Plays))
 	singleUnnamed := len(baseAST.Plays) == 1 && baseAST.Plays[0].Name == ""
+	// registerSeen enforces the documented "a register name can only be
+	// registered once" rule (docs/task-envelope.md) at load time, so apply
+	// and plan reject a reused name the same way validate does instead of
+	// silently merging results across tasks (#314). The map is recipe-wide
+	// because the registered map is shared across every play in one run.
+	registerSeen := map[string]registerHit{}
 	for i, rawPlay := range baseAST.Plays {
 		if len(rawPlay.Problems) > 0 {
 			return nil, problemToError(rawPlay.Problems[0])
@@ -598,6 +610,14 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 		perPlay := perAST.Plays[i]
 		if len(perPlay.Problems) > 0 {
 			return nil, problemToError(perPlay.Problems[0])
+		}
+
+		// Reject a register name reused across tasks or plays before loop
+		// expansion, so the run-wide accumulator never merges results from
+		// two distinct tasks (#314). Iterations of one loop task share a
+		// name legally because the check walks task nodes, not expansions.
+		if regProblems := validateRegisterReferences(perPlay.TasksNode, perPlay.Label, registerSeen); len(regProblems) > 0 {
+			return nil, problemToError(regProblems[0])
 		}
 
 		exprCtx := buildExprContext(playCtx)
@@ -951,21 +971,17 @@ func buildExprContext(context map[string]interface{}) map[string]interface{} {
 }
 
 // rejectLoopVarsInTask scans every string field on task for surviving
-// `{{ .item }}` / `{{ .index }}` references and returns an error when
-// it finds one. Loop expansions render those tokens to real values, so
-// any survivor implies the user referenced a loop variable from a
-// non-loop task.
+// `{{ .item ... }}` / `{{ .index ... }}` references (including sub-field
+// and pipelined forms) and returns an error when it finds one. Loop
+// expansions render those tokens to real values, so any survivor implies
+// the user referenced a loop variable from a non-loop task.
 func rejectLoopVarsInTask(index int, name string, task Task) error {
 	bytes, err := yaml.Marshal(task)
 	if err != nil {
 		return nil
 	}
-	body := string(bytes)
-	if strings.Contains(body, ".item") && (strings.Contains(body, "{{ .item }}") || strings.Contains(body, "{{.item}}")) {
-		return fmt.Errorf("task parse error: task #%d %q: .item is only available inside a loop body", index, name)
-	}
-	if strings.Contains(body, ".index") && (strings.Contains(body, "{{ .index }}") || strings.Contains(body, "{{.index}}")) {
-		return fmt.Errorf("task parse error: task #%d %q: .index is only available inside a loop body", index, name)
+	if m := loopVarSentinelPattern.FindStringSubmatch(string(bytes)); m != nil {
+		return fmt.Errorf("task parse error: task #%d %q: .%s is only available inside a loop body", index, name, m[1])
 	}
 	return nil
 }

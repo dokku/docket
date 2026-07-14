@@ -80,10 +80,11 @@ func (a loopRegisterAccumulator) remember(name string, state tasks.TaskOutputSta
 }
 
 // finalize returns the RegisteredValue for name from the accumulated
-// states. For a single-iteration accumulator this is identical to the
-// non-loop register shape (Results: nil). For multi-iteration accumulators
-// the embedded TaskOutputState aggregates per the documented Ansible
-// semantics and Results carries every iteration's post-override state.
+// states. Every loop expansion - including a single-iteration one -
+// carries a Results list with one entry per iteration, so `.Results[0]`
+// is always available. The embedded TaskOutputState aggregates per the
+// documented Ansible semantics (Changed = any iteration changed, Error =
+// first error, the rest mirror the last iteration).
 func (a loopRegisterAccumulator) finalize(name string) tasks.RegisteredValue {
 	return tasks.AggregateRegistered(a[name])
 }

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/expr-lang/expr"
@@ -97,6 +98,16 @@ func truthy(v interface{}) bool {
 		return len(x) > 0
 	case map[string]interface{}:
 		return len(x) > 0
+	}
+	// Reflect fallback for typed collections (`[]string` from
+	// registered.foo.Commands, `[]TaskOutputState` from .Results, typed
+	// maps) that do not match the generic case arms above. A typed nil
+	// slice/map has Kind Slice/Map and length 0, so an empty one is
+	// correctly false rather than falling through to the default true.
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return rv.Len() > 0
 	}
 	return true
 }

@@ -811,19 +811,17 @@ func scanForLoopVars(node *yaml.Node, playLabel, taskLabel string, skipGroupChil
 	return problems
 }
 
-// containsLoopVar reports whether s contains a `{{ .item }}` or
-// `{{ .index }}` reference (with or without surrounding whitespace).
+// containsLoopVar reports whether s contains a `{{ .item ... }}` or
+// `{{ .index ... }}` reference, including sub-field (`{{ .item.name }}`)
+// and pipelined (`{{ .item | f }}`) forms, while leaving real inputs that
+// merely start with those letters (`{{ .items }}`, `{{ .item_name }}`)
+// alone. It shares loopVarSentinelPattern with the loader so both agree
+// on what counts as a loop-variable reference.
 func containsLoopVar(s string) bool {
 	if s == "" {
 		return false
 	}
-	if strings.Contains(s, "{{ .item }}") || strings.Contains(s, "{{.item}}") {
-		return true
-	}
-	if strings.Contains(s, "{{ .index }}") || strings.Contains(s, "{{.index}}") {
-		return true
-	}
-	return false
+	return loopVarSentinelPattern.MatchString(s)
 }
 
 // inputWithNode is the validate-time projection of an Input that also carries

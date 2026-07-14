@@ -154,3 +154,19 @@ EOF
   assert_failure
   assert_output --partial ".item / .index are only available inside a loop body"
 }
+
+@test "envelope: .item sub-field outside a loop is rejected by validate" {
+  # A sub-field reference (`{{ .item.name }}`) used to slip past the
+  # exact-token check and render to a literal; it must now be rejected
+  # the same way a bare `{{ .item }}` is (#321).
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: stray
+      dokku_app:
+        app: "{{ .item.name }}"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial ".item / .index are only available inside a loop body"
+}

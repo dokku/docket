@@ -106,6 +106,23 @@ EOF
   assert_output --partial "item=c"
 }
 
+@test "--list-tasks keeps both iterations for duplicate loop items" {
+  # Duplicate scalar items used to collide into one envelope name and
+  # trip the duplicate-name guard, dropping an iteration (#320). Both
+  # iterations must survive with disambiguated names.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - loop: [web, web]
+      dokku_app: { app: "docket-test-list-dup-{{ .index }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "(item=web) #0"
+  assert_output --partial "(item=web) #1"
+  refute_output --partial "duplicate task name"
+}
+
 @test "--list-tasks shows [skipped] for when:false" {
   write_tasks_file <<EOF
 ---

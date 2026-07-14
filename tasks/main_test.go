@@ -466,24 +466,41 @@ func TestGetTasksRejectsDuplicateTaskNames(t *testing.T) {
 	}
 }
 
-func TestGetTasksRejectsLoopSuffixCollision(t *testing.T) {
+func TestGetTasksDisambiguatesDuplicateLoopItems(t *testing.T) {
 	// Loop item names are trimmed for the (item=<value>) suffix, so two
-	// items that differ only by surrounding whitespace collapse to the
-	// same envelope name. The runtime guard rejects the collision instead
-	// of silently dropping an iteration (#307).
+	// items that are equal (or equal only after TrimSpace) would collapse
+	// to the same envelope name. Both iterations must still run, so the
+	// colliding names get an index suffix instead of dropping an iteration
+	// or erroring (#320, resolving the tension with the #307 guard).
 	data := []byte(`---
 - tasks:
     - name: dup
-      loop: ["a", " a "]
+      loop: ["a", " a ", "web"]
       dokku_app:
-        app: "app-{{ .item }}"
+        app: "app-{{ .index }}"
 `)
-	_, err := GetTasks(data, map[string]interface{}{})
-	if err == nil {
-		t.Fatal("expected error for colliding loop suffixes, got nil")
+	out, err := GetTasks(data, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("GetTasks: %v", err)
 	}
-	if !strings.Contains(err.Error(), "duplicate task name") {
-		t.Errorf("expected duplicate-name error, got: %v", err)
+	keys := out.Keys()
+	if len(keys) != 3 {
+		t.Fatalf("expected 3 surviving expansions, got %d (%v)", len(keys), keys)
+	}
+	seen := map[string]bool{}
+	for _, k := range keys {
+		if seen[k] {
+			t.Errorf("duplicate expansion key %q", k)
+		}
+		seen[k] = true
+	}
+	// Each iteration renders its own body via .index, proving none was
+	// overwritten by a colliding key.
+	wantApps := []string{"app-0", "app-1", "app-2"}
+	for i, k := range keys {
+		if got := out.GetEnvelope(k).Task.(*AppTask).App; got != wantApps[i] {
+			t.Errorf("expansion %d app = %q, want %q", i, got, wantApps[i])
+		}
 	}
 }
 
