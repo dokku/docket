@@ -5,6 +5,7 @@ import (
 	"io"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -134,6 +135,10 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 		opts.InputOverrides = map[string]bool{}
 	}
 
+	// Retained before normalization so a post-render parse failure can be
+	// re-diagnosed against the original recipe (see diagnoseUnsafeInputValue).
+	rawData := data
+
 	// An input name that is not a valid template variable (e.g. a hyphen)
 	// would otherwise make the render below fail with a cryptic "bad
 	// character" error. Check names first so the clearer invalid_input_name
@@ -215,6 +220,18 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 	// below this point are validate-only: they need placeholder-aware body
 	// decoding or offline-only cross-reference auditing.
 	ast := parseRecipe(rendered)
+	// A yaml_parse problem after rendering with real input values may be an
+	// input value that broke its surrounding scalar (#371). Re-diagnose so the
+	// operator gets an input-named message instead of a cryptic YAML error;
+	// parseRecipe short-circuits on yaml_parse, so ast carries nothing else.
+	for _, p := range ast.Problems {
+		if p.Code == "yaml_parse" {
+			if diag := diagnoseUnsafeInputValue(rawData, opts.Format, context); diag != nil {
+				return []Problem{*diag}
+			}
+			break
+		}
+	}
 	problems := append([]Problem(nil), ast.Problems...)
 
 	// registerSeen tracks register names across the whole recipe so a
@@ -937,6 +954,126 @@ func checkInputNames(data []byte, format string) []Problem {
 		}
 	}
 	return problems
+}
+
+// diagnoseUnsafeInputValue attributes a post-render YAML parse failure to an
+// input whose resolved value breaks its surrounding scalar once substituted as
+// raw text (#371). It is called only on the parse-failure path and returns nil
+// when the failure is not caused by an input value, so the caller keeps its
+// original yaml_parse diagnostic.
+//
+// The culprit is isolated by re-rendering: first with every input replaced by a
+// known-safe placeholder (which must then parse), then with one input at a time
+// restored to its real value; the inputs that reintroduce the failure are the
+// culprits. data is the raw recipe bytes, format its surface syntax, and
+// context maps input name -> resolved value.
+//
+// The message never echoes an input's value: an input may be marked sensitive,
+// and the value is not needed to act on the problem.
+func diagnoseUnsafeInputValue(data []byte, format string, context map[string]interface{}) *Problem {
+	if len(context) == 0 {
+		return nil
+	}
+
+	parses := func(ctx map[string]interface{}) bool {
+		rendered, err := renderRecipeBytes(data, ctx)
+		if err != nil {
+			return false
+		}
+		normalized, probs := normalizeRecipeBytes(rendered, format)
+		if len(probs) > 0 {
+			return false
+		}
+		var node yaml.Node
+		return yaml.Unmarshal(normalized, &node) == nil
+	}
+
+	safeContext := func(real string) map[string]interface{} {
+		ctx := make(map[string]interface{}, len(context))
+		for k := range context {
+			ctx[k] = validatePlaceholder
+		}
+		if real != "" {
+			ctx[real] = context[real]
+		}
+		return ctx
+	}
+
+	// The real context must fail and the all-safe context must parse, or the
+	// failure is structural rather than a value-injection problem.
+	if parses(context) || !parses(safeContext("")) {
+		return nil
+	}
+
+	var culprits []string
+	for name := range context {
+		if !parses(safeContext(name)) {
+			culprits = append(culprits, name)
+		}
+	}
+	if len(culprits) == 0 {
+		// The values break the render only in combination; name them all so
+		// the operator still gets an actionable, non-cryptic message.
+		for name := range context {
+			culprits = append(culprits, name)
+		}
+	}
+	sort.Strings(culprits)
+
+	line, column := unsafeInputPosition(data, format, culprits[0])
+	return &Problem{
+		Code:    "unsafe_input_value",
+		Line:    line,
+		Column:  column,
+		Message: unsafeInputMessage(culprits),
+		Hint:    unsafeInputHint(culprits[0]),
+	}
+}
+
+// unsafeInputPosition returns the source position of an input's declaration so
+// the diagnostic anchors at the right line. Input declarations are
+// template-free, so the raw recipe parses even when its rendered form does not.
+// Returns 0, 0 when the position cannot be derived.
+func unsafeInputPosition(data []byte, format, name string) (int, int) {
+	normalized, probs := normalizeRecipeBytes(data, format)
+	if len(probs) > 0 {
+		return 0, 0
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(normalized, &root); err != nil {
+		return 0, 0
+	}
+	doc := documentBody(&root)
+	if doc == nil || doc.Kind != yaml.SequenceNode {
+		return 0, 0
+	}
+	for _, inputs := range extractPlayInputs(doc) {
+		for _, in := range inputs {
+			if in.Name == name {
+				return in.Line, in.Column
+			}
+		}
+	}
+	return 0, 0
+}
+
+// unsafeInputMessage renders the unsafe_input_value message for one or more
+// culprit input names, without echoing any value.
+func unsafeInputMessage(names []string) string {
+	if len(names) == 1 {
+		return fmt.Sprintf("input %q has a value that breaks the surrounding scalar after template substitution", names[0])
+	}
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = fmt.Sprintf("%q", n)
+	}
+	return fmt.Sprintf("inputs %s have values that break the surrounding scalar after template substitution", strings.Join(quoted, ", "))
+}
+
+// unsafeInputHint points at the safe interpolation patterns, using name as the
+// example.
+func unsafeInputHint(name string) string {
+	return fmt.Sprintf("escape it inside the quotes with `\"{{ .%s | dq }}\"`, or use a quote style that does not clash with the value (a single-quoted `'{{ .%s }}'` tolerates a double quote)", name, name)
 }
 
 // documentBody returns the inner content node when root is a DocumentNode,

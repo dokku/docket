@@ -58,6 +58,49 @@ the input to use underscores, for example `my_app`:
         app: "{{ .my_app }}"
 ```
 
+## Special characters in values
+
+An input value is substituted into the task body as raw text before the recipe is parsed. That
+means a value with a character that collides with the surrounding quotes breaks the scalar. Given
+the scaffolded shape `app: "{{ .app }}"`, a value containing a double quote renders the invalid
+`app: "ab"cd"`, and `docket validate` (as well as `plan` / `apply`) reports it as
+`unsafe_input_value`, naming the offending input, instead of a cryptic YAML error.
+
+The robust fix is the `dq` filter, which escapes a value for a double-quoted scalar. Use it **inside
+the quotes** so it handles any value - double quotes, both quote types, even a newline - while the
+recipe stays valid YAML/JSON5 for `docket validate` and `docket fmt`. The `docket init` scaffold uses
+it for exactly this reason:
+
+```yaml
+---
+- inputs:
+    - name: motd
+      default: 'say "hi"'
+  tasks:
+    - dokku_config:
+        app: web
+        config:
+          MOTD: "{{ .motd | dq }}"          # -> MOTD: "say \"hi\""
+    - dokku_domains:
+        app: web
+        domains: ["{{ .motd | dq }}.example.com"]   # works mid-string too
+```
+
+For a value that only contains one kind of quote, choosing a compatible quote style also works and
+needs no filter: a single-quoted body tolerates a double quote, and a double-quoted body tolerates a
+single quote.
+
+```yaml
+    - dokku_config:
+        app: web
+        config:
+          MOTD: '{{ .motd }}'               # single quotes tolerate a " in the value
+```
+
+Note that `dq` must sit inside a double-quoted scalar. Do not leave the reference unquoted
+(`app: {{ .app | dq }}`): an unquoted `{{` is not valid YAML, so `docket validate` and `docket fmt`,
+which read the recipe before it is rendered, would reject the file.
+
 ## Overriding inputs
 
 Override an input on the command line by passing its name as a flag. Omit it to use the default:

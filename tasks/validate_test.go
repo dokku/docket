@@ -257,6 +257,77 @@ func TestValidateAllowsValidInputNames(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsUnsafeInputValue(t *testing.T) {
+	// The issue #371 repro: a value containing a double quote breaks the
+	// double-quoted body it is substituted into. validate names the offending
+	// input instead of reporting a cryptic YAML parse error.
+	data := []byte(`---
+- inputs:
+    - name: app
+      default: 'ab"cd'
+  tasks:
+    - dokku_app:
+        app: "{{ .app }}"
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "unsafe_input_value")
+	if p == nil {
+		t.Fatalf("expected unsafe_input_value problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"app"`) {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+	if p.Line == 0 {
+		t.Errorf("expected a source line, got 0")
+	}
+	// The clearer diagnostic must win over the raw YAML parse error.
+	if n := countProblems(problems, "yaml_parse"); n != 0 {
+		t.Errorf("unsafe_input_value should suppress the yaml_parse error, got %d", n)
+	}
+	// The value must not be echoed, so a sensitive input cannot leak.
+	if strings.Contains(p.Message+p.Hint, `ab"cd`) {
+		t.Errorf("message must not echo the input value: %q / %q", p.Message, p.Hint)
+	}
+}
+
+func TestValidateAllowsDoubleQuoteEscapedValue(t *testing.T) {
+	// Piping a special-character value through `dq` inside the quotes keeps the
+	// rendered scalar valid, so validate passes.
+	data := []byte(`---
+- inputs:
+    - name: motd
+      default: 'say "hi"'
+  tasks:
+    - dokku_config:
+        app: web
+        config:
+          MOTD: "{{ .motd | dq }}"
+`)
+	problems := Validate(data, ValidateOptions{})
+	if len(problems) != 0 {
+		t.Errorf("dq-escaped value should validate cleanly, got: %+v", problems)
+	}
+}
+
+func TestValidateAllowsSingleQuotedSpecialValue(t *testing.T) {
+	// A single-quoted body tolerates a double quote in the value without any
+	// filter, and stays valid YAML for validate.
+	data := []byte(`---
+- inputs:
+    - name: app
+      default: 'ab"cd'
+  tasks:
+    - dokku_config:
+        app: web
+        config:
+          MOTD: '{{ .app }}'
+`)
+	problems := Validate(data, ValidateOptions{})
+	if len(problems) != 0 {
+		t.Errorf("single-quoted body should validate cleanly, got: %+v", problems)
+	}
+}
+
 func TestValidateReservedNameNotReportedAsInvalidInputName(t *testing.T) {
 	// A reserved name is also hyphenated, but it must surface as the more
 	// specific reserved_input_name, not invalid_input_name (#370).

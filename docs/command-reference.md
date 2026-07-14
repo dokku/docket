@@ -60,8 +60,10 @@ mean" for typos); required fields decode; a task's conditional/semantic input ru
 example a list that must be non-empty when `state: present`, or mutually-exclusive fields) - the same
 checks `plan` and `apply` run, surfaced offline as `invalid_task_input`; each input name is a valid
 `{{ .name }}` template variable (a hyphenated name is rejected as `invalid_input_name`); sigil
-templates render against the input defaults; expr predicates parse; and `.item` / `.index` are only
-used inside a `loop:`.
+templates render against the input defaults, and an input value that would break the scalar it is
+substituted into is reported as `unsafe_input_value` (naming the input) rather than a cryptic YAML
+error - see [special characters in values](inputs.md#special-characters-in-values); expr predicates
+parse; and `.item` / `.index` are only used inside a `loop:`.
 
 ```bash
 docket validate --tasks path/to/tasks.yml

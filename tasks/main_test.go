@@ -423,6 +423,28 @@ func TestGetPlaysRejectsInvalidInputName(t *testing.T) {
 	}
 }
 
+func TestGetPlaysRejectsUnsafeInputValue(t *testing.T) {
+	// A value containing a double quote breaks the double-quoted body it lands
+	// in; the loader rejects it offline with the same input-named message
+	// validate reports, so plan and apply do not fail with a cryptic YAML
+	// error (#371).
+	data := []byte(`---
+- inputs:
+    - name: app
+      default: 'ab"cd'
+  tasks:
+    - dokku_app:
+        app: "{{ .app }}"
+`)
+	_, err := GetPlays(data, map[string]interface{}{"app": `ab"cd`}, nil)
+	if err == nil {
+		t.Fatal("expected error for unsafe input value, got nil")
+	}
+	if !strings.Contains(err.Error(), `input "app"`) || !strings.Contains(err.Error(), "breaks the surrounding scalar") {
+		t.Errorf("expected unsafe-input-value error, got: %v", err)
+	}
+}
+
 func TestGetTasksRejectsDuplicateTaskNames(t *testing.T) {
 	// Two tasks sharing a name used to silently drop all but the last
 	// when keyed into the ordered map; the loader now rejects them (#307).

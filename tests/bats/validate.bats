@@ -216,6 +216,76 @@ EOF
   refute_output --partial "flag redefined"
 }
 
+@test "docket validate exits 1 on an input value that breaks its scalar" {
+  # A value containing a double quote breaks the double-quoted body it is
+  # substituted into; validate names the input instead of a cryptic YAML error
+  # (#371).
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: app
+      default: 'ab"cd'
+  tasks:
+    - dokku_app:
+        app: "{{ .app }}"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial 'input "app"'
+  assert_output --partial "breaks the surrounding scalar"
+  refute_output --partial "did not find expected"
+}
+
+@test "docket validate --json emits unsafe_input_value for a breaking value" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: app
+      default: 'ab"cd'
+  tasks:
+    - dokku_app:
+        app: "{{ .app }}"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"unsafe_input_value"'
+}
+
+@test "docket validate passes when a breaking value is escaped with dq" {
+  # Piping the value through dq inside the quotes keeps the rendered scalar
+  # valid, and the quoted recipe still parses for validate (#371).
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: motd
+      default: 'say "hi"'
+  tasks:
+    - dokku_config:
+        app: web
+        config:
+          MOTD: "{{ .motd | dq }}"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket apply rejects an unsafe input value offline" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: app
+      default: 'ab"cd'
+  tasks:
+    - dokku_app:
+        app: "{{ .app }}"
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "breaks the surrounding scalar"
+  refute_output --partial "did not find expected"
+}
+
 @test "docket validate exits 1 on duplicate task names" {
   write_tasks_file <<EOF
 ---

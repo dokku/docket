@@ -288,8 +288,10 @@ func TestInitSpecialCharacterNamesParse(t *testing.T) {
 func TestInitYAMLSpecialNamesFullyValidate(t *testing.T) {
 	// The names the issue calls out (@web, a `: `-containing name) also
 	// round-trip through full validate, including the sigil render that
-	// substitutes the name into the task bodies (#355).
-	names := []string{"@web", "foo: bar", "*star", "- dash"}
+	// substitutes the name into the task bodies (#355). A name with a double
+	// quote (`has"quote`) used to break the rendered body; the scaffold now
+	// pipes each interpolation through `dq`, so it validates too (#371).
+	names := []string{"@web", "foo: bar", "*star", "- dash", `has"quote`}
 	for _, name := range names {
 		out, err := renderInit(initOptions{Name: name})
 		if err != nil {

@@ -3,7 +3,6 @@ package commands
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,7 +17,6 @@ import (
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/posener/complete"
 	flag "github.com/spf13/pflag"
-	yaml "gopkg.in/yaml.v3"
 )
 
 // InitCommand scaffolds a starter tasks.yml from an embedded template.
@@ -214,8 +212,8 @@ func renderInit(opts initOptions) ([]byte, error) {
 	// a broken one. yamlStr leaves simple names unquoted, matching the
 	// previous output for ordinary names.
 	tmpl, err := template.New(templateName).Delims("<<", ">>").Funcs(template.FuncMap{
-		"yamlStr": yamlScalar,
-		"jsonStr": jsonScalar,
+		"yamlStr": tasks.YAMLScalar,
+		"jsonStr": tasks.JSONScalar,
 	}).Parse(string(raw))
 	if err != nil {
 		return nil, fmt.Errorf("parse template %s: %w", templateName, err)
@@ -235,28 +233,6 @@ func renderInit(opts initOptions) ([]byte, error) {
 	}
 	out.Write(body.Bytes())
 	return out.Bytes(), nil
-}
-
-// yamlScalar renders s as a YAML scalar, quoting and escaping only when
-// necessary so ordinary names stay unquoted. Used by the YAML init
-// templates so a name with YAML-special characters cannot break the
-// scaffold.
-func yamlScalar(s string) (string, error) {
-	b, err := yaml.Marshal(s)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimRight(string(b), "\n"), nil
-}
-
-// jsonScalar renders s as a JSON string literal (valid JSON5), used by the
-// JSON5 init templates so an embedded quote or backslash is escaped.
-func jsonScalar(s string) (string, error) {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }
 
 // selectInitTemplate returns the embedded template name for (format,
