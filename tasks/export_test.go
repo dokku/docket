@@ -364,6 +364,208 @@ func TestExportGlobalCertBecomesGlobalTask(t *testing.T) {
 	}
 }
 
+func TestExportInlineRedactBlanksSensitiveScalar(t *testing.T) {
+	// Regression for #311: inline + redact must blank sensitive scalar fields
+	// (cert/key PEM here) in place, not fall back to the original unredacted body.
+	certPEM := "-----BEGIN CERTIFICATE-----\nMIIFAKECERT\n-----END CERTIFICATE-----"
+	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIIFAKEKEY\n-----END PRIVATE KEY-----"
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet global-cert:report --global --global-cert-enabled": "true",
+		"--quiet global-cert:show crt":                              certPEM,
+		"--quiet global-cert:show key":                              keyPEM,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{Inline: true, Redact: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if strings.Contains(out, "MIIFAKECERT") || strings.Contains(out, "MIIFAKEKEY") {
+		t.Errorf("inline+redact leaked the certificate PEM:\n%s", out)
+	}
+	// The task is still present, just with blanked content.
+	if !strings.Contains(out, "dokku_certs") {
+		t.Errorf("expected the certs task to remain after redaction:\n%s", out)
+	}
+}
+
+func TestExportAppCertSkippedWhenLetsencryptActive(t *testing.T) {
+	// Regression for #337: a letsencrypt-managed app reports ssl-enabled, but its
+	// cert is ephemeral and re-issued by dokku_letsencrypt, so it must not be
+	// pinned as a static dokku_certs task.
+	certPEM := "-----BEGIN CERTIFICATE-----\nMIILEACERT\n-----END CERTIFICATE-----"
+	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIILEAKEY\n-----END PRIVATE KEY-----"
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                      "web",
+		"--quiet certs:report web --ssl-enabled": "true",
+		"--quiet letsencrypt:active web":         "true",
+		"--quiet certs:show web crt":             certPEM,
+		"--quiet certs:show web key":             keyPEM,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if strings.Contains(out, "dokku_certs") {
+		t.Errorf("letsencrypt-managed cert must not be exported as dokku_certs:\n%s", out)
+	}
+	if strings.Contains(out, "MIILEACERT") || strings.Contains(out, "MIILEAKEY") {
+		t.Errorf("recipe leaked the ephemeral letsencrypt PEM:\n%s", out)
+	}
+	if !strings.Contains(out, "dokku_letsencrypt") {
+		t.Errorf("expected the letsencrypt task to be exported:\n%s", out)
+	}
+}
+
+func TestExportAppCertExportedWhenLetsencryptInactive(t *testing.T) {
+	// A manual (non-letsencrypt) cert is still exported as dokku_certs.
+	certPEM := "-----BEGIN CERTIFICATE-----\nMIIMANUAL\n-----END CERTIFICATE-----"
+	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIIMANUALKEY\n-----END PRIVATE KEY-----"
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                      "web",
+		"--quiet certs:report web --ssl-enabled": "true",
+		"--quiet letsencrypt:active web":         "false",
+		"--quiet certs:show web crt":             certPEM,
+		"--quiet certs:show web key":             keyPEM,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if !strings.Contains(out, "dokku_certs") {
+		t.Errorf("a manual cert should be exported as dokku_certs:\n%s", out)
+	}
+	if strings.Contains(out, "dokku_letsencrypt") {
+		t.Errorf("no letsencrypt task expected when inactive:\n%s", out)
+	}
+}
+
+func TestExportMaintenanceCustomPageInlinesContent(t *testing.T) {
+	// #334: with maintenance:custom-page-export available, the page HTML is read
+	// back and inlined as content instead of lifted into an input, producing a
+	// valid, self-contained task in both file and stdout modes.
+	html := "<html><body><h1>Down for maintenance</h1></body></html>\n"
+	tarBytes, err := buildMaintenancePageTarball(html)
+	if err != nil {
+		t.Fatalf("buildMaintenancePageTarball: %v", err)
+	}
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                          "web",
+		"maintenance:report web --format json":       `{"enabled":"false","custom-page-sha256":"abc123"}`,
+		"--quiet maintenance:custom-page-export web": string(tarBytes),
+	}))()
+
+	// The task ExportApp yields a valid task carrying the real content.
+	bodies, err := MaintenanceCustomPageTask{}.ExportApp("web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	page := bodies[0].(MaintenanceCustomPageTask)
+	if page.Content != html {
+		t.Errorf("Content = %q, want the exported HTML", page.Content)
+	}
+	if err := page.Validate(); err != nil {
+		t.Errorf("exported maintenance page task must be valid, got: %v", err)
+	}
+
+	for _, inline := range []bool{false, true} {
+		res, err := ExportRecipe(ExportOptions{Inline: inline})
+		if err != nil {
+			t.Fatalf("ExportRecipe(inline=%v): %v", inline, err)
+		}
+		if _, ok := res.Vars["web_maintenance_custom_page"]; ok {
+			t.Errorf("inline=%v: content should be inlined, not lifted into a var", inline)
+		}
+		recipe, _ := res.MarshalRecipe("yaml")
+		out := string(recipe)
+		if !strings.Contains(out, "Down for maintenance") {
+			t.Errorf("inline=%v: recipe should contain the real page content:\n%s", inline, out)
+		}
+		if strings.Contains(out, "{{ .web_maintenance_custom_page }}") {
+			t.Errorf("inline=%v: content should not be an input template:\n%s", inline, out)
+		}
+	}
+}
+
+func TestExportHttpAuthUserInlineEmitsInputAndWarns(t *testing.T) {
+	// #334: stdout export can't read passwords back, so it emits an input block
+	// (a valid non-empty sigil) and warns that the passwords must be supplied.
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                  "web",
+		"http-auth:report web --format json": `{"enabled":"true","users":"admin","allowed-ips":"","domains":""}`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{Inline: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	for _, want := range []string{
+		"{{ .web_http_auth_password_admin }}",
+		"name: web_http_auth_password_admin",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout recipe missing %q:\n%s", want, out)
+		}
+	}
+	found := false
+	for _, w := range res.Report.Warnings {
+		if strings.Contains(w, "http-auth") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a warning about http-auth passwords, got %v", res.Report.Warnings)
+	}
+}
+
+func TestAppCountExcludesGlobalPlay(t *testing.T) {
+	// #345: the leading global play is not an app, so AppCount excludes it.
+	responses := exportFixture()
+	responses["--quiet plugin:list --format json"] = `[{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"c0ffee","branch":"master"}]`
+	defer subprocess.SetExecRunner(fakeDokku(responses))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if got := res.PlayCount(); got != 3 {
+		t.Errorf("PlayCount = %d, want 3 (global + 2 apps)", got)
+	}
+	if got := res.AppCount(); got != 2 {
+		t.Errorf("AppCount = %d, want 2 (excludes the global play)", got)
+	}
+}
+
+func TestExportMissingAppsRecorded(t *testing.T) {
+	// #346: a nonexistent --app is recorded, not silently dropped, and the
+	// existing app still exports.
+	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+
+	res, err := ExportRecipe(ExportOptions{Apps: []string{"app-one", "nope"}})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if len(res.Report.MissingApps) != 1 || res.Report.MissingApps[0] != "nope" {
+		t.Errorf("MissingApps = %v, want [nope]", res.Report.MissingApps)
+	}
+	if res.AppCount() != 1 {
+		t.Errorf("AppCount = %d, want 1 (app-one still exported)", res.AppCount())
+	}
+}
+
 func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet apps:list": "",

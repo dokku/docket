@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
 
 	"github.com/josegonzalez/cli-skeleton/command"
@@ -113,7 +114,10 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 
-	resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
+	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
+	if resolvedHost != "" {
+		defer subprocess.CloseSshControlMaster(resolvedHost)
+	}
 
 	toStdout := c.output == "-"
 
@@ -128,6 +132,19 @@ func (c *ExportCommand) Run(args []string) int {
 	}
 	for _, w := range res.Report.Warnings {
 		c.Ui.Warn(fmt.Sprintf("warning: %s", w))
+	}
+
+	// A nonexistent --app must not silently produce an empty recipe (which the
+	// loader then rejects). When nothing was collected, abort without writing;
+	// otherwise the existing apps are exported and the missing names are reported
+	// with a non-zero exit at the end (#346).
+	if res.PlayCount() == 0 {
+		if len(res.Report.MissingApps) > 0 {
+			c.Ui.Error(fmt.Sprintf("error: %s not found on server; nothing to export", strings.Join(res.Report.MissingApps, ", ")))
+		} else {
+			c.Ui.Error("error: nothing to export")
+		}
+		return 1
 	}
 
 	recipeFormat := taskFileFormatYAML
@@ -145,7 +162,7 @@ func (c *ExportCommand) Run(args []string) int {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
 			return 1
 		}
-		return 0
+		return c.exitForMissingApps(res)
 	}
 
 	varsOutput := c.varsOutput
@@ -198,8 +215,7 @@ func (c *ExportCommand) Run(args []string) int {
 		}
 	}
 
-	playCount := res.PlayCount()
-	c.Ui.Output(fmt.Sprintf("==> Exported %s (%s)", c.output, pluralize(playCount, "app")))
+	c.Ui.Output(fmt.Sprintf("==> Exported %s (%s)", c.output, pluralize(res.AppCount(), "app")))
 	if writeVars {
 		c.Ui.Output(fmt.Sprintf("    values written to %s", varsOutput))
 		if c.redact {
@@ -213,7 +229,18 @@ func (c *ExportCommand) Run(args []string) int {
 	} else {
 		c.Ui.Output(fmt.Sprintf("  $ %s apply --tasks %s", appName(), c.output))
 	}
-	return 0
+	return c.exitForMissingApps(res)
+}
+
+// exitForMissingApps reports any --app names that were not found on the server
+// and returns a non-zero exit code, so a typo is surfaced even though the apps
+// that do exist were still exported (#346).
+func (c *ExportCommand) exitForMissingApps(res *tasks.ExportResult) int {
+	if len(res.Report.MissingApps) == 0 {
+		return 0
+	}
+	c.Ui.Error(fmt.Sprintf("error: %s not found on server", strings.Join(res.Report.MissingApps, ", ")))
+	return 1
 }
 
 // confirmOverwrite prompts for permission to overwrite an existing file. When

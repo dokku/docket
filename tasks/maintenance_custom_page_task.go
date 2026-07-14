@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -57,7 +58,7 @@ func (t MaintenanceCustomPageTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t MaintenanceCustomPageTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "maintenance:report exposes only a custom-page-sha256 checksum, not the HTML, so the page content cannot be read back; export detects that a custom page is set and lifts it into a required content input the user supplies before apply. Multi-file tarball pages collapse to that single content input, so extra assets are not captured. A faithful export awaits an upstream export command (dokku/dokku-maintenance#28)"}
+	return ExportSupport{Status: ExportPartial, Caveat: "export reads the current page back via maintenance:custom-page-export and inlines maintenance.html as content. Multi-file tarball pages collapse to that single content field, so extra assets are not captured. On an older dokku-maintenance without the export command the content cannot be read back and is lifted into a required content input the user supplies before apply"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -345,13 +346,14 @@ func maintenanceCustomPageState(app string) (checksum string, reported bool, err
 }
 
 // ExportApp emits a dokku_maintenance_custom_page task when the app has a custom
-// page installed. maintenance:report exposes only the custom-page-sha256
-// checksum, never the HTML, so the content cannot be read back; the engine lifts
-// it into a required input the user supplies before applying (see
-// processMaintenanceCustomPage). A custom page is detected purely by a non-empty
-// checksum, so nothing is emitted when no page is set or when the plugin is too
-// old to report the checksum. A transport-level SSH failure propagates as a
-// warning; a dokku-level or parse failure is treated as "nothing to export".
+// page installed. A custom page is detected by a non-empty custom-page-sha256 in
+// maintenance:report, so nothing is emitted when no page is set or when the
+// plugin is too old to report the checksum. The page content is then read back
+// via maintenance:custom-page-export and inlined as Content, producing a faithful,
+// self-contained task. On an older dokku-maintenance without the export command
+// (any non-SSH failure) the content cannot be read; an empty task is returned and
+// processMaintenanceCustomPage lifts the content into a required input. A
+// transport-level SSH failure propagates as a warning.
 func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) {
 	checksum, reported, err := maintenanceCustomPageState(app)
 	if err != nil {
@@ -364,7 +366,66 @@ func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) 
 	if !reported || checksum == "" {
 		return nil, nil
 	}
-	return []interface{}{MaintenanceCustomPageTask{App: app}}, nil
+
+	content, extraAssets, err := maintenanceCustomPageExport(app)
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		return []interface{}{MaintenanceCustomPageTask{App: app}}, nil
+	}
+	if extraAssets {
+		log.Printf("warning: dokku maintenance custom page for %q has files beyond maintenance.html; only maintenance.html is captured in the export", app)
+	}
+	return []interface{}{MaintenanceCustomPageTask{App: app, Content: content}}, nil
+}
+
+// maintenanceCustomPageExport reads the app's current custom page back via
+// `dokku maintenance:custom-page-export <app>` (the inverse of
+// maintenance:custom-page), which streams the stored tar archive to stdout. It
+// returns the contents of the root-level maintenance.html and whether the archive
+// carried any additional files (which the single-content task shape cannot
+// represent, so they are dropped - see ExportSupport).
+func maintenanceCustomPageExport(app string) (content string, extraAssets bool, err error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "maintenance:custom-page-export", app},
+	})
+	if err != nil {
+		return "", false, err
+	}
+
+	// Read the raw stdout bytes, not StdoutBytes(), which trims whitespace and
+	// would corrupt a binary tar archive.
+	found := false
+	tr := tar.NewReader(bytes.NewReader([]byte(result.Stdout)))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", false, fmt.Errorf("read custom page tarball: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if strings.TrimPrefix(hdr.Name, "./") == "maintenance.html" {
+			b, err := io.ReadAll(tr)
+			if err != nil {
+				return "", false, fmt.Errorf("read maintenance.html: %w", err)
+			}
+			content = string(b)
+			found = true
+			continue
+		}
+		extraAssets = true
+	}
+	if !found {
+		return "", false, fmt.Errorf("custom page tarball has no maintenance.html")
+	}
+	return content, extraAssets, nil
 }
 
 // init registers the MaintenanceCustomPageTask with the task registry
