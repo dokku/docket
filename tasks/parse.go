@@ -1,0 +1,508 @@
+package tasks
+
+import (
+	"fmt"
+	"strings"
+
+	yaml "gopkg.in/yaml.v3"
+)
+
+// parse.go is the shared, position-carrying recipe parser used by both the
+// offline validator (tasks.Validate) and the runtime loader
+// (GetPlaysWithFormat). One structural walk over the yaml.v3 node tree
+// produces a parsedRecipe AST plus a list of Problems anchored to source
+// positions. The validator consumes every problem at once; the loader
+// converts the first problem into its fail-fast error via recipeParseError,
+// so both commands agree on what is structurally valid by construction.
+
+// parsedRecipe is the parsed form of one rendered recipe document.
+type parsedRecipe struct {
+	// Doc is the document body node (the top-level sequence of plays).
+	// nil when the document failed to parse or was empty.
+	Doc *yaml.Node
+
+	// Plays holds one entry per top-level play, in source order.
+	Plays []*parsedPlay
+
+	// Problems are document-level findings (yaml parse errors, recipe
+	// shape violations). Play- and entry-level findings live on the
+	// parsedPlay / parsedTaskEntry they anchor to.
+	Problems []Problem
+}
+
+// parsedPlay is the parsed form of one play mapping.
+type parsedPlay struct {
+	// Node is the play's mapping node; positions anchor here.
+	Node *yaml.Node
+
+	// Index is the play's 1-based position in the recipe.
+	Index int
+
+	// Label is the diagnostic label ("play #N"), matching the validator's
+	// historical labelling.
+	Label string
+
+	// Name is the play's scalar `name:` value, "" when absent.
+	Name string
+
+	// TasksNode is the play's `tasks:` sequence node, nil when absent.
+	TasksNode *yaml.Node
+
+	// Entries holds the parsed task entries, in source order.
+	Entries []*parsedTaskEntry
+
+	// Problems are play-level findings (non-mapping play, unexpected play
+	// keys, non-sequence tasks value).
+	Problems []Problem
+}
+
+// parsedTaskEntry is the parsed form of one task entry mapping, including
+// its typed envelope values and the partitioned task-type key. Group
+// entries (block / rescue / always) carry their children recursively.
+type parsedTaskEntry struct {
+	// Node is the entry's mapping node; positions anchor here.
+	Node *yaml.Node
+
+	// Index is the entry's 1-based position within its task list (or
+	// group clause).
+	Index int
+
+	// Label is the diagnostic label ("task #N" or `task #N "name"`).
+	Label string
+
+	// Name is the entry's `name:` value, "" when absent.
+	Name string
+
+	// NameNode is the value node of `name:`, nil when absent.
+	NameNode *yaml.Node
+
+	// Typed envelope values. Decoded during the walk; a wrong type is
+	// reported as a Problem and leaves the zero value here.
+	Tags         []string
+	When         string
+	Register     string
+	ChangedWhen  string
+	FailedWhen   string
+	IgnoreErrors bool
+
+	// LoopNode is the raw `loop:` value node (list literal or expr
+	// string); nil when absent. The loader decodes it at envelope-build
+	// time, the validator checks the scalar form compiles.
+	LoopNode *yaml.Node
+
+	// TypeKey / TypeNode / BodyNode identify the single registered
+	// task-type key and its body. All zero for group entries and for
+	// entries whose structure was rejected.
+	TypeKey  string
+	TypeNode *yaml.Node
+	BodyNode *yaml.Node
+
+	// Group clause nodes and their recursively parsed children.
+	IsGroup    bool
+	BlockNode  *yaml.Node
+	RescueNode *yaml.Node
+	AlwaysNode *yaml.Node
+	Block      []*parsedTaskEntry
+	Rescue     []*parsedTaskEntry
+	Always     []*parsedTaskEntry
+
+	// Problems are the structural findings anchored to this entry.
+	Problems []Problem
+
+	// Valid is false when a structural problem prevents the entry from
+	// being decoded further (body validation and envelope building skip
+	// invalid entries).
+	Valid bool
+}
+
+// normalizeRecipeBytes converts a recipe's on-disk surface syntax to YAML
+// bytes. JSON5 input is converted via json5ToYAMLBytes; YAML (and any
+// unknown format value) passes through unchanged. A conversion failure is
+// returned as a json5_parse problem.
+func normalizeRecipeBytes(data []byte, format string) ([]byte, []Problem) {
+	if !IsJSON5Format(format) {
+		return data, nil
+	}
+	converted, err := json5ToYAMLBytes(data)
+	if err != nil {
+		return nil, []Problem{{
+			Code:    "json5_parse",
+			Message: err.Error(),
+		}}
+	}
+	return converted, nil
+}
+
+// parseRecipe parses data (YAML bytes, already sigil-rendered and
+// format-normalized) into a parsedRecipe. Structural findings are
+// collected as Problems rather than returned as an error so the validator
+// can report all of them; the loader uses recipeParseError to fail fast on
+// the first one.
+func parseRecipe(data []byte) *parsedRecipe {
+	out := &parsedRecipe{}
+
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		line, col := parseYAMLErrorPosition(err.Error())
+		out.Problems = append(out.Problems, Problem{
+			Code:    "yaml_parse",
+			Line:    line,
+			Column:  col,
+			Message: err.Error(),
+		})
+		return out
+	}
+
+	doc := documentBody(&root)
+	if doc == nil {
+		out.Problems = append(out.Problems, Problem{
+			Code:    "recipe_shape",
+			Message: "no recipe found in tasks file",
+		})
+		return out
+	}
+	if doc.Kind != yaml.SequenceNode {
+		out.Problems = append(out.Problems, Problem{
+			Code:    "recipe_shape",
+			Line:    doc.Line,
+			Column:  doc.Column,
+			Message: "recipe must be a yaml list of plays",
+		})
+		return out
+	}
+	out.Doc = doc
+
+	for i, play := range doc.Content {
+		out.Plays = append(out.Plays, parsePlay(play, i+1))
+	}
+	return out
+}
+
+// parsePlay walks one play mapping into a parsedPlay.
+func parsePlay(play *yaml.Node, index int) *parsedPlay {
+	pp := &parsedPlay{
+		Node:  play,
+		Index: index,
+		Label: fmt.Sprintf("play #%d", index),
+	}
+
+	if play.Kind != yaml.MappingNode {
+		pp.Problems = append(pp.Problems, Problem{
+			Code:    "recipe_shape",
+			Play:    pp.Label,
+			Line:    play.Line,
+			Column:  play.Column,
+			Message: "play must be a yaml mapping with inputs and/or tasks",
+		})
+		return pp
+	}
+
+	pp.Name = scalarChild(play, "name")
+
+	for i := 0; i < len(play.Content); i += 2 {
+		key := play.Content[i].Value
+		if !allowedPlayKeys[key] {
+			pp.Problems = append(pp.Problems, Problem{
+				Code:    "recipe_shape",
+				Play:    pp.Label,
+				Line:    play.Content[i].Line,
+				Column:  play.Content[i].Column,
+				Message: fmt.Sprintf("unexpected play key %q (expected: %s)", key, allowedPlayKeysList),
+			})
+		}
+	}
+
+	tasksNode := mappingValue(play, "tasks")
+	if tasksNode == nil {
+		return pp
+	}
+	if tasksNode.Kind != yaml.SequenceNode {
+		pp.Problems = append(pp.Problems, Problem{
+			Code:    "recipe_shape",
+			Play:    pp.Label,
+			Line:    tasksNode.Line,
+			Column:  tasksNode.Column,
+			Message: "tasks must be a yaml list",
+		})
+		return pp
+	}
+	pp.TasksNode = tasksNode
+
+	for i, task := range tasksNode.Content {
+		pp.Entries = append(pp.Entries, parseTaskEntry(task, i+1, pp.Label))
+	}
+	return pp
+}
+
+// parseTaskEntry walks one task entry mapping into a parsedTaskEntry,
+// partitioning envelope keys from the task-type key, decoding typed
+// envelope values, and recursing into group clauses.
+func parseTaskEntry(task *yaml.Node, index int, playLabel string) *parsedTaskEntry {
+	e := &parsedTaskEntry{
+		Node:  task,
+		Index: index,
+		Label: fmt.Sprintf("task #%d", index),
+		Valid: true,
+	}
+
+	problem := func(code, message, hint string, node *yaml.Node) {
+		p := Problem{
+			Code:    code,
+			Play:    playLabel,
+			Task:    e.Label,
+			Message: message,
+			Hint:    hint,
+		}
+		if node != nil {
+			p.Line = node.Line
+			p.Column = node.Column
+		}
+		e.Problems = append(e.Problems, p)
+		e.Valid = false
+	}
+
+	if task.Kind != yaml.MappingNode {
+		problem("task_entry_shape", "task entry must be a yaml mapping", "", task)
+		return e
+	}
+
+	var (
+		taskTypeKeys []string
+		unknownKeys  []string
+		unknownNodes []*yaml.Node
+	)
+
+	for i := 0; i < len(task.Content); i += 2 {
+		keyNode := task.Content[i]
+		valueNode := task.Content[i+1]
+		key := keyNode.Value
+
+		switch key {
+		case "name":
+			e.NameNode = valueNode
+			if valueNode.Kind == yaml.ScalarNode {
+				e.Name = valueNode.Value
+			}
+		case "tags":
+			var raw interface{}
+			if err := valueNode.Decode(&raw); err != nil {
+				problem("envelope_key_type", fmt.Sprintf("tags decode error: %v", err), "", valueNode)
+				continue
+			}
+			tags, err := decodeTags(raw)
+			if err != nil {
+				problem("envelope_key_type", err.Error(), "", valueNode)
+				continue
+			}
+			e.Tags = tags
+		case "when":
+			s, ok, typeName := scalarString(valueNode)
+			if !ok {
+				problem("envelope_key_type", fmt.Sprintf("when must be a string expression, got %s", typeName), "", valueNode)
+				continue
+			}
+			e.When = s
+		case "register":
+			s, ok, typeName := scalarString(valueNode)
+			if !ok {
+				problem("envelope_key_type", fmt.Sprintf("register must be a string, got %s", typeName), "", valueNode)
+				continue
+			}
+			e.Register = s
+		case "changed_when":
+			s, ok, typeName := scalarString(valueNode)
+			if !ok {
+				problem("envelope_key_type", fmt.Sprintf("changed_when must be a string expression, got %s", typeName), "", valueNode)
+				continue
+			}
+			e.ChangedWhen = s
+		case "failed_when":
+			s, ok, typeName := scalarString(valueNode)
+			if !ok {
+				problem("envelope_key_type", fmt.Sprintf("failed_when must be a string expression, got %s", typeName), "", valueNode)
+				continue
+			}
+			e.FailedWhen = s
+		case "ignore_errors":
+			var b bool
+			if err := valueNode.Decode(&b); err != nil {
+				problem("envelope_key_type", fmt.Sprintf("ignore_errors must be a bool, got %s", scalarTypeName(valueNode)), "", valueNode)
+				continue
+			}
+			e.IgnoreErrors = b
+		case "loop":
+			e.LoopNode = valueNode
+		case "block":
+			e.BlockNode = valueNode
+			e.IsGroup = true
+		case "rescue":
+			e.RescueNode = valueNode
+		case "always":
+			e.AlwaysNode = valueNode
+		default:
+			if dependentIssue, reserved := reservedEnvelopeKeys[key]; reserved {
+				problem("envelope_key_unsupported",
+					fmt.Sprintf("envelope key %q is reserved but not yet supported", key),
+					fmt.Sprintf("activates with %s", dependentIssue), keyNode)
+				continue
+			}
+			if _, registered := RegisteredTasks[key]; registered {
+				taskTypeKeys = append(taskTypeKeys, key)
+				e.TypeKey = key
+				e.TypeNode = keyNode
+				e.BodyNode = valueNode
+				continue
+			}
+			unknownKeys = append(unknownKeys, key)
+			unknownNodes = append(unknownNodes, keyNode)
+		}
+	}
+
+	if e.Name != "" {
+		e.Label = fmt.Sprintf("task #%d %q", index, e.Name)
+		for i := range e.Problems {
+			e.Problems[i].Task = e.Label
+		}
+	}
+
+	if e.RescueNode != nil && e.BlockNode == nil {
+		problem("block_orphan_clause", "rescue: requires a block: in the same task entry", "", e.RescueNode)
+		return e
+	}
+	if e.AlwaysNode != nil && e.BlockNode == nil {
+		problem("block_orphan_clause", "always: requires a block: in the same task entry", "", e.AlwaysNode)
+		return e
+	}
+
+	if e.IsGroup {
+		if len(taskTypeKeys) > 0 {
+			problem("block_with_task_type",
+				fmt.Sprintf("block: group entry cannot also carry task-type key %q", taskTypeKeys[0]), "", e.TypeNode)
+		}
+		for i, key := range unknownKeys {
+			problem("unknown_key", unknownKeyMessage(key), unknownKeyHint(key), unknownNodes[i])
+		}
+		if e.BlockNode.Kind != yaml.SequenceNode {
+			problem("block_shape", "block: must be a yaml list of task entries", "", e.BlockNode)
+			return e
+		}
+		if len(e.BlockNode.Content) == 0 {
+			problem("block_empty", "block: must contain at least one child task", "", e.BlockNode)
+		}
+		e.TypeKey = ""
+		e.TypeNode = nil
+		e.BodyNode = nil
+		e.Block = parseGroupClause(e.BlockNode, playLabel)
+		e.Rescue = parseGroupClause(e.RescueNode, playLabel)
+		e.Always = parseGroupClause(e.AlwaysNode, playLabel)
+		return e
+	}
+
+	switch {
+	case len(taskTypeKeys) == 0 && len(unknownKeys) == 1:
+		problem("unknown_task_type",
+			fmt.Sprintf("unknown task type %q", unknownKeys[0]),
+			unknownKeyHint(unknownKeys[0]), unknownNodes[0])
+		return e
+	case len(unknownKeys) > 0:
+		for i, key := range unknownKeys {
+			problem("unknown_key", unknownKeyMessage(key), unknownKeyHint(key), unknownNodes[i])
+		}
+		return e
+	case len(taskTypeKeys) == 0:
+		problem("task_entry_shape", "task entry must contain exactly one task-type key", "", task)
+		return e
+	case len(taskTypeKeys) > 1:
+		problem("task_entry_shape",
+			fmt.Sprintf("task entry has %d task-type keys (%s); exactly one is allowed", len(taskTypeKeys), strings.Join(taskTypeKeys, ", ")), "", task)
+		e.TypeKey = ""
+		e.TypeNode = nil
+		e.BodyNode = nil
+		return e
+	}
+
+	return e
+}
+
+// parseGroupClause parses the children of a block / rescue / always
+// sequence node. A nil or non-sequence clause yields no children (the
+// group-level shape problems are reported by parseTaskEntry).
+func parseGroupClause(clause *yaml.Node, playLabel string) []*parsedTaskEntry {
+	if clause == nil || clause.Kind != yaml.SequenceNode {
+		return nil
+	}
+	out := make([]*parsedTaskEntry, 0, len(clause.Content))
+	for i, child := range clause.Content {
+		out = append(out, parseTaskEntry(child, i+1, playLabel))
+	}
+	return out
+}
+
+// scalarString decodes node into a string, reporting whether the value
+// really was a string plus a human-readable name of the actual type for
+// diagnostics. Matches the loader's historical `got %T` phrasing by
+// naming the Go type the value would decode to.
+func scalarString(node *yaml.Node) (string, bool, string) {
+	var raw interface{}
+	if err := node.Decode(&raw); err != nil {
+		return "", false, scalarTypeName(node)
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return "", false, fmt.Sprintf("%T", raw)
+	}
+	return s, true, "string"
+}
+
+// scalarTypeName renders a best-effort Go-style type name for a node used
+// in envelope-type diagnostics when the value cannot be decoded.
+func scalarTypeName(node *yaml.Node) string {
+	var raw interface{}
+	if err := node.Decode(&raw); err != nil {
+		return node.Tag
+	}
+	return fmt.Sprintf("%T", raw)
+}
+
+// unknownKeyMessage renders the diagnostic for a key that is neither an
+// envelope key nor a registered task type, on an entry that already has
+// (or lacks) a task-type key. The allowlist text mirrors the loader's
+// historical message.
+func unknownKeyMessage(key string) string {
+	return fmt.Sprintf("unknown envelope key %q (allowed: %s, or any registered task type)", key, strings.Join(envelopeAllowlistKeys, ", "))
+}
+
+// unknownKeyHint returns a did-you-mean hint for an unknown key, searching
+// both the envelope allowlist and the registered task names.
+func unknownKeyHint(key string) string {
+	if suggestion := nearestEnvelopeOrTaskKey(key); suggestion != "" {
+		return fmt.Sprintf("did you mean %q?", suggestion)
+	}
+	return ""
+}
+
+// allProblems flattens every problem in the parse result: document-level
+// first, then per play in source order (play problems, then each entry's
+// problems including group children, depth-first).
+func (r *parsedRecipe) allProblems() []Problem {
+	out := append([]Problem(nil), r.Problems...)
+	for _, play := range r.Plays {
+		out = append(out, play.Problems...)
+		for _, entry := range play.Entries {
+			out = append(out, entryProblems(entry)...)
+		}
+	}
+	return out
+}
+
+// entryProblems returns the entry's own problems followed by its group
+// children's, depth-first.
+func entryProblems(e *parsedTaskEntry) []Problem {
+	out := append([]Problem(nil), e.Problems...)
+	for _, group := range [][]*parsedTaskEntry{e.Block, e.Rescue, e.Always} {
+		for _, child := range group {
+			out = append(out, entryProblems(child)...)
+		}
+	}
+	return out
+}
