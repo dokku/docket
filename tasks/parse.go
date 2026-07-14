@@ -247,7 +247,7 @@ func parseTaskEntry(task *yaml.Node, index int, playLabel string) *parsedTaskEnt
 		Valid: true,
 	}
 
-	problem := func(code, message, hint string, node *yaml.Node) {
+	addProblem := func(code, message, hint string, node *yaml.Node) {
 		p := Problem{
 			Code:    code,
 			Play:    playLabel,
@@ -260,6 +260,12 @@ func parseTaskEntry(task *yaml.Node, index int, playLabel string) *parsedTaskEnt
 			p.Column = node.Column
 		}
 		e.Problems = append(e.Problems, p)
+	}
+	// problem records a structural finding and marks the entry invalid so
+	// downstream body validation / envelope building skips it. Envelope-key
+	// type errors that do not block body decoding use addProblem instead.
+	problem := func(code, message, hint string, node *yaml.Node) {
+		addProblem(code, message, hint, node)
 		e.Valid = false
 	}
 
@@ -282,8 +288,18 @@ func parseTaskEntry(task *yaml.Node, index int, playLabel string) *parsedTaskEnt
 		switch key {
 		case "name":
 			e.NameNode = valueNode
-			if valueNode.Kind == yaml.ScalarNode {
+			switch {
+			case valueNode.Kind == yaml.ScalarNode && valueNode.Tag == "!!null":
+				// A bare `name:` (null value) means "no name" - the
+				// loader auto-generates one, matching an omitted key.
+			case valueNode.Kind == yaml.ScalarNode && valueNode.Tag == "!!str":
 				e.Name = valueNode.Value
+			default:
+				// A non-string name (e.g. `name: 123`) used to be silently
+				// dropped and replaced with a random auto-name; reject it
+				// with a typed error like when:/register: (#342).
+				addProblem("envelope_key_type",
+					fmt.Sprintf("name must be a string, got %s", scalarTypeName(valueNode)), "", valueNode)
 			}
 		case "tags":
 			var raw interface{}

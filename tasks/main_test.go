@@ -381,6 +381,25 @@ func TestGetTasksRejectsNullTaskBodyUnderLoop(t *testing.T) {
 	}
 }
 
+func TestGetTasksRejectsNonStringName(t *testing.T) {
+	// A non-string name (`name: 123`) used to be silently dropped and a
+	// random auto-name used; it now returns a typed parse error like the
+	// other envelope keys (#342).
+	data := []byte(`---
+- tasks:
+    - name: 123
+      dokku_app:
+        app: x
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for non-string name, got nil")
+	}
+	if !strings.Contains(err.Error(), "name must be a string") {
+		t.Errorf("expected name-type error, got: %v", err)
+	}
+}
+
 func TestGetTasksAllowsEmptyMappingBody(t *testing.T) {
 	// An empty mapping `{}` is not a null body: it decodes to a zero
 	// struct so a missing required field surfaces at apply, not a parse

@@ -152,6 +152,25 @@ func TestValidateRejectsNullTaskBody(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsNonStringName(t *testing.T) {
+	// validate agrees with the loader that a non-string name is an error
+	// rather than treating `name: 123` as the string "123" (#342).
+	data := []byte(`---
+- tasks:
+    - name: 123
+      dokku_app:
+        app: x
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "envelope_key_type")
+	if p == nil {
+		t.Fatalf("expected envelope_key_type problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "name must be a string") {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+}
+
 func TestValidateMissingRequiredField(t *testing.T) {
 	data := []byte(`---
 - tasks:

@@ -99,6 +99,19 @@ EOF
   assert_output --partial "body must not be empty"
 }
 
+@test "docket validate exits 1 on a non-string task name" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: 123
+      dokku_app:
+        app: x
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "name must be a string"
+}
+
 @test "docket validate exits 1 on broken sigil template" {
   write_tasks_file <<EOF
 ---
