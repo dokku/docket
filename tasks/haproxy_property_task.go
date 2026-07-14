@@ -104,6 +104,13 @@ func (t HaproxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t HaproxyPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("haproxy:set", haproxyPropertyKeys, func(property, value string) interface{} {
+		return HaproxyPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the HaproxyPropertyTask with the task registry
 func init() {
 	RegisterTask(&HaproxyPropertyTask{})

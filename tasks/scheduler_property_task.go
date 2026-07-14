@@ -100,6 +100,13 @@ func (t SchedulerPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t SchedulerPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("scheduler:set", schedulerPropertyKeys, func(property, value string) interface{} {
+		return SchedulerPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the SchedulerPropertyTask with the task registry
 func init() {
 	RegisterTask(&SchedulerPropertyTask{})

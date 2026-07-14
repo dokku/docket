@@ -106,6 +106,13 @@ func (t PsPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t PsPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("ps:set", psPropertyKeys, func(property, value string) interface{} {
+		return PsPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the PsPropertyTask with the task registry
 func init() {
 	RegisterTask(&PsPropertyTask{})

@@ -105,6 +105,13 @@ func (t CaddyPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t CaddyPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("caddy:set", caddyPropertyKeys, func(property, value string) interface{} {
+		return CaddyPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the CaddyPropertyTask with the task registry
 func init() {
 	RegisterTask(&CaddyPropertyTask{})

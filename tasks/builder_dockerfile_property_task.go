@@ -100,6 +100,13 @@ func (t BuilderDockerfilePropertyTask) ExportApp(app string) ([]interface{}, err
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t BuilderDockerfilePropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("builder-dockerfile:set", builderDockerfilePropertyKeys, func(property, value string) interface{} {
+		return BuilderDockerfilePropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderDockerfilePropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderDockerfilePropertyTask{})

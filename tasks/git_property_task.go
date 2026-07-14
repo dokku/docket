@@ -114,6 +114,13 @@ func (t GitPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t GitPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("git:set", gitPropertyKeys, func(property, value string) interface{} {
+		return GitPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the GitPropertyTask with the task registry
 func init() {
 	RegisterTask(&GitPropertyTask{})

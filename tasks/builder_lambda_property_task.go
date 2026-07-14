@@ -100,6 +100,13 @@ func (t BuilderLambdaPropertyTask) ExportApp(app string) ([]interface{}, error) 
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t BuilderLambdaPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("builder-lambda:set", builderLambdaPropertyKeys, func(property, value string) interface{} {
+		return BuilderLambdaPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderLambdaPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderLambdaPropertyTask{})

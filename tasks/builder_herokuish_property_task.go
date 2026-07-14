@@ -100,6 +100,13 @@ func (t BuilderHerokuishPropertyTask) ExportApp(app string) ([]interface{}, erro
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t BuilderHerokuishPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("builder-herokuish:set", builderHerokuishPropertyKeys, func(property, value string) interface{} {
+		return BuilderHerokuishPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderHerokuishPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderHerokuishPropertyTask{})

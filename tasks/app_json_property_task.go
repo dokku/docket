@@ -99,6 +99,13 @@ func (t AppJsonPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t AppJsonPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("app-json:set", appJsonPropertyKeys, func(property, value string) interface{} {
+		return AppJsonPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the AppJsonPropertyTask with the task registry
 func init() {
 	RegisterTask(&AppJsonPropertyTask{})

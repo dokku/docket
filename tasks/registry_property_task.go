@@ -112,6 +112,13 @@ func (t RegistryPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t RegistryPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("registry:set", registryPropertyKeys, func(property, value string) interface{} {
+		return RegistryPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the RegistryPropertyTask with the task registry
 func init() {
 	RegisterTask(&RegistryPropertyTask{})

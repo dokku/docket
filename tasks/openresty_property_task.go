@@ -141,6 +141,13 @@ func (t OpenrestyPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t OpenrestyPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("openresty:set", openrestyPropertyKeys, func(property, value string) interface{} {
+		return OpenrestyPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the OpenrestyPropertyTask with the task registry
 func init() {
 	RegisterTask(&OpenrestyPropertyTask{})

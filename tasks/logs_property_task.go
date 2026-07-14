@@ -104,6 +104,13 @@ func (t LogsPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t LogsPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("logs:set", logsPropertyKeys, func(property, value string) interface{} {
+		return LogsPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the LogsPropertyTask with the task registry
 func init() {
 	RegisterTask(&LogsPropertyTask{})

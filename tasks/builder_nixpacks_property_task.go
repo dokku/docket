@@ -100,6 +100,13 @@ func (t BuilderNixpacksPropertyTask) ExportApp(app string) ([]interface{}, error
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t BuilderNixpacksPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("builder-nixpacks:set", builderNixpacksPropertyKeys, func(property, value string) interface{} {
+		return BuilderNixpacksPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the BuilderNixpacksPropertyTask with the task registry
 func init() {
 	RegisterTask(&BuilderNixpacksPropertyTask{})

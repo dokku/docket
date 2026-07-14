@@ -115,6 +115,13 @@ func (t TraefikPropertyTask) ExportApp(app string) ([]interface{}, error) {
 	})
 }
 
+// ExportGlobal reconstructs the globally-set properties.
+func (t TraefikPropertyTask) ExportGlobal() ([]interface{}, error) {
+	return exportGlobalProperties("traefik:set", traefikPropertyKeys, func(property, value string) interface{} {
+		return TraefikPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
 // init registers the TraefikPropertyTask with the task registry
 func init() {
 	RegisterTask(&TraefikPropertyTask{})

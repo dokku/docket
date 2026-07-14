@@ -566,6 +566,104 @@ func TestExportMissingAppsRecorded(t *testing.T) {
 	}
 }
 
+func TestExportGlobalPropertiesReadsGlobalScope(t *testing.T) {
+	// #327: exportGlobalProperties reads the --global report and emits the global
+	// form of each set property (both global-only and dual-scope keys), skipping
+	// empty values and per-app-only keys.
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet git:report --global --format json": `{"global-deploy-branch":"main","global-archive-max-files":"100","global-keep-git-dir":""}`,
+	}))()
+
+	bodies, err := exportGlobalProperties("git:set", gitPropertyKeys, func(property, value string) interface{} {
+		return GitPropertyTask{Global: true, Property: property, Value: value}
+	})
+	if err != nil {
+		t.Fatalf("exportGlobalProperties: %v", err)
+	}
+	got := map[string]string{}
+	for _, b := range bodies {
+		p := b.(GitPropertyTask)
+		if !p.Global {
+			t.Errorf("expected Global:true for %q", p.Property)
+		}
+		got[p.Property] = p.Value
+	}
+	if got["deploy-branch"] != "main" {
+		t.Errorf("deploy-branch = %q, want main", got["deploy-branch"])
+	}
+	if got["archive-max-files"] != "100" {
+		t.Errorf("archive-max-files = %q, want 100", got["archive-max-files"])
+	}
+	if _, ok := got["keep-git-dir"]; ok {
+		t.Errorf("keep-git-dir has an empty value and must be skipped")
+	}
+}
+
+func TestExportGlobalK3sTokenLiftedAsSensitiveInput(t *testing.T) {
+	// #327: the scheduler-k3s global token is core bootstrap state and must be
+	// exported - but as a secret, lifted into a sensitive input, never inline.
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet scheduler-k3s:report --global --format json": `{"global-token":"s3cr3ttoken","global-ingress-class":"nginx-ingress"}`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if got := res.Vars["global_token"]; got != "s3cr3ttoken" {
+		t.Errorf("vars[global_token] = %q, want the token lifted", got)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if strings.Contains(out, "s3cr3ttoken") {
+		t.Errorf("recipe leaked the k3s cluster token:\n%s", out)
+	}
+	for _, want := range []string{
+		"dokku_scheduler_k3s_property",
+		"global: true",
+		"{{ .global_token }}",
+		"name: global_token",
+		"sensitive: true",
+		"nginx-ingress", // a non-sensitive global stays inline
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestExportGlobalTraefikPasswordLiftedAsSensitiveInput(t *testing.T) {
+	// #327: the traefik global basic-auth password is also a secret and must be
+	// lifted rather than emitted in cleartext.
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet traefik:report --global --format json": `{"global-basic-auth-password":"hunter2"}`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if got := res.Vars["global_basic_auth_password"]; got != "hunter2" {
+		t.Errorf("vars[global_basic_auth_password] = %q, want the password lifted", got)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("recipe leaked the traefik basic-auth password:\n%s", out)
+	}
+	for _, want := range []string{
+		"dokku_traefik_property",
+		"{{ .global_basic_auth_password }}",
+		"sensitive: true",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet apps:list": "",
