@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 
 	_ "github.com/gliderlabs/sigil/builtin"
@@ -23,6 +24,53 @@ func TestPortsTaskEmptyPortMappings(t *testing.T) {
 	result := task.Execute()
 	if result.Error == nil {
 		t.Fatal("Execute with empty port mappings should return an error")
+	}
+}
+
+func TestPortsTaskValidatePerItem(t *testing.T) {
+	tests := []struct {
+		name    string
+		task    PortsTask
+		wantErr string
+	}{
+		{
+			name: "valid mapping",
+			task: PortsTask{App: "web", PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}}},
+		},
+		{
+			name:    "missing scheme is rejected",
+			task:    PortsTask{App: "web", PortMappings: []PortMapping{{Host: 80, Container: 5000}}},
+			wantErr: "'scheme' is required for port_mappings[0]",
+		},
+		{
+			name:    "missing host is rejected",
+			task:    PortsTask{App: "web", PortMappings: []PortMapping{{Scheme: "http", Container: 5000}}},
+			wantErr: "'host' must be a port",
+		},
+		{
+			name:    "missing container is rejected",
+			task:    PortsTask{App: "web", PortMappings: []PortMapping{{Scheme: "http", Host: 80}}},
+			wantErr: "'container' must be a port",
+		},
+		{
+			name:    "missing app is rejected",
+			task:    PortsTask{PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}}},
+			wantErr: "'app' is required",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.task.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error %q, got: %v", tt.wantErr, err)
+			}
+		})
 	}
 }
 

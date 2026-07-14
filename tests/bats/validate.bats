@@ -43,6 +43,21 @@ EOF
   assert_output --partial 'missing required field "app"'
 }
 
+@test "docket validate exits 1 on a port mapping missing its scheme" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ports:
+        app: web
+        port_mappings:
+          - host: 80
+            container: 5000
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'scheme' is required"
+}
+
 @test "docket validate exits 1 on git_from_image email without username" {
   write_tasks_file <<EOF
 ---
