@@ -14,6 +14,9 @@ docket has seven commands. Running `docket` with no subcommand prints the list:
 
 `apply`, `plan`, `validate`, and `fmt` all accept either YAML or JSON5 recipes. When `--tasks` is
 omitted they probe `tasks.yml`, then `tasks.yaml`, then `tasks.json`, and use the first that exists.
+`apply`, `plan`, and `validate` also accept the recipe as a single positional argument (for example
+`docket validate staging/tasks.yml`); passing both a positional path and `--tasks`, or more than one
+positional path, is an error.
 
 ## docket init
 

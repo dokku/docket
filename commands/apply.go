@@ -139,7 +139,12 @@ func (c *ApplyCommand) Run(args []string) int {
 
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
 
-	resolvedPath, resolvedFormat, err := resolveTaskFilePath(c.tasksFile)
+	taskFile, err := resolveTaskFileArg(c.tasksFile, flags.Args())
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+	resolvedPath, resolvedFormat, err := resolveTaskFilePath(taskFile)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1

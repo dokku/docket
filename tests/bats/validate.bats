@@ -233,6 +233,56 @@ EOF
   assert_output --partial '"version":1'
 }
 
+@test "docket validate checks a positional file argument" {
+  mkdir -p "$BATS_TEST_TMPDIR/staging"
+  cat >"$BATS_TEST_TMPDIR/staging/tasks.yml" <<EOF
+---
+- tasks:
+    - dokku_appp:
+        app: broken
+EOF
+  # A valid default tasks.yml in the cwd must not mask the broken
+  # positional file (the bug: the positional was ignored, #331).
+  cat >"$BATS_TEST_TMPDIR/tasks.yml" <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: ok
+EOF
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" validate staging/tasks.yml
+  assert_failure
+  assert_output --partial "staging/tasks.yml"
+  assert_output --partial "unknown task type"
+}
+
+@test "docket validate rejects both --tasks and a positional file" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: ok
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "cannot specify both --tasks and a positional"
+}
+
+@test "docket apply --list-tasks honors a positional file argument" {
+  mkdir -p "$BATS_TEST_TMPDIR/staging"
+  cat >"$BATS_TEST_TMPDIR/staging/tasks.yml" <<EOF
+---
+- tasks:
+    - name: staging-only
+      dokku_app:
+        app: api
+EOF
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" apply --list-tasks staging/tasks.yml
+  assert_success
+  assert_output --partial "staging-only"
+}
+
 @test "docket validate --strict flags required input without default" {
   write_tasks_file <<EOF
 ---
