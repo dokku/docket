@@ -423,7 +423,29 @@ func parseTaskEntry(task *yaml.Node, index int, playLabel string) *parsedTaskEnt
 		return e
 	}
 
+	// A task-type key with a null body (`dokku_app:` with nothing after
+	// it) leaves the value node as a !!null scalar. The old loader
+	// allocated a nil struct pointer here and panicked in SetDefaults;
+	// the old validator decoded it to a zero struct and reported confusing
+	// missing_required_field noise. Reject the empty body directly so both
+	// paths agree on a single, clear diagnostic.
+	if isNullNode(e.BodyNode) {
+		problem("empty_task_body", fmt.Sprintf("%s body must not be empty", e.TypeKey), "", e.TypeNode)
+		e.TypeKey = ""
+		e.TypeNode = nil
+		e.BodyNode = nil
+		return e
+	}
+
 	return e
+}
+
+// isNullNode reports whether node is absent or an explicit/implicit YAML
+// null scalar. An empty mapping (`{}`) is not null, so a task with an
+// intentionally empty body still decodes and surfaces its missing
+// required fields as usual.
+func isNullNode(node *yaml.Node) bool {
+	return node == nil || (node.Kind == yaml.ScalarNode && node.Tag == "!!null")
 }
 
 // parseGroupClause parses the children of a block / rescue / always

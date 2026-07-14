@@ -127,6 +127,31 @@ func TestValidateUnknownTaskTypeNoSuggestion(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsNullTaskBody(t *testing.T) {
+	// A task-type key with a null body is reported as a single
+	// empty_task_body problem rather than the missing_required_field
+	// noise the old zero-struct decode produced (#306).
+	data := []byte(`---
+- tasks:
+    - name: x
+      dokku_app:
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "empty_task_body")
+	if p == nil {
+		t.Fatalf("expected empty_task_body problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "dokku_app body must not be empty") {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+	if p.Line == 0 {
+		t.Errorf("expected non-zero line, got: %d", p.Line)
+	}
+	if n := countProblems(problems, "missing_required_field"); n != 0 {
+		t.Errorf("null body should not also report missing_required_field, got %d", n)
+	}
+}
+
 func TestValidateMissingRequiredField(t *testing.T) {
 	data := []byte(`---
 - tasks:

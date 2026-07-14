@@ -345,6 +345,56 @@ func TestGetTasksTwoPropertiesNoName(t *testing.T) {
 	}
 }
 
+func TestGetTasksRejectsNullTaskBody(t *testing.T) {
+	// A task-type key with no body (`dokku_app:` and nothing after it)
+	// used to panic in defaults.SetDefaults on the loader path; it now
+	// returns a clean parse error (#306).
+	data := []byte(`---
+- tasks:
+    - name: x
+      dokku_app:
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for null task body, got nil")
+	}
+	if !strings.Contains(err.Error(), "dokku_app body must not be empty") {
+		t.Errorf("expected empty-body error, got: %v", err)
+	}
+}
+
+func TestGetTasksRejectsNullTaskBodyUnderLoop(t *testing.T) {
+	// The loop path shares the same decode helper, so a null body under a
+	// loop is rejected the same way instead of panicking per iteration.
+	data := []byte(`---
+- tasks:
+    - name: x
+      loop: [a, b]
+      dokku_app:
+`)
+	_, err := GetTasks(data, map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected error for null task body under loop, got nil")
+	}
+	if !strings.Contains(err.Error(), "dokku_app body must not be empty") {
+		t.Errorf("expected empty-body error, got: %v", err)
+	}
+}
+
+func TestGetTasksAllowsEmptyMappingBody(t *testing.T) {
+	// An empty mapping `{}` is not a null body: it decodes to a zero
+	// struct so a missing required field surfaces at apply, not a parse
+	// error. The loader accepts it (validate reports the missing field).
+	data := []byte(`---
+- tasks:
+    - name: x
+      dokku_app: {}
+`)
+	if _, err := GetTasks(data, map[string]interface{}{}); err != nil {
+		t.Fatalf("empty mapping body should parse, got: %v", err)
+	}
+}
+
 func TestGetTasksFromRealExample(t *testing.T) {
 	data := []byte(`---
 - inputs:

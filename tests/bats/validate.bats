@@ -87,6 +87,18 @@ EOF
   assert_output --partial '"code":"invalid_task_input"'
 }
 
+@test "docket validate exits 1 on a null task body" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: x
+      dokku_app:
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "body must not be empty"
+}
+
 @test "docket validate exits 1 on broken sigil template" {
   write_tasks_file <<EOF
 ---
