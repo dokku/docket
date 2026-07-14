@@ -322,6 +322,24 @@ func exportCert(t CertsTask) ([]interface{}, error) {
 		return nil, nil
 	}
 
+	// A letsencrypt-managed app reports ssl-enabled too, but its certificate is
+	// ephemeral (~90 days) and re-issued on the new host by the dokku_letsencrypt
+	// task. Pinning the current PEM would embed a stale private key and
+	// double-manage the same certificate, so skip the certs export for it (#337).
+	// A missing dokku-letsencrypt plugin (a non-SSH probe error) means the cert is
+	// not letsencrypt-managed, so fall through and export it as a manual cert.
+	if !t.Global {
+		active, lerr := letsencryptActive(t.App)
+		if lerr != nil {
+			var sshErr *subprocess.SSHError
+			if errors.As(lerr, &sshErr) {
+				return nil, lerr
+			}
+		} else if active {
+			return nil, nil
+		}
+	}
+
 	crt, err := certsShow(t, "crt")
 	if err != nil {
 		return nil, err

@@ -168,6 +168,73 @@ func TestExportOutputValidates(t *testing.T) {
 	}
 }
 
+func TestExportCommandSummaryExcludesGlobalPlay(t *testing.T) {
+	// #345: one app plus a global play must report "(1 app)", not "(2 apps)".
+	responses := exportCommandFixture()
+	responses["--quiet plugin:list --format json"] = `[{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"c0ffee","branch":"master"}]`
+	defer subprocess.SetExecRunner(fakeExecRunner(responses))()
+
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "tasks.yml")
+
+	c, ui := newExportCommand()
+	if code := c.Run([]string{"--output", recipe}); code != 0 {
+		t.Fatalf("Run exit = %d, want 0", code)
+	}
+	out := ui.OutputWriter.String()
+	if !strings.Contains(out, "(1 app)") {
+		t.Errorf("summary should report 1 app, got:\n%s", out)
+	}
+	if strings.Contains(out, "(2 apps)") {
+		t.Errorf("summary must not count the global play as an app:\n%s", out)
+	}
+}
+
+func TestExportCommandNonexistentAppExitsNonZero(t *testing.T) {
+	// #346: a --app typo must not write an empty recipe and exit 0.
+	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "tasks.yml")
+
+	c, ui := newExportCommand()
+	code := c.Run([]string{"--app", "nope", "--output", recipe})
+	if code != 1 {
+		t.Fatalf("Run exit = %d, want 1", code)
+	}
+	if _, err := os.Stat(recipe); !os.IsNotExist(err) {
+		t.Errorf("no recipe file should be written for a nonexistent app")
+	}
+	if !strings.Contains(ui.ErrorWriter.String(), "nope") {
+		t.Errorf("error output should name the missing app:\n%s", ui.ErrorWriter.String())
+	}
+}
+
+func TestExportCommandPartialMissingAppStillWrites(t *testing.T) {
+	// #346: existing apps are still exported, but a missing one forces a non-zero
+	// exit so the typo is surfaced.
+	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "tasks.yml")
+
+	c, ui := newExportCommand()
+	code := c.Run([]string{"--app", "web", "--app", "nope", "--output", recipe})
+	if code != 1 {
+		t.Fatalf("Run exit = %d, want 1", code)
+	}
+	body, err := os.ReadFile(recipe)
+	if err != nil {
+		t.Fatalf("web should still be exported: %v", err)
+	}
+	if !strings.Contains(string(body), "web") {
+		t.Errorf("recipe should contain the exported app web:\n%s", body)
+	}
+	if !strings.Contains(ui.ErrorWriter.String(), "nope") {
+		t.Errorf("error output should name the missing app:\n%s", ui.ErrorWriter.String())
+	}
+}
+
 func TestExportCommandDeriveVarsOutput(t *testing.T) {
 	cases := map[string]string{
 		"tasks.yml":        "tasks.vars.yml",

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log"
 	"reflect"
@@ -111,6 +112,60 @@ func TestSecretPropertiesAreMarkedSensitive(t *testing.T) {
 	}
 	if !schedulerK3sPropertyKeys["token"].Sensitive {
 		t.Error("scheduler-k3s token must be marked Sensitive")
+	}
+}
+
+func TestReadPropertyReportUnparseableReportErrors(t *testing.T) {
+	// #329: the exec succeeds (plugin responded) but the payload is not clean
+	// JSON - e.g. a deprecation line before the JSON. This is "installed but
+	// unreadable" and must surface an error (which export turns into a warning),
+	// not be silently dropped.
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet nginx:report web --format json": "Deprecated: use something else\n{\"x\":\"y\"}",
+	}))()
+
+	if _, err := readPropertyReport("nginx", "web", false); err == nil {
+		t.Error("expected an error for an installed-but-unreadable report")
+	}
+}
+
+func TestReadPropertyReportNotInstalledIsQuietSkip(t *testing.T) {
+	// #329: when the report exec fails and the plugin is not installed, the skip
+	// is quiet (nil, nil) - no warning.
+	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		switch strings.Join(in.Args, " ") {
+		case "--quiet plugin:list":
+			return subprocess.ExecCommandResponse{Stdout: "nginx 1.0.0 enabled nginx"}, nil
+		case "--quiet caddy:report web --format json":
+			return subprocess.ExecCommandResponse{}, errors.New("caddy:report: command not found")
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	})()
+
+	payload, err := readPropertyReport("caddy", "web", false)
+	if err != nil {
+		t.Errorf("a not-installed plugin should be a quiet skip, got error: %v", err)
+	}
+	if payload != nil {
+		t.Errorf("expected nil payload for a quiet skip, got %v", payload)
+	}
+}
+
+func TestReadPropertyReportInstalledExecFailureErrors(t *testing.T) {
+	// #329: when the report exec fails but the plugin IS installed, the failure
+	// must surface an error rather than a silent drop.
+	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		switch strings.Join(in.Args, " ") {
+		case "--quiet plugin:list":
+			return subprocess.ExecCommandResponse{Stdout: "nginx 1.0.0 enabled nginx"}, nil
+		case "--quiet nginx:report web --format json":
+			return subprocess.ExecCommandResponse{}, errors.New("boom")
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	})()
+
+	if _, err := readPropertyReport("nginx", "web", false); err == nil {
+		t.Error("expected an error when an installed plugin's report fails")
 	}
 }
 

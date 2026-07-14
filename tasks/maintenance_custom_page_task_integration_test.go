@@ -217,9 +217,10 @@ func TestIntegrationExportMaintenanceCustomPageRoundTrip(t *testing.T) {
 		t.Fatalf("failed to set custom page: %v", result.Error)
 	}
 
-	// Export reconstructs the task from the reported checksum. The content is
-	// not readable, so the exported body carries an empty Content; the engine is
-	// what lifts it into a required input.
+	// Export reconstructs the task from the reported checksum and reads the page
+	// back via maintenance:custom-page-export, so the exported body carries the
+	// real Content. An older dokku-maintenance without the export command would
+	// instead carry an empty Content for the engine to lift into an input.
 	bodies, err := (MaintenanceCustomPageTask{}).ExportApp(appName)
 	if err != nil {
 		t.Fatalf("ExportApp failed: %v", err)
@@ -234,13 +235,15 @@ func TestIntegrationExportMaintenanceCustomPageRoundTrip(t *testing.T) {
 	if got.App != appName {
 		t.Errorf("exported App = %q, want %q", got.App, appName)
 	}
-	if got.Content != "" {
-		t.Errorf("exported Content = %q, want empty (content is not readable)", got.Content)
+	if got.Content != "" && got.Content != content {
+		t.Errorf("exported Content = %q, want %q", got.Content, content)
 	}
 
-	// export -> apply idempotency: once the user supplies the same HTML the
-	// input would carry, re-planning reports no drift.
-	got.Content = content
+	// export -> apply idempotency: with the content captured (or, on an older
+	// plugin, supplied by the user), re-planning reports no drift.
+	if got.Content == "" {
+		got.Content = content
+	}
 	got.State = StatePresent
 	plan := got.Plan()
 	if plan.Error != nil {

@@ -110,20 +110,11 @@ func getProperty(subcommand, app string, global bool, property string, keys map[
 // keys.
 func exportProperties(app, subcommand string, keys map[string]PropertyKeys, factory func(app, property, value string) interface{}) ([]interface{}, error) {
 	plugin := pluginFromSubcommand(subcommand)
-	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    getPropertyArgs(plugin, app, false),
-	})
+	payload, err := readPropertyReport(plugin, app, false)
 	if err != nil {
-		var sshErr *subprocess.SSHError
-		if errors.As(err, &sshErr) {
-			return nil, err
-		}
-		return nil, nil
+		return nil, err
 	}
-
-	payload := map[string]string{}
-	if err := json.Unmarshal(response.StdoutBytes(), &payload); err != nil {
+	if payload == nil {
 		return nil, nil
 	}
 
@@ -146,6 +137,38 @@ func exportProperties(app, subcommand string, keys map[string]PropertyKeys, fact
 		out = append(out, factory(app, prop, value))
 	}
 	return out, nil
+}
+
+// readPropertyReport runs `dokku <plugin>:report [<app>|--global] --format json`
+// and returns the decoded payload, distinguishing a plugin that is not installed
+// (returns nil, nil - a quiet skip) from one that is installed but whose report
+// cannot be read (returns an error the export surfaces as a warning). An SSH
+// transport failure always propagates. Any other exec failure is a quiet skip
+// only when the plugin is not installed; when it is installed, the failure is an
+// error. A JSON parse failure is always an error, since the exec succeeded so the
+// plugin responded with something unparseable (for example a deprecation line
+// printed before the JSON payload) rather than being absent (#329).
+func readPropertyReport(plugin, app string, global bool) (map[string]string, error) {
+	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    getPropertyArgs(plugin, app, global),
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return nil, err
+		}
+		if installed, ierr := pluginInstalled(plugin); ierr != nil || !installed {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("dokku %s:report failed: %w", plugin, err)
+	}
+
+	payload := map[string]string{}
+	if err := json.Unmarshal(response.StdoutBytes(), &payload); err != nil {
+		return nil, fmt.Errorf("parse %s:report json: %w", plugin, err)
+	}
+	return payload, nil
 }
 
 // getPropertyArgs builds the `dokku <plugin>:report ... --format json` arg list.

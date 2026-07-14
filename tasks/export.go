@@ -147,6 +147,11 @@ type ExportOptions struct {
 // ExportReport carries non-fatal diagnostics from an export run.
 type ExportReport struct {
 	Warnings []string
+
+	// MissingApps lists app names passed via --app that do not exist on the
+	// server. The export still proceeds for the apps that do exist; the command
+	// surfaces these and exits non-zero so a typo is not silently dropped (#346).
+	MissingApps []string
 }
 
 // ExportResult is the outcome of ExportRecipe: the assembled recipe (as a list
@@ -181,6 +186,7 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	res.Report.MissingApps = missingApps(apps, opts.Apps)
 	apps = filterApps(apps, opts.Apps)
 	sort.Strings(apps)
 
@@ -306,6 +312,7 @@ func (res *ExportResult) processSensitiveScalars(app string, body interface{}, o
 	out.Set(rv)
 
 	var inputs []map[string]interface{}
+	changed := false
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
 		if field.Tag.Get("sensitive") != "true" || field.Type.Kind() != reflect.String {
@@ -317,13 +324,19 @@ func (res *ExportResult) processSensitiveScalars(app string, body interface{}, o
 			continue
 		}
 		if opts.Inline {
+			// Inline mode keeps the value in the body, so there is no input to
+			// declare; under --redact the value is blanked in place. The blank
+			// is written to the copy, so the copy must be returned (returning
+			// the original body would leak the value; see #311).
 			if opts.Redact {
 				fv.SetString("")
+				changed = true
 			}
 			continue
 		}
 		name := res.uniqueVarName(app, yamlFieldName(field))
 		fv.SetString("{{ ." + name + " }}")
+		changed = true
 		if opts.Redact {
 			res.Vars[name] = ""
 		} else {
@@ -335,7 +348,7 @@ func (res *ExportResult) processSensitiveScalars(app string, body interface{}, o
 			"sensitive": true,
 		})
 	}
-	if len(inputs) == 0 {
+	if !changed {
 		return body, nil
 	}
 	return out.Interface(), inputs
@@ -357,9 +370,14 @@ func yamlFieldName(field reflect.StructField) string {
 // http-auth:report never exposes password material. The recipe therefore always
 // needs the passwords supplied in the vars-file before apply.
 func (res *ExportResult) processHttpAuthUser(app string, b HttpAuthUserTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
-	if opts.Inline || len(b.Users) == 0 {
+	if len(b.Users) == 0 {
 		return b, nil
 	}
+	// The password is never readable (http-auth stores an htpasswd hash), so it
+	// is always lifted into a required input rather than emitted as an empty
+	// string, which would fail HttpAuthUserTask.Validate(). Inline mode has no
+	// companion vars-file, so warn that the passwords must be supplied at apply
+	// time (e.g. via a CLI --<name>=<value> input) (#334).
 	var inputs []map[string]interface{}
 	users := make([]HttpAuthUser, len(b.Users))
 	for i, u := range b.Users {
@@ -374,21 +392,30 @@ func (res *ExportResult) processHttpAuthUser(app string, b HttpAuthUserTask, opt
 		})
 	}
 	b.Users = users
+	if opts.Inline {
+		res.Report.Warnings = append(res.Report.Warnings,
+			fmt.Sprintf("%s: http-auth passwords are not readable; supply them as inputs before apply", app))
+	}
 	return b, inputs
 }
 
-// processMaintenanceCustomPage lifts the custom page HTML into a required input,
-// since maintenance:report exposes only a checksum, never the page content. The
-// recipe therefore always needs the HTML supplied in the vars-file before apply,
-// so the value is blanked unconditionally (like http-auth passwords). Unlike a
-// secret, the page is public HTML, so the input is not marked sensitive.
+// processMaintenanceCustomPage emits the custom page task. When ExportApp was
+// able to read the page back (via maintenance:custom-page-export) it carries real
+// Content (or a Tarball), which is public HTML, so it is emitted as-is in both
+// modes. When the content could not be read (an older plugin without the export
+// command), it is lifted into a required input in both modes so the emitted task
+// is valid instead of carrying an empty content that fails Validate() (#334).
 func (res *ExportResult) processMaintenanceCustomPage(app string, b MaintenanceCustomPageTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
-	if opts.Inline {
+	if b.Content != "" || b.Tarball != "" {
 		return b, nil
 	}
 	name := res.uniqueVarName(app, "maintenance_custom_page")
 	b.Content = "{{ ." + name + " }}"
 	res.Vars[name] = "" // page HTML is not readable; the user fills this in
+	if opts.Inline {
+		res.Report.Warnings = append(res.Report.Warnings,
+			fmt.Sprintf("%s: maintenance custom page is not readable; supply the content as an input before apply", app))
+	}
 	inputs := []map[string]interface{}{{
 		"name":     name,
 		"required": true,
@@ -562,9 +589,23 @@ func (res *ExportResult) HasVars() bool {
 	return len(res.Vars) > 0
 }
 
-// PlayCount returns the number of plays (one per exported app) in the result.
+// PlayCount returns the total number of plays in the result, including the
+// leading global play when one was emitted. Used to detect an empty export.
 func (res *ExportResult) PlayCount() int {
 	return len(res.plays)
+}
+
+// AppCount returns the number of app plays, excluding the leading "global" play
+// (global resources are not an app), so the export summary reports the app count
+// accurately.
+func (res *ExportResult) AppCount() int {
+	n := len(res.plays)
+	if n > 0 {
+		if name, _ := res.plays[0]["name"].(string); name == "global" {
+			n--
+		}
+	}
+	return n
 }
 
 // listApps returns every app on the server via `dokku apps:list`.
@@ -583,6 +624,26 @@ func listApps() ([]string, error) {
 		}
 	}
 	return apps, nil
+}
+
+// missingApps returns the names in want that do not appear in apps (the live
+// server list), in sorted order. Empty when want is empty or every name exists.
+func missingApps(apps, want []string) []string {
+	if len(want) == 0 {
+		return nil
+	}
+	have := map[string]bool{}
+	for _, a := range apps {
+		have[a] = true
+	}
+	var missing []string
+	for _, a := range want {
+		if !have[a] {
+			missing = append(missing, a)
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 // filterApps keeps only the apps named in want, or all apps when want is empty.
