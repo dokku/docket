@@ -147,6 +147,56 @@ EOF
   assert_output --partial "reserved for a built-in flag"
 }
 
+@test "docket validate exits 1 on a hyphenated input name" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: my-app
+      default: web
+  tasks:
+    - dokku_app:
+        app: "{{ .my-app }}"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "not a valid template variable name"
+  refute_output --partial "bad character"
+}
+
+@test "docket validate --json emits invalid_input_name for a hyphenated input name" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: my-app
+      default: web
+  tasks:
+    - dokku_app:
+        app: "{{ .my-app }}"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"invalid_input_name"'
+}
+
+@test "docket apply rejects a hyphenated input name offline" {
+  # A hyphenated input name breaks `{{ .name }}` rendering; the loader must
+  # reject it up front with the same clear message validate reports, not a
+  # cryptic render error (#370).
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: my-app
+      default: web
+  tasks:
+    - dokku_app:
+        app: "{{ .my-app }}"
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "not a valid template variable name"
+  refute_output --partial "bad character"
+}
+
 @test "docket apply does not panic on an input named after a built-in flag" {
   # An input named after a built-in flag used to make pflag panic before
   # flag parsing began (#302). apply must now fail cleanly instead.

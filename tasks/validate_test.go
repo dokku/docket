@@ -192,6 +192,91 @@ func TestValidateAllowsHelpVersionInputNames(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInvalidInputName(t *testing.T) {
+	// A hyphenated input name cannot be referenced with `{{ .name }}` because
+	// Go text/template rejects the hyphen; validate reports a clear
+	// invalid_input_name instead of a cryptic template render error (#370).
+	data := []byte(`---
+- inputs:
+    - name: my-app
+      default: web
+  tasks:
+    - dokku_app:
+        app: "{{ .my-app }}"
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_input_name")
+	if p == nil {
+		t.Fatalf("expected invalid_input_name problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `"my-app"`) {
+		t.Errorf("unexpected message: %q", p.Message)
+	}
+	if p.Line == 0 {
+		t.Errorf("expected a source line, got 0")
+	}
+	// The clearer name diagnostic must win over the render error it prevents.
+	if n := countProblems(problems, "template_render"); n != 0 {
+		t.Errorf("invalid_input_name should suppress the template_render error, got %d", n)
+	}
+}
+
+func TestValidateRejectsInvalidInputNameEvenWhenUnreferenced(t *testing.T) {
+	// The name is rejected at declaration, regardless of whether a template
+	// ever references it (#370).
+	data := []byte(`---
+- inputs:
+    - name: my-app
+      default: web
+  tasks:
+    - dokku_app:
+        app: static
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "invalid_input_name"); p == nil {
+		t.Fatalf("expected invalid_input_name problem, got: %+v", problems)
+	}
+}
+
+func TestValidateAllowsValidInputNames(t *testing.T) {
+	// Letters, digits, and underscores are valid template variable names and
+	// must not be flagged (#370).
+	for _, name := range []string{"app", "db_host", "app2", "_private", "App"} {
+		data := []byte(`---
+- inputs:
+    - name: ` + name + `
+      default: web
+  tasks:
+    - dokku_app:
+        app: "{{ .` + name + ` }}"
+`)
+		problems := Validate(data, ValidateOptions{})
+		if p := findProblem(problems, "invalid_input_name"); p != nil {
+			t.Errorf("input name %q should be valid, got: %+v", name, *p)
+		}
+	}
+}
+
+func TestValidateReservedNameNotReportedAsInvalidInputName(t *testing.T) {
+	// A reserved name is also hyphenated, but it must surface as the more
+	// specific reserved_input_name, not invalid_input_name (#370).
+	data := []byte(`---
+- inputs:
+    - name: no-color
+      default: x
+  tasks:
+    - dokku_app:
+        app: web
+`)
+	problems := Validate(data, ValidateOptions{})
+	if p := findProblem(problems, "invalid_input_name"); p != nil {
+		t.Errorf("reserved name should not be invalid_input_name, got: %+v", *p)
+	}
+	if p := findProblem(problems, "reserved_input_name"); p == nil {
+		t.Fatalf("expected reserved_input_name problem, got: %+v", problems)
+	}
+}
+
 func TestValidateRejectsDuplicateTaskNames(t *testing.T) {
 	// validate flags duplicate task names offline so a recipe that would
 	// silently drop a task fails the CI lint (#307).

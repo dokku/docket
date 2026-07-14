@@ -134,6 +134,14 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 		opts.InputOverrides = map[string]bool{}
 	}
 
+	// An input name that is not a valid template variable (e.g. a hyphen)
+	// would otherwise make the render below fail with a cryptic "bad
+	// character" error. Check names first so the clearer invalid_input_name
+	// diagnostic wins.
+	if nameProblems := checkInputNames(data, opts.Format); len(nameProblems) > 0 {
+		return nameProblems
+	}
+
 	// Sigil renders templates, so a malformed `{{ .x` is caught here even
 	// when the rest of the file is otherwise unparseable as YAML (the YAML
 	// parser would otherwise misread `{{` as a broken flow mapping). The
@@ -880,6 +888,55 @@ func buildSigilContext(plays [][]inputWithNode) map[string]interface{} {
 		}
 	}
 	return context
+}
+
+// inputNameRe matches an input name usable with the documented `{{ .name }}`
+// syntax. Go text/template lexes a field as a letter or underscore followed by
+// letters, digits, or underscores; any other character (notably a hyphen)
+// makes `{{ .name }}` fail at lex time with "bad character".
+var inputNameRe = regexp.MustCompile(`^[\p{L}_][\p{L}\p{N}_]*$`)
+
+// checkInputNames flags any declared input name that cannot be referenced with
+// the documented `{{ .name }}` syntax, so a hyphenated name surfaces as a clear
+// invalid_input_name diagnostic instead of a cryptic template render error. It
+// parses tolerantly: on any normalize/parse failure it returns nil so the
+// caller's existing parse-error path reports the underlying issue. Reserved
+// names are skipped here so they keep surfacing as the more specific
+// reserved_input_name diagnostic. Shared by Validate and the loader
+// (GetPlaysWithFormat), both of which render before any name check would
+// otherwise run.
+func checkInputNames(data []byte, format string) []Problem {
+	normalized, normProblems := normalizeRecipeBytes(data, format)
+	if len(normProblems) > 0 {
+		return nil
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(normalized, &root); err != nil {
+		return nil
+	}
+	doc := documentBody(&root)
+	if doc == nil || doc.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var problems []Problem
+	for _, inputs := range extractPlayInputs(doc) {
+		for _, in := range inputs {
+			if in.Name == "" || ReservedInputNames[in.Name] {
+				continue
+			}
+			if inputNameRe.MatchString(in.Name) {
+				continue
+			}
+			problems = append(problems, Problem{
+				Code:    "invalid_input_name",
+				Line:    in.Line,
+				Column:  in.Column,
+				Message: fmt.Sprintf("input name %q is not a valid template variable name", in.Name),
+				Hint:    `use only letters, digits, and underscores (for example "my_app")`,
+			})
+		}
+	}
+	return problems
 }
 
 // documentBody returns the inner content node when root is a DocumentNode,
