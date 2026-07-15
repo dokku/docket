@@ -65,8 +65,9 @@ BIN_DIR="$HOME/.local/bin" curl -fsSL https://raw.githubusercontent.com/dokku/do
 ```
 
 On Linux and macOS the script installs to `/usr/local/bin` (using `sudo` only if that directory
-is not writable). On Windows, run the script from a POSIX shell - Git Bash, MSYS2, Cygwin, or
-WSL - and it installs `docket.exe` to `$HOME/bin`.
+is not writable). On Windows, run the script from a POSIX shell - Git Bash, MSYS2, or Cygwin - and
+it installs `docket.exe` to `$HOME/bin`. Under WSL the script sees a Linux environment, so it
+installs the Linux binary to `/usr/local/bin` like any other Linux host.
 
 ### Homebrew (macOS, Linux)
 

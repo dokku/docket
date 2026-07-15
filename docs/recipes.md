@@ -138,8 +138,7 @@ docket apply --tasks tasks.yml             # default: stop this play, continue t
 docket apply --tasks tasks.yml --fail-fast # stop the whole run on the first error
 ```
 
-When a play is skipped (by its `when:` or because every task in it was skipped), the summary line
-gains a `· N play skipped` segment:
+When a play is skipped by its `when:`, the summary line gains a `· N play skipped` segment:
 
 ```text
 ==> Play: api

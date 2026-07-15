@@ -151,7 +151,7 @@ always report drift with a `(... not probed)` reason.
 
 | Flag | Effect |
 |------|--------|
-| `--tasks <path>` | Use a specific recipe. |
+| `--tasks <path>` | Use a specific recipe. Accepts a local path or an `http(s)://` URL (fetched over HTTP). |
 | `--json` | Emit JSON-lines events instead of the human formatter. See [JSON output](json-output.md). |
 | `--detailed-exitcode` | Exit `0` for no drift, `2` for drift, `1` on error. Errors win over drift. Mirrors `terraform plan -detailed-exitcode`. |
 | `--vars-file <path>` | Load input values from a file (repeatable). See [inputs](inputs.md#layered-values-with---vars-file). |
@@ -177,7 +177,7 @@ gets a status marker:
 |--------|---------|
 | `[ok]` | Ran, no change. |
 | `[changed]` | Ran, changed state. |
-| `[skipped]` | Filtered out by tags, `when:`, or `--start-at-task`. |
+| `[skipped]` | Filtered out by `when:` or `--start-at-task`. |
 | `[error]` | Errored. |
 
 A play header precedes the task lines, and a summary closes the run:
@@ -196,7 +196,7 @@ summary still prints with partial counts.
 
 | Flag | Effect |
 |------|--------|
-| `--tasks <path>` | Use a specific recipe. |
+| `--tasks <path>` | Use a specific recipe. Accepts a local path or an `http(s)://` URL (fetched over HTTP). |
 | `--verbose` | After each task, echo every resolved Dokku command it ran, one per `→` line. Masked against sensitive values. Ignored with `--json` (which already includes commands). |
 | `--json` | Emit JSON-lines events instead of the human formatter. See [JSON output](json-output.md). |
 | `--vars-file <path>` | Load input values from a file (repeatable). See [inputs](inputs.md#layered-values-with---vars-file). |

@@ -156,6 +156,42 @@ func TestInitNameFlagSetsAppDefault(t *testing.T) {
 	}
 }
 
+// TestInitNameSetsPlayName: --name names the scaffolded play (not just the
+// app input default) so `docket apply --play <name>` resolves after init.
+// Every template variant is checked because the play name is what the
+// documented `--name` behaviour promises.
+func TestInitNameSetsPlayName(t *testing.T) {
+	cases := []struct {
+		label   string
+		opts    initOptions
+		format  string
+		context map[string]interface{}
+	}{
+		{"yaml-default", initOptions{Name: "web"}, tasks.FormatYAML, map[string]interface{}{"app": "web", "repo": "https://example.com/r.git"}},
+		{"yaml-minimal", initOptions{Name: "web", Minimal: true}, tasks.FormatYAML, nil},
+		{"json5-default", initOptions{Name: "web", Format: tasks.FormatNameJSON5}, tasks.FormatNameJSON5, map[string]interface{}{"app": "web", "repo": "https://example.com/r.git"}},
+		{"json5-minimal", initOptions{Name: "web", Minimal: true, Format: tasks.FormatNameJSON5}, tasks.FormatNameJSON5, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			out, err := renderInit(tc.opts)
+			if err != nil {
+				t.Fatalf("renderInit: %v", err)
+			}
+			plays, err := tasks.GetPlaysWithFormat(out, tc.format, tc.context, nil)
+			if err != nil {
+				t.Fatalf("GetPlaysWithFormat: %v\n%s", err, out)
+			}
+			if len(plays) != 1 {
+				t.Fatalf("plays = %d, want 1\n%s", len(plays), out)
+			}
+			if plays[0].Name != "web" {
+				t.Errorf("play name = %q, want \"web\"\n%s", plays[0].Name, out)
+			}
+		})
+	}
+}
+
 func TestInitRepoFlagSetsRepoDefault(t *testing.T) {
 	out, err := renderInit(initOptions{Name: "demo", Repo: "git@github.com:foo/bar.git"})
 	if err != nil {

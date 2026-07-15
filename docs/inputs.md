@@ -188,8 +188,9 @@ Values are coerced to each input's declared `type`:
 - `string`: any scalar (a YAML boolean `true` becomes the string `"true"`).
 - `int`: whole numbers, including numeric strings and whole-valued JSON numbers.
 - `float`: floats, ints, and parseable numeric strings.
-- `bool`: native booleans and the same string forms the CLI accepts (`true`/`yes`/`on`/`y` and
-  their false counterparts).
+- `bool`: native booleans, or a string spelled `true`/`yes`/`on`/`y` (or `false`/`no`/`off`/`n`).
+  A `--name=value` flag on the command line is parsed separately by pflag, which accepts
+  `true`/`false`/`1`/`0` but not `yes`/`on`.
 
 A key in a vars file that does not match any declared input is a hard error, with a suggestion for
 the closest real name:
