@@ -33,7 +33,6 @@ dokku_http_auth_user:
           password: secret
         - username: ops
           password: hunter2
-    update_password: false
 ```
 
 ### Rotate an existing user's password
@@ -54,7 +53,6 @@ dokku_http_auth_user:
     app: hello-world
     users:
         - username: ops
-    update_password: false
     state: absent
 ```
 
@@ -64,7 +62,6 @@ dokku_http_auth_user:
 dokku_http_auth_user:
     app: hello-world
     users: []
-    update_password: false
     state: absent
 ```
 

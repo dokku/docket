@@ -28,7 +28,6 @@ dokku_resource_limit:
     resources:
         cpu: "100"
         memory: "256"
-    clear_before: false
 ```
 
 ### Set memory limit for web process type
@@ -39,7 +38,6 @@ dokku_resource_limit:
     process_type: web
     resources:
         memory: "512"
-    clear_before: false
 ```
 
 ### Clear all resource limits
@@ -48,7 +46,6 @@ dokku_resource_limit:
 dokku_resource_limit:
     app: hello-world
     resources: {}
-    clear_before: false
     state: absent
 ```
 

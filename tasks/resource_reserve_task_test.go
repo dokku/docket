@@ -82,7 +82,9 @@ func TestGetTasksResourceReserveTaskParsedCorrectly(t *testing.T) {
 	if rrTask.Resources["memory"] != "256" {
 		t.Errorf("Resources[memory] = %q, want %q", rrTask.Resources["memory"], "256")
 	}
-	if !rrTask.ClearBefore {
+	// ClearBefore is a *bool, so an explicit clear_before: true survives decoding
+	// (go-defaults leaves pointer fields untouched).
+	if rrTask.ClearBefore == nil || !*rrTask.ClearBefore {
 		t.Error("ClearBefore = false, want true (YAML value should be preserved)")
 	}
 }

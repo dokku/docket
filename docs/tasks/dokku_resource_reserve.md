@@ -28,7 +28,6 @@ dokku_resource_reserve:
     resources:
         cpu: "100"
         memory: "256"
-    clear_before: false
 ```
 
 ### Set memory reservation for web process type
@@ -39,7 +38,6 @@ dokku_resource_reserve:
     process_type: web
     resources:
         memory: "512"
-    clear_before: false
 ```
 
 ### Clear all resource reservations
@@ -48,7 +46,6 @@ dokku_resource_reserve:
 dokku_resource_reserve:
     app: hello-world
     resources: {}
-    clear_before: false
     state: absent
 ```
 

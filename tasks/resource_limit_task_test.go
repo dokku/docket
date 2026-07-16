@@ -44,7 +44,7 @@ func TestResourceLimitClearBeforeConvergesWhenMatched(t *testing.T) {
 	plan := ResourceLimitTask{
 		App:         "test-app",
 		Resources:   map[string]string{"cpu": "100"},
-		ClearBefore: true,
+		ClearBefore: boolPtr(true),
 		State:       StatePresent,
 	}.Plan()
 	if plan.Error != nil {
@@ -64,7 +64,7 @@ func TestResourceLimitClearBeforeIgnoresEmptyExtraResource(t *testing.T) {
 	plan := ResourceLimitTask{
 		App:         "test-app",
 		Resources:   map[string]string{"cpu": "100"},
-		ClearBefore: true,
+		ClearBefore: boolPtr(true),
 		State:       StatePresent,
 	}.Plan()
 	if plan.Error != nil {
@@ -84,7 +84,7 @@ func TestResourceLimitClearBeforeClearsNonDesiredResource(t *testing.T) {
 	plan := ResourceLimitTask{
 		App:         "test-app",
 		Resources:   map[string]string{"cpu": "100"},
-		ClearBefore: true,
+		ClearBefore: boolPtr(true),
 		State:       StatePresent,
 	}.Plan()
 	if plan.Error != nil {
@@ -161,10 +161,9 @@ func TestGetTasksResourceLimitTaskParsedCorrectly(t *testing.T) {
 	if rlTask.Resources["memory"] != "256" {
 		t.Errorf("Resources[memory] = %q, want %q", rlTask.Resources["memory"], "256")
 	}
-	// Unlike ConfigTask.Restart (default:"true"), ClearBefore has default:"false" which
-	// is the zero value for bool. Since defaults.SetDefaults only overrides zero values,
-	// and true is non-zero, setting clear_before: true in YAML is preserved correctly.
-	if !rlTask.ClearBefore {
+	// ClearBefore is a *bool, so an explicit clear_before: true survives decoding
+	// (go-defaults leaves pointer fields untouched).
+	if rlTask.ClearBefore == nil || !*rlTask.ClearBefore {
 		t.Error("ClearBefore = false, want true (YAML value should be preserved)")
 	}
 }

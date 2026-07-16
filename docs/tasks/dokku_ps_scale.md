@@ -27,7 +27,6 @@ dokku_ps_scale:
     scale:
         web: 2
         worker: 1
-    skip_deploy: false
 ```
 
 ### Scale web and worker processes without deploy

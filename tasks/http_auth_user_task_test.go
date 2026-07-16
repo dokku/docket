@@ -126,7 +126,8 @@ func TestGetTasksHttpAuthUserTaskParsedCorrectly(t *testing.T) {
 	if hauTask.App != "test-app" {
 		t.Errorf("App = %q, want %q", hauTask.App, "test-app")
 	}
-	if !hauTask.UpdatePassword {
+	// UpdatePassword is a *bool, so an explicit update_password: true survives decoding.
+	if hauTask.UpdatePassword == nil || !*hauTask.UpdatePassword {
 		t.Error("UpdatePassword = false, want true")
 	}
 	if len(hauTask.Users) != 2 {

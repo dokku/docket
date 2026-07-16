@@ -103,7 +103,7 @@ func TestIntegrationResourceReserveProcessType(t *testing.T) {
 		App:         appName,
 		ProcessType: "web",
 		Resources:   map[string]string{"cpu": "200"},
-		ClearBefore: true,
+		ClearBefore: boolPtr(true),
 		State:       StatePresent,
 	}
 	result = clearBeforeTask.Execute()

@@ -14,8 +14,12 @@ type ConfigTask struct {
 	// App is the name of the app
 	App string `required:"true" yaml:"app" description:"Name of the app"`
 
-	// Restart is a flag indicating if the app should be restarted
-	Restart bool `yaml:"restart" default:"true" description:"Flag indicating if the app should be restarted"`
+	// Restart is a flag indicating if the app should be restarted. It is a
+	// *bool so an explicit `restart: false` is distinguishable from an omitted
+	// key: nil defaults to true via boolValue(t.Restart, true). The default:"true"
+	// tag only drives the generated docs table; go-defaults leaves pointer fields
+	// untouched, which is what fixes the silent override of an explicit false.
+	Restart *bool `yaml:"restart,omitempty" default:"true" description:"Flag indicating if the app should be restarted"`
 
 	// Config is a map of configuration key-value pairs
 	Config map[string]string `yaml:"config" description:"Map of configuration key-value pairs"`
@@ -55,7 +59,7 @@ func (t ConfigTask) Examples() ([]Doc, error) {
 			Name: "set KEY=VALUE",
 			ConfigTask: ConfigTask{
 				App:     "hello-world",
-				Restart: true,
+				Restart: boolPtr(true),
 				Config: map[string]string{
 					"KEY": "VALUE_1",
 				},
@@ -65,7 +69,7 @@ func (t ConfigTask) Examples() ([]Doc, error) {
 			Name: "set KEY=VALUE without restart",
 			ConfigTask: ConfigTask{
 				App:     "hello-world",
-				Restart: false,
+				Restart: boolPtr(false),
 				Config: map[string]string{
 					"KEY": "VALUE_1",
 				},
@@ -156,7 +160,7 @@ func planConfigSet(t ConfigTask) PlanResult {
 		status = PlanStatusCreate
 	}
 	args := []string{"--quiet", "config:set", "--encoded"}
-	if !t.Restart {
+	if !boolValue(t.Restart, true) {
 		args = append(args, "--no-restart")
 	}
 	args = append(args, t.App)
@@ -192,7 +196,7 @@ func planConfigUnset(t ConfigTask) PlanResult {
 		mutations = append(mutations, fmt.Sprintf("unset %s", k))
 	}
 	args := []string{"--quiet", "config:unset"}
-	if !t.Restart {
+	if !boolValue(t.Restart, true) {
 		args = append(args, "--no-restart")
 	}
 	args = append(args, t.App)
@@ -242,7 +246,7 @@ func (t ConfigTask) ExportApp(app string) ([]interface{}, error) {
 	if len(config) == 0 {
 		return nil, nil
 	}
-	return []interface{}{ConfigTask{App: app, Restart: true, Config: config}}, nil
+	return []interface{}{ConfigTask{App: app, Restart: boolPtr(true), Config: config}}, nil
 }
 
 // getConfig retrieves the current configuration for a given dokku application

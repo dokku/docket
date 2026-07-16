@@ -85,7 +85,7 @@ func TestIntegrationPlanConfigItemizes(t *testing.T) {
 
 	task := ConfigTask{
 		App:     appName,
-		Restart: false,
+		Restart: boolPtr(false),
 		Config:  map[string]string{"DOCKET_TEST_KEY_A": "1", "DOCKET_TEST_KEY_B": "2"},
 		State:   StatePresent,
 	}
