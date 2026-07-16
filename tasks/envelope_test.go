@@ -98,6 +98,41 @@ func TestFilterByTagsCombinedNarrowsThenDrops(t *testing.T) {
 	}
 }
 
+// TestEnvelopePassesTags covers the per-envelope predicate that backs
+// FilterByTags and the apply loop's post-gate tag filter: no flags keep
+// everything, --tags requires an intersection (dropping untagged), and
+// --skip-tags drops an intersection (keeping untagged), with both
+// combining as narrow-then-drop.
+func TestEnvelopePassesTags(t *testing.T) {
+	tagged := &TaskEnvelope{Tags: []string{"foo", "skip"}}
+	untagged := &TaskEnvelope{}
+
+	cases := []struct {
+		name     string
+		env      *TaskEnvelope
+		includes []string
+		skips    []string
+		want     bool
+	}{
+		{"no flags keeps tagged", tagged, nil, nil, true},
+		{"no flags keeps untagged", untagged, nil, nil, true},
+		{"include intersects", tagged, []string{"foo"}, nil, true},
+		{"include misses", tagged, []string{"bar"}, nil, false},
+		{"include excludes untagged", untagged, []string{"foo"}, nil, false},
+		{"skip intersects drops", tagged, nil, []string{"skip"}, false},
+		{"skip misses keeps", tagged, nil, []string{"bar"}, true},
+		{"skip keeps untagged", untagged, nil, []string{"skip"}, true},
+		{"both narrows then drops", tagged, []string{"foo"}, []string{"skip"}, false},
+		{"both keeps when include hits and skip misses", tagged, []string{"foo"}, []string{"bar"}, true},
+	}
+	for _, tc := range cases {
+		if got := EnvelopePassesTags(tc.env, tc.includes, tc.skips); got != tc.want {
+			t.Errorf("%s: EnvelopePassesTags(%v, includes=%v, skips=%v) = %v, want %v",
+				tc.name, tc.env.Tags, tc.includes, tc.skips, got, tc.want)
+		}
+	}
+}
+
 // TestEnvelopeContainsName covers the helper used by --start-at-task
 // gating: a top-level name match, a recursive match through a block /
 // rescue / always child, and a miss.

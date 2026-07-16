@@ -305,3 +305,112 @@ func TestApplyStartAtTaskInsideBlock(t *testing.T) {
 		t.Errorf("block-c should run after the match; got:\n%s", stdout)
 	}
 }
+
+// TestApplyStartAtTaskThenTags is the #315 regression: tag filtering
+// must run *after* the --start-at-task gate. The target task itself is
+// excluded by --tags, so under the old (tags-first) order the run
+// silently no-oped. The documented order selects the resume point
+// first, then narrows by tags, so a later tag-matching task runs.
+func TestApplyStartAtTaskThenTags(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{Changed: true})
+	stubSet("b", StubFixture{Changed: true})
+	stubSet("c", StubFixture{Changed: true})
+
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: first
+      tags: [x]
+      dokku_stub: { key: a }
+    - name: second
+      tags: [y]
+      dokku_stub: { key: b }
+    - name: third
+      tags: [x]
+      dokku_stub: { key: c }
+`)
+	stdout, stderr, exit := runApply(t, path, "--start-at-task", "second", "--tags", "x")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "[skipped] first  (before --start-at-task)") {
+		t.Errorf("first should be skipped before --start-at-task; got:\n%s", stdout)
+	}
+	// second is the resume target but carries tag y, which --tags x
+	// excludes: it establishes the resume point but does not run and
+	// leaves no output line.
+	if strings.Contains(stdout, "second") {
+		t.Errorf("second should be excluded by --tags and not appear; got:\n%s", stdout)
+	}
+	// third is the regression guard: the run must not silently no-op.
+	if !strings.Contains(stdout, "[changed] third") {
+		t.Errorf("third should run as [changed]; got:\n%s", stdout)
+	}
+}
+
+// TestApplyStartAtTaskThenSkipTags pins the same ordering for the
+// --skip-tags path: the resume target is dropped by --skip-tags but the
+// gate still resumes so a later surviving task runs.
+func TestApplyStartAtTaskThenSkipTags(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{Changed: true})
+	stubSet("b", StubFixture{Changed: true})
+	stubSet("c", StubFixture{Changed: true})
+
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: first
+      tags: [x]
+      dokku_stub: { key: a }
+    - name: second
+      tags: [y]
+      dokku_stub: { key: b }
+    - name: third
+      tags: [x]
+      dokku_stub: { key: c }
+`)
+	stdout, stderr, exit := runApply(t, path, "--start-at-task", "second", "--skip-tags", "y")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "[skipped] first  (before --start-at-task)") {
+		t.Errorf("first should be skipped before --start-at-task; got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "second") {
+		t.Errorf("second should be dropped by --skip-tags and not appear; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "[changed] third") {
+		t.Errorf("third should run as [changed]; got:\n%s", stdout)
+	}
+}
+
+// TestApplyStartAtTaskGroupChildWithTags confirms that a resume target
+// nested inside a group stays reachable even when the group's own tags
+// fail the filter: descent into the resume-point group bypasses tag
+// filtering so an explicitly named child is never hidden by --tags.
+func TestApplyStartAtTaskGroupChildWithTags(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{Changed: true})
+	stubSet("b", StubFixture{Changed: true})
+
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: group-1
+      tags: [other]
+      block:
+        - name: block-a
+          dokku_stub: { key: a }
+        - name: block-b
+          dokku_stub: { key: b }
+`)
+	stdout, stderr, exit := runApply(t, path, "--start-at-task", "block-b", "--tags", "x")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "[skipped] [block] block-a  (before --start-at-task)") {
+		t.Errorf("block-a should be skipped before --start-at-task; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "[changed] [block] block-b") {
+		t.Errorf("block-b should run despite the group's tag not matching --tags; got:\n%s", stdout)
+	}
+}

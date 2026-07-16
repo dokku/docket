@@ -259,7 +259,9 @@ Summary: 4 tasks · 1 changed · 1 ok · 2 skipped · 0 errors  (took 1.1s)
 
 Filters apply in this order: `--start-at-task` selects first, then `--tags` / `--skip-tags`, then
 per-task `when:` at execution time. The name search walks every play in source order, narrowed by
-`--play`. An unmatched name exits 1 with the available names listed.
+`--play`. An unmatched name exits 1 with the available names listed. A `--start-at-task` target that
+is itself excluded by `--tags` / `--skip-tags` still establishes the resume point but does not itself
+run - tasks after it that pass the tag filter do.
 
 ## docket export
 
