@@ -127,6 +127,29 @@ EOF
   done
 }
 
+@test "uncaught block failure fails the run and marks the group" {
+  require_dokku
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: deploy
+      block:
+        - dokku_ports:
+            app: nonexistent-block-target-zzz
+            port_mappings: [{ scheme: http, host: 80, container: 5000 }]
+            state: present
+    - name: after-group
+      dokku_app: { app: docket-test-block-1 }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "[error]"
+  assert_output --partial "(group)"
+  refute_output --partial "after-group"
+  run dokku apps:exists docket-test-block-1
+  assert_failure
+}
+
 @test "validate flags empty block" {
   write_tasks_file <<EOF
 ---

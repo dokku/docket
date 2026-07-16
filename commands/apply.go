@@ -664,11 +664,20 @@ func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *ap
 		groupState.Error = rescueErr
 		groupState.State = ""
 	case blockFailedState != nil && len(env.Rescue) == 0:
-		// Block errored and there is no rescue clause; the original
-		// error propagates as the group's verdict.
+		// Block failed and there is no rescue clause; the failing
+		// child's verdict becomes the group's. A child can fail three
+		// ways: with an error, via a state mismatch (nil error), or via
+		// a zero-value failed state (a runtime-erroring when/failed_when
+		// predicate). Propagate the error and/or state mismatch as-is.
 		groupState.Error = blockFailedState.Error
 		groupState.State = blockFailedState.State
 		groupState.DesiredState = blockFailedState.DesiredState
+		if groupState.Error == nil && groupState.State == groupState.DesiredState {
+			// The child failed with neither an error nor a state
+			// mismatch; synthesize an error so the failure is not
+			// silently classified as ok/changed.
+			groupState.Error = errors.New("block child failed")
+		}
 	}
 
 	postState, overrideErr := applyEnvelopeOverrides(env, groupState, ac.playExprCtx, ac.registered, failedTask)
@@ -705,6 +714,23 @@ func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *ap
 			Ignored:   ignored,
 			Duration:  time.Since(taskStart),
 			Timestamp: time.Now().UTC(),
+		})
+		return applyTaskOutcome{state: groupState, failed: !ignored, abort: c.failFast && !ignored}
+	case groupState.State != groupState.DesiredState:
+		ignored := env.IgnoreErrors
+		if !ignored {
+			ac.counts.Errors++
+		}
+		ac.emitter.ApplyTask(ApplyTaskEvent{
+			Play:         ac.play.Name,
+			Name:         name,
+			Phase:        phase,
+			Group:        true,
+			State:        groupState,
+			InvalidState: true,
+			Ignored:      ignored,
+			Duration:     time.Since(taskStart),
+			Timestamp:    time.Now().UTC(),
 		})
 		return applyTaskOutcome{state: groupState, failed: !ignored, abort: c.failFast && !ignored}
 	case groupState.Changed:

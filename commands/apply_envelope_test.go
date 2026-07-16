@@ -187,6 +187,28 @@ func TestApplyFailedWhenTrueMarksSuccessAsError(t *testing.T) {
 	}
 }
 
+// TestApplyLeafStateMismatchFailsRun: a top-level task that fails via a
+// bare state mismatch (State != DesiredState, nil error) renders [error]
+// and aborts the run with a non-zero exit. This is the baseline the
+// group path is expected to match (see TestApplyGroupBlockStateMismatchFailsGroup).
+func TestApplyLeafStateMismatchFailsRun(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{MismatchState: true})
+
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: drifted
+      dokku_stub: { key: a }
+`)
+	stdout, stderr, exit := runApply(t, path)
+	if exit == 0 {
+		t.Fatalf("exit = 0, want non-zero (a bare state mismatch should fail the run); stdout=%s stderr=%s", stdout, stderr)
+	}
+	if !strings.Contains(stderr, "[error]") {
+		t.Errorf("expected [error] marker in stderr; got:\n%s", stderr)
+	}
+}
+
 // TestApplyFailedWhenFalseClearsStateMismatch: a falsy failed_when
 // also normalizes State to DesiredState so the state-mismatch branch
 // does not re-flag the task.

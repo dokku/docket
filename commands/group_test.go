@@ -282,3 +282,63 @@ func TestApplyGroupNestedFailureReachesOuterRescue(t *testing.T) {
 		t.Errorf("outer rescue should fire; got:\n%s", stdout)
 	}
 }
+
+// TestApplyGroupBlockStateMismatchFailsGroup: a block child that fails
+// via a state mismatch (State != DesiredState, nil error) inside a
+// rescue-less group must mark the group failed, render [error]  (group),
+// abort the rest of the play, and exit non-zero -- matching the verdict
+// the identical task gets at the top level.
+func TestApplyGroupBlockStateMismatchFailsGroup(t *testing.T) {
+	defer stubReset()
+	stubSet("mismatch", StubFixture{MismatchState: true})
+	stubSet("after", StubFixture{Changed: true})
+
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: deploy
+      block:
+        - name: mismatched
+          dokku_stub: { key: mismatch }
+    - name: after-group
+      dokku_stub: { key: after }
+`)
+	stdout, stderr, exit := runApply(t, path)
+	if exit == 0 {
+		t.Fatalf("expected non-zero exit when a block child fails via state mismatch; stdout=%s stderr=%s", stdout, stderr)
+	}
+	combined := stdout + stderr
+	if !strings.Contains(stderr, "[error]") {
+		t.Errorf("expected [error] marker in stderr; combined=\n%s", combined)
+	}
+	if !strings.Contains(combined, "deploy  (group)") {
+		t.Errorf("expected the group summary line to render; combined=\n%s", combined)
+	}
+	if strings.Contains(combined, "after-group") {
+		t.Errorf("follow-up task must not run after the failed group; combined=\n%s", combined)
+	}
+}
+
+// TestApplyGroupBlockRuntimeFailedWhenErrorFailsGroup: a block child
+// whose failed_when predicate errors at run time returns failed with a
+// zero-value state (nil error, empty State/DesiredState). A rescue-less
+// group must still surface that as a failure rather than swallowing it.
+func TestApplyGroupBlockRuntimeFailedWhenErrorFailsGroup(t *testing.T) {
+	defer stubReset()
+	stubSet("ok", StubFixture{})
+
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: deploy
+      block:
+        - name: boom
+          failed_when: 'result.Commands[0] == ""'
+          dokku_stub: { key: ok }
+`)
+	stdout, stderr, exit := runApply(t, path)
+	if exit == 0 {
+		t.Fatalf("expected non-zero exit when a block child's failed_when errors at run time; stdout=%s stderr=%s", stdout, stderr)
+	}
+	if !strings.Contains(stderr, "[error]") {
+		t.Errorf("expected [error] marker in stderr; stdout=%s stderr=%s", stdout, stderr)
+	}
+}
