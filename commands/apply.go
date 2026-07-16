@@ -304,7 +304,14 @@ playLoop:
 		}
 
 		failed := false
-		for _, name := range tasks.FilterByTags(play.Tasks, c.tags, c.skipTags) {
+		// Iterate the full task list in source order. Tag filtering
+		// (--tags/--skip-tags) is applied inside executeTask, *after*
+		// the --start-at-task gate, so the documented filter order holds
+		// (start-at-task selects the resume point first, then tags
+		// narrow). Pre-filtering here would drop the --start-at-task
+		// target before the gate could flip `started`, silently no-oping
+		// the run.
+		for _, name := range play.Tasks.Keys() {
 			env := play.Tasks.GetEnvelope(name)
 			outcome := c.executeTask(env, name, ac, nil, "")
 			if outcome.abort {
@@ -374,7 +381,19 @@ type applyTaskOutcome struct {
 // group whose own name does not match but a descendant does is
 // entered so the recursive executeTask call lands on the matched
 // child.
+//
+// Tag filtering (--tags/--skip-tags) runs *after* the gate so the
+// documented order holds - start-at-task selects the resume point,
+// then tags narrow the survivors. It applies only to top-level
+// entries (phase == ""); group children are never tag-filtered. A
+// resume-point group (one entered to reach a nested target) bypasses
+// the tag filter so the named child stays reachable.
 func (c *ApplyCommand) executeTask(env *tasks.TaskEnvelope, name string, ac *applyContext, failedTask interface{}, phase string) applyTaskOutcome {
+	// resumeGroup marks a group we descend into to reach a nested
+	// --start-at-task target; such a group skips tag filtering below so
+	// the descent can land on the matched child regardless of the
+	// group's own tags.
+	resumeGroup := false
 	if !*ac.started && ac.startAtTask != "" {
 		switch {
 		case name == ac.startAtTask:
@@ -383,6 +402,7 @@ func (c *ApplyCommand) executeTask(env *tasks.TaskEnvelope, name string, ac *app
 			// Don't skip; descend into the group so the matching
 			// child runs. The synthesized group state will reflect
 			// only the executed children, not the skipped ones.
+			resumeGroup = true
 		default:
 			ac.counts.Tasks++
 			ac.counts.Skipped++
@@ -397,6 +417,13 @@ func (c *ApplyCommand) executeTask(env *tasks.TaskEnvelope, name string, ac *app
 			})
 			return applyTaskOutcome{skipped: true}
 		}
+	}
+	// Drop a top-level entry the tag filter excludes. This runs after the
+	// gate above so the --start-at-task target still flips `started` even
+	// when its own tags exclude it. Excluded tasks produce no event and no
+	// counts, matching the prior FilterByTags pre-pass.
+	if phase == "" && !resumeGroup && !tasks.EnvelopePassesTags(env, c.tags, c.skipTags) {
+		return applyTaskOutcome{skipped: true}
 	}
 	if env.IsGroup() {
 		return c.executeGroup(env, name, ac, failedTask, phase)

@@ -169,6 +169,26 @@ func (e *TaskEnvelope) IntersectsTags(tags []string) bool {
 	return false
 }
 
+// EnvelopePassesTags reports whether env survives the include (--tags)
+// and skip (--skip-tags) filters, using the same rules FilterByTags
+// applies per key:
+//
+//   - No flags supplied: always kept.
+//   - --tags supplied: kept iff env's tag set intersects includes;
+//     untagged envelopes are excluded.
+//   - --skip-tags supplied: dropped iff env's tag set intersects skips;
+//     untagged envelopes are kept.
+//   - Both: --tags narrows first, then --skip-tags drops.
+func EnvelopePassesTags(env *TaskEnvelope, includes, skips []string) bool {
+	if len(includes) > 0 && !env.IntersectsTags(includes) {
+		return false
+	}
+	if len(skips) > 0 && env.IntersectsTags(skips) {
+		return false
+	}
+	return true
+}
+
 // FilterByTags returns the subset of m's keys that satisfy the include
 // (--tags) and skip (--skip-tags) filters. Rules:
 //
@@ -188,16 +208,9 @@ func FilterByTags(m OrderedStringEnvelopeMap, includes, skips []string) []string
 
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
-		env := m.GetEnvelope(k)
-		if len(includes) > 0 {
-			if !env.IntersectsTags(includes) {
-				continue
-			}
+		if EnvelopePassesTags(m.GetEnvelope(k), includes, skips) {
+			out = append(out, k)
 		}
-		if len(skips) > 0 && env.IntersectsTags(skips) {
-			continue
-		}
-		out = append(out, k)
 	}
 	return out
 }

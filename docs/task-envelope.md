@@ -53,6 +53,11 @@ docket plan  --tasks tasks.yml --tags api          # only the api task
 docket apply --tasks tasks.yml --skip-tags worker  # everything except worker
 ```
 
+When combined with `--start-at-task`, the resume point is selected first and tags narrow the
+survivors: `--start-at-task` skips every task before the named one, then `--tags` / `--skip-tags`
+filter what remains. See [command reference](command-reference.md#inspecting-and-resuming) for the
+full filter order.
+
 ## `when`: run a task conditionally
 
 `when:` is an expr expression evaluated for each task just before it runs. A false result renders
