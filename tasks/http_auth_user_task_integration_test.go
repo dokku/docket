@@ -75,7 +75,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	}
 
 	// update_password re-issues add-user for an existing user
-	rotate := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "new-pass"}}, UpdatePassword: true, State: StatePresent}
+	rotate := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "new-pass"}}, UpdatePassword: boolPtr(true), State: StatePresent}
 	result = rotate.Execute()
 	if result.Error != nil {
 		t.Fatalf("failed to rotate password: %v", result.Error)

@@ -146,7 +146,7 @@ func TestIntegrationPsScaleSkipDeploy(t *testing.T) {
 	scaleTask := PsScaleTask{
 		App:        appName,
 		Scale:      map[string]int{"web": 2, "worker": 1},
-		SkipDeploy: true,
+		SkipDeploy: boolPtr(true),
 		State:      StatePresent,
 	}
 	result := scaleTask.Execute()

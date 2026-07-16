@@ -38,8 +38,12 @@ type param struct {
 
 // displayType maps a Go field type to the doc-facing type name. Named string
 // types such as State render as "string"; slices render as "list" and maps as
-// "dict", mirroring Ansible's type vocabulary.
+// "dict", mirroring Ansible's type vocabulary. Pointer fields (e.g. an optional
+// *bool) render as their element type so they read as "bool" rather than "*bool".
 func displayType(t reflect.Type) string {
+	if t.Kind() == reflect.Ptr {
+		return displayType(t.Elem())
+	}
 	switch t.Kind() {
 	case reflect.String:
 		return "string"

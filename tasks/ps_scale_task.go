@@ -15,8 +15,9 @@ type PsScaleTask struct {
 	// Scale is a map of process types to quantities
 	Scale map[string]int `required:"true" yaml:"scale" description:"Map of process types to quantities"`
 
-	// SkipDeploy skips the corresponding deploy
-	SkipDeploy bool `yaml:"skip_deploy" default:"false" description:"Skip the corresponding deploy"`
+	// SkipDeploy skips the corresponding deploy. It is a *bool so the value
+	// survives decoding unchanged; nil defaults to false.
+	SkipDeploy *bool `yaml:"skip_deploy,omitempty" default:"false" description:"Skip the corresponding deploy"`
 
 	// State is the desired state of the process scale
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present" description:"Desired state of the process scale"`
@@ -63,7 +64,7 @@ func (t PsScaleTask) Examples() ([]Doc, error) {
 			Name: "Scale web and worker processes without deploy",
 			PsScaleTask: PsScaleTask{
 				App:        "hello-world",
-				SkipDeploy: true,
+				SkipDeploy: boolPtr(true),
 				Scale: map[string]int{
 					"web":    4,
 					"worker": 4,
@@ -114,7 +115,7 @@ func (t PsScaleTask) Plan() PlanResult {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
 			args := []string{"ps:scale"}
-			if t.SkipDeploy {
+			if boolValue(t.SkipDeploy, false) {
 				args = append(args, "--skip-deploy")
 			}
 			args = append(args, t.App)

@@ -16,7 +16,7 @@ func TestIntegrationExportConfigRoundTrip(t *testing.T) {
 	createApp(app)
 	defer destroyApp(app)
 
-	set := ConfigTask{App: app, Restart: false, Config: map[string]string{"EXPORT_KEY": "export_value"}, State: StatePresent}
+	set := ConfigTask{App: app, Restart: boolPtr(false), Config: map[string]string{"EXPORT_KEY": "export_value"}, State: StatePresent}
 	if r := set.Execute(); r.Error != nil {
 		t.Fatalf("set config: %v", r.Error)
 	}

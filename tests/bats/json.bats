@@ -9,6 +9,8 @@ setup() {
   dokku_clean_app docket-test-json-clean
   dokku_clean_app docket-test-json-drift
   dokku_clean_app docket-test-json-mut
+  dokku_clean_app docket-test-json-norestart
+  dokku_clean_app docket-test-json-restart
 }
 
 teardown() {
@@ -16,6 +18,8 @@ teardown() {
   dokku_clean_app docket-test-json-clean
   dokku_clean_app docket-test-json-drift
   dokku_clean_app docket-test-json-mut
+  dokku_clean_app docket-test-json-norestart
+  dokku_clean_app docket-test-json-restart
 }
 
 @test "docket apply --json emits valid JSON-lines" {
@@ -154,6 +158,57 @@ EOF
   cmd_count="$(echo "$task_event" | jq '.commands | length')"
   [ "$cmd_count" -ge 1 ] || fail "expected at least 1 command, got $cmd_count: $task_event"
   echo "$task_event" | jq -e '.commands[0] | contains("apps:create")' >/dev/null || fail "command should mention apps:create: $task_event"
+}
+
+@test "docket plan --json emits --no-restart for dokku_config restart: false" {
+  write_tasks_file setup.yml <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: docket-test-json-norestart
+EOF
+  "$(docket_bin)" apply --tasks "$TASKS_FILE"
+
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: configure
+      dokku_config:
+        app: docket-test-json-norestart
+        restart: false
+        config:
+          NR_KEY: nr-value
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --json
+  assert_success
+  task_event="$(echo "$output" | jq -c 'select(.type == "task" and .would_change == true)' | head -n1)"
+  [ -n "$task_event" ] || fail "no drift task event found"
+  echo "$task_event" | jq -e '.commands[0] | contains("--no-restart")' >/dev/null || fail "config:set should include --no-restart: $task_event"
+}
+
+@test "docket plan --json omits --no-restart when restart is not set" {
+  write_tasks_file setup.yml <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: docket-test-json-restart
+EOF
+  "$(docket_bin)" apply --tasks "$TASKS_FILE"
+
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: configure
+      dokku_config:
+        app: docket-test-json-restart
+        config:
+          R_KEY: r-value
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --json
+  assert_success
+  task_event="$(echo "$output" | jq -c 'select(.type == "task" and .would_change == true)' | head -n1)"
+  [ -n "$task_event" ] || fail "no drift task event found"
+  echo "$task_event" | jq -e '.commands[0] | contains("--no-restart") | not' >/dev/null || fail "omitted restart should not include --no-restart: $task_event"
 }
 
 @test "docket plan --detailed-exitcode returns 0 when in sync" {

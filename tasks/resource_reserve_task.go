@@ -11,8 +11,9 @@ type ResourceReserveTask struct {
 	// Resources is a map of resource type to quantity
 	Resources map[string]string `yaml:"resources" description:"Map of resource type to quantity"`
 
-	// ClearBefore clears all resource reservations before applying new ones
-	ClearBefore bool `yaml:"clear_before" default:"false" description:"ClearBefore clears all resource reservations before applying new ones"`
+	// ClearBefore clears all resource reservations before applying new ones. It
+	// is a *bool so the value survives decoding unchanged; nil defaults to false.
+	ClearBefore *bool `yaml:"clear_before,omitempty" default:"false" description:"ClearBefore clears all resource reservations before applying new ones"`
 
 	// State is the desired state of the resource reservations
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the resource reservations"`
@@ -94,7 +95,7 @@ func (t ResourceReserveTask) Validate() error {
 
 // Plan reports the drift the ResourceReserveTask would produce.
 func (t ResourceReserveTask) Plan() PlanResult {
-	return planResource(t.State, t.App, t.ProcessType, t.Resources, t.ClearBefore, "resource:reserve")
+	return planResource(t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:reserve")
 }
 
 // init registers the ResourceReserveTask with the task registry

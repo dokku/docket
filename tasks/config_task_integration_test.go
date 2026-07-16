@@ -17,7 +17,7 @@ func TestIntegrationConfigSetAndUnset(t *testing.T) {
 	// set config
 	setTask := ConfigTask{
 		App:     appName,
-		Restart: false,
+		Restart: boolPtr(false),
 		Config:  map[string]string{"TEST_KEY": "test_value"},
 		State:   StatePresent,
 	}
@@ -44,7 +44,7 @@ func TestIntegrationConfigSetAndUnset(t *testing.T) {
 	// unset config
 	unsetTask := ConfigTask{
 		App:     appName,
-		Restart: false,
+		Restart: boolPtr(false),
 		Config:  map[string]string{"TEST_KEY": ""},
 		State:   StateAbsent,
 	}
@@ -81,7 +81,7 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 	// set 3 keys
 	setTask := ConfigTask{
 		App:     appName,
-		Restart: false,
+		Restart: boolPtr(false),
 		Config:  map[string]string{"KEY_A": "val_a", "KEY_B": "val_b", "KEY_C": "val_c"},
 		State:   StatePresent,
 	}
@@ -96,7 +96,7 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 	// update one key, keep others the same
 	updateTask := ConfigTask{
 		App:     appName,
-		Restart: false,
+		Restart: boolPtr(false),
 		Config:  map[string]string{"KEY_A": "val_a", "KEY_B": "val_b_updated", "KEY_C": "val_c"},
 		State:   StatePresent,
 	}
@@ -120,7 +120,7 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 	// unset all keys
 	unsetTask := ConfigTask{
 		App:     appName,
-		Restart: false,
+		Restart: boolPtr(false),
 		Config:  map[string]string{"KEY_A": "", "KEY_B": "", "KEY_C": ""},
 		State:   StateAbsent,
 	}

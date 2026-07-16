@@ -20,8 +20,9 @@ type HttpAuthUserTask struct {
 
 	// UpdatePassword re-issues http-auth:add-user for users that already exist
 	// so their password converges. Passwords are not exposed in the report, so
-	// a rotation cannot be drift-detected; enable this to force convergence.
-	UpdatePassword bool `required:"false" yaml:"update_password" default:"false" description:"Re-issue add-user for users that already exist so their password converges"`
+	// a rotation cannot be drift-detected; enable this to force convergence. It
+	// is a *bool so the value survives decoding unchanged; nil defaults to false.
+	UpdatePassword *bool `required:"false" yaml:"update_password,omitempty" default:"false" description:"Re-issue add-user for users that already exist so their password converges"`
 
 	// State is the desired state of the HTTP auth users
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the HTTP auth users"`
@@ -99,7 +100,7 @@ func (t HttpAuthUserTask) Examples() ([]Doc, error) {
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App:            "hello-world",
 				Users:          []HttpAuthUser{{Username: "admin", Password: "new-secret"}},
-				UpdatePassword: true,
+				UpdatePassword: boolPtr(true),
 			},
 		},
 		{
@@ -166,7 +167,7 @@ func (t HttpAuthUserTask) Plan() PlanResult {
 				case !current[u.Username]:
 					toApply = append(toApply, u)
 					mutations = append(mutations, "add "+u.Username)
-				case t.UpdatePassword:
+				case boolValue(t.UpdatePassword, false):
 					toApply = append(toApply, u)
 					mutations = append(mutations, "update "+u.Username)
 				}

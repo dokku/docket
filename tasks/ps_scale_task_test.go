@@ -74,7 +74,8 @@ func TestGetTasksPsScaleTaskParsedCorrectly(t *testing.T) {
 	if psTask.Scale["worker"] != 1 {
 		t.Errorf("Scale[worker] = %d, want %d", psTask.Scale["worker"], 1)
 	}
-	if !psTask.SkipDeploy {
+	// SkipDeploy is a *bool, so an explicit skip_deploy: true survives decoding.
+	if psTask.SkipDeploy == nil || !*psTask.SkipDeploy {
 		t.Error("SkipDeploy = false, want true (YAML value should be preserved)")
 	}
 }
