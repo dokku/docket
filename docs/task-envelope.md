@@ -236,7 +236,8 @@ tasks. Use it when a sequence of steps needs a cleanup or rollback path. The out
 The rules:
 
 - `block:` children run in order. The first one that fails (and whose own `ignore_errors` is false)
-  stops the block.
+  stops the block. "Fails" means the same thing it does for any task: a hard error, a state mismatch
+  (`State != DesiredState`), or a `when:` / `failed_when:` predicate that errors at runtime.
 - `rescue:` children run, in order, only when a block child failed. They run with the failing
   child's result bound to `.failed_task`, so a rescue can branch on the cause:
   `when: 'failed_task.Stderr contains "..."'`.
@@ -244,6 +245,10 @@ The rules:
 - The group's own envelope applies to the combined outcome: `register:` saves the post-rescue,
   post-always result, and `ignore_errors: true` on the group swallows any error that remains after
   rescue and always.
+- With no `rescue:`, an uncaught block failure becomes the group's verdict: the group line renders
+  `[error]  (group)`, `apply` aborts the rest of the play and exits non-zero, exactly as the same
+  failing task would at the top level. A falsy `failed_when:` or `ignore_errors: true` on the group
+  clears it.
 - `ignore_errors: true` on a *child* of `block:` swallows that child's error and continues; it does
   not trigger `rescue:`. Rescue is the "handle it" path; `ignore_errors` is the "swallow it" path.
 - `loop:` on a group runs the whole group once per item, with `.item` / `.index` shared by every
