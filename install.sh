@@ -3,7 +3,8 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/dokku/docket/main/install.sh | sh
-#   VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/dokku/docket/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dokku/docket/main/install.sh | VERSION=0.1.0 sh
+
 #
 # Environment variables:
 #   VERSION  Release tag to install (defaults to the latest release).
