@@ -66,6 +66,7 @@ func (t TraefikPropertyTask) Examples() ([]Doc, error) {
 			TraefikPropertyTask: TraefikPropertyTask{
 				App:      "node-js-app",
 				Property: "letsencrypt-email",
+				State:    StateAbsent,
 			},
 		},
 	})

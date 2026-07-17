@@ -66,6 +66,7 @@ func (t BuilderNixpacksPropertyTask) Examples() ([]Doc, error) {
 			BuilderNixpacksPropertyTask: BuilderNixpacksPropertyTask{
 				App:      "node-js-app",
 				Property: "nixpackstoml-path",
+				State:    StateAbsent,
 			},
 		},
 	})

@@ -66,6 +66,7 @@ func (t SchedulerPropertyTask) Examples() ([]Doc, error) {
 			SchedulerPropertyTask: SchedulerPropertyTask{
 				App:      "node-js-app",
 				Property: "selected",
+				State:    StateAbsent,
 			},
 		},
 	})

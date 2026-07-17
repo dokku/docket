@@ -74,6 +74,7 @@ func (t GitPropertyTask) Examples() ([]Doc, error) {
 			GitPropertyTask: GitPropertyTask{
 				App:      "node-js-app",
 				Property: "deploy-branch",
+				State:    StateAbsent,
 			},
 		},
 	})

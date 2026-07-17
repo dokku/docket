@@ -45,6 +45,7 @@ dokku_traefik_property:
 dokku_traefik_property:
     app: node-js-app
     property: letsencrypt-email
+    state: absent
 ```
 
 ## Return Values

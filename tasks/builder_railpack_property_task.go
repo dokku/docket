@@ -66,6 +66,7 @@ func (t BuilderRailpackPropertyTask) Examples() ([]Doc, error) {
 			BuilderRailpackPropertyTask: BuilderRailpackPropertyTask{
 				App:      "node-js-app",
 				Property: "railpackjson-path",
+				State:    StateAbsent,
 			},
 		},
 	})

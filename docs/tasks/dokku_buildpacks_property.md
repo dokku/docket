@@ -45,6 +45,7 @@ dokku_buildpacks_property:
 dokku_buildpacks_property:
     app: node-js-app
     property: stack
+    state: absent
 ```
 
 ## Return Values

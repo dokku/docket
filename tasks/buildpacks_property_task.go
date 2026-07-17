@@ -66,6 +66,7 @@ func (t BuildpacksPropertyTask) Examples() ([]Doc, error) {
 			BuildpacksPropertyTask: BuildpacksPropertyTask{
 				App:      "node-js-app",
 				Property: "stack",
+				State:    StateAbsent,
 			},
 		},
 	})

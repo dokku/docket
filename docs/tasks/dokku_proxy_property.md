@@ -54,6 +54,7 @@ dokku_proxy_property:
 dokku_proxy_property:
     app: node-js-app
     property: type
+    state: absent
 ```
 
 ## Return Values

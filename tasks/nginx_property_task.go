@@ -74,6 +74,7 @@ func (t NginxPropertyTask) Examples() ([]Doc, error) {
 			NginxPropertyTask: NginxPropertyTask{
 				App:      "node-js-app",
 				Property: "proxy-read-timeout",
+				State:    StateAbsent,
 			},
 		},
 	})

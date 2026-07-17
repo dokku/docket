@@ -74,6 +74,7 @@ func (t RegistryPropertyTask) Examples() ([]Doc, error) {
 			RegistryPropertyTask: RegistryPropertyTask{
 				App:      "node-js-app",
 				Property: "image-repo",
+				State:    StateAbsent,
 			},
 		},
 	})

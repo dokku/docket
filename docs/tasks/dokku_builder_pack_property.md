@@ -45,6 +45,7 @@ dokku_builder_pack_property:
 dokku_builder_pack_property:
     app: node-js-app
     property: projecttoml-path
+    state: absent
 ```
 
 ## Return Values

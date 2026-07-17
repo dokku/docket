@@ -66,6 +66,7 @@ func (t PsPropertyTask) Examples() ([]Doc, error) {
 			PsPropertyTask: PsPropertyTask{
 				App:      "node-js-app",
 				Property: "restart-policy",
+				State:    StateAbsent,
 			},
 		},
 	})

@@ -58,6 +58,7 @@ dokku_letsencrypt_property:
 dokku_letsencrypt_property:
     app: node-js-app
     property: email
+    state: absent
 ```
 
 ## Return Values

@@ -45,6 +45,7 @@ dokku_builder_herokuish_property:
 dokku_builder_herokuish_property:
     app: node-js-app
     property: allowed
+    state: absent
 ```
 
 ## Return Values

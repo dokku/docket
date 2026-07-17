@@ -66,6 +66,7 @@ func (t HaproxyPropertyTask) Examples() ([]Doc, error) {
 			HaproxyPropertyTask: HaproxyPropertyTask{
 				App:      "node-js-app",
 				Property: "letsencrypt-email",
+				State:    StateAbsent,
 			},
 		},
 	})

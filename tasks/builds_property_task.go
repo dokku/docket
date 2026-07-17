@@ -66,6 +66,7 @@ func (t BuildsPropertyTask) Examples() ([]Doc, error) {
 			BuildsPropertyTask: BuildsPropertyTask{
 				App:      "node-js-app",
 				Property: "retention",
+				State:    StateAbsent,
 			},
 		},
 	})

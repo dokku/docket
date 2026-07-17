@@ -54,6 +54,7 @@ dokku_registry_property:
 dokku_registry_property:
     app: node-js-app
     property: image-repo
+    state: absent
 ```
 
 ## Return Values

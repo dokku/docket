@@ -54,6 +54,7 @@ dokku_nginx_property:
 dokku_nginx_property:
     app: node-js-app
     property: proxy-read-timeout
+    state: absent
 ```
 
 ## Return Values

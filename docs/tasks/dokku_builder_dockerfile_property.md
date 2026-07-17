@@ -45,6 +45,7 @@ dokku_builder_dockerfile_property:
 dokku_builder_dockerfile_property:
     app: node-js-app
     property: dockerfile-path
+    state: absent
 ```
 
 ## Return Values

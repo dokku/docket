@@ -45,6 +45,7 @@ dokku_builder_railpack_property:
 dokku_builder_railpack_property:
     app: node-js-app
     property: railpackjson-path
+    state: absent
 ```
 
 ## Return Values

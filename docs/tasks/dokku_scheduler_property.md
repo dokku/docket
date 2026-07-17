@@ -45,6 +45,7 @@ dokku_scheduler_property:
 dokku_scheduler_property:
     app: node-js-app
     property: selected
+    state: absent
 ```
 
 ## Return Values
