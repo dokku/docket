@@ -54,6 +54,7 @@ dokku_git_property:
 dokku_git_property:
     app: node-js-app
     property: deploy-branch
+    state: absent
 ```
 
 ## Return Values

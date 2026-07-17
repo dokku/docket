@@ -66,6 +66,7 @@ func (t BuilderLambdaPropertyTask) Examples() ([]Doc, error) {
 			BuilderLambdaPropertyTask: BuilderLambdaPropertyTask{
 				App:      "node-js-app",
 				Property: "lambdayml-path",
+				State:    StateAbsent,
 			},
 		},
 	})

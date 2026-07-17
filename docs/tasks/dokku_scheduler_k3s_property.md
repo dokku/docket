@@ -54,6 +54,7 @@ dokku_scheduler_k3s_property:
 dokku_scheduler_k3s_property:
     app: node-js-app
     property: namespace
+    state: absent
 ```
 
 ## Return Values

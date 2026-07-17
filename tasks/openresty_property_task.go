@@ -74,6 +74,7 @@ func (t OpenrestyPropertyTask) Examples() ([]Doc, error) {
 			OpenrestyPropertyTask: OpenrestyPropertyTask{
 				App:      "node-js-app",
 				Property: "proxy-read-timeout",
+				State:    StateAbsent,
 			},
 		},
 	})

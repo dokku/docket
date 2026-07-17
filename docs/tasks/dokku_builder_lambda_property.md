@@ -45,6 +45,7 @@ dokku_builder_lambda_property:
 dokku_builder_lambda_property:
     app: node-js-app
     property: lambdayml-path
+    state: absent
 ```
 
 ## Return Values

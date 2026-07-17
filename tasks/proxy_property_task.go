@@ -74,6 +74,7 @@ func (t ProxyPropertyTask) Examples() ([]Doc, error) {
 			ProxyPropertyTask: ProxyPropertyTask{
 				App:      "node-js-app",
 				Property: "type",
+				State:    StateAbsent,
 			},
 		},
 	})

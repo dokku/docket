@@ -66,6 +66,7 @@ func (t ChecksPropertyTask) Examples() ([]Doc, error) {
 			ChecksPropertyTask: ChecksPropertyTask{
 				App:      "node-js-app",
 				Property: "wait-to-retire",
+				State:    StateAbsent,
 			},
 		},
 	})

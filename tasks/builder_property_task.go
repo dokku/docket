@@ -58,6 +58,7 @@ func (t BuilderPropertyTask) Examples() ([]Doc, error) {
 			BuilderPropertyTask: BuilderPropertyTask{
 				App:      "node-js-app",
 				Property: "selected",
+				State:    StateAbsent,
 			},
 		},
 		{

@@ -45,6 +45,7 @@ dokku_cron_property:
 dokku_cron_property:
     app: node-js-app
     property: maintenance
+    state: absent
 ```
 
 ## Return Values

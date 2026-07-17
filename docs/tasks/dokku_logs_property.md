@@ -45,6 +45,7 @@ dokku_logs_property:
 dokku_logs_property:
     app: node-js-app
     property: max-size
+    state: absent
 ```
 
 ## Return Values

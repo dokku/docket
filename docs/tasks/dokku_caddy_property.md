@@ -45,6 +45,7 @@ dokku_caddy_property:
 dokku_caddy_property:
     app: node-js-app
     property: tls-internal
+    state: absent
 ```
 
 ## Return Values

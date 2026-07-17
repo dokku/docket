@@ -66,6 +66,7 @@ func (t AppJsonPropertyTask) Examples() ([]Doc, error) {
 			AppJsonPropertyTask: AppJsonPropertyTask{
 				App:      "node-js-app",
 				Property: "appjson-path",
+				State:    StateAbsent,
 			},
 		},
 	})

@@ -45,6 +45,7 @@ dokku_ps_property:
 dokku_ps_property:
     app: node-js-app
     property: restart-policy
+    state: absent
 ```
 
 ## Return Values

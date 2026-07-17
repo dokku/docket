@@ -79,6 +79,7 @@ func (t SchedulerK3sPropertyTask) Examples() ([]Doc, error) {
 			SchedulerK3sPropertyTask: SchedulerK3sPropertyTask{
 				App:      "node-js-app",
 				Property: "namespace",
+				State:    StateAbsent,
 			},
 		},
 	})

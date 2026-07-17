@@ -66,6 +66,7 @@ func (t CronPropertyTask) Examples() ([]Doc, error) {
 			CronPropertyTask: CronPropertyTask{
 				App:      "node-js-app",
 				Property: "maintenance",
+				State:    StateAbsent,
 			},
 		},
 	})

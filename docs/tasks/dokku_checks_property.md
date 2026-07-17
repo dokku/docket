@@ -45,6 +45,7 @@ dokku_checks_property:
 dokku_checks_property:
     app: node-js-app
     property: wait-to-retire
+    state: absent
 ```
 
 ## Return Values

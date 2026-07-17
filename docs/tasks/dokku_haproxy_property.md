@@ -45,6 +45,7 @@ dokku_haproxy_property:
 dokku_haproxy_property:
     app: node-js-app
     property: letsencrypt-email
+    state: absent
 ```
 
 ## Return Values

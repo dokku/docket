@@ -45,6 +45,7 @@ dokku_app_json_property:
 dokku_app_json_property:
     app: node-js-app
     property: appjson-path
+    state: absent
 ```
 
 ## Return Values

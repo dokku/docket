@@ -66,6 +66,7 @@ func (t BuilderHerokuishPropertyTask) Examples() ([]Doc, error) {
 			BuilderHerokuishPropertyTask: BuilderHerokuishPropertyTask{
 				App:      "node-js-app",
 				Property: "allowed",
+				State:    StateAbsent,
 			},
 		},
 	})

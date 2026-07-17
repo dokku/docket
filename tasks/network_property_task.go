@@ -74,6 +74,7 @@ func (t NetworkPropertyTask) Examples() ([]Doc, error) {
 			NetworkPropertyTask: NetworkPropertyTask{
 				App:      "hello-world",
 				Property: "attach-post-create",
+				State:    StateAbsent,
 			},
 		},
 	})

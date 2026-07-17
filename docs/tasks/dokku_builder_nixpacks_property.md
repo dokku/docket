@@ -45,6 +45,7 @@ dokku_builder_nixpacks_property:
 dokku_builder_nixpacks_property:
     app: node-js-app
     property: nixpackstoml-path
+    state: absent
 ```
 
 ## Return Values

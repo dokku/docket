@@ -45,6 +45,7 @@ dokku_builds_property:
 dokku_builds_property:
     app: node-js-app
     property: retention
+    state: absent
 ```
 
 ## Return Values

@@ -63,6 +63,7 @@ func (t SchedulerDockerLocalPropertyTask) Examples() ([]Doc, error) {
 			SchedulerDockerLocalPropertyTask: SchedulerDockerLocalPropertyTask{
 				App:      "node-js-app",
 				Property: "init-process",
+				State:    StateAbsent,
 			},
 		},
 	})

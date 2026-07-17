@@ -54,6 +54,7 @@ dokku_network_property:
 dokku_network_property:
     app: hello-world
     property: attach-post-create
+    state: absent
 ```
 
 ## Return Values

@@ -66,6 +66,7 @@ func (t BuilderPackPropertyTask) Examples() ([]Doc, error) {
 			BuilderPackPropertyTask: BuilderPackPropertyTask{
 				App:      "node-js-app",
 				Property: "projecttoml-path",
+				State:    StateAbsent,
 			},
 		},
 	})

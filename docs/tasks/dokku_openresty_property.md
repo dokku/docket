@@ -54,6 +54,7 @@ dokku_openresty_property:
 dokku_openresty_property:
     app: node-js-app
     property: proxy-read-timeout
+    state: absent
 ```
 
 ## Return Values

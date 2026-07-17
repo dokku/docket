@@ -66,6 +66,7 @@ func (t LogsPropertyTask) Examples() ([]Doc, error) {
 			LogsPropertyTask: LogsPropertyTask{
 				App:      "node-js-app",
 				Property: "max-size",
+				State:    StateAbsent,
 			},
 		},
 	})

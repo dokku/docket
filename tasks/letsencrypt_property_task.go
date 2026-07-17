@@ -81,6 +81,7 @@ func (t LetsencryptPropertyTask) Examples() ([]Doc, error) {
 			LetsencryptPropertyTask: LetsencryptPropertyTask{
 				App:      "node-js-app",
 				Property: "email",
+				State:    StateAbsent,
 			},
 		},
 	})

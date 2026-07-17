@@ -66,6 +66,7 @@ func (t CaddyPropertyTask) Examples() ([]Doc, error) {
 			CaddyPropertyTask: CaddyPropertyTask{
 				App:      "node-js-app",
 				Property: "tls-internal",
+				State:    StateAbsent,
 			},
 		},
 	})

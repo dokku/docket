@@ -66,6 +66,7 @@ func (t BuilderDockerfilePropertyTask) Examples() ([]Doc, error) {
 			BuilderDockerfilePropertyTask: BuilderDockerfilePropertyTask{
 				App:      "node-js-app",
 				Property: "dockerfile-path",
+				State:    StateAbsent,
 			},
 		},
 	})

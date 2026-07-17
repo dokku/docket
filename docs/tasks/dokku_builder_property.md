@@ -35,6 +35,7 @@ dokku_builder_property:
 dokku_builder_property:
     app: node-js-app
     property: selected
+    state: absent
 ```
 
 ### Changing the build build directory
