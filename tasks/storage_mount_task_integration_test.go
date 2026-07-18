@@ -179,12 +179,16 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 		t.Error("expected changed=false for unchanged legacy mount with options")
 	}
 
-	// dropping volume_options should surface as drift
+	// dropping volume_options should surface as drift on the existing mount,
+	// which the plan must render as an in-place modify (~), not a create (+).
 	withoutOpts := StorageMountTask{
 		App:          appName,
 		HostDir:      hostDir,
 		ContainerDir: containerDir,
 		State:        StatePresent,
+	}
+	if plan := withoutOpts.Plan(); plan.Status != PlanStatusModify {
+		t.Errorf("expected Modify status for volume_options drift on an existing mount, got %q (reason %q)", plan.Status, plan.Reason)
 	}
 	result = withoutOpts.Execute()
 	if result.Error != nil {
