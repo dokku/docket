@@ -45,7 +45,7 @@ func envelopeExprContext(
 	if !hasLoopVars && !hasResult && !hasRegistered && !hasFailedTask {
 		return base
 	}
-	out := make(map[string]interface{}, len(base)+4)
+	out := make(map[string]interface{}, safeCap(len(base), 4))
 	for k, v := range base {
 		out[k] = v
 	}

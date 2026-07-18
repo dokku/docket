@@ -41,7 +41,7 @@ func expandLoop(base *TaskEnvelope, bodyBytes []byte, typeKey string, sigilConte
 	names := loopExpansionNames(base.Name, items)
 	out := make([]*TaskEnvelope, 0, len(items))
 	for i, item := range items {
-		iterCtx := make(map[string]interface{}, len(sigilContext)+2)
+		iterCtx := make(map[string]interface{}, safeCap(len(sigilContext), 2))
 		for k, v := range sigilContext {
 			iterCtx[k] = v
 		}
@@ -114,7 +114,7 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 	names := loopExpansionNames(base.Name, items)
 	out := make([]*TaskEnvelope, 0, len(items))
 	for i, item := range items {
-		iterCtx := make(map[string]interface{}, len(sigilContext)+2)
+		iterCtx := make(map[string]interface{}, safeCap(len(sigilContext), 2))
 		for k, v := range sigilContext {
 			iterCtx[k] = v
 		}
