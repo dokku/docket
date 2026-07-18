@@ -188,6 +188,10 @@ func (t StorageMountTask) Plan() PlanResult {
 			}
 			var args []string
 			reason := "mount missing"
+			// A brand-new attachment is a create; drift on an existing one
+			// is an in-place modify, matching the create-vs-modify split in
+			// sibling tasks such as service_expose.
+			status := PlanStatusCreate
 			if existing == nil {
 				args = t.mountArgs()
 			} else {
@@ -197,11 +201,12 @@ func (t StorageMountTask) Plan() PlanResult {
 				// exists." (dokku/dokku#8713 kept that contract).
 				args = t.namedMountArgs(existing.EntryName)
 				reason = fmt.Sprintf("volume_options drift (have %q, want %q)", existing.VolumeOptions, t.VolumeOptions)
+				status = PlanStatusModify
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
-				Status:    PlanStatusCreate,
+				Status:    status,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("mount %s on %s", t.describeMount(), t.App)},
 				Commands:  resolveCommands(inputs),

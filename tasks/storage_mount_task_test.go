@@ -392,6 +392,69 @@ func TestStorageMountPlanFindsRunOnlyMount(t *testing.T) {
 	}
 }
 
+func TestStorageMountPlanVolumeOptionsDriftReportsModify(t *testing.T) {
+	// An attachment already exists and only volume_options drifted: the plan
+	// remediates it in place, so it must render the modify marker (~), not the
+	// create marker (+). Regression guard for the hardcoded PlanStatusCreate.
+	report := `{
+		"attachment.1.entry-name": "data",
+		"attachment.1.host-path": "/h/data",
+		"attachment.1.container-path": "/app/storage",
+		"attachment.1.phases": "deploy,run",
+		"attachment.1.volume-options": "Z",
+		"attachment.1.readonly": "false"
+	}`
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet storage:report node-js-app --format json": report,
+	}))()
+
+	task := StorageMountTask{
+		App:           "node-js-app",
+		EntryName:     "data",
+		ContainerDir:  "/app/storage",
+		VolumeOptions: "noexec,nosuid",
+		State:         StatePresent,
+	}
+	plan := task.Plan()
+	if plan.Error != nil {
+		t.Fatalf("Plan returned error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when volume_options differ on an existing mount")
+	}
+	if plan.Status != PlanStatusModify {
+		t.Errorf("expected Modify status for in-place volume_options drift, got %q", plan.Status)
+	}
+	if !strings.Contains(plan.Reason, "volume_options drift") {
+		t.Errorf("expected reason to mention volume_options drift, got %q", plan.Reason)
+	}
+}
+
+func TestStorageMountPlanMissingReportsCreate(t *testing.T) {
+	// No attachment matches the recipe, so the mount is brand new and must
+	// render the create marker (+). Pins the default create branch.
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet storage:report node-js-app --format json": "{}",
+	}))()
+
+	task := StorageMountTask{
+		App:          "node-js-app",
+		EntryName:    "data",
+		ContainerDir: "/app/storage",
+		State:        StatePresent,
+	}
+	plan := task.Plan()
+	if plan.Error != nil {
+		t.Fatalf("Plan returned error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when no attachment exists")
+	}
+	if plan.Status != PlanStatusCreate {
+		t.Errorf("expected Create status for a brand-new mount, got %q", plan.Status)
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
