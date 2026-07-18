@@ -240,7 +240,7 @@ func (s *json5Scanner) readString() string {
 				// line continuation: the newline is elided
 			case 'u':
 				if s.pos+4 <= len(s.data) {
-					if r, err := strconv.ParseUint(string(s.data[s.pos:s.pos+4]), 16, 32); err == nil {
+					if r, err := strconv.ParseInt(string(s.data[s.pos:s.pos+4]), 16, 32); err == nil {
 						for i := 0; i < 4; i++ {
 							s.advance()
 						}
