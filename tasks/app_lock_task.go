@@ -131,9 +131,10 @@ func (t AppLockTask) ExportApp(app string) ([]interface{}, error) {
 	return []interface{}{AppLockTask{App: app, State: StatePresent}}, nil
 }
 
-// appLocked checks if a dokku app is locked. Returns (false,
-// *subprocess.SSHError) on transport failure; (false, nil) when dokku
-// reports unlocked; (true, nil) when locked.
+// appLocked checks if a dokku app is locked. Returns (false, err) when
+// the probe could not run - a transport failure, a missing dokku binary,
+// or a cancellation; (false, nil) when dokku reports unlocked; (true,
+// nil) when locked.
 func appLocked(app string) (bool, error) {
 	return subprocess.Probe(subprocess.ExecCommandInput{
 		Command: "dokku",

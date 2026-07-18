@@ -115,8 +115,9 @@ func (t AppTask) ExportApp(app string) ([]interface{}, error) {
 
 // appExists checks if an app exists. Returns (true, nil) when the app
 // is present, (false, nil) when dokku reports it absent, and
-// (false, *subprocess.SSHError) when the probe could not reach the
-// server. Plan() callers must short-circuit on the error.
+// (false, err) when the probe could not run - a transport failure, a
+// missing dokku binary, or a cancellation. Plan() callers must
+// short-circuit on the error.
 func appExists(appName string) (bool, error) {
 	return subprocess.Probe(subprocess.ExecCommandInput{
 		Command: "dokku",

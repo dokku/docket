@@ -190,8 +190,9 @@ func (t ServiceLinkTask) Plan() PlanResult {
 }
 
 // serviceLinked checks if a dokku service is linked to an app. Returns
-// (false, *subprocess.SSHError) on transport failure; (false, nil) when
-// dokku reports no link; (true, nil) when linked.
+// (false, err) when the probe could not run - a transport failure, a
+// missing dokku binary, or a cancellation; (false, nil) when dokku
+// reports no link; (true, nil) when linked.
 func serviceLinked(service, name, app string) (bool, error) {
 	return subprocess.Probe(subprocess.ExecCommandInput{
 		Command: "dokku",

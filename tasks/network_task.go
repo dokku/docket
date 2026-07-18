@@ -164,9 +164,10 @@ func (t NetworkTask) ExportGlobal() ([]interface{}, error) {
 	return out, nil
 }
 
-// networkExists checks if a Docker network exists. Returns (false,
-// *subprocess.SSHError) on transport failure; (false, nil) when dokku
-// reports the network absent; (true, nil) when present.
+// networkExists checks if a Docker network exists. Returns (false, err)
+// when the probe could not run - a transport failure, a missing dokku
+// binary, or a cancellation; (false, nil) when dokku reports the network
+// absent; (true, nil) when present.
 func networkExists(name string) (bool, error) {
 	return subprocess.Probe(subprocess.ExecCommandInput{
 		Command: "dokku",

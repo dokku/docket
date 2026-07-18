@@ -133,18 +133,15 @@ func TestMultiPlayPlayFilterComposesWithTags(t *testing.T) {
   tasks:
     - name: deploy-api
       tags: [deploy]
-      dokku_app:
-        app: docket-test-deploy-api
+      dokku_stub: { key: deploy-api }
     - name: configure-api
       tags: [configure]
-      dokku_app:
-        app: docket-test-configure-api
+      dokku_stub: { key: configure-api }
 - name: worker
   tasks:
     - name: deploy-worker
       tags: [deploy]
-      dokku_app:
-        app: docket-test-deploy-worker
+      dokku_stub: { key: deploy-worker }
 `)
 	stdout, _, _ := runPlan(t, path, "--play", "api", "--tags", "deploy")
 	if !strings.Contains(stdout, "deploy-api") {
@@ -168,14 +165,12 @@ func TestMultiPlayPlayLevelTagsPropagateToTasks(t *testing.T) {
   tags: [api]
   tasks:
     - name: deploy-api
-      dokku_app:
-        app: docket-test-deploy-api
+      dokku_stub: { key: deploy-api }
 - name: worker
   tags: [worker]
   tasks:
     - name: deploy-worker
-      dokku_app:
-        app: docket-test-deploy-worker
+      dokku_stub: { key: deploy-worker }
 `)
 	stdout, _, _ := runPlan(t, path, "--tags", "api")
 	if !strings.Contains(stdout, "deploy-api") {
@@ -235,6 +230,41 @@ func TestPlanFailedWhenClearsError(t *testing.T) {
 	}
 	if strings.Contains(stdout, "[!]") {
 		t.Errorf("probe error should be cleared by failed_when; got:\n%s", stdout)
+	}
+}
+
+// TestPlanProbeErrorRendersMarkerAndExits pins the documented contract
+// that an uncleared probe error renders [!] on stderr and makes plan
+// exit 1, and that errors win over drift under --detailed-exitcode (exit
+// 1, not 2). This is the end-to-end guard for #328: a probe that could
+// not run must not be reported as absent with an optimistic [+] create.
+func TestPlanProbeErrorRendersMarkerAndExits(t *testing.T) {
+	defer stubReset()
+	stubSet("a", StubFixture{
+		PlanError: errors.New(`exec: "dokku": executable file not found in $PATH`),
+	})
+
+	path := writeMultiPlayTasks(t, `---
+- tasks:
+    - name: needs-dokku
+      dokku_stub: { key: a }
+`)
+
+	stdout, stderr, exit := runPlan(t, path)
+	if exit != 1 {
+		t.Fatalf("exit = %d, want 1; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "[!]") {
+		t.Errorf("expected [!] marker on stderr; got stdout=%s stderr=%s", stdout, stderr)
+	}
+	if strings.Contains(stdout, "[+]") {
+		t.Errorf("plan must not predict [+] create for state it never read; got:\n%s", stdout)
+	}
+
+	// --detailed-exitcode: errors win over drift, so exit stays 1, not 2.
+	_, _, exit = runPlan(t, path, "--detailed-exitcode")
+	if exit != 1 {
+		t.Errorf("detailed-exitcode exit = %d, want 1 (errors win over drift)", exit)
 	}
 }
 

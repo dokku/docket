@@ -147,9 +147,10 @@ func (t ServiceCreateTask) Plan() PlanResult {
 	})
 }
 
-// serviceExists checks if a dokku service exists. Returns (false,
-// *subprocess.SSHError) on transport failure, (false, nil) when dokku
-// reports the service absent, (true, nil) when present.
+// serviceExists checks if a dokku service exists. Returns (false, err)
+// when the probe could not run - a transport failure, a missing dokku
+// binary, or a cancellation, (false, nil) when dokku reports the service
+// absent, (true, nil) when present.
 func serviceExists(service, name string) (bool, error) {
 	return subprocess.Probe(subprocess.ExecCommandInput{
 		Command: "dokku",

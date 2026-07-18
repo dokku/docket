@@ -79,6 +79,15 @@ type ExecCommandInput struct {
 type ExecError struct {
 	Response ExecCommandResponse
 	Err      error
+
+	// Ran is true only when the command executed to completion and
+	// Response.ExitCode is its real exit status. It is false when the
+	// command could not be started (binary not found, permission denied)
+	// or was cancelled, in which cases Response.ExitCode is not
+	// meaningful. Probe() uses this to tell a dokku-level "state absent"
+	// (Ran, non-zero exit) apart from a real execution failure that must
+	// be propagated.
+	Ran bool
 }
 
 // Error returns the wrapped error's message so existing string-based
@@ -312,6 +321,10 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 
 	res, err := cmd.Execute(ctx)
 	if err != nil {
+		// The command could not be run to completion: the binary was not
+		// found, was not executable, or the context was cancelled. The
+		// exit code is not meaningful, so Ran stays false and callers such
+		// as Probe surface the failure instead of reading it as absence.
 		response := ExecCommandResponse{
 			Command:   resolved,
 			Stdout:    res.Stdout,
@@ -330,7 +343,7 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 			ExitCode:  res.ExitCode,
 			Cancelled: res.Cancelled,
 		}
-		return response, &ExecError{Response: response, Err: errors.New(res.Stderr)}
+		return response, &ExecError{Response: response, Err: errors.New(res.Stderr), Ran: true}
 	}
 
 	return ExecCommandResponse{

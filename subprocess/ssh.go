@@ -217,12 +217,18 @@ var (
 )
 
 // Probe runs input as a state probe and reports whether it matched
-// (exit 0). A dokku-level non-zero exit is reported as `(false, nil)`,
-// i.e. "the probed state is absent," so callers can write idempotent
-// probes without unwrapping errors themselves. A transport-level
-// failure (`*SSHError`) is propagated as `(false, err)` so the caller
-// can short-circuit `Plan()` with `PlanResult{Error: err}` and let the
-// formatter render `! ssh: ...`.
+// (exit 0). A non-zero exit from a command that actually ran is reported
+// as `(false, nil)`, i.e. "the probed state is absent," so callers can
+// write idempotent probes without unwrapping errors themselves.
+//
+// Any failure that means the probe never produced a real answer is
+// propagated as `(false, err)` so the caller can short-circuit `Plan()`
+// with `PlanResult{Error: err}` and let the formatter render `[!]`. That
+// covers a transport-level failure (`*SSHError`), a command that could
+// not be executed at all (the dokku binary is missing or not
+// executable), and a cancelled probe. Distinguishing "ran and said no"
+// from "could not run" relies on `ExecError.Ran`, since binary-not-found
+// reports `ExitCode 0` and so cannot be told apart by exit code.
 //
 // Use this for any plan-time probe that today reads exit code only
 // (`apps:exists`, `network:exists`, `<service>:linked`, etc.). Probes
@@ -231,11 +237,22 @@ var (
 func Probe(input ExecCommandInput) (bool, error) {
 	result, err := CallExecCommand(input)
 	if err != nil {
+		// Transport-level failure (ssh connect/auth/host-key): propagate
+		// so the caller can render `! ssh: ...`.
 		var sshErr *SSHError
 		if errors.As(err, &sshErr) {
 			return false, err
 		}
-		return false, nil
+		// The command executed and exited non-zero: the probed state is
+		// absent. Report (false, nil) so idempotent probes need not unwrap.
+		var execErr *ExecError
+		if errors.As(err, &execErr) && execErr.Ran {
+			return false, nil
+		}
+		// Anything else - the command could not be executed (binary not
+		// found, permission denied) or was cancelled - is a real failure
+		// the caller must surface, not "state absent".
+		return false, err
 	}
 	return result.ExitCode == 0, nil
 }
@@ -390,7 +407,10 @@ func classifySshResult(target sshTarget, remote []string, resp ExecCommandRespon
 		}
 	}
 	if resp.ExitCode != 0 {
-		return resp, &ExecError{Response: resp, Err: errors.New(resp.Stderr)}
+		// The remote dokku command ran and exited non-zero (not a
+		// transport failure). Ran marks the exit code as authoritative so
+		// Probe treats it as "state absent" rather than an execution error.
+		return resp, &ExecError{Response: resp, Err: errors.New(resp.Stderr), Ran: true}
 	}
 	return resp, nil
 }
