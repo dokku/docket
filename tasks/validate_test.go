@@ -598,6 +598,22 @@ func TestValidateStorageEnsureInvalidChown(t *testing.T) {
 	}
 }
 
+func TestValidateStorageEnsureNumericChownValid(t *testing.T) {
+	// dokku's storage:ensure-directory --chown also accepts a raw numeric uid.
+	// The value is written unquoted, so this also proves the YAML integer scalar
+	// decodes into the string chown field (as the raw "1000") before validation.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_ensure:
+        app: node-js-app
+        chown: 1000
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input for a numeric chown, got %d: %+v", n, problems)
+	}
+}
+
 func TestValidateInvalidTaskInputSkippedWhenRequiredMissing(t *testing.T) {
 	// When a required field is missing, only missing_required_field is
 	// reported; the conditional Validate() check (which depends on that

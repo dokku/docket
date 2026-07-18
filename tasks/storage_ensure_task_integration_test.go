@@ -49,3 +49,27 @@ func TestIntegrationStorageEnsureOmittedChown(t *testing.T) {
 		t.Errorf("expected state 'present', got '%s'", result.State)
 	}
 }
+
+func TestIntegrationStorageEnsureNumericChown(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-storage-numeric-chown"
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	// A raw numeric uid is accepted by dokku (ownership set to <uid>:<uid>).
+	task := StorageEnsureTask{
+		App:   appName,
+		Chown: "32767",
+		State: StatePresent,
+	}
+	result := task.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to ensure storage with numeric chown: %v", result.Error)
+	}
+	if result.State != StatePresent {
+		t.Errorf("expected state 'present', got '%s'", result.State)
+	}
+}

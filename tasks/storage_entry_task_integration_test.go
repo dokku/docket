@@ -55,3 +55,28 @@ func TestIntegrationStorageEntry(t *testing.T) {
 		t.Error("expected changed=false for already-absent entry")
 	}
 }
+
+func TestIntegrationStorageEntryNumericChown(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "docket-test-entry-numeric-chown"
+
+	// Start clean, then create with a raw numeric uid. The sibling
+	// dokku_storage_entry passes chown through unrestricted, so numeric uids
+	// already work here (unlike the historically narrower dokku_storage_ensure).
+	destroy := StorageEntryTask{Name: name, State: StateAbsent}
+	destroy.Execute()
+	defer destroy.Execute()
+
+	create := StorageEntryTask{Name: name, Chown: "32767", State: StatePresent}
+	result := create.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to create entry with numeric chown: %v", result.Error)
+	}
+	if result.State != StatePresent {
+		t.Errorf("expected state 'present', got '%s'", result.State)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for new entry")
+	}
+}

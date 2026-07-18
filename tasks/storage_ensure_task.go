@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -13,7 +14,7 @@ type StorageEnsureTask struct {
 	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Chown is the chown value to set
-	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Chown value to set"`
+	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Chown value to set: an ownership preset or a numeric uid (0-65535)"`
 
 	// State is the desired state of the storage
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage"`
@@ -78,21 +79,35 @@ func (t StorageEnsureTask) Execute() TaskOutputState {
 
 // Validate checks the StorageEnsureTask's inputs without contacting the server.
 // chown is optional: an omitted value lets dokku apply its default (herokuish)
-// ownership. A non-empty value must name one of the ownership presets dokku's
-// storage:ensure-directory understands so a typo is caught before dispatch.
+// ownership. A non-empty value must be one dokku's storage:ensure-directory
+// accepts - a named ownership preset or a numeric uid in 0-65535 (see
+// validChown) - so a typo or out-of-range value is caught before dispatch.
 func (t StorageEnsureTask) Validate() error {
-	if t.State == StatePresent && t.Chown != "" {
-		chownValues := map[string]bool{
-			"heroku": true, "herokuish": true, "paketo": true, "root": true, "false": true,
-		}
-		if !chownValues[t.Chown] {
-			return errors.New("'chown' must be one of heroku, herokuish, paketo, root, false")
-		}
+	if t.State == StatePresent && t.Chown != "" && !validChown(t.Chown) {
+		return errors.New("'chown' must be one of heroku, herokuish, paketo, root, false or a numeric uid (0-65535)")
 	}
 	if t.State == StateAbsent {
 		return errors.New("the absent state is not supported for storage:ensure")
 	}
 	return nil
+}
+
+// validChown reports whether a chown value is one dokku's
+// storage:ensure-directory accepts: a named ownership preset or a raw
+// numeric uid. dokku's ResolveChownID maps the presets to uids and parses
+// a numeric value with strconv.ParseUint(value, 10, 16), so docket mirrors
+// that here - accepting a uid in 0-65535 - while still catching typos in
+// non-numeric values before dispatch. dokku's deprecated 'packeto' alias is
+// intentionally not accepted so the typo surfaces at validate time. The raw
+// string is validated with the same base-10 parser dokku applies to the
+// --chown argument, so docket's decision always matches dokku's runtime parse.
+func validChown(chown string) bool {
+	switch chown {
+	case "heroku", "herokuish", "paketo", "root", "false":
+		return true
+	}
+	_, err := strconv.ParseUint(chown, 10, 16)
+	return err == nil
 }
 
 // ensureArgs builds the storage:ensure-directory command arguments. The
