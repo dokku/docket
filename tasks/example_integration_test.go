@@ -102,6 +102,11 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 	// be created first.
 	"dokku_storage_mount": {ensureApps: []string{"node-js-app"}, setup: setupStorageMountExample},
 
+	// network_property references a network that must exist for a build to
+	// attach to it, and its global example sets a property that would otherwise
+	// make every later app build attach to that network.
+	"dokku_network_property": {setup: setupNetworkPropertyExample},
+
 	// Tasks whose documented value is a placeholder the driver must provision
 	// (a real inline PEM / cert path, a registry secret, or a maintenance
 	// tarball) because it cannot be published in the docs.
@@ -405,6 +410,23 @@ func enableHttpAuthExampleApp(t *testing.T) {
 	result := HttpAuthTask{App: "hello-world", Username: "admin", Password: "secret", State: StatePresent}.Execute()
 	if result.Error != nil {
 		t.Fatalf("failed to enable http-auth on example app: %v", result.Error)
+	}
+}
+
+// setupNetworkPropertyExample creates the network the examples reference and,
+// on cleanup, clears the global attach-post-create property the global example
+// sets and removes the network. Without the cleanup, that global property
+// persists and makes every subsequent app build fail attaching to a network the
+// build environment no longer has.
+func setupNetworkPropertyExample(t *testing.T) (func(Task) Task, func()) {
+	t.Helper()
+	result := NetworkTask{Name: "example-network", State: StatePresent}.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to create example network: %v", result.Error)
+	}
+	return nil, func() {
+		NetworkPropertyTask{Global: true, Property: "attach-post-create", State: StateAbsent}.Execute()
+		NetworkTask{Name: "example-network", State: StateAbsent}.Execute()
 	}
 }
 
