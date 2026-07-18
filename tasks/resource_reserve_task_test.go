@@ -1,8 +1,10 @@
 package tasks
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/dokku/docket/subprocess"
 	_ "github.com/gliderlabs/sigil/builtin"
 )
 
@@ -31,6 +33,39 @@ func TestResourceReserveTaskNilResources(t *testing.T) {
 	result := task.Execute()
 	if result.Error == nil {
 		t.Fatal("Execute with nil resources and state=present should return an error")
+	}
+}
+
+func TestResourceReserveSetCommandDeterministicOrder(t *testing.T) {
+	// Both cpu and memory drift, so the set command carries both flags and both
+	// mutations are reported. Sorting the resource keys must yield byte-identical,
+	// alphabetical output on every run so plan and apply agree (issue #341).
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet resource:reserve test-app": "cpu: 50\nmemory: 256",
+	}))()
+
+	task := ResourceReserveTask{
+		App:       "test-app",
+		Resources: map[string]string{"memory": "512", "cpu": "100"},
+		State:     StatePresent,
+	}
+
+	wantCommands := []string{"dokku resource:reserve --cpu 100 --memory 512 test-app"}
+	wantMutations := []string{`set cpu=100 (was "50")`, `set memory=512 (was "256")`}
+
+	// Repeat so a reintroduced map-order bug is caught reliably rather than
+	// passing by chance on a lucky iteration.
+	for i := 0; i < 20; i++ {
+		plan := task.Plan()
+		if plan.Error != nil {
+			t.Fatalf("iteration %d: unexpected plan error: %v", i, plan.Error)
+		}
+		if !reflect.DeepEqual(plan.Commands, wantCommands) {
+			t.Fatalf("iteration %d commands = %v, want %v", i, plan.Commands, wantCommands)
+		}
+		if !reflect.DeepEqual(plan.Mutations, wantMutations) {
+			t.Fatalf("iteration %d mutations = %v, want %v", i, plan.Mutations, wantMutations)
+		}
 	}
 }
 

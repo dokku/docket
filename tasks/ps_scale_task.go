@@ -2,9 +2,11 @@ package tasks
 
 import (
 	"fmt"
-	"github.com/dokku/docket/subprocess"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 // PsScaleTask manages the process scale for a given dokku application
@@ -100,7 +102,15 @@ func (t PsScaleTask) Plan() PlanResult {
 			}
 			toScale := []string{}
 			mutations := []string{}
-			for proctype, qty := range t.Scale {
+			// Range over sorted process types so the ps:scale args and the
+			// mutation list are deterministic across runs (issue #341).
+			proctypes := make([]string, 0, len(t.Scale))
+			for proctype := range t.Scale {
+				proctypes = append(proctypes, proctype)
+			}
+			sort.Strings(proctypes)
+			for _, proctype := range proctypes {
+				qty := t.Scale[proctype]
 				if cur, ok := existing[proctype]; ok && cur == qty {
 					continue
 				}
