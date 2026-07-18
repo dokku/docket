@@ -57,17 +57,18 @@ func (t GitFromArchiveTask) ExportSupport() ExportSupport {
 func (t GitFromArchiveTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromArchiveTaskExample{
 		{
-			Name: "Deploy a tar archive",
+			Name: "Deploy a tar.gz archive",
 			GitFromArchiveTask: GitFromArchiveTask{
-				App:        "node-js-app",
-				ArchiveURL: "https://example.com/release-1.0.0.tar",
+				App:         "node-js-app",
+				ArchiveURL:  "https://github.com/dokku/smoke-test-app/archive/refs/heads/master.tar.gz",
+				ArchiveType: "tar.gz",
 			},
 		},
 		{
 			Name: "Deploy a zip archive with author metadata",
 			GitFromArchiveTask: GitFromArchiveTask{
 				App:         "node-js-app",
-				ArchiveURL:  "https://example.com/release-1.0.0.zip",
+				ArchiveURL:  "https://github.com/dokku/smoke-test-app/archive/refs/heads/master.zip",
 				ArchiveType: "zip",
 				GitUsername: "deploy-bot",
 				GitEmail:    "deploy@example.com",

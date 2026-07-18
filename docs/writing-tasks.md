@@ -216,6 +216,16 @@ make docs
 This runs `go generate generate/docs.go`, which writes one `docs/tasks/<task>.md` per registered
 task plus the `docs/tasks/README.md` index. Commit the regenerated files alongside your code.
 
+Because the examples are published as-is, they are also tested. `TestAllTaskExamplesValidate`
+(`tasks/main_test.go`) decodes every example offline, applies the field defaults, and runs the
+task's `Validate()`, so a snippet that would fail `docket validate` cannot ship - it runs as part of
+`make test`. `TestIntegrationTaskExamples` (`tasks/example_integration_test.go`) then applies every
+example against a live Dokku under `make test-integration`. Write examples that are actually
+runnable: reference real resources (a reachable image or archive, not a placeholder URL), and if a
+task needs a prerequisite the shared placeholder apps do not provide - a backing service, a deployed
+app, a plugin, a cluster - or its documented value cannot apply verbatim (a secret or inline PEM),
+declare it in the driver's `exampleIntegrationPolicy` rather than leaving the example unapplied.
+
 ## See also
 
 - [Tasks](tasks/README.md) - the generated reference for every task

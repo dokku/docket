@@ -72,7 +72,7 @@ func (t GitSyncTask) Examples() ([]Doc, error) {
 			GitSyncTask: GitSyncTask{
 				App:    "hello-world",
 				Remote: "https://github.com/dokku/smoke-test-app.git",
-				GitRef: "main",
+				GitRef: "master",
 				Build:  true,
 			},
 		},

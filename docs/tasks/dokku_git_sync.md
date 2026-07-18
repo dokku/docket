@@ -41,7 +41,7 @@ dokku_git_sync:
 dokku_git_sync:
     app: hello-world
     remote: https://github.com/dokku/smoke-test-app.git
-    git_ref: main
+    git_ref: master
     build: true
     build_if_changes: false
     skip_deploy_branch: false

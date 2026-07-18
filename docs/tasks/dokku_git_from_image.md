@@ -26,16 +26,15 @@ Partial - the image reference is written to the companion vars-file.
 ```yaml
 dokku_git_from_image:
     app: node-js-app
-    image: dokku/node-js-app:latest
+    image: dokku/smoke-test-app:dockerfile
 ```
 
-### Deploy from an image with a build directory and git author
+### Deploy from an image with git author metadata
 
 ```yaml
 dokku_git_from_image:
     app: node-js-app
-    image: dokku/node-js-app:latest
-    build_dir: /app
+    image: dokku/smoke-test-app:dockerfile
     git_username: dokku
     git_email: dokku@example.com
 ```

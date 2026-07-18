@@ -62,9 +62,9 @@ func (t GitPropertyTask) Examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Setting the rev env var globally",
+			Name: "Setting the rev env var for an app",
 			GitPropertyTask: GitPropertyTask{
-				Global:   true,
+				App:      "node-js-app",
 				Property: "rev-env-var",
 				Value:    "GIT_REV",
 			},
