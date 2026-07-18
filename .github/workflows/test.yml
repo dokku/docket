@@ -116,7 +116,8 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/dokku/dokku-letsencrypt.git /tmp/dokku-letsencrypt
           docker build -t letest-lego:latest /tmp/dokku-letsencrypt/tests/lego
-          docker compose -f /tmp/dokku-letsencrypt/tests/docker-compose.yml up -d --wait
+          mkdir -p /tmp/letest-host
+          LETEST_HOST_DIR=/tmp/letest-host docker compose -f /tmp/dokku-letsencrypt/tests/docker-compose.yml up -d --wait
           PLUGIN_SRC=/tmp/dokku-letsencrypt bash /tmp/dokku-letsencrypt/tests/setup-native.sh
       - name: apply the letsencrypt documented example
         run: sudo DOKKU_TEST_LETSENCRYPT=1 go test -v -count=1 -timeout 20m -run '^TestIntegrationTaskExamples/dokku_letsencrypt$' ./tasks/
