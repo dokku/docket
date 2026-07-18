@@ -21,12 +21,13 @@ Supported.
 
 ## Examples
 
-### Deploy a tar archive
+### Deploy a tar.gz archive
 
 ```yaml
 dokku_git_from_archive:
     app: node-js-app
-    archive_url: https://example.com/release-1.0.0.tar
+    archive_url: https://github.com/dokku/smoke-test-app/archive/refs/heads/master.tar.gz
+    archive_type: tar.gz
 ```
 
 ### Deploy a zip archive with author metadata
@@ -34,7 +35,7 @@ dokku_git_from_archive:
 ```yaml
 dokku_git_from_archive:
     app: node-js-app
-    archive_url: https://example.com/release-1.0.0.zip
+    archive_url: https://github.com/dokku/smoke-test-app/archive/refs/heads/master.zip
     archive_type: zip
     git_username: deploy-bot
     git_email: deploy@example.com

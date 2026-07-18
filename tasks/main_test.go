@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	_ "github.com/gliderlabs/sigil/builtin"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func TestGetTasksEmptyRecipe(t *testing.T) {
@@ -696,6 +697,59 @@ func TestAllTasksExamplesReturnNoError(t *testing.T) {
 			_, err := task.Examples()
 			if err != nil {
 				t.Errorf("Examples() returned error: %v", err)
+			}
+		})
+	}
+}
+
+// TestAllTaskExamplesValidate proves every documented example is valid by
+// decoding it the same way the loader does and running the task's optional
+// input validation, so a broken snippet cannot ship into docs/tasks/*.md.
+// For each example it mirrors validateTaskBody (tasks/validate.go): the
+// example Codeblock is a single task-type key mapping to a body, so it is
+// unmarshaled into a one-entry map to split the key from the body, the body
+// is decoded through decodeTaskBytes so the `default:` struct tags are
+// applied exactly as the loader applies them (`state` becomes "present" when
+// omitted), and, when the decoded task implements InputValidator, Validate()
+// must not error.
+//
+// This is the guard that would have caught #323: a "Clearing ..." example
+// that omits `state: absent` decodes to state "present", which a property
+// task's Validate() then rejects for having no value.
+func TestAllTaskExamplesValidate(t *testing.T) {
+	for name, task := range RegisteredTasks {
+		t.Run(name, func(t *testing.T) {
+			examples, err := task.Examples()
+			if err != nil {
+				t.Fatalf("Examples() returned error: %v", err)
+			}
+			for _, example := range examples {
+				var body map[string]yaml.Node
+				if err := yaml.Unmarshal([]byte(example.Codeblock), &body); err != nil {
+					t.Errorf("example %q: failed to unmarshal codeblock: %v", example.Name, err)
+					continue
+				}
+				if len(body) != 1 {
+					t.Errorf("example %q: expected exactly one task-type key, got %d", example.Name, len(body))
+					continue
+				}
+				for typeKey, node := range body {
+					raw, err := yaml.Marshal(&node)
+					if err != nil {
+						t.Errorf("example %q: failed to marshal task body: %v", example.Name, err)
+						continue
+					}
+					decoded, err := decodeTaskBytes(typeKey, raw)
+					if err != nil {
+						t.Errorf("example %q: decodeTaskBytes(%q) failed: %v", example.Name, typeKey, err)
+						continue
+					}
+					if validator, ok := decoded.(InputValidator); ok {
+						if err := validator.Validate(); err != nil {
+							t.Errorf("example %q (%s): Validate() error: %v", example.Name, typeKey, err)
+						}
+					}
+				}
 			}
 		})
 	}

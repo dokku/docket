@@ -38,12 +38,11 @@ dokku_git_property:
     value: "true"
 ```
 
-### Setting the rev env var globally
+### Setting the rev env var for an app
 
 ```yaml
 dokku_git_property:
-    app: ""
-    global: true
+    app: node-js-app
     property: rev-env-var
     value: GIT_REV
 ```

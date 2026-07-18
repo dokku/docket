@@ -46,9 +46,9 @@ func (t TraefikPropertyTask) ExportSupport() ExportSupport {
 func (t TraefikPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]TraefikPropertyTaskExample{
 		{
-			Name: "Setting the letsencrypt email for an app",
+			Name: "Setting the letsencrypt email globally",
 			TraefikPropertyTask: TraefikPropertyTask{
-				App:      "node-js-app",
+				Global:   true,
 				Property: "letsencrypt-email",
 				Value:    "admin@example.com",
 			},
@@ -62,9 +62,9 @@ func (t TraefikPropertyTask) Examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Clearing the letsencrypt email for an app",
+			Name: "Clearing the letsencrypt email globally",
 			TraefikPropertyTask: TraefikPropertyTask{
-				App:      "node-js-app",
+				Global:   true,
 				Property: "letsencrypt-email",
 				State:    StateAbsent,
 			},

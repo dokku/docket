@@ -20,11 +20,12 @@ Supported.
 
 ## Examples
 
-### Setting the letsencrypt email for an app
+### Setting the letsencrypt email globally
 
 ```yaml
 dokku_haproxy_property:
-    app: node-js-app
+    app: ""
+    global: true
     property: letsencrypt-email
     value: admin@example.com
 ```
@@ -39,11 +40,12 @@ dokku_haproxy_property:
     value: INFO
 ```
 
-### Clearing the letsencrypt email for an app
+### Clearing the letsencrypt email globally
 
 ```yaml
 dokku_haproxy_property:
-    app: node-js-app
+    app: ""
+    global: true
     property: letsencrypt-email
     state: absent
 ```
