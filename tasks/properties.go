@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
@@ -220,15 +219,16 @@ func getPropertyArgs(plugin, app string, global bool) []string {
 	return append(args, "--format", "json")
 }
 
-// warnIfUnknownProperty surfaces a diagnostic when the probe identifies the
-// property as unknown, either because the JSON payload had no matching key
-// (likely a stale map or a dokku version mismatch) or because the :report
-// invocation rejected `--format json` itself (older plugin versions). Other
-// errors are silent because callers already propagate them through
-// PlanResult.Reason.
-func warnIfUnknownProperty(plugin, property string, err error) {
+// unknownPropertyWarning returns a diagnostic (and true) when the probe
+// identifies the property as unknown, either because the JSON payload had no
+// matching key (likely a stale map or a dokku version mismatch) or because the
+// :report invocation rejected `--format json` itself (older plugin versions).
+// It returns ok=false for every other error, since callers already propagate
+// those through PlanResult.Reason. The returned message is raw; planProperty
+// attaches it to PlanResult.Warnings and the emitter masks it at output time.
+func unknownPropertyWarning(plugin, property string, err error) (PlanWarning, bool) {
 	if err == nil {
-		return
+		return PlanWarning{}, false
 	}
 
 	var unknown *errUnknownProperty
@@ -237,23 +237,27 @@ func warnIfUnknownProperty(plugin, property string, err error) {
 		// letsencrypt dns-provider-*) where missing-from-report is the
 		// normal pre-set state, not a typo.
 		if isDynamicProperty(plugin, property) {
-			return
+			return PlanWarning{}, false
 		}
-		log.Printf("warning: dokku %s:report has no key %q for property %q (available keys: %s)",
-			plugin, unknown.lookedFor, property,
-			strings.Join(unknown.validKeys, ", "))
-		return
+		return PlanWarning{
+			Reason: WarnReasonUnknownProperty,
+			Message: fmt.Sprintf("dokku %s:report has no key %q for property %q (available keys: %s)",
+				plugin, unknown.lookedFor, property, strings.Join(unknown.validKeys, ", ")),
+		}, true
 	}
 
 	var execErr *subprocess.ExecError
 	if !errors.As(err, &execErr) {
-		return
+		return PlanWarning{}, false
 	}
 	stderr := strings.TrimSpace(execErr.Response.Stderr)
 	if !strings.Contains(stderr, "Invalid flag passed, valid flags:") {
-		return
+		return PlanWarning{}, false
 	}
-	log.Printf("warning: dokku %s:report rejected probe for property %q: %s", plugin, property, stderr)
+	return PlanWarning{
+		Reason:  WarnReasonProbeRejected,
+		Message: fmt.Sprintf("dokku %s:report rejected probe for property %q: %s", plugin, property, stderr),
+	}, true
 }
 
 // isDynamicProperty reports whether a (plugin, property) pair represents a
@@ -282,9 +286,10 @@ func isDynamicProperty(plugin, property string) bool {
 //
 // When the probe errors (other than SSH transport failures), the apply
 // closure runs the set/unset unconditionally. Diagnostic warnings are
-// emitted via warnIfUnknownProperty for typos and unsupported plugin
-// versions; other probe failures are recorded in PlanResult.Reason and
-// the apply still runs, matching pre-probe behavior.
+// attached to PlanResult.Warnings via unknownPropertyWarning for typos and
+// unsupported plugin versions (the run loop routes them through the emitter);
+// other probe failures are recorded in PlanResult.Reason and the apply still
+// runs, matching pre-probe behavior.
 // validatePropertyInput checks a property task's inputs without probing the
 // server: app/global scoping, that the property is supported for the target
 // scope, and that a value is supplied only in the state that allows it. Both
@@ -345,12 +350,15 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 			if sensitive {
 				subprocess.AddGlobalSensitive(current)
 			}
+			var warnings []PlanWarning
 			if probeErr != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(probeErr, &sshErr) {
 					return PlanResult{Status: PlanStatusError, Error: probeErr}
 				}
-				warnIfUnknownProperty(plugin, property, probeErr)
+				if w, ok := unknownPropertyWarning(plugin, property, probeErr); ok {
+					warnings = append(warnings, w)
+				}
 			}
 			if probeErr == nil && current == value {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
@@ -374,6 +382,7 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("set %s=%s", property, value)},
 				Commands:  resolveCommands(inputs),
+				Warnings:  warnings,
 				apply:     applyPropertySet(subcommand, target, property, value),
 			}
 		},
@@ -386,12 +395,15 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 			if sensitive {
 				subprocess.AddGlobalSensitive(current)
 			}
+			var warnings []PlanWarning
 			if probeErr != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(probeErr, &sshErr) {
 					return PlanResult{Status: PlanStatusError, Error: probeErr}
 				}
-				warnIfUnknownProperty(plugin, property, probeErr)
+				if w, ok := unknownPropertyWarning(plugin, property, probeErr); ok {
+					warnings = append(warnings, w)
+				}
 			}
 			if probeErr == nil && current == "" {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
@@ -411,6 +423,7 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("unset %s", property)},
 				Commands:  resolveCommands(inputs),
+				Warnings:  warnings,
 				apply:     applyPropertyUnset(subcommand, target, property),
 			}
 		},

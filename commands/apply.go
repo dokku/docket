@@ -468,11 +468,18 @@ func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac 
 	}
 
 	if msg := tasks.TaskDeprecation(env.Task); msg != "" {
-		ac.emitter.TaskWarning(ac.play.Name, name, msg)
+		ac.emitter.TaskWarning(ac.play.Name, name, "deprecated", msg)
 	}
 
 	state := env.Task.Execute()
 	ac.counts.Tasks++
+
+	// Probe diagnostics raised during planning (carried out on the state by
+	// ExecutePlan) surface as informational warning lines/events above the
+	// task's own result line.
+	for _, w := range state.Warnings {
+		ac.emitter.TaskWarning(ac.play.Name, name, w.Reason, w.Message)
+	}
 
 	postState, overrideErr := applyEnvelopeOverrides(env, state, ac.playExprCtx, ac.registered, failedTask)
 	if overrideErr != nil {

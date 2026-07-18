@@ -393,11 +393,17 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 	}
 
 	if msg := tasks.TaskDeprecation(env.Task); msg != "" {
-		pc.emitter.TaskWarning(pc.play.Name, name, msg)
+		pc.emitter.TaskWarning(pc.play.Name, name, "deprecated", msg)
 	}
 
 	result := env.Task.Plan()
 	pc.counts.Tasks++
+
+	// Probe diagnostics raised during planning surface as informational
+	// warning lines/events above the task's own result line.
+	for _, w := range result.Warnings {
+		pc.emitter.TaskWarning(pc.play.Name, name, w.Reason, w.Message)
+	}
 
 	synth := tasks.TaskOutputState{
 		Changed:      !result.InSync,

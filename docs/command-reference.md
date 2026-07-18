@@ -133,6 +133,10 @@ layout as `apply`, with a marker set focused on drift:
 | `[-]` | `apply` would remove existing state. |
 | `[!]` | The read-state probe itself errored, so drift is unknown. |
 
+A task may also be preceded by an informational `[deprecated]` or `[warning]` line (a task-type
+deprecation notice, or a property probe diagnostic such as an unknown report key). These do not
+count toward the summary or the exit code.
+
 Tasks that perform several operations itemize them under the task line:
 
 ```text
@@ -183,6 +187,9 @@ gets a status marker:
 | `[changed]` | Ran, changed state. |
 | `[skipped]` | Filtered out by `when:` or `--start-at-task`. |
 | `[error]` | Errored. |
+
+As in `plan`, a task may be preceded by an informational `[deprecated]` or `[warning]` line that
+does not count toward the summary or the exit code.
 
 A play header precedes the task lines, and a summary closes the run:
 

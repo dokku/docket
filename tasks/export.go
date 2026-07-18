@@ -27,6 +27,15 @@ type GlobalExporter interface {
 	ExportGlobal() ([]interface{}, error)
 }
 
+// appExportReporter is an optional richer form of AppExporter: an exporter that
+// can surface a non-fatal diagnostic (for example assets it could not capture)
+// implements it so the warning reaches ExportReport.Warnings instead of a raw
+// log line. exportAppPlay passes a warn callback wired to res.Report.Warnings
+// and prefers this method when the task implements it.
+type appExportReporter interface {
+	ExportAppReport(app string, warn func(msg string)) ([]interface{}, error)
+}
+
 // globalExportOrder is the fixed order in which not-app-scoped task types are
 // emitted into the leading global play. Adding a global resource means
 // implementing GlobalExporter on its task and adding its type-key here.
@@ -286,7 +295,16 @@ func (res *ExportResult) exportAppPlay(app string, opts ExportOptions) map[strin
 		if !ok {
 			continue
 		}
-		bodies, err := exporter.ExportApp(app)
+		var bodies []interface{}
+		var err error
+		if reporter, ok := proto.(appExportReporter); ok {
+			bodies, err = reporter.ExportAppReport(app, func(msg string) {
+				res.Report.Warnings = append(res.Report.Warnings,
+					fmt.Sprintf("%s: %s: %s", app, typeKey, msg))
+			})
+		} else {
+			bodies, err = exporter.ExportApp(app)
+		}
 		if err != nil {
 			res.Report.Warnings = append(res.Report.Warnings,
 				fmt.Sprintf("%s: %s: %v", app, typeKey, err))

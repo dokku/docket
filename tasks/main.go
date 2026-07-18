@@ -169,7 +169,34 @@ type TaskOutputState struct {
 	// task executed. Empty when no subprocess ran. Same last-call-wins
 	// rule as Stderr.
 	Stdout string
+
+	// Warnings carries non-fatal probe diagnostics discovered while planning
+	// (a property task's Plan() surfaces them, and ExecutePlan copies them off
+	// the PlanResult so the apply path can drain them). The run loop routes
+	// each entry through EventEmitter.TaskWarning; the message is masked at
+	// emit time. Empty for tasks that produced no diagnostic.
+	Warnings []PlanWarning
 }
+
+// PlanWarning is a non-fatal probe diagnostic a task's Plan() surfaces for the
+// run loop to route through EventEmitter.TaskWarning. Reason is a stable
+// machine key (see the WarnReason* constants) so JSON consumers can branch on a
+// typed category; Message is human-readable detail, stored raw and masked at
+// emit time like PlanResult.Reason.
+type PlanWarning struct {
+	Reason  string
+	Message string
+}
+
+const (
+	// WarnReasonUnknownProperty marks a probe warning raised when a property's
+	// key is absent from the plugin's JSON report (a stale key map or a dokku
+	// version that does not emit it).
+	WarnReasonUnknownProperty = "unknown_property"
+	// WarnReasonProbeRejected marks a probe warning raised when an older plugin
+	// rejects `:report --format json` outright.
+	WarnReasonProbeRejected = "probe_rejected"
+)
 
 // WithExecResult returns a copy of s with Stdout/Stderr/ExitCode populated
 // from r. Callers use it from the success path so the returned state
@@ -247,6 +274,13 @@ type PlanResult struct {
 	Stdout   string
 	Stderr   string
 	ExitCode int
+
+	// Warnings carries non-fatal probe diagnostics raised while planning (for
+	// example a property probe that found no matching report key). The run
+	// loop drains them through EventEmitter.TaskWarning; ExecutePlan copies
+	// them onto TaskOutputState so the apply path surfaces them too. Stored
+	// raw and masked at emit time, mirroring Reason. Empty when no diagnostic.
+	Warnings []PlanWarning
 
 	// apply, when non-nil, is the closure ExecutePlan invokes to mutate
 	// server state. nil when InSync. Captures any probed state needed for
