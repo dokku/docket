@@ -34,12 +34,20 @@ type exampleReq struct {
 	// plugins are dokku plugins every example needs; the task skips when any is
 	// missing.
 	plugins []string
+	// ensureApps are apps that must exist (created, not deployed) before the
+	// task's setup and examples run - used when the setup needs the app present
+	// (e.g. to enable http-auth on it).
+	ensureApps []string
 	// deployApps are placeholder apps that must be deployed (not just created)
 	// before the examples run.
 	deployApps []string
 	// cleanupApps are extra apps the task creates (e.g. a clone target) that
 	// must be destroyed afterward.
 	cleanupApps []string
+	// freshAppPerExample destroys and recreates the referenced app before each
+	// example, so a task whose examples are independent full deploys of the
+	// same app (git_from_archive) does not fail the second on unchanged content.
+	freshAppPerExample bool
 	// requireDockerLink gates the task behind legacy docker --link support.
 	requireDockerLink bool
 	// setup provisions a backing resource and returns a transform that rewrites
@@ -60,39 +68,52 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 		deployApps: []string{"node-js-app"},
 		setup:      setupLetsencryptExample,
 	},
-	"dokku_scheduler_k3s_annotations":      {k3s: true},
-	"dokku_scheduler_k3s_autoscaling_auth": {k3s: true},
-	"dokku_scheduler_k3s_chart":            {k3s: true},
-	"dokku_scheduler_k3s_labels":           {k3s: true},
-	"dokku_scheduler_k3s_profile":          {k3s: true},
-	"dokku_scheduler_k3s_property":         {k3s: true},
+	"dokku_scheduler_k3s_annotations": {k3s: true},
+	"dokku_scheduler_k3s_chart":       {k3s: true},
+	"dokku_scheduler_k3s_labels":      {k3s: true},
+	"dokku_scheduler_k3s_profile":     {k3s: true},
+	"dokku_scheduler_k3s_property":    {k3s: true},
 
 	// Plugin-gated app tasks (the plugins are installed in the integration CI job).
-	"dokku_acl_app":                 {plugins: []string{"acl"}},
-	"dokku_acl_service":             {plugins: []string{"acl"}},
-	"dokku_http_auth":               {plugins: []string{"http-auth"}},
-	"dokku_http_auth_allowed_ip":    {plugins: []string{"http-auth"}},
-	"dokku_http_auth_domain":        {plugins: []string{"http-auth"}},
-	"dokku_http_auth_user":          {plugins: []string{"http-auth"}},
-	"dokku_maintenance":             {plugins: []string{"maintenance"}},
-	"dokku_maintenance_custom_page": {plugins: []string{"maintenance"}},
-	"dokku_letsencrypt_property":    {plugins: []string{"letsencrypt"}},
+	"dokku_acl_app":              {plugins: []string{"acl"}},
+	"dokku_acl_service":          {plugins: []string{"acl"}},
+	"dokku_http_auth":            {plugins: []string{"http-auth"}},
+	"dokku_http_auth_allowed_ip": {plugins: []string{"http-auth"}, ensureApps: []string{"hello-world"}, setup: setupHttpAuthEnabledExample},
+	"dokku_http_auth_domain":     {plugins: []string{"http-auth"}, ensureApps: []string{"hello-world"}, setup: setupHttpAuthDomainExample},
+	"dokku_http_auth_user":       {plugins: []string{"http-auth"}, ensureApps: []string{"hello-world"}, setup: setupHttpAuthEnabledExample},
+	"dokku_maintenance":          {plugins: []string{"maintenance"}},
+	"dokku_maintenance_custom_page": {
+		plugins:    []string{"maintenance"},
+		ensureApps: []string{"node-js-app"},
+		setup:      setupMaintenanceCustomPageExample,
+	},
+	"dokku_letsencrypt_property": {plugins: []string{"letsencrypt"}},
 
 	// Deploy-dependent tasks.
-	"dokku_ps_scale":     {deployApps: []string{"hello-world"}},
 	"dokku_app_clone":    {deployApps: []string{"node-js-app"}, cleanupApps: []string{"node-js-app-staging"}},
 	"dokku_service_link": {plugins: []string{"redis"}, requireDockerLink: true, deployApps: []string{"my-app"}},
 
+	// git_from_archive's two examples are independent full deploys of the same
+	// app, so the second must start from a fresh app to avoid an unchanged-tree
+	// error on redeploy.
+	"dokku_git_from_archive": {freshAppPerExample: true},
+
+	// storage_mount's named-entry examples reference a storage entry that must
+	// be created first.
+	"dokku_storage_mount": {ensureApps: []string{"node-js-app"}, setup: setupStorageMountExample},
+
 	// Tasks whose documented value is a placeholder the driver must provision
-	// (a real inline PEM / cert path, or a registry secret) because it cannot
-	// be published in the docs.
+	// (a real inline PEM / cert path, a registry secret, or a maintenance
+	// tarball) because it cannot be published in the docs.
 	"dokku_certs":         {setup: setupCertsExample},
 	"dokku_registry_auth": {setup: setupRegistryExample},
 
-	// Tasks that mutate host or external state beyond a throwaway dokku app.
-	"dokku_service_backup": {skip: "needs an object-storage backend and credentials; covered offline"},
-	"dokku_plugin":         {skip: "installs/uninstalls a real dokku plugin; covered offline and by TestIntegrationPlugin"},
-	"dokku_ssh_key":        {skip: "manages host ssh keys; covered offline"},
+	// Tasks that need infra not present in the integration environment.
+	"dokku_ps_scale":                       {skip: "requires a multi-process (web+worker) deploy that a stock image does not provide; covered offline"},
+	"dokku_scheduler_k3s_autoscaling_auth":  {skip: "requires KEDA installed on the cluster to apply the trigger-authentication chart; covered offline"},
+	"dokku_service_backup":                 {skip: "needs an object-storage backend and credentials; covered offline"},
+	"dokku_plugin":                         {skip: "installs/uninstalls a real dokku plugin; covered offline and by TestIntegrationPlugin"},
+	"dokku_ssh_key":                        {skip: "manages host ssh keys; covered offline"},
 }
 
 // TestIntegrationTaskExamples applies every documented example against a live
@@ -141,6 +162,10 @@ func TestIntegrationTaskExamples(t *testing.T) {
 					destroyApp(app)
 				}
 			})
+			for _, app := range policy.ensureApps {
+				createApp(app)
+				created[app] = true
+			}
 			for _, app := range policy.deployApps {
 				deployExampleApp(t, app)
 				created[app] = true
@@ -159,7 +184,7 @@ func TestIntegrationTaskExamples(t *testing.T) {
 				t.Run(example.Name, func(t *testing.T) {
 					task := loadExampleTask(t, example)
 					gateExample(t, name, task)
-					ensureExampleApp(t, name, task, created)
+					ensureExampleApp(t, name, task, created, policy.freshAppPerExample)
 					ensureExampleService(t, name, task)
 					if transform != nil {
 						task = transform(task)
@@ -177,7 +202,7 @@ func TestIntegrationTaskExamples(t *testing.T) {
 // app themselves: dokku_app_clone (App is the clone target the example creates,
 // torn down via cleanupApps) and dokku_app (its examples create and destroy the
 // app, which is only tracked here so a failed run still tears it down).
-func ensureExampleApp(t *testing.T, taskName string, task Task, created map[string]bool) {
+func ensureExampleApp(t *testing.T, taskName string, task Task, created map[string]bool, fresh bool) {
 	t.Helper()
 	if taskName == "dokku_app_clone" {
 		return
@@ -189,6 +214,9 @@ func ensureExampleApp(t *testing.T, taskName string, task Task, created map[stri
 	if taskName == "dokku_app" {
 		created[app] = true
 		return
+	}
+	if fresh {
+		destroyApp(app)
 	}
 	createApp(app)
 	created[app] = true
@@ -345,6 +373,70 @@ func setupRegistryExample(t *testing.T) (func(Task) Task, func()) {
 		return auth
 	}
 	return transform, nil
+}
+
+// setupHttpAuthEnabledExample enables HTTP auth on the example app so the
+// http_auth_user / http_auth_allowed_ip examples, which configure an already
+// enabled auth, have an initialized auth config to act on.
+func setupHttpAuthEnabledExample(t *testing.T) (func(Task) Task, func()) {
+	t.Helper()
+	enableHttpAuthExampleApp(t)
+	return nil, nil
+}
+
+// setupHttpAuthDomainExample enables HTTP auth and adds the domains the
+// http_auth_domain examples restrict auth to, since dokku only accepts domains
+// that already belong to the app.
+func setupHttpAuthDomainExample(t *testing.T) (func(Task) Task, func()) {
+	t.Helper()
+	enableHttpAuthExampleApp(t)
+	result := DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}, State: StateSet}.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to add http-auth-domain example domains: %v", result.Error)
+	}
+	return nil, nil
+}
+
+// enableHttpAuthExampleApp turns on HTTP auth for the shared http-auth example
+// app (created via the task's ensureApps).
+func enableHttpAuthExampleApp(t *testing.T) {
+	t.Helper()
+	result := HttpAuthTask{App: "hello-world", Username: "admin", Password: "secret", State: StatePresent}.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to enable http-auth on example app: %v", result.Error)
+	}
+}
+
+// setupStorageMountExample creates the named storage entry the storage_mount
+// named-entry examples attach, and removes it afterward.
+func setupStorageMountExample(t *testing.T) (func(Task) Task, func()) {
+	t.Helper()
+	result := StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish", State: StatePresent}.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to create storage entry for storage_mount example: %v", result.Error)
+	}
+	return nil, func() {
+		StorageEntryTask{Name: "node-js-app-data", State: StateAbsent}.Execute()
+	}
+}
+
+// setupMaintenanceCustomPageExample writes a valid maintenance-page tarball to
+// the path the tarball example references, since the documented path holds no
+// real file. It removes the file afterward.
+func setupMaintenanceCustomPageExample(t *testing.T) (func(Task) Task, func()) {
+	t.Helper()
+	const tarballPath = "/etc/dokku/maintenance/node-js-app.tar"
+	tarball, err := buildMaintenancePageTarball("<html><body><h1>Down for maintenance</h1></body></html>\n")
+	if err != nil {
+		t.Fatalf("failed to build maintenance tarball: %v", err)
+	}
+	if err := os.MkdirAll("/etc/dokku/maintenance", 0o755); err != nil {
+		t.Fatalf("failed to create maintenance dir: %v", err)
+	}
+	if err := os.WriteFile(tarballPath, tarball, 0o644); err != nil {
+		t.Fatalf("failed to write maintenance tarball: %v", err)
+	}
+	return nil, func() { os.Remove(tarballPath) }
 }
 
 // Pebble reaches the app over the docker bridge gateway, and challtestsrv's
