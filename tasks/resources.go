@@ -159,11 +159,11 @@ func planSetResource(subcommand string, rctx ResourceContext) PlanResult {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 
-	for k := range rctx.Resources {
+	for _, k := range sortedResourceKeys(rctx.Resources) {
 		if _, ok := currentResources[k]; !ok {
 			return PlanResult{
 				Status: PlanStatusError,
-				Error:  fmt.Errorf("unknown resource %s, valid resources: %v", k, mapKeys(currentResources)),
+				Error:  fmt.Errorf("unknown resource %s, valid resources: %v", k, sortedResourceKeys(currentResources)),
 			}
 		}
 	}
@@ -180,7 +180,8 @@ func planSetResource(subcommand string, rctx ResourceContext) PlanResult {
 	if effective.ClearBefore {
 		mutations = append(mutations, "clear before set")
 	}
-	for k, v := range rctx.Resources {
+	for _, k := range sortedResourceKeys(rctx.Resources) {
+		v := rctx.Resources[k]
 		if currentResources[k] != v {
 			mutations = append(mutations, fmt.Sprintf("set %s=%s (was %q)", k, v, currentResources[k]))
 		}
@@ -269,8 +270,8 @@ func resourceSetInputs(subcommand string, rctx ResourceContext) []subprocess.Exe
 		inputs = append(inputs, resourceClearInput(subcommand, rctx))
 	}
 	args := []string{subcommand}
-	for key, value := range rctx.Resources {
-		args = append(args, fmt.Sprintf("--%s", key), value)
+	for _, key := range sortedResourceKeys(rctx.Resources) {
+		args = append(args, fmt.Sprintf("--%s", key), rctx.Resources[key])
 	}
 	if rctx.ProcessType != "" {
 		args = append(args, "--process-type", rctx.ProcessType)
@@ -304,5 +305,13 @@ func mapKeys(m map[string]string) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+	return keys
+}
+
+// sortedResourceKeys returns the resource keys in deterministic (sorted) order so
+// plan and apply build byte-identical command args and mutation lists (issue #341).
+func sortedResourceKeys(m map[string]string) []string {
+	keys := mapKeys(m)
+	sort.Strings(keys)
 	return keys
 }
