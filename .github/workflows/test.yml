@@ -65,7 +65,48 @@ jobs:
       - name: install dokku maintenance plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-maintenance.git maintenance
       - name: run integration tests (shard ${{ matrix.shard }} of 4)
-        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 20m -run TestIntegration ./tasks/
+        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 20m -run TestIntegration -skip TestIntegrationTaskExamples ./tasks/
+
+  task-examples-test:
+    name: task-examples-test
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: enable docker legacy link support
+        run: |
+          sudo mkdir -p /etc/systemd/system/docker.service.d
+          printf '[Service]\nEnvironment="DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1"\n' | sudo tee /etc/systemd/system/docker.service.d/legacy-links.conf
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+      - name: install dokku
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.22
+          sudo dokku plugin:install-dependencies --core
+      - name: install dokku redis plugin
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-redis.git redis
+      - name: install dokku http-auth plugin
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git http-auth
+      - name: install dokku global-cert plugin
+        run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git global-cert
+      - name: install dokku letsencrypt plugin
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish 0.25.0 letsencrypt
+      - name: install dokku acl plugin
+        run: sudo dokku plugin:install https://github.com/dokku-community/dokku-acl.git acl
+      - name: install dokku maintenance plugin
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-maintenance.git maintenance
+      - name: apply documented task examples (shard ${{ matrix.shard }} of 2)
+        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=2 go test -v -count=1 -timeout 30m -run '^TestIntegrationTaskExamples$' ./tasks/
 
   scheduler-k3s-test:
     name: scheduler-k3s-test
