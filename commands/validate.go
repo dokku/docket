@@ -93,7 +93,7 @@ func (c *ValidateCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--tasks":         complete.PredictFiles(taskFileAutocompleteGlob),
+			"--tasks":         taskFileAutocomplete(),
 			"--json":          complete.PredictNothing,
 			"--strict":        complete.PredictNothing,
 			"--vars-file":     complete.PredictFiles("*"),

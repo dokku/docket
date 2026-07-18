@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/posener/complete"
 )
 
 func TestDetectTaskFileFormat(t *testing.T) {
@@ -171,6 +173,87 @@ func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
 	}
 	if format != taskFileFormatYAML {
 		t.Errorf("format = %q, want yaml", format)
+	}
+}
+
+// TestTaskFileAutocompleteMatchesRecipeExtensions guards #340: the previous
+// brace glob "*.{yml,yaml,json,json5}" matched no file through filepath.Glob,
+// so completion only ever offered directories. Every recipe extension must now
+// be offered, a non-recipe file must not, and a directory must appear once
+// (the dedupe, since each per-extension sub-predictor lists it).
+func TestTaskFileAutocompleteMatchesRecipeExtensions(t *testing.T) {
+	dir := t.TempDir()
+	recipes := []string{"tasks.yml", "config.yaml", "data.json", "recipe.json5"}
+	for _, name := range recipes {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("---\n"), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("seed notes.txt: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+
+	withCwd(t, dir, func() {
+		counts := map[string]int{}
+		for _, match := range taskFileAutocomplete().Predict(complete.Args{Last: ""}) {
+			counts[match]++
+		}
+		for _, name := range recipes {
+			if counts[name] == 0 {
+				t.Errorf("expected %q to be offered, got %v", name, counts)
+			}
+		}
+		if counts["notes.txt"] != 0 {
+			t.Errorf("non-recipe notes.txt must not be offered, got %v", counts)
+		}
+		if counts["sub/"] != 1 {
+			t.Errorf("directory sub/ should be offered exactly once, got %d (%v)", counts["sub/"], counts)
+		}
+	})
+}
+
+// TestPredictFilesByExtension proves the completion mechanism is generic and
+// not hard-wired to the recipe extensions.
+func TestPredictFilesByExtension(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"readme.md", "todo.txt", "ignore.yml"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+
+	withCwd(t, dir, func() {
+		got := map[string]bool{}
+		for _, match := range predictFilesByExtension([]string{"md", "txt"}).Predict(complete.Args{Last: ""}) {
+			got[match] = true
+		}
+		if !got["readme.md"] {
+			t.Errorf("expected readme.md to be offered, got %v", got)
+		}
+		if !got["todo.txt"] {
+			t.Errorf("expected todo.txt to be offered, got %v", got)
+		}
+		if got["ignore.yml"] {
+			t.Errorf("ignore.yml must not be offered for extensions {md,txt}, got %v", got)
+		}
+	})
+}
+
+func TestHasTaskFileExtension(t *testing.T) {
+	yes := []string{"tasks.yml", "tasks.YAML", "path/to/c.json", "x.json5"}
+	no := []string{"notes.txt", "tasks", "archive.tar.gz", ""}
+	for _, p := range yes {
+		if !hasTaskFileExtension(p) {
+			t.Errorf("hasTaskFileExtension(%q) = false, want true", p)
+		}
+	}
+	for _, p := range no {
+		if hasTaskFileExtension(p) {
+			t.Errorf("hasTaskFileExtension(%q) = true, want false", p)
+		}
 	}
 }
 
