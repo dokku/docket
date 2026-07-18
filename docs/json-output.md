@@ -27,11 +27,18 @@ slightly between `apply` and `plan`:
 | `summary` (plan) | `version`, `type`, `tasks`, `would_change`, `in_sync`, `skipped`, `errors`, `plays_skipped`, `duration_ms` | - |
 
 A `warning` event precedes the `task` event it is associated with so consumers can correlate by
-ordering. Today the only `reason` is `deprecated`, emitted when a task whose type implements
-`Deprecation()` is about to run; `message` carries the deprecation notice with sensitive values
-masked. `--list-tasks --json` does not emit a separate `warning` event; instead, the `list_task`
-event for a deprecated task carries `"deprecated": true` and a `deprecation` field with the
-message.
+ordering. The `reason` is a stable machine key so consumers can branch on the category:
+
+| `reason` | Emitted when |
+|----------|--------------|
+| `deprecated` | A task whose type implements `Deprecation()` is about to run; `message` carries the deprecation notice. |
+| `unknown_property` | A property task's probe found no matching key in the plugin's `:report --format json` payload (a stale key map or a dokku version that does not emit it). |
+| `probe_rejected` | An older plugin rejected `:report --format json` outright, so the property task could not probe current state. |
+
+In every case `message` is masked, so a registered sensitive value that reaches the warning (for
+example server stderr echoed by a rejected probe) renders as `***`. `--list-tasks --json` does not
+emit a separate `warning` event; instead, the `list_task` event for a deprecated task carries
+`"deprecated": true` and a `deprecation` field with the message.
 
 ## Commands
 

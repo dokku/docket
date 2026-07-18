@@ -382,7 +382,7 @@ func TestApplyTaskErrorOmitsEmptyStdout(t *testing.T) {
 
 func TestFormatterTaskWarningRendersDeprecatedMarker(t *testing.T) {
 	f, ui := newTestFormatter(false)
-	f.TaskWarning("tasks", "ensure storage", "use dokku_storage_entry instead")
+	f.TaskWarning("tasks", "ensure storage", "deprecated", "use dokku_storage_entry instead")
 	got := ui.OutputWriter.String()
 	if !strings.Contains(got, "[deprecated]") {
 		t.Errorf("expected [deprecated] marker, got %q", got)
@@ -398,9 +398,36 @@ func TestFormatterTaskWarningRendersDeprecatedMarker(t *testing.T) {
 	}
 }
 
+// TestFormatterTaskWarningRendersWarningMarker pins that a non-deprecation
+// reason renders the [warning] marker (not [deprecated]) on stdout, and masks
+// the message. (#353)
+func TestFormatterTaskWarningRendersWarningMarker(t *testing.T) {
+	subprocess.SetGlobalSensitive([]string{"s3cr3t"})
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	f, ui := newTestFormatter(false)
+	f.TaskWarning("tasks", "set token", "probe_rejected", "rejected probe near value s3cr3t")
+	got := ui.OutputWriter.String()
+	if !strings.Contains(got, "[warning]") {
+		t.Errorf("expected [warning] marker, got %q", got)
+	}
+	if strings.Contains(got, "[deprecated]") {
+		t.Errorf("non-deprecation warning must not use [deprecated], got %q", got)
+	}
+	if strings.Contains(got, "s3cr3t") {
+		t.Errorf("warning line leaked secret: %q", got)
+	}
+	if !strings.Contains(got, "***") {
+		t.Errorf("expected masked placeholder in line, got %q", got)
+	}
+	if ui.ErrorWriter.String() != "" {
+		t.Errorf("informational warning must not write to stderr, got %q", ui.ErrorWriter.String())
+	}
+}
+
 func TestFormatterTaskWarningEmptyMessageIsNoOp(t *testing.T) {
 	f, ui := newTestFormatter(false)
-	f.TaskWarning("tasks", "ensure storage", "")
+	f.TaskWarning("tasks", "ensure storage", "deprecated", "")
 	if ui.OutputWriter.String() != "" {
 		t.Errorf("expected no output for empty message, got %q", ui.OutputWriter.String())
 	}

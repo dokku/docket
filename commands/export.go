@@ -131,7 +131,7 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 	for _, w := range res.Report.Warnings {
-		c.Ui.Warn(fmt.Sprintf("warning: %s", w))
+		c.Ui.Warn(fmt.Sprintf("warning: %s", subprocess.MaskString(w)))
 	}
 
 	// A nonexistent --app must not silently produce an empty recipe (which the

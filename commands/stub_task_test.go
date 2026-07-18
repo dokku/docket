@@ -46,6 +46,7 @@ func (t StubTask) Plan() tasks.PlanResult {
 	return tasks.PlanResult{
 		Status:       tasks.PlanStatusModify,
 		DesiredState: tasks.StatePresent,
+		Warnings:     fixture.Warnings,
 	}
 }
 
@@ -85,6 +86,7 @@ func (t StubTask) Execute() tasks.TaskOutputState {
 		Stdout:       fixture.Stdout,
 		Stderr:       fixture.Stderr,
 		ExitCode:     fixture.ExitCode,
+		Warnings:     fixture.Warnings,
 	}
 }
 
@@ -99,6 +101,10 @@ type StubFixture struct {
 	Stderr        string
 	ExitCode      int
 	MismatchState bool
+	// Warnings are echoed onto the drift PlanResult (plan mode) and the
+	// success TaskOutputState (apply mode) so tests can drive the run loops'
+	// warning drain. #353.
+	Warnings []tasks.PlanWarning
 }
 
 var (

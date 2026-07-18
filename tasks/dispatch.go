@@ -91,7 +91,12 @@ func DispatchPlan(state State, funcMap map[State]func() PlanResult) PlanResult {
 //  3. otherwise       - invoke p.apply (must be non-nil) and return its
 //     TaskOutputState verbatim. apply is responsible for setting Changed
 //     and a final State that matches DesiredState on success.
-func ExecutePlan(p PlanResult) TaskOutputState {
+func ExecutePlan(p PlanResult) (out TaskOutputState) {
+	// Probe diagnostics raised during planning ride out on every returned
+	// state so the apply run loop can drain them through the emitter, even on
+	// the error / in-sync branches that never invoke the apply closure.
+	defer func() { out.Warnings = append(out.Warnings, p.Warnings...) }()
+
 	if p.Error != nil {
 		stdout, stderr, exitCode := p.Stdout, p.Stderr, p.ExitCode
 		// Recover the underlying ExecCommandResponse if a probe helper
@@ -131,7 +136,7 @@ func ExecutePlan(p PlanResult) TaskOutputState {
 			State:        p.DesiredState,
 		}
 	}
-	out := p.apply()
+	out = p.apply()
 	if out.DesiredState == "" {
 		out.DesiredState = p.DesiredState
 	}

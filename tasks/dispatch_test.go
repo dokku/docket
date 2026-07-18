@@ -107,6 +107,44 @@ func TestExecutePlanExplicitProbeFieldsTakePrecedence(t *testing.T) {
 	}
 }
 
+// TestExecutePlanCopiesWarnings pins that probe diagnostics on a PlanResult
+// ride out on the returned TaskOutputState across every branch (error, in-sync,
+// and apply), so the apply run loop can drain them through the emitter. (#353)
+func TestExecutePlanCopiesWarnings(t *testing.T) {
+	warn := PlanWarning{Reason: WarnReasonUnknownProperty, Message: "no key foo"}
+
+	assertWarned := func(label string, got TaskOutputState) {
+		t.Helper()
+		if len(got.Warnings) != 1 || got.Warnings[0] != warn {
+			t.Errorf("%s: warnings = %+v; want [%+v]", label, got.Warnings, warn)
+		}
+	}
+
+	assertWarned("error branch", ExecutePlan(PlanResult{
+		Status:       PlanStatusError,
+		Error:        errors.New("boom"),
+		DesiredState: StatePresent,
+		Warnings:     []PlanWarning{warn},
+	}))
+
+	assertWarned("in-sync branch", ExecutePlan(PlanResult{
+		InSync:       true,
+		DesiredState: StatePresent,
+		Warnings:     []PlanWarning{warn},
+	}))
+
+	// The apply closure returns a state with no warnings of its own; ExecutePlan
+	// appends the plan's warnings so the apply path still surfaces them.
+	assertWarned("apply branch", ExecutePlan(PlanResult{
+		Status:       PlanStatusModify,
+		DesiredState: StatePresent,
+		Warnings:     []PlanWarning{warn},
+		apply: func() TaskOutputState {
+			return TaskOutputState{Changed: true, State: StatePresent}
+		},
+	}))
+}
+
 func TestWithExecResultZeroValueClears(t *testing.T) {
 	// A no-op apply (no inputs) hands runExecInputs the zero
 	// ExecCommandResponse; the contract is that the new fields then

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"sort"
 	"strings"
@@ -345,7 +344,24 @@ func maintenanceCustomPageState(app string) (checksum string, reported bool, err
 	return *report.CustomPageSHA256, true, nil
 }
 
-// ExportApp emits a dokku_maintenance_custom_page task when the app has a custom
+// ExportApp satisfies AppExporter by delegating to exportApp with a no-op warn
+// callback. The export engine prefers ExportAppReport when present, so the
+// dropped-assets diagnostic reaches ExportReport.Warnings rather than being
+// discarded here.
+func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) {
+	return t.exportApp(app, func(string) {})
+}
+
+// ExportAppReport is the diagnostics-aware form of ExportApp (the
+// appExportReporter interface): it routes the "dropped extra assets" warning
+// through the engine's warn callback (wired to ExportReport.Warnings) instead
+// of a raw log line, so the warning is rendered and masked like every other
+// export diagnostic.
+func (t MaintenanceCustomPageTask) ExportAppReport(app string, warn func(msg string)) ([]interface{}, error) {
+	return t.exportApp(app, warn)
+}
+
+// exportApp emits a dokku_maintenance_custom_page task when the app has a custom
 // page installed. A custom page is detected by a non-empty custom-page-sha256 in
 // maintenance:report, so nothing is emitted when no page is set or when the
 // plugin is too old to report the checksum. The page content is then read back
@@ -353,8 +369,10 @@ func maintenanceCustomPageState(app string) (checksum string, reported bool, err
 // self-contained task. On an older dokku-maintenance without the export command
 // (any non-SSH failure) the content cannot be read; an empty task is returned and
 // processMaintenanceCustomPage lifts the content into a required input. A
-// transport-level SSH failure propagates as a warning.
-func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) {
+// transport-level SSH failure propagates as a warning. When the archive carries
+// files beyond maintenance.html (which the single-Content task cannot represent)
+// warn is invoked with the dropped-assets notice.
+func (t MaintenanceCustomPageTask) exportApp(app string, warn func(msg string)) ([]interface{}, error) {
 	checksum, reported, err := maintenanceCustomPageState(app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
@@ -376,7 +394,7 @@ func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) 
 		return []interface{}{MaintenanceCustomPageTask{App: app}}, nil
 	}
 	if extraAssets {
-		log.Printf("warning: dokku maintenance custom page for %q has files beyond maintenance.html; only maintenance.html is captured in the export", app)
+		warn("custom page has files beyond maintenance.html; only maintenance.html is captured in the export")
 	}
 	return []interface{}{MaintenanceCustomPageTask{App: app, Content: content}}, nil
 }

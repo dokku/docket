@@ -30,10 +30,13 @@ type EventEmitter interface {
 	// PlanTask emits one event per task in a `plan` run.
 	PlanTask(ev PlanTaskEvent)
 	// TaskWarning emits a non-fatal warning associated with a task, such
-	// as a task-type deprecation notice. It does not affect task counts
-	// or exit codes; apply / plan call it before the per-task event so
-	// the warning appears immediately above the task's result line.
-	TaskWarning(play, name, message string)
+	// as a task-type deprecation notice or a property probe diagnostic. It
+	// does not affect task counts or exit codes. reason is a stable machine
+	// key ("deprecated", or a tasks.WarnReason* value) the JSON emitter
+	// surfaces and the human emitter maps to a marker. The warning is
+	// emitted before the per-task event so it appears above the task's
+	// result line.
+	TaskWarning(play, name, reason, message string)
 	// ApplySummary emits the end-of-run footer for `apply`.
 	ApplySummary(c ApplyCounts, d time.Duration)
 	// PlanSummary emits the end-of-run footer for `plan`.
@@ -134,6 +137,12 @@ const (
 	// markers because the warning is informational and does not feed
 	// the run counts or exit code.
 	MarkerDeprecated Marker = "deprecated"
+
+	// MarkerWarning prefixes a TaskWarning line for a non-deprecation
+	// diagnostic (for example a property probe that found no matching
+	// report key). Like MarkerDeprecated it is informational and does not
+	// feed the run counts or exit code.
+	MarkerWarning Marker = "warning"
 )
 
 // markerWidth is the fixed column width that every bracketed marker is
@@ -200,20 +209,26 @@ func NewFormatter(ui cli.Ui, verbose bool) *Formatter {
 			MarkerDestroy:    color.New(color.FgRed),
 			MarkerProbeError: color.New(color.FgRed),
 			MarkerDeprecated: color.New(color.FgYellow, color.Faint),
+			MarkerWarning:    color.New(color.FgYellow, color.Faint),
 		},
 	}
 }
 
-// TaskWarning renders a `[deprecated] <name>  (<message>)` line above the
+// TaskWarning renders a `[<marker>] <name>  (<message>)` line above the
 // task's result line. It is informational, so the line goes to
-// Ui.Output (not Ui.Error) and does not affect counts. The message is
-// masked against the global sensitive set.
-func (f *Formatter) TaskWarning(_, name, message string) {
+// Ui.Output (not Ui.Error) and does not affect counts. The marker is
+// `[deprecated]` for a deprecation notice and `[warning]` for any other
+// diagnostic. The message is masked against the global sensitive set.
+func (f *Formatter) TaskWarning(_, name, reason, message string) {
 	if message == "" {
 		return
 	}
+	marker := MarkerWarning
+	if reason == "deprecated" {
+		marker = MarkerDeprecated
+	}
 	suffix := "(" + message + ")"
-	f.TaskLine(MarkerDeprecated, name, suffix)
+	f.TaskLine(marker, name, suffix)
 }
 
 // Verbose reports whether the formatter is in verbose mode.

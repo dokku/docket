@@ -175,10 +175,11 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 }
 
 // TaskWarning emits a `warning` event keyed by `reason` and tied to a
-// specific task. Today the only reason is "deprecated"; the event is
-// emitted before the task's own `task` event so consumers can correlate
-// by ordering.
-func (e *JSONEmitter) TaskWarning(play, name, message string) {
+// specific task. reason is "deprecated" for a deprecation notice or a
+// tasks.WarnReason* value for a probe diagnostic; the event is emitted
+// before the task's own `task` event so consumers can correlate by
+// ordering.
+func (e *JSONEmitter) TaskWarning(play, name, reason, message string) {
 	if message == "" {
 		return
 	}
@@ -187,7 +188,7 @@ func (e *JSONEmitter) TaskWarning(play, name, message string) {
 		"type":    "warning",
 		"play":    subprocess.MaskString(play),
 		"name":    subprocess.MaskString(name),
-		"reason":  "deprecated",
+		"reason":  reason,
 		"message": subprocess.MaskString(message),
 		"ts":      nowRFC3339(),
 	})

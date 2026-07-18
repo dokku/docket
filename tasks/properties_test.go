@@ -1,10 +1,8 @@
 package tasks
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log"
 	"reflect"
 	"strings"
 	"testing"
@@ -169,103 +167,152 @@ func TestReadPropertyReportInstalledExecFailureErrors(t *testing.T) {
 	}
 }
 
-func captureLog(t *testing.T) *bytes.Buffer {
-	t.Helper()
-	buf := &bytes.Buffer{}
-	orig := log.Writer()
-	flags := log.Flags()
-	prefix := log.Prefix()
-	log.SetOutput(buf)
-	log.SetFlags(0)
-	log.SetPrefix("")
-	t.Cleanup(func() {
-		log.SetOutput(orig)
-		log.SetFlags(flags)
-		log.SetPrefix(prefix)
-	})
-	return buf
-}
-
-func TestWarnIfUnknownPropertyMissingKey(t *testing.T) {
-	buf := captureLog(t)
+func TestUnknownPropertyWarningMissingKey(t *testing.T) {
 	err := &errUnknownProperty{
 		plugin:    "nginx",
 		property:  "selecte",
 		lookedFor: "selecte",
 		validKeys: []string{"bind-address-ipv4", "selected"},
 	}
-	warnIfUnknownProperty("nginx", "selecte", err)
-	out := buf.String()
-	if !strings.Contains(out, "no key") {
-		t.Errorf("log output missing 'no key': %q", out)
+	w, ok := unknownPropertyWarning("nginx", "selecte", err)
+	if !ok {
+		t.Fatal("expected a warning for a missing report key")
 	}
-	if !strings.Contains(out, "nginx") {
-		t.Errorf("log output missing plugin name: %q", out)
+	if w.Reason != WarnReasonUnknownProperty {
+		t.Errorf("reason = %q; want %q", w.Reason, WarnReasonUnknownProperty)
 	}
-	if !strings.Contains(out, "selecte") {
-		t.Errorf("log output missing property name: %q", out)
-	}
-	if !strings.Contains(out, "selected") {
-		t.Errorf("log output missing available key list: %q", out)
+	for _, want := range []string{"no key", "nginx", "selecte", "selected"} {
+		if !strings.Contains(w.Message, want) {
+			t.Errorf("message %q missing %q", w.Message, want)
+		}
 	}
 }
 
-func TestWarnIfUnknownPropertyInvalidFlag(t *testing.T) {
-	buf := captureLog(t)
+func TestUnknownPropertyWarningInvalidFlag(t *testing.T) {
 	execErr := &subprocess.ExecError{
 		Response: subprocess.ExecCommandResponse{
 			Stderr: "Invalid flag passed, valid flags: --letsencrypt-email",
 		},
 		Err: errors.New("exit status 1"),
 	}
-	warnIfUnknownProperty("letsencrypt", "email", execErr)
-	out := buf.String()
-	if !strings.Contains(out, "rejected probe") {
-		t.Errorf("log output missing 'rejected probe': %q", out)
+	w, ok := unknownPropertyWarning("letsencrypt", "email", execErr)
+	if !ok {
+		t.Fatal("expected a warning for a rejected probe")
 	}
-	if !strings.Contains(out, "letsencrypt") {
-		t.Errorf("log output missing plugin name: %q", out)
+	if w.Reason != WarnReasonProbeRejected {
+		t.Errorf("reason = %q; want %q", w.Reason, WarnReasonProbeRejected)
 	}
-	if !strings.Contains(out, "Invalid flag passed") {
-		t.Errorf("log output missing stderr snippet: %q", out)
+	for _, want := range []string{"rejected probe", "letsencrypt", "Invalid flag passed"} {
+		if !strings.Contains(w.Message, want) {
+			t.Errorf("message %q missing %q", w.Message, want)
+		}
 	}
 }
 
-func TestWarnIfUnknownPropertyIgnoresOtherErrors(t *testing.T) {
-	buf := captureLog(t)
-	warnIfUnknownProperty("nginx", "bind-address-ipv4", nil)
-	if buf.Len() != 0 {
-		t.Errorf("log output should be empty for nil error, got %q", buf.String())
-	}
+// TestUnknownPropertyWarningMasksSensitiveStderr is the core #353 guarantee:
+// the rejected-probe branch embeds the server's raw stderr, and a registered
+// secret that reaches it must mask at emit time. The message is stored raw
+// (like PlanResult.Reason) so the assertion masks it the way the emitter does.
+func TestUnknownPropertyWarningMasksSensitiveStderr(t *testing.T) {
+	subprocess.SetGlobalSensitive(nil)
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	subprocess.AddGlobalSensitive("s3cr3t")
 
-	warnIfUnknownProperty("nginx", "bind-address-ipv4", errors.New("plain"))
-	if buf.Len() != 0 {
-		t.Errorf("log output should be empty for plain error, got %q", buf.String())
+	execErr := &subprocess.ExecError{
+		Response: subprocess.ExecCommandResponse{
+			Stderr: "Invalid flag passed, valid flags: --token near value s3cr3t",
+		},
+		Err: errors.New("exit status 1"),
 	}
+	w, ok := unknownPropertyWarning("registry", "password", execErr)
+	if !ok {
+		t.Fatal("expected a warning for a rejected probe")
+	}
+	if !strings.Contains(w.Message, "s3cr3t") {
+		t.Fatalf("message should embed raw stderr pre-masking, got %q", w.Message)
+	}
+	if masked := subprocess.MaskString(w.Message); strings.Contains(masked, "s3cr3t") {
+		t.Errorf("masked warning leaked secret: %q -> %q", w.Message, masked)
+	}
+}
 
+func TestUnknownPropertyWarningIgnoresOtherErrors(t *testing.T) {
+	if _, ok := unknownPropertyWarning("nginx", "bind-address-ipv4", nil); ok {
+		t.Error("nil error should not warn")
+	}
+	if _, ok := unknownPropertyWarning("nginx", "bind-address-ipv4", errors.New("plain")); ok {
+		t.Error("plain error should not warn")
+	}
 	execErr := &subprocess.ExecError{
 		Response: subprocess.ExecCommandResponse{
 			Stderr: "App nonexistent does not exist",
 		},
 		Err: errors.New("exit status 1"),
 	}
-	warnIfUnknownProperty("nginx", "bind-address-ipv4", execErr)
-	if buf.Len() != 0 {
-		t.Errorf("log output should be empty for non-flag exec error, got %q", buf.String())
+	if _, ok := unknownPropertyWarning("nginx", "bind-address-ipv4", execErr); ok {
+		t.Error("non-flag exec error should not warn")
 	}
 }
 
-func TestWarnIfUnknownPropertyDynamicPropertySkipsWarning(t *testing.T) {
-	buf := captureLog(t)
+func TestUnknownPropertyWarningDynamicPropertySkipsWarning(t *testing.T) {
 	err := &errUnknownProperty{
 		plugin:    "letsencrypt",
 		property:  "dns-provider-NAMECHEAP_API_USER",
 		lookedFor: "dns-provider-NAMECHEAP_API_USER",
 		validKeys: []string{"email", "server"},
 	}
-	warnIfUnknownProperty("letsencrypt", "dns-provider-NAMECHEAP_API_USER", err)
-	if buf.Len() != 0 {
-		t.Errorf("log output should be empty for dynamic property, got %q", buf.String())
+	if _, ok := unknownPropertyWarning("letsencrypt", "dns-provider-NAMECHEAP_API_USER", err); ok {
+		t.Error("dynamic property should not warn")
+	}
+}
+
+// TestPlanPropertyAttachesUnknownKeyWarning drives the whole Plan() path: a
+// report payload missing the probed key yields drift plus a PlanWarning the run
+// loop can drain. (#353)
+func TestPlanPropertyAttachesUnknownKeyWarning(t *testing.T) {
+	keys := map[string]PropertyKeys{
+		"hsts": {PerApp: "hsts", Global: ""},
+	}
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet nginx:report myapp --format json": `{"proxy-read-timeout":"60s"}`,
+	}))()
+
+	res := planProperty(StatePresent, "myapp", false, "hsts", "true", "nginx:set", keys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if len(res.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d (%v)", len(res.Warnings), res.Warnings)
+	}
+	if res.Warnings[0].Reason != WarnReasonUnknownProperty {
+		t.Errorf("reason = %q; want %q", res.Warnings[0].Reason, WarnReasonUnknownProperty)
+	}
+}
+
+// TestPlanPropertyAttachesRejectedProbeWarning drives the older-plugin path:
+// `:report --format json` fails with an "Invalid flag" stderr, so the probe
+// error becomes drift plus a probe_rejected PlanWarning. (#353)
+func TestPlanPropertyAttachesRejectedProbeWarning(t *testing.T) {
+	keys := map[string]PropertyKeys{
+		"hsts": {PerApp: "hsts", Global: ""},
+	}
+	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		resp := subprocess.ExecCommandResponse{
+			Stderr:   "Invalid flag passed, valid flags: --app, --global",
+			ExitCode: 1,
+		}
+		return resp, &subprocess.ExecError{Response: resp, Err: errors.New("exit status 1"), Ran: true}
+	})()
+
+	res := planProperty(StatePresent, "myapp", false, "hsts", "true", "nginx:set", keys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if len(res.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d (%v)", len(res.Warnings), res.Warnings)
+	}
+	if res.Warnings[0].Reason != WarnReasonProbeRejected {
+		t.Errorf("reason = %q; want %q", res.Warnings[0].Reason, WarnReasonProbeRejected)
 	}
 }
 

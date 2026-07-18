@@ -7,7 +7,75 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
+
+// appExportReporter is satisfied by MaintenanceCustomPageTask so the export
+// engine prefers ExportAppReport and routes the dropped-assets diagnostic into
+// ExportReport.Warnings rather than a raw log line. #353.
+var _ appExportReporter = MaintenanceCustomPageTask{}
+
+// TestMaintenanceCustomPageExportReportWarnsOnExtraAssets pins #353: when the
+// exported archive carries files beyond maintenance.html, ExportAppReport routes
+// the dropped-assets notice through the warn callback the engine wires to
+// ExportReport.Warnings, and still captures the maintenance.html content.
+func TestMaintenanceCustomPageExportReportWarnsOnExtraAssets(t *testing.T) {
+	tarball := tarFromEntries(t, map[string]string{
+		"maintenance.html": maintenanceTestPage,
+		"assets/logo.png":  "PNGDATA",
+	})
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"maintenance:report myapp --format json":       `{"custom-page-sha256":"abc123"}`,
+		"--quiet maintenance:custom-page-export myapp": string(tarball),
+	}))()
+
+	var warnings []string
+	bodies, err := MaintenanceCustomPageTask{}.ExportAppReport("myapp", func(msg string) {
+		warnings = append(warnings, msg)
+	})
+	if err != nil {
+		t.Fatalf("ExportAppReport error: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d (%v)", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "beyond maintenance.html") {
+		t.Errorf("warning = %q, want to mention the dropped assets", warnings[0])
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 body, got %d", len(bodies))
+	}
+	body, ok := bodies[0].(MaintenanceCustomPageTask)
+	if !ok {
+		t.Fatalf("body type = %T, want MaintenanceCustomPageTask", bodies[0])
+	}
+	if body.Content != maintenanceTestPage {
+		t.Errorf("content = %q, want %q", body.Content, maintenanceTestPage)
+	}
+}
+
+// TestMaintenanceCustomPageExportReportNoExtraAssets pins that a single
+// maintenance.html produces no warning.
+func TestMaintenanceCustomPageExportReportNoExtraAssets(t *testing.T) {
+	tarball := tarFromEntries(t, map[string]string{
+		"maintenance.html": maintenanceTestPage,
+	})
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"maintenance:report myapp --format json":       `{"custom-page-sha256":"abc123"}`,
+		"--quiet maintenance:custom-page-export myapp": string(tarball),
+	}))()
+
+	var warnings []string
+	if _, err := (MaintenanceCustomPageTask{}).ExportAppReport("myapp", func(msg string) {
+		warnings = append(warnings, msg)
+	}); err != nil {
+		t.Fatalf("ExportAppReport error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", warnings)
+	}
+}
 
 // tarFromEntries builds an uncompressed tar archive from name->body pairs for
 // use in the checksum tests.

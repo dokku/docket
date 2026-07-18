@@ -450,7 +450,7 @@ func TestJSONEmitterEveryEventHasVersion1(t *testing.T) {
 // TestEmitterInterfaceSatisfied compiles iff Formatter and JSONEmitter both
 func TestJSONEmitterTaskWarning(t *testing.T) {
 	e, ui := emitterTestUI()
-	e.TaskWarning("tasks", "ensure storage", "use dokku_storage_entry instead")
+	e.TaskWarning("tasks", "ensure storage", "deprecated", "use dokku_storage_entry instead")
 	ev := decodeOnly(t, ui.OutputWriter.String())
 
 	if got, want := ev["version"], float64(1); got != want {
@@ -478,9 +478,30 @@ func TestJSONEmitterTaskWarning(t *testing.T) {
 
 func TestJSONEmitterTaskWarningEmptyIsNoOp(t *testing.T) {
 	e, ui := emitterTestUI()
-	e.TaskWarning("tasks", "ensure storage", "")
+	e.TaskWarning("tasks", "ensure storage", "deprecated", "")
 	if ui.OutputWriter.String() != "" {
 		t.Errorf("expected no output for empty message, got %q", ui.OutputWriter.String())
+	}
+}
+
+// TestJSONEmitterTaskWarningProbeReason pins that a non-deprecation warning
+// carries its own reason through the event and that the message is masked. (#353)
+func TestJSONEmitterTaskWarningProbeReason(t *testing.T) {
+	subprocess.SetGlobalSensitive([]string{"s3cr3t"})
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	e, ui := emitterTestUI()
+	e.TaskWarning("tasks", "set token", "probe_rejected", "rejected probe near value s3cr3t")
+	ev := decodeOnly(t, ui.OutputWriter.String())
+
+	if got, want := ev["reason"], "probe_rejected"; got != want {
+		t.Errorf("reason = %v, want %v", got, want)
+	}
+	if msg, _ := ev["message"].(string); strings.Contains(msg, "s3cr3t") {
+		t.Errorf("message leaked secret: %q", msg)
+	}
+	if msg, _ := ev["message"].(string); !strings.Contains(msg, "***") {
+		t.Errorf("message should carry mask placeholder, got %q", msg)
 	}
 }
 
