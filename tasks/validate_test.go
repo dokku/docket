@@ -564,6 +564,40 @@ func TestValidateInvalidTaskInputSatisfied(t *testing.T) {
 	}
 }
 
+func TestValidateStorageEnsureOmittedChownValid(t *testing.T) {
+	// chown is optional on dokku_storage_ensure; omitting it lets dokku apply
+	// its default ownership, so the recipe validates without an
+	// invalid_task_input problem.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_ensure:
+        app: node-js-app
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input for an omitted chown, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateStorageEnsureInvalidChown(t *testing.T) {
+	// A non-empty chown that is not one of the known ownership presets is
+	// still rejected so a typo surfaces at validate time.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_ensure:
+        app: node-js-app
+        chown: packeto
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'chown' must be one of") {
+		t.Errorf("expected message to mention the allowed chown values, got: %q", p.Message)
+	}
+}
+
 func TestValidateInvalidTaskInputSkippedWhenRequiredMissing(t *testing.T) {
 	// When a required field is missing, only missing_required_field is
 	// reported; the conditional Validate() check (which depends on that

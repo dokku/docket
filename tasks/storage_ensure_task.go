@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"errors"
+	"strings"
+
 	"github.com/dokku/docket/subprocess"
 )
 
@@ -11,7 +13,7 @@ type StorageEnsureTask struct {
 	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Chown is the chown value to set
-	Chown string `required:"false" yaml:"chown,omitempty" description:"Chown value to set"`
+	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Chown value to set"`
 
 	// State is the desired state of the storage
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage"`
@@ -75,19 +77,33 @@ func (t StorageEnsureTask) Execute() TaskOutputState {
 }
 
 // Validate checks the StorageEnsureTask's inputs without contacting the server.
+// chown is optional: an omitted value lets dokku apply its default (herokuish)
+// ownership. A non-empty value must name one of the ownership presets dokku's
+// storage:ensure-directory understands so a typo is caught before dispatch.
 func (t StorageEnsureTask) Validate() error {
-	if t.State == StatePresent {
+	if t.State == StatePresent && t.Chown != "" {
 		chownValues := map[string]bool{
 			"heroku": true, "herokuish": true, "paketo": true, "root": true, "false": true,
 		}
 		if !chownValues[t.Chown] {
-			return errors.New("invalid chown value specified")
+			return errors.New("'chown' must be one of heroku, herokuish, paketo, root, false")
 		}
 	}
 	if t.State == StateAbsent {
 		return errors.New("the absent state is not supported for storage:ensure")
 	}
 	return nil
+}
+
+// ensureArgs builds the storage:ensure-directory command arguments. The
+// --chown flag is omitted when no chown value is set so the field stays
+// genuinely optional and dokku applies its default ownership.
+func (t StorageEnsureTask) ensureArgs() []string {
+	args := []string{"--quiet", "storage:ensure-directory"}
+	if t.Chown != "" {
+		args = append(args, "--chown", t.Chown)
+	}
+	return append(args, t.App)
 }
 
 // Plan reports the drift the StorageEnsureTask would produce. dokku does
@@ -99,15 +115,16 @@ func (t StorageEnsureTask) Plan() PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
+			args := t.ensureArgs()
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
-				Args:    []string{"--quiet", "storage:ensure-directory", "--chown", t.Chown, t.App},
+				Args:    args,
 			}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "directory presence not probed",
-				Mutations: []string{"storage:ensure-directory --chown " + t.Chown + " " + t.App},
+				Mutations: []string{strings.Join(args[1:], " ")},
 				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
 					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)

@@ -15,7 +15,7 @@ Not supported - deprecated; storage state is exported via dokku_storage_mount.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `chown` | string | no |  |  | Chown value to set |
+| `chown` | string | no |  | heroku, herokuish, paketo, root, false | Chown value to set |
 | `state` | string | no | present | present, absent | Desired state of the storage |
 
 ## Examples
