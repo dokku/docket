@@ -102,11 +102,6 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 	// be created first.
 	"dokku_storage_mount": {ensureApps: []string{"node-js-app"}, setup: setupStorageMountExample},
 
-	// network_property references a network that must exist for a build to
-	// attach to it, and its global example sets a property that would otherwise
-	// make every later app build attach to that network.
-	"dokku_network_property": {setup: setupNetworkPropertyExample},
-
 	// Tasks whose documented value is a placeholder the driver must provision
 	// (a real inline PEM / cert path, a registry secret, or a maintenance
 	// tarball) because it cannot be published in the docs.
@@ -195,6 +190,7 @@ func TestIntegrationTaskExamples(t *testing.T) {
 						task = transform(task)
 					}
 					applyExample(t, example.Name, task)
+					registerGlobalPropertyRevert(t, task)
 				})
 			}
 		})
@@ -413,23 +409,6 @@ func enableHttpAuthExampleApp(t *testing.T) {
 	}
 }
 
-// setupNetworkPropertyExample creates the network the examples reference and,
-// on cleanup, clears the global attach-post-create property the global example
-// sets and removes the network. Without the cleanup, that global property
-// persists and makes every subsequent app build fail attaching to a network the
-// build environment no longer has.
-func setupNetworkPropertyExample(t *testing.T) (func(Task) Task, func()) {
-	t.Helper()
-	result := NetworkTask{Name: "example-network", State: StatePresent}.Execute()
-	if result.Error != nil {
-		t.Fatalf("failed to create example network: %v", result.Error)
-	}
-	return nil, func() {
-		NetworkPropertyTask{Global: true, Property: "attach-post-create", State: StateAbsent}.Execute()
-		NetworkTask{Name: "example-network", State: StateAbsent}.Execute()
-	}
-}
-
 // setupStorageMountExample creates the named storage entry the storage_mount
 // named-entry examples attach, and removes it afterward.
 func setupStorageMountExample(t *testing.T) (func(Task) Task, func()) {
@@ -514,6 +493,46 @@ func clearChalltestsrvA(host string) {
 		Command: "curl",
 		Args:    []string{"-sf", "-X", "POST", "-H", "Content-Type: application/json", "-d", body, challtestsrvURL + "/clear-a"},
 	})
+}
+
+// registerGlobalPropertyRevert clears a global property an example just set, so
+// the setting does not persist and break later app builds or deploys. Property
+// tasks' "Setting a global X" examples have no global-clear counterpart (their
+// clear example targets the per-app scope), and a leftover global registry
+// server, network attachment, or similar makes every subsequent deploy fail.
+// It is a no-op for any task that is not a present/set of a global property.
+func registerGlobalPropertyRevert(t *testing.T, task Task) {
+	t.Helper()
+	v := reflect.Indirect(reflect.ValueOf(taskAsPointer(task)))
+	if v.Kind() != reflect.Struct {
+		return
+	}
+	global := v.FieldByName("Global")
+	property := v.FieldByName("Property")
+	state := v.FieldByName("State")
+	if !global.IsValid() || global.Kind() != reflect.Bool || !global.Bool() {
+		return
+	}
+	if !property.IsValid() || property.Kind() != reflect.String || property.String() == "" {
+		return
+	}
+	if !state.IsValid() || state.Kind() != reflect.String {
+		return
+	}
+	if s := State(state.String()); s != StatePresent && s != StateSet {
+		return
+	}
+	clear := reflect.New(v.Type())
+	clear.Elem().Set(v)
+	clear.Elem().FieldByName("State").Set(reflect.ValueOf(StateAbsent))
+	if value := clear.Elem().FieldByName("Value"); value.IsValid() && value.Kind() == reflect.String {
+		value.SetString("")
+	}
+	clearTask, ok := clear.Interface().(Task)
+	if !ok {
+		return
+	}
+	t.Cleanup(func() { clearTask.Execute() })
 }
 
 // taskStringField returns the value of a string field on a task struct, or ""
