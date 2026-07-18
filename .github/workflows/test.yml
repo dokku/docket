@@ -73,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -105,8 +105,8 @@ jobs:
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-acl.git acl
       - name: install dokku maintenance plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-maintenance.git maintenance
-      - name: apply documented task examples (shard ${{ matrix.shard }} of 2)
-        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=2 go test -v -count=1 -timeout 30m -run '^TestIntegrationTaskExamples$' ./tasks/
+      - name: apply documented task examples (shard ${{ matrix.shard }} of 4)
+        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 30m -run '^TestIntegrationTaskExamples$' ./tasks/
 
   scheduler-k3s-test:
     name: scheduler-k3s-test

@@ -310,7 +310,8 @@ func applyExample(t *testing.T, name string, task Task) {
 	}
 	state := task.Execute()
 	if state.Error != nil {
-		t.Fatalf("example %q: apply returned error: %v", name, state.Error)
+		t.Fatalf("example %q: apply returned error: %v\n  commands: %v\n  exit: %d\n  stdout: %s\n  stderr: %s",
+			name, state.Error, state.Commands, state.ExitCode, state.Stdout, state.Stderr)
 	}
 	if state.State != state.DesiredState {
 		t.Errorf("example %q: applied state = %q, want desired state %q", name, state.State, state.DesiredState)
