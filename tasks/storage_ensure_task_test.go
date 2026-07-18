@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -13,23 +14,33 @@ func TestStorageEnsureTaskInvalidState(t *testing.T) {
 }
 
 func TestStorageEnsureValidChownValues(t *testing.T) {
-	validValues := []string{"heroku", "herokuish", "paketo", "root", "false"}
+	// The named ownership presets plus a raw numeric uid in dokku's supported
+	// range (0-65535) all pass validation, matching dokku's ResolveChownID.
+	validValues := []string{"heroku", "herokuish", "paketo", "root", "false", "0", "1000", "32767", "65535"}
 	for _, chown := range validValues {
 		task := StorageEnsureTask{App: "test-app", Chown: chown, State: StatePresent}
-		result := task.Execute()
-		// These will fail because dokku isn't running, but should NOT fail
-		// due to invalid chown value
-		if result.Error != nil && result.Error.Error() == "'chown' must be one of heroku, herokuish, paketo, root, false" {
-			t.Errorf("chown value %q should be valid but was rejected", chown)
+		if err := task.Validate(); err != nil {
+			t.Errorf("chown value %q should be valid but was rejected: %v", chown, err)
 		}
 	}
 }
 
 func TestStorageEnsureInvalidChownValue(t *testing.T) {
-	task := StorageEnsureTask{App: "test-app", Chown: "packeto", State: StatePresent}
-	result := task.Execute()
-	if result.Error == nil || result.Error.Error() != "'chown' must be one of heroku, herokuish, paketo, root, false" {
-		t.Errorf("chown value 'packeto' (misspelled) should be rejected as invalid")
+	// Non-preset, non-numeric values and out-of-range/malformed numbers are
+	// rejected before dispatch. 'packeto' is dokku's deprecated typo alias and
+	// is intentionally still rejected. 0x10/1_000 confirm the raw string (not a
+	// resolved integer) is validated with dokku's base-10 parser.
+	invalidValues := []string{"packeto", "65536", "70000", "-1", "+5", "1000:1000", "root:root", "0x10", "1_000", "abc"}
+	for _, chown := range invalidValues {
+		task := StorageEnsureTask{App: "test-app", Chown: chown, State: StatePresent}
+		err := task.Validate()
+		if err == nil {
+			t.Errorf("chown value %q should be rejected as invalid", chown)
+			continue
+		}
+		if !strings.Contains(err.Error(), "'chown' must be one of") {
+			t.Errorf("chown value %q: unexpected error message: %v", chown, err)
+		}
 	}
 }
 
@@ -52,6 +63,15 @@ func TestStorageEnsureChownCommandShape(t *testing.T) {
 	task := StorageEnsureTask{App: "node-js-app", Chown: "herokuish", State: StatePresent}
 	args := task.ensureArgs()
 	want := []string{"--quiet", "storage:ensure-directory", "--chown", "herokuish", "node-js-app"}
+	if !equalStrings(args, want) {
+		t.Errorf("ensureArgs mismatch:\n  got: %v\n want: %v", args, want)
+	}
+}
+
+func TestStorageEnsureNumericChownCommandShape(t *testing.T) {
+	task := StorageEnsureTask{App: "node-js-app", Chown: "1000", State: StatePresent}
+	args := task.ensureArgs()
+	want := []string{"--quiet", "storage:ensure-directory", "--chown", "1000", "node-js-app"}
 	if !equalStrings(args, want) {
 		t.Errorf("ensureArgs mismatch:\n  got: %v\n want: %v", args, want)
 	}
