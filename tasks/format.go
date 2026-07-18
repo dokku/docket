@@ -150,7 +150,7 @@ func reorderMapping(node *yaml.Node, priority []string) {
 		return
 	}
 	pairs := mappingPairs(node)
-	out := make([]*yaml.Node, 0, len(pairs)*2)
+	out := make([]*yaml.Node, 0, safeCap(len(pairs), len(pairs)))
 	used := make(map[int]bool, len(pairs))
 
 	for _, key := range priority {
@@ -182,7 +182,7 @@ func reorderTaskEnvelope(node *yaml.Node) {
 		return
 	}
 	pairs := mappingPairs(node)
-	out := make([]*yaml.Node, 0, len(pairs)*2)
+	out := make([]*yaml.Node, 0, safeCap(len(pairs), len(pairs)))
 	used := make(map[int]bool, len(pairs))
 
 	for _, key := range canonicalEnvelopeKeys {
@@ -345,7 +345,7 @@ func spliceSeparatorBlank(out []string, dashIndent int) []string {
 	for at > 0 && isCommentAtColumn(out[at-1], dashIndent) {
 		at--
 	}
-	res := make([]string, 0, len(out)+1)
+	res := make([]string, 0, safeCap(len(out), 1))
 	res = append(res, out[:at]...)
 	res = append(res, "")
 	res = append(res, out[at:]...)

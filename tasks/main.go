@@ -749,7 +749,7 @@ func renderRecipeBytes(data []byte, context map[string]interface{}) ([]byte, err
 // per-play context the loader used so per-task `when:` predicates see
 // the same values as the rendered task bodies.
 func BuildPerPlayContext(base map[string]interface{}, playInputs []Input, userSet map[string]bool) map[string]interface{} {
-	out := make(map[string]interface{}, len(base)+len(playInputs))
+	out := make(map[string]interface{}, safeCap(len(base), len(playInputs)))
 	for k, v := range base {
 		out[k] = v
 	}
