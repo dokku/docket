@@ -62,15 +62,14 @@ func (t GitFromImageTask) Examples() ([]Doc, error) {
 			Name: "Deploy an app from a docker image",
 			GitFromImageTask: GitFromImageTask{
 				App:   "node-js-app",
-				Image: "dokku/node-js-app:latest",
+				Image: "dokku/smoke-test-app:dockerfile",
 			},
 		},
 		{
-			Name: "Deploy from an image with a build directory and git author",
+			Name: "Deploy from an image with git author metadata",
 			GitFromImageTask: GitFromImageTask{
 				App:         "node-js-app",
-				Image:       "dokku/node-js-app:latest",
-				BuildDir:    "/app",
+				Image:       "dokku/smoke-test-app:dockerfile",
 				GitUsername: "dokku",
 				GitEmail:    "dokku@example.com",
 			},
