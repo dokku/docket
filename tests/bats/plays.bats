@@ -20,6 +20,11 @@ setup() {
   dokku_clean_app docket-test-play-kept
   dokku_clean_app docket-test-play-bail-ok
   dokku_clean_app docket-test-play-failfast
+  dokku_clean_app docket-test-playtags-deploy-api
+  dokku_clean_app docket-test-playtags-configure-api
+  dokku_clean_app docket-test-playtags-deploy-worker
+  dokku_clean_app docket-test-playlvltags-api
+  dokku_clean_app docket-test-playlvltags-worker
 }
 
 teardown() {
@@ -31,6 +36,11 @@ teardown() {
   dokku_clean_app docket-test-play-kept
   dokku_clean_app docket-test-play-bail-ok
   dokku_clean_app docket-test-play-failfast
+  dokku_clean_app docket-test-playtags-deploy-api
+  dokku_clean_app docket-test-playtags-configure-api
+  dokku_clean_app docket-test-playtags-deploy-worker
+  dokku_clean_app docket-test-playlvltags-api
+  dokku_clean_app docket-test-playlvltags-worker
 }
 
 @test "plays: multi-play tasks.yml runs all plays in order" {
@@ -96,6 +106,57 @@ EOF
   assert_output --partial '--play "missing"'
   assert_output --partial '"first"'
   assert_output --partial '"second"'
+}
+
+@test "plays: --play composes with --tags to filter tasks within the play" {
+  require_dokku
+  write_tasks_file <<EOF
+---
+- name: api
+  tasks:
+    - name: deploy-api
+      tags: [deploy]
+      dokku_app:
+        app: docket-test-playtags-deploy-api
+    - name: configure-api
+      tags: [configure]
+      dokku_app:
+        app: docket-test-playtags-configure-api
+- name: worker
+  tasks:
+    - name: deploy-worker
+      tags: [deploy]
+      dokku_app:
+        app: docket-test-playtags-deploy-worker
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --play api --tags deploy
+  assert_success
+  assert_output --partial "deploy-api"
+  refute_output --partial "configure-api"
+  refute_output --partial "deploy-worker"
+}
+
+@test "plays: play-level tags propagate to tasks for the --tags filter" {
+  require_dokku
+  write_tasks_file <<EOF
+---
+- name: api
+  tags: [api]
+  tasks:
+    - name: deploy-api
+      dokku_app:
+        app: docket-test-playlvltags-api
+- name: worker
+  tags: [worker]
+  tasks:
+    - name: deploy-worker
+      dokku_app:
+        app: docket-test-playlvltags-worker
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --tags api
+  assert_success
+  assert_output --partial "deploy-api"
+  refute_output --partial "deploy-worker"
 }
 
 @test "plays: play with when:false is skipped" {

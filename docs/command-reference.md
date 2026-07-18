@@ -149,6 +149,10 @@ decide whether to mutate. A few tasks (notably `dokku_git_auth`, `dokku_registry
 `dokku_storage_ensure`) cannot read their state without running the underlying command, so they
 always report drift with a `(... not probed)` reason.
 
+When the probe command cannot run at all - for example the local `dokku` CLI is not installed, or
+the configured SSH host is unreachable - the task renders `[!]` and `plan` exits `1`, rather than
+optimistically predicting `[+] create` for state it never actually read.
+
 | Flag | Effect |
 |------|--------|
 | `--tasks <path>` | Use a specific recipe. Accepts a local path or an `http(s)://` URL (fetched over HTTP). |

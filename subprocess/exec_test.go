@@ -3,6 +3,7 @@ package subprocess
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"testing"
@@ -170,6 +171,15 @@ func TestCallExecCommandFailure(t *testing.T) {
 	if resp.ExitCode == 0 {
 		t.Error("expected non-zero exit code")
 	}
+	// The command ran and exited non-zero, so the exit code is real:
+	// ExecError.Ran must be true so Probe reads it as "state absent".
+	var execErr *ExecError
+	if !errors.As(err, &execErr) {
+		t.Fatalf("expected *ExecError, got %T", err)
+	}
+	if !execErr.Ran {
+		t.Error("ExecError.Ran should be true when the command ran and exited non-zero")
+	}
 }
 
 func TestCallExecCommandNotFound(t *testing.T) {
@@ -178,6 +188,16 @@ func TestCallExecCommandNotFound(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for nonexistent command")
+	}
+	// The command could not be started, so there is no real exit code:
+	// ExecError.Ran must be false so Probe propagates the failure instead
+	// of reporting the probed state as absent.
+	var execErr *ExecError
+	if !errors.As(err, &execErr) {
+		t.Fatalf("expected *ExecError, got %T", err)
+	}
+	if execErr.Ran {
+		t.Error("ExecError.Ran should be false when the binary is not found")
 	}
 }
 

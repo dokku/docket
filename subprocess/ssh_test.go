@@ -1,6 +1,7 @@
 package subprocess
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -428,6 +429,62 @@ func TestProbeSshTransportErrorPropagates(t *testing.T) {
 	if !errors.As(err, &sshErr) {
 		t.Fatalf("Probe error should be *SSHError, got %T (%v)", err, err)
 	}
+}
+
+func TestProbeLocalExecErrorPropagates(t *testing.T) {
+	// A local probe whose binary is not on PATH must surface the failure
+	// rather than reporting the probed state as absent. This is the
+	// no-dokku-installed scenario: without propagation, plan would print a
+	// confident [+] create for every resource instead of [!].
+	matched, err := Probe(ExecCommandInput{
+		Command: "nonexistent-binary-docket-test-12345",
+		Args:    []string{"--quiet", "apps:exists", "anything"},
+	})
+	if matched {
+		t.Error("Probe should report matched=false when the binary is missing")
+	}
+	if err == nil {
+		t.Fatal("Probe should propagate a binary-not-found error, not swallow it as absent")
+	}
+}
+
+func TestProbeExecRanFlagControlsAbsence(t *testing.T) {
+	// The Ran flag is the sole signal that separates "the command ran and
+	// exited non-zero" (state absent) from "the command could not run"
+	// (real failure). Inject each case via the swappable runner so the
+	// behaviour is pinned without spawning a process.
+	t.Run("ran non-zero reports absent", func(t *testing.T) {
+		defer SetExecRunner(func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+			resp := ExecCommandResponse{ExitCode: 1}
+			return resp, &ExecError{Response: resp, Err: errors.New("absent"), Ran: true}
+		})()
+
+		matched, err := Probe(ExecCommandInput{Command: "dokku"})
+		if err != nil {
+			t.Fatalf("Probe should treat a ran non-zero exit as absent, got err %v", err)
+		}
+		if matched {
+			t.Error("Probe should report matched=false for a ran non-zero exit")
+		}
+	})
+
+	t.Run("cancelled probe propagates", func(t *testing.T) {
+		defer SetExecRunner(func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+			resp := ExecCommandResponse{ExitCode: -1, Cancelled: true}
+			return resp, &ExecError{Response: resp, Err: context.Canceled}
+		})()
+
+		matched, err := Probe(ExecCommandInput{Command: "dokku"})
+		if matched {
+			t.Error("Probe should report matched=false on a cancelled probe")
+		}
+		if err == nil {
+			t.Fatal("Probe should propagate a cancelled probe, not swallow it as absent")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("propagated error should wrap context.Canceled, got %v", err)
+		}
+	})
 }
 
 func TestSetAndGetDefaultHost(t *testing.T) {
