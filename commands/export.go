@@ -86,8 +86,8 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--output":               complete.PredictFiles(taskFileAutocompleteGlob),
-			"--vars-output":          complete.PredictFiles(taskFileAutocompleteGlob),
+			"--output":               taskFileAutocomplete(),
+			"--vars-output":          taskFileAutocomplete(),
 			"--overwrite":            complete.PredictNothing,
 			"--redact":               complete.PredictNothing,
 			"--app":                  complete.PredictNothing,

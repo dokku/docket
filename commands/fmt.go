@@ -65,7 +65,7 @@ func (c *FmtCommand) Arguments() []command.Argument {
 }
 
 func (c *FmtCommand) AutocompleteArgs() complete.Predictor {
-	return complete.PredictFiles(taskFileAutocompleteGlob)
+	return taskFileAutocomplete()
 }
 
 func (c *FmtCommand) ParsedArguments(args []string) (map[string]command.Argument, error) {

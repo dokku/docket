@@ -115,7 +115,7 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--tasks":                complete.PredictFiles(taskFileAutocompleteGlob),
+			"--tasks":                taskFileAutocomplete(),
 			"--verbose":              complete.PredictNothing,
 			"--json":                 complete.PredictNothing,
 			"--host":                 complete.PredictAnything,

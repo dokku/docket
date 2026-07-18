@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/posener/complete"
 )
 
 // Task file format identifiers used throughout the commands package and
@@ -102,16 +104,21 @@ func fetchTaskFileURL(rawURL string) ([]byte, error) {
 	return data, nil
 }
 
+// taskFileExtensions lists the recipe file extensions docket recognises,
+// the single source of truth for hasTaskFileExtension and taskFileAutocomplete.
+var taskFileExtensions = []string{"yml", "yaml", "json", "json5"}
+
 // hasTaskFileExtension reports whether path carries one of the recipe
 // file extensions. Used to spot a positional recipe path in an argv the
 // flag parser has not yet processed.
 func hasTaskFileExtension(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".yml", ".yaml", ".json", ".json5":
-		return true
-	default:
-		return false
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
+	for _, candidate := range taskFileExtensions {
+		if ext == candidate {
+			return true
+		}
 	}
+	return false
 }
 
 // resolveTaskFilePath returns the path to use as the task file plus its
@@ -156,6 +163,40 @@ func resolveTaskFileArg(explicit string, positional []string) (string, error) {
 	return positional[0], nil
 }
 
-// taskFileAutocompleteGlob is the shared file glob for the --tasks flag
-// completion across apply / plan / validate / fmt / init.
-const taskFileAutocompleteGlob = "*.{yml,yaml,json,json5}"
+// predictFilesByExtension returns a completion predictor offering files whose
+// name ends in one of the given extensions (each without a leading dot, e.g.
+// "yml"), plus directories for navigation, each offered exactly once.
+//
+// complete.PredictFiles feeds its pattern to filepath.Glob, whose
+// filepath.Match engine has no brace expansion, so a single "*.{yml,yaml}"
+// glob matches nothing (#340). Unioning one PredictFiles per extension
+// restores per-extension matching; the dedupe stops a directory (which every
+// sub-predictor lists) from being offered once per extension -- the library
+// prints every option without deduping (posener/complete complete.go output).
+func predictFilesByExtension(extensions []string) complete.Predictor {
+	predictors := make([]complete.Predictor, 0, len(extensions))
+	for _, ext := range extensions {
+		predictors = append(predictors, complete.PredictFiles("*."+ext))
+	}
+	return complete.PredictFunc(func(a complete.Args) []string {
+		seen := make(map[string]bool)
+		var matches []string
+		for _, p := range predictors {
+			for _, match := range p.Predict(a) {
+				if seen[match] {
+					continue
+				}
+				seen[match] = true
+				matches = append(matches, match)
+			}
+		}
+		return matches
+	})
+}
+
+// taskFileAutocomplete is the file-completion predictor shared by the
+// --tasks / --output / --vars-output flags and `docket fmt`'s positional
+// argument across apply / plan / validate / fmt / init / export.
+func taskFileAutocomplete() complete.Predictor {
+	return predictFilesByExtension(taskFileExtensions)
+}
