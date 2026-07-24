@@ -10,7 +10,7 @@ require (
 	github.com/gliderlabs/sigil v0.12.0
 	github.com/gobuffalo/flect v1.0.3
 	github.com/josegonzalez/cli-skeleton v0.25.0
-	github.com/mattn/go-isatty v0.0.23
+	github.com/mattn/go-isatty v0.0.24
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/mitchellh/cli v1.1.5
 	github.com/posener/complete v1.2.3
