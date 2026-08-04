@@ -130,6 +130,26 @@ Create a file named `tasks.yml` in your project. docket picks this name up autom
 If you would rather start from a generated template, run `docket init` and it writes a starter
 `tasks.yml` for you. See the [command reference](command-reference.md#docket-init) for its flags.
 
+## Previewing with plan
+
+Before changing anything, you can preview what `apply` would do. `docket plan` reads the live
+server and reports the differences without running any mutating command - the same idea as
+`terraform plan` or `git diff`:
+
+```bash
+docket plan
+```
+
+```text
+==> Play: tasks
+[+]       dokku apps:create inflector
+[+]       dokku git:sync inflector
+
+Plan: 2 task(s); 2 would change, 0 in sync, 0 error(s).
+```
+
+This is the safest way to understand a recipe you did not write, or to gate a deploy in CI.
+
 ## Applying the recipe
 
 `docket apply` runs the recipe against your Dokku server, making only the changes needed. Run it
@@ -159,26 +179,6 @@ the recipe:
 
 Summary: 2 tasks · 0 changed · 2 ok · 0 skipped · 0 errors  (took 0.6s)
 ```
-
-## Previewing with plan
-
-Before changing anything, you can preview what `apply` would do. `docket plan` reads the live
-server and reports the differences without running any mutating command - the same idea as
-`terraform plan` or `git diff`:
-
-```bash
-docket plan
-```
-
-```text
-==> Play: tasks
-[+]       dokku apps:create inflector
-[+]       dokku git:sync inflector
-
-Plan: 2 task(s); 2 would change, 0 in sync, 0 error(s).
-```
-
-This is the safest way to understand a recipe you did not write, or to gate a deploy in CI.
 
 ## Next steps
 
