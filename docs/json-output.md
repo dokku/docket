@@ -10,7 +10,9 @@ future schema change does not silently break them. Values marked sensitive - inp
 `sensitive: true`, or task fields tagged `sensitive:"true"` - are masked as `***`. Masking covers
 every string field a secret can reach, including `name` and `play` (a loop over a sensitive value
 expands the task name) and the `when` / `reason` fields on `play_skipped` (a play predicate can
-interpolate a sensitive input).
+interpolate a sensitive input). Masking applies to the `apply` / `plan` run stream and to
+`validate --json`; the `--list-tasks --json` stream is **not** masked, so do not route it anywhere a
+secret must not land.
 
 ## Events
 
@@ -76,7 +78,7 @@ treat any output as failure without parsing it. Every problem carries `version`,
 `hint` are masked.
 
 ```jsonl
-{"code":"unknown_task_type","column":7,"line":4,"message":"unknown task type \"dokku_appp\"","hint":"did you mean \"dokku_app\"?","play":"play #1","task":"task #1 \"typo\"","type":"validate_problem","version":1}
+{"code":"unknown_task_type","column":7,"hint":"did you mean \"dokku_app\"?","line":4,"message":"unknown task type \"dokku_appp\"","play":"play #1","task":"task #1 \"typo\"","type":"validate_problem","version":1}
 {"code":"missing_required_field","column":9,"line":8,"message":"missing required field \"app\" on dokku_config","play":"play #1","task":"task #2 \"configure\"","type":"validate_problem","version":1}
 ```
 
@@ -96,8 +98,10 @@ reworded:
 | `envelope_key_type` | An envelope key has the wrong type (for example `tags:` as a string). |
 | `duplicate_task_name` | Two tasks in one play share a `name`. |
 | `block_shape` | A `block` / `rescue` / `always` clause is not a list of task entries. |
-| `block_empty` | A group declares `rescue` or `always` with no `block`. |
+| `block_empty` | A `block:` clause contains no child tasks. |
+| `block_orphan_clause` | A task entry declares `rescue` or `always` with no `block`. |
 | `block_with_task_type` | A group entry also carries a task-type key. |
+| `envelope_key_unsupported` | An envelope key is reserved for a future release but not yet implemented. `hint` names the tracking issue. |
 | `task_body_decode` | The task body does not decode into the task's struct. |
 | `missing_required_field` | A field tagged `required:"true"` is absent or zero. |
 | `invalid_task_input` | A task's own `Validate()` rejected the combination of fields - conditional requirements, mutually-exclusive fields, enum values. |
@@ -151,7 +155,8 @@ Without it, `apply` exits `0` either way. The equivalent signal inside the strea
 
 ```bash
 docket apply --json --detailed-exitcode | tee apply.jsonl
-case $? in
+# $? would be tee's status, not docket's; read the head of the pipeline instead.
+case "${PIPESTATUS[0]}" in
   0) echo "no changes" ;;
   2) echo "changed" ;;
   *) echo "failed" ;;

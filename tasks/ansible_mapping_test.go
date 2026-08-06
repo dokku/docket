@@ -107,10 +107,7 @@ func TestAnsibleMappingCoversEveryRegisteredTask(t *testing.T) {
 	}
 	doc := strings.Split(string(raw), "\n")
 
-	documented := map[string]bool{}
-	for name := range tasksInMappingTable(t, doc) {
-		documented[name] = true
-	}
+	documented := tasksInMappingTable(t, doc)
 	for name := range tasksInNoModuleSection(t, doc) {
 		documented[name] = true
 	}

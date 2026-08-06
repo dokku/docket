@@ -38,10 +38,7 @@ func decodeOnly(t *testing.T, out string) map[string]interface{} {
 func decodeLines(t *testing.T, out string) []map[string]interface{} {
 	t.Helper()
 	var events []map[string]interface{}
-	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if line == "" {
-			continue
-		}
+	for _, line := range jsonLines(out) {
 		var ev map[string]interface{}
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			t.Fatalf("invalid JSON line %q: %v", line, err)

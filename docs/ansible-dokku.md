@@ -171,8 +171,10 @@ flag.
 ### Deriving `failed`
 
 Exit `1` is failure; exit `0` and `2` are not. Within the stream, a failed task carries
-`"status": "error"` and an `error` message, plus `stdout`, `stderr`, and `exit_code` when the failure
-came from a `dokku` subprocess. Those map onto Ansible's `msg`, `stdout`, `stderr`, and `rc`.
+`"status": "error"` and an `error` message. On an `apply` task it also carries `stdout`, `stderr`,
+and `exit_code` when the failure came from a `dokku` subprocess; those map onto Ansible's `msg`,
+`stdout`, `stderr`, and `rc`. A `plan` task carries only `error`, so a `check_mode` failure has no
+`rc` to forward.
 
 A task whose error was swallowed by `ignore_errors` carries `"ignored": true`, does not count toward
 `summary.errors`, and does not affect the exit code - the same semantics Ansible gives the keyword.
@@ -200,9 +202,13 @@ reason. When the probe itself fails - no `dokku` binary, unreachable host - the 
 ### Secrets
 
 Values from inputs declared `sensitive: true` and from task fields tagged `sensitive:"true"` are
-masked as `***` everywhere in the output, including `commands` and `name`. A wrapper cannot read a
-secret back out of the stream, which is the point - but it also means a wrapper must not diff a
-returned value against the one it sent.
+masked as `***` everywhere in the `apply` / `plan` / `validate` output, including `commands` and
+`name`. A wrapper cannot read a secret back out of those streams, which is the point - but it also
+means a wrapper must not diff a returned value against the one it sent.
+
+The one exception is `--list-tasks`, which renders the resolved plan before any sensitive value is
+registered and does no masking at all: an interpolated secret comes back verbatim in `name`,
+`when`, and `loop_item`. Never surface that stream to an Ansible caller.
 
 ## Module mapping
 

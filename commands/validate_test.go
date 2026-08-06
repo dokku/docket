@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -166,25 +167,24 @@ func TestValidateJSONEventShape(t *testing.T) {
 			assertLinesMatchSchema(t, validateSchemaPath, out)
 
 			var codes []string
-			for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-				if strings.TrimSpace(line) == "" {
-					continue
-				}
+			for _, line := range jsonLines(out) {
 				var ev map[string]interface{}
 				if err := json.Unmarshal([]byte(line), &ev); err != nil {
 					t.Fatalf("invalid JSON line %q: %v", line, err)
 				}
-				codes = append(codes, ev["code"].(string))
+				// Not a type assertion with the comma-ok dropped:
+				// assertLinesMatchSchema above reports a missing or
+				// non-string `code` with t.Errorf, so execution
+				// reaches here and a bare assertion would panic the
+				// whole test binary instead of failing this case.
+				code, ok := ev["code"].(string)
+				if !ok {
+					t.Fatalf("line %q has no string \"code\" field", line)
+				}
+				codes = append(codes, code)
 			}
 			for _, want := range tt.codes {
-				found := false
-				for _, got := range codes {
-					if got == want {
-						found = true
-						break
-					}
-				}
-				if !found {
+				if !slices.Contains(codes, want) {
 					t.Errorf("expected a %q problem, got codes %v\noutput:\n%s", want, codes, out)
 				}
 			}

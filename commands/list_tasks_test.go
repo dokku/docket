@@ -213,9 +213,6 @@ func TestPlanListTasksWorks(t *testing.T) {
 	}
 }
 
-// TestApplyStartAtTaskUnknownErrors pins the up-front guard:
-// --start-at-task pointing at a name that does not exist returns 1
-// with the available-names hint.
 // TestListTasksJSONMatchesSchema drives every branch of the
 // --list-tasks --json emitter through one recipe and holds each line to
 // docs/schemas/list-tasks-v1.schema.json. That stream is deliberately
@@ -286,6 +283,9 @@ func TestListTasksJSONMatchesSchema(t *testing.T) {
 	}
 }
 
+// TestApplyStartAtTaskUnknownErrors pins the up-front guard:
+// --start-at-task pointing at a name that does not exist returns 1
+// with the available-names hint.
 func TestApplyStartAtTaskUnknownErrors(t *testing.T) {
 	defer stubReset()
 	path := writeTasksFile(t, `---
