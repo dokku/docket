@@ -278,19 +278,30 @@ the same two defaults outright, so the behavior matches.
 
 ## What cannot be delegated yet
 
-- **The `dokku_git_sync` module.** It targets the commercial `dokku-git-sync` plugin (`git-sync:set
-  <app> remote`), which docket has no task for. Mind the name collision: docket's `dokku_git_sync` is
-  core `git:sync`, which is what the `dokku_clone` module does. The two are unrelated.
-- **`dokku_ports` with `state: clear`.** `dokku_ports` handles `present` and `absent` only, so
-  clearing every mapping has to stay in the module for now.
-- **Host-directory management in `dokku_storage`.** With `create_host_dir`, the module does host-side
-  `os.makedirs`, `chmod 0777`, and `chown` using the `user` / `group` options; `destroy_host_dir` does
-  an `os.rmdir` before unmounting. `dokku_storage_entry` creates the entry's host directory and takes
-  a `chown` preset or numeric uid, which covers the common case, but there is no chmod and no
-  host-directory removal.
-- **Custom service images.** `dokku_service_create` in the module reads image overrides from Ansible's
-  `environment:` (`POSTGRES_IMAGE` and friends) rather than from a module argument. docket does not
-  forward those.
+Four things. Each is tracked, so a wrapper can keep the module implementation for now and drop it when
+the task lands.
+
+- **The `dokku_git_sync` module**
+  ([#414](https://github.com/dokku/docket/issues/414)). It targets the commercial `dokku-git-sync`
+  plugin (`git-sync:set <app> remote`), which docket has no task for. Mind the name collision:
+  docket's `dokku_git_sync` is core `git:sync`, which is what the `dokku_clone` module does. The two
+  are unrelated.
+- **`dokku_ports` with `state: clear`**
+  ([#415](https://github.com/dokku/docket/issues/415)). `dokku_ports` handles `present` and `absent`
+  only, and rejects an empty `port_mappings` list, so clearing every mapping has to stay in the module
+  for now.
+- **Host-directory management in `dokku_storage`**
+  ([#416](https://github.com/dokku/docket/issues/416)). With `create_host_dir`, the module does
+  host-side `os.makedirs`, `chmod 0777`, and `chown` using the `user` / `group` options;
+  `destroy_host_dir` does an `os.rmdir` before unmounting. `dokku_storage_entry` creates the entry's
+  host directory and takes a `chown` preset or numeric uid, which covers the common case, but there is
+  no chmod and no host-directory removal. The module gets away with raw filesystem calls because
+  Ansible is already running on the dokku host; docket may be driving it over SSH, so anything it does
+  here has to go through a `dokku` subcommand.
+- **Custom service images**
+  ([#417](https://github.com/dokku/docket/issues/417)). `dokku_service_create` in the module reads
+  image overrides from Ansible's `environment:` (`POSTGRES_IMAGE` and friends) rather than from a
+  module argument. docket does not forward those.
 
 ## docket tasks with no ansible-dokku module
 
