@@ -34,6 +34,15 @@ setup() {
   refute_output --partial 'notes.txt'
 }
 
+@test "docket apply --tasks-format completes the two recipe formats" {
+  cd "$BATS_TEST_TMPDIR"
+  export COMP_LINE='docket apply --tasks-format '
+  run "$(docket_bin)" apply --tasks-format
+  assert_success
+  assert_output --partial 'yaml'
+  assert_output --partial 'json5'
+}
+
 @test "docket fmt completes recipe files positionally (#340)" {
   cd "$BATS_TEST_TMPDIR"
   : >tasks.yml

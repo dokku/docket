@@ -137,6 +137,7 @@ Declaring one is reported as `reserved_input_name` by `docket validate` (and rej
 - `sudo`
 - `tags`
 - `tasks`
+- `tasks-format`
 - `vars-file`
 - `verbose`
 

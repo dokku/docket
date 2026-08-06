@@ -335,6 +335,90 @@ func TestFmtStdinReadsAndWritesStdout(t *testing.T) {
 	}
 }
 
+func TestFmtStdinInvalidTasksFormatFails(t *testing.T) {
+	captured, exit := withStdinAndStdout(t, messyTasksYAML, func() int {
+		c := newTestFmtCommand()
+		return c.Run([]string{"--tasks-format", "toml", "-"})
+	})
+	if exit != 1 {
+		t.Errorf("invalid --tasks-format exit = %d, want 1", exit)
+	}
+	if captured != "" {
+		t.Errorf("nothing should be written on a rejected format, got:\n%s", captured)
+	}
+}
+
+// TestFmtStdinTasksFormatOverridesSniff is the case sniffing alone
+// cannot get right: a top-level flow sequence is valid YAML but opens
+// with "[", so sniffStdinFormat calls it JSON5 and the JSON5 formatter
+// rewrites it into JSON5 syntax. --tasks-format yaml keeps it YAML.
+func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
+	const flowYAML = "[{tasks: [{name: flow, dokku_app: {app: api}}]}]\n"
+
+	sniffed, exit := withStdinAndStdout(t, flowYAML, func() int {
+		c := newTestFmtCommand()
+		return c.Run([]string{"-"})
+	})
+	if exit != 0 {
+		t.Fatalf("sniffed exit = %d, want 0", exit)
+	}
+	if !strings.Contains(sniffed, "dokku_app: {") {
+		t.Errorf("without an override the sniff should pick JSON5, got:\n%s", sniffed)
+	}
+
+	forced, exit := withStdinAndStdout(t, flowYAML, func() int {
+		c := newTestFmtCommand()
+		return c.Run([]string{"--tasks-format", "yaml", "-"})
+	})
+	if exit != 0 {
+		t.Fatalf("forced exit = %d, want 0", exit)
+	}
+	if forced == sniffed {
+		t.Errorf("--tasks-format yaml should not produce the JSON5 layout, got:\n%s", forced)
+	}
+}
+
+func TestFmtTasksFormatOverridesFileExtension(t *testing.T) {
+	dir := t.TempDir()
+	// A .yml extension would normally select the YAML formatter; the
+	// override sends this JSON5 body to the JSON5 formatter instead.
+	path := filepath.Join(dir, "recipe.yml")
+	if err := os.WriteFile(path, []byte(messyTasksJSON5), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--tasks-format", "json5", path}); exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != canonicalTasksJSON5 {
+		t.Errorf("output mismatch:\nwant:\n%s\ngot:\n%s", canonicalTasksJSON5, got)
+	}
+}
+
+// TestFmtRejectsStdinMixedWithPaths: stdin is one stream, so it cannot
+// be combined with named files. Without the guard the "-" fell through
+// to expandPaths, matched no glob, and died on os.ReadFile("-").
+func TestFmtRejectsStdinMixedWithPaths(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(canonicalTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"-", path}); exit != 1 {
+		t.Errorf("exit = %d, want 1", exit)
+	}
+	errOut := c.Ui.(*cli.MockUi).ErrorWriter.String()
+	if !strings.Contains(errOut, "cannot mix - with other paths") {
+		t.Errorf("error should explain the mix, got: %s", errOut)
+	}
+}
+
 func TestFmtGlobExpandsMatches(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.yml", "b.yml", "c.yaml"} {
@@ -446,7 +530,14 @@ func withStdinAndStdout(t *testing.T, input string, fn func() int) (string, int)
 	}
 	origStdin := os.Stdin
 	os.Stdin = stdinR
-	t.Cleanup(func() { os.Stdin = origStdin })
+	// readStdinRecipe memoizes the one read a process gets, so the memo
+	// has to be dropped around every test that swaps os.Stdin -
+	// otherwise the second such test is served the first one's bytes.
+	resetStdinRecipe()
+	t.Cleanup(func() {
+		os.Stdin = origStdin
+		resetStdinRecipe()
+	})
 
 	go func() {
 		_, _ = stdinW.WriteString(input)

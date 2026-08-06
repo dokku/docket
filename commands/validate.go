@@ -20,14 +20,20 @@ import (
 type ValidateCommand struct {
 	command.Meta
 
-	tasksFile   string
-	tasksFormat string
-	json        bool
-	strict      bool
-	varsFiles   []string
-	play        string
-	startAtTask string
-	arguments   map[string]*Argument
+	tasksFile string
+	// tasksDisplay is tasksFile rendered for output; "<stdin>" when the
+	// recipe was piped in.
+	tasksDisplay string
+	// tasksFormatFlag is the raw --tasks-format value; tasksFormat is
+	// the format actually used, after override / extension / sniff.
+	tasksFormatFlag string
+	tasksFormat     string
+	json            bool
+	strict          bool
+	varsFiles       []string
+	play            string
+	startAtTask     string
+	arguments       map[string]*Argument
 }
 
 func (c *ValidateCommand) Name() string {
@@ -48,6 +54,8 @@ func (c *ValidateCommand) Examples() map[string]string {
 		"Validate the default tasks.yml":           fmt.Sprintf("%s %s", appName, c.Name()),
 		"Validate a specific YAML file":            fmt.Sprintf("%s %s --tasks path/to/task.yml", appName, c.Name()),
 		"Validate a JSON5 file":                    fmt.Sprintf("%s %s --tasks path/to/tasks.json", appName, c.Name()),
+		"Validate a recipe piped in on stdin":      fmt.Sprintf("cat tasks.yml | %s %s -", appName, c.Name()),
+		"Force the format of an odd extension":     fmt.Sprintf("%s %s --tasks recipe.txt --tasks-format json5", appName, c.Name()),
 		"Emit JSON-lines problem events":           fmt.Sprintf("%s %s --json", appName, c.Name()),
 		"Flag required inputs without an override": fmt.Sprintf("%s %s --strict", appName, c.Name()),
 	}
@@ -67,16 +75,19 @@ func (c *ValidateCommand) ParsedArguments(args []string) (map[string]command.Arg
 
 func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
-	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory.")
+	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. Pass - to read the recipe from stdin. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory.")
+	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format (yaml or json5) instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines problem event per finding")
 	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override, and check that --play / --start-at-task references resolve to real names in the file")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
 	f.StringVar(&c.play, "play", "", "(strict) verify the named play exists in the recipe (matches the play's `name:` field; auto-named plays use `play #N`)")
 	f.StringVar(&c.startAtTask, "start-at-task", "", "(strict) verify a task with this name exists in the recipe; narrowed by --play when set")
 
-	taskFile, format := resolveTaskFileFromArgs(os.Args)
-	data, err := os.ReadFile(taskFile)
-	if err != nil {
+	// validate is offline by contract, so its recipe read never fetches
+	// a URL - unlike apply and plan, its --tasks help has never
+	// advertised one.
+	data, format, _ := preloadRecipeForFlags(os.Args, false)
+	if data == nil {
 		return f
 	}
 
@@ -94,6 +105,7 @@ func (c *ValidateCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--tasks":         taskFileAutocomplete(),
+			"--tasks-format":  tasksFormatAutocomplete(),
 			"--json":          complete.PredictNothing,
 			"--strict":        complete.PredictNothing,
 			"--vars-file":     complete.PredictFiles("*"),
@@ -130,6 +142,19 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
+	formatOverride, err := parseTasksFormatFlag(c.tasksFormatFlag)
+	if err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "argument_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(err.Error())
+		}
+		return 1
+	}
+
 	taskFile, err := resolveTaskFileArg(c.tasksFile, flags.Args())
 	if err != nil {
 		if c.json {
@@ -143,7 +168,7 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	resolvedPath, resolvedFormat, err := resolveTaskFilePath(taskFile)
+	recipe, err := loadRecipe(taskFile, formatOverride, false, nil, "")
 	if err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{
@@ -155,21 +180,10 @@ func (c *ValidateCommand) Run(args []string) int {
 		}
 		return 1
 	}
-	c.tasksFile = resolvedPath
-	c.tasksFormat = resolvedFormat
-
-	data, err := os.ReadFile(c.tasksFile)
-	if err != nil {
-		if c.json {
-			c.emitJSONProblem(tasks.Problem{
-				Code:    "read_error",
-				Message: err.Error(),
-			})
-		} else {
-			c.Ui.Error(fmt.Sprintf("read error: %v", err))
-		}
-		return 1
-	}
+	c.tasksFile = recipe.Path
+	c.tasksDisplay = recipe.Display
+	c.tasksFormat = recipe.Format
+	data := recipe.Data
 
 	overrides := map[string]bool{}
 	var sensitiveValues []string
@@ -209,9 +223,9 @@ func (c *ValidateCommand) Run(args []string) int {
 	}
 
 	if len(problems) == 0 {
-		c.Ui.Info(fmt.Sprintf("==> Validating %s", c.tasksFile))
+		c.Ui.Info(fmt.Sprintf("==> Validating %s", c.tasksDisplay))
 		c.Ui.Info("")
-		c.Ui.Info(fmt.Sprintf("[ok]      %s is valid", c.tasksFile))
+		c.Ui.Info(fmt.Sprintf("[ok]      %s is valid", c.tasksDisplay))
 		return 0
 	}
 
@@ -255,7 +269,7 @@ func (c *ValidateCommand) emitJSONProblem(p tasks.Problem) {
 // example output. Play and task headers are emitted only when they change so
 // the output stays compact.
 func (c *ValidateCommand) renderHumanProblems(problems []tasks.Problem) {
-	c.Ui.Info(fmt.Sprintf("==> Validating %s", c.tasksFile))
+	c.Ui.Info(fmt.Sprintf("==> Validating %s", c.tasksDisplay))
 	c.Ui.Info("")
 	c.Ui.Info(fmt.Sprintf("[error]   %d problem(s):", len(problems)))
 	c.Ui.Info("")

@@ -127,7 +127,8 @@ func getTaskYamlFilename(s []string) string {
 // and returns the first one that exists; if none exist the legacy
 // default ("tasks.yml") is returned so the downstream os.ReadFile error
 // path still fires with the familiar message. Format is keyed by file
-// extension; see detectTaskFileFormat.
+// extension; see detectTaskFileFormat. The format is empty for stdin,
+// which has no name - taskFileFormatFor sniffs the bytes instead.
 func resolveTaskFileFromArgs(s []string) (string, string) {
 	positional := ""
 	skipNext := false
@@ -135,10 +136,16 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 		if arg == "--tasks" {
 			if len(s) > i+1 {
 				path := s[i+1]
+				if path == taskFileStdin {
+					return taskFileStdin, ""
+				}
 				return path, detectTaskFileFormat(path)
 			}
 		}
 		if taskFile, found := strings.CutPrefix(arg, "--tasks="); found {
+			if taskFile == taskFileStdin {
+				return taskFileStdin, ""
+			}
 			return taskFile, detectTaskFileFormat(taskFile)
 		}
 		// Best-effort positional detection so recipe input flags still
@@ -151,6 +158,17 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 			skipNext = false
 			continue
 		}
+		// A bare "-" is the stdin recipe. It has to be tested after the
+		// skipNext check, so `--play -` cannot be mistaken for the
+		// recipe, and before the HasPrefix check below, which would
+		// otherwise swallow it as a flag. It also needs its own branch
+		// because hasTaskFileExtension("-") is false.
+		if arg == taskFileStdin {
+			if positional == "" {
+				positional = taskFileStdin
+			}
+			continue
+		}
 		if strings.HasPrefix(arg, "-") {
 			if valueTakingFlags[arg] {
 				skipNext = true
@@ -160,6 +178,12 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 		if positional == "" && hasTaskFileExtension(arg) {
 			positional = arg
 		}
+	}
+	// stdin must short-circuit before the os.Stat below: it never
+	// stats, and falling through would silently resolve to ./tasks.yml
+	// while Run read the recipe the user actually piped in.
+	if positional == taskFileStdin {
+		return taskFileStdin, ""
 	}
 	if positional != "" {
 		if _, err := os.Stat(positional); err == nil {
@@ -174,11 +198,28 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 	return defaultTaskFileCandidates[0], detectTaskFileFormat(defaultTaskFileCandidates[0])
 }
 
+// tasksFormatFromArgs pulls a --tasks-format value out of os.Args-style
+// argv. Needed because FlagSet() runs before pflag parses, so the
+// preregistration pass cannot read the parsed flag. An empty result
+// means "not given"; the value is not validated here, only in Run.
+func tasksFormatFromArgs(s []string) string {
+	for i, arg := range s {
+		if arg == "--tasks-format" && len(s) > i+1 {
+			return s[i+1]
+		}
+		if value, found := strings.CutPrefix(arg, "--tasks-format="); found {
+			return value
+		}
+	}
+	return ""
+}
+
 // valueTakingFlags are the built-in flags that consume the following argv
 // token as their value, used by resolveTaskFileFromArgs so a flag value
 // with a task-file extension is not mistaken for a positional recipe path.
 var valueTakingFlags = map[string]bool{
 	"--tasks":         true,
+	"--tasks-format":  true,
 	"--vars-file":     true,
 	"--host":          true,
 	"--tags":          true,

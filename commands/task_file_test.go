@@ -20,11 +20,124 @@ func TestDetectTaskFileFormat(t *testing.T) {
 		"path/to/tasks.yml": taskFileFormatYAML,
 		"recipe.txt":        taskFileFormatYAML,
 		"":                  taskFileFormatYAML,
+		// stdin has no extension; detection defaults to YAML here and
+		// the caller sniffs instead. See taskFileFormatFor.
+		taskFileStdin: taskFileFormatYAML,
 	}
 	for path, want := range cases {
 		if got := detectTaskFileFormat(path); got != want {
 			t.Errorf("detectTaskFileFormat(%q) = %q, want %q", path, got, want)
 		}
+	}
+}
+
+func TestParseTasksFormatFlag(t *testing.T) {
+	valid := map[string]string{
+		"":      "",
+		"yaml":  taskFileFormatYAML,
+		"YAML":  taskFileFormatYAML,
+		"yml":   taskFileFormatYAML,
+		"json":  taskFileFormatJSON5,
+		"json5": taskFileFormatJSON5,
+		"JSON5": taskFileFormatJSON5,
+		" yaml": taskFileFormatYAML,
+	}
+	for value, want := range valid {
+		got, err := parseTasksFormatFlag(value)
+		if err != nil {
+			t.Errorf("parseTasksFormatFlag(%q) returned error: %v", value, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("parseTasksFormatFlag(%q) = %q, want %q", value, got, want)
+		}
+	}
+
+	for _, value := range []string{"toml", "hcl", "ini", "yamlish"} {
+		if _, err := parseTasksFormatFlag(value); err == nil {
+			t.Errorf("parseTasksFormatFlag(%q) = nil error, want a rejection", value)
+		} else if !strings.Contains(err.Error(), "yaml, json5") {
+			t.Errorf("parseTasksFormatFlag(%q) error %q should name the valid values", value, err)
+		}
+	}
+}
+
+// TestTaskFileFormatFor pins the precedence rule: an explicit
+// --tasks-format beats extension detection, which beats a content
+// sniff. The return value must never be empty - tasks.IsJSON5Format("")
+// is false, so an empty format silently means YAML downstream.
+func TestTaskFileFormatFor(t *testing.T) {
+	jsonish := []byte("[{tasks: []}]")
+	yamlish := []byte("---\n- tasks: []\n")
+
+	tests := []struct {
+		name     string
+		detected string
+		override string
+		data     []byte
+		want     string
+	}{
+		{name: "override beats detection", detected: taskFileFormatYAML, override: taskFileFormatJSON5, data: yamlish, want: taskFileFormatJSON5},
+		{name: "override beats sniff", detected: "", override: taskFileFormatYAML, data: jsonish, want: taskFileFormatYAML},
+		{name: "detection beats sniff", detected: taskFileFormatYAML, data: jsonish, want: taskFileFormatYAML},
+		{name: "sniff picks json5 for stdin", detected: "", data: jsonish, want: taskFileFormatJSON5},
+		{name: "sniff picks yaml for stdin", detected: "", data: yamlish, want: taskFileFormatYAML},
+		{name: "empty stdin defaults to yaml", detected: "", data: nil, want: taskFileFormatYAML},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := taskFileFormatFor(tt.detected, tt.override, tt.data); got != tt.want {
+				t.Errorf("taskFileFormatFor(%q, %q, %q) = %q, want %q", tt.detected, tt.override, tt.data, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTaskFileDisplayName(t *testing.T) {
+	cases := map[string]string{
+		taskFileStdin: "<stdin>",
+		"tasks.yml":   "tasks.yml",
+		"a/b.json":    "a/b.json",
+		"":            "",
+	}
+	for path, want := range cases {
+		if got := taskFileDisplayName(path); got != want {
+			t.Errorf("taskFileDisplayName(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// TestResolveTaskFilePathStdin: "-" must resolve to itself with an
+// empty format (so the caller sniffs) and must never fall through to
+// the default candidate probe, which would silently prefer ./tasks.yml
+// over the recipe the user piped in.
+func TestResolveTaskFilePathStdin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte("---\n"), 0o644); err != nil {
+		t.Fatalf("write yml: %v", err)
+	}
+	withCwd(t, dir, func() {
+		path, format, err := resolveTaskFilePath(taskFileStdin)
+		if err != nil {
+			t.Fatalf("resolveTaskFilePath: %v", err)
+		}
+		if path != taskFileStdin {
+			t.Errorf("path = %q, want %q", path, taskFileStdin)
+		}
+		if format != "" {
+			t.Errorf("format = %q, want empty so the caller sniffs", format)
+		}
+	})
+}
+
+// TestReadRecipeBytesURLPermission: validate is offline by contract, so
+// it passes allowURL=false and an http(s) --tasks must not be fetched.
+func TestReadRecipeBytesURLPermission(t *testing.T) {
+	const url = "https://example.invalid/tasks.yml"
+	if _, err := readRecipeBytes(url, false); err == nil {
+		t.Fatal("readRecipeBytes(url, false) = nil error, want a local-read failure")
+	} else if strings.Contains(err.Error(), "fetch") {
+		t.Errorf("readRecipeBytes(url, false) attempted a fetch: %v", err)
 	}
 }
 
@@ -173,6 +286,85 @@ func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
 	}
 	if format != taskFileFormatYAML {
 		t.Errorf("format = %q, want yaml", format)
+	}
+}
+
+// TestResolveTaskFileFromArgsStdin covers every spelling of the stdin
+// recipe, plus the two ways a bare "-" was previously lost: the
+// HasPrefix("-") branch swallowed it as a flag, and the post-loop
+// os.Stat("-") failed and fell through to the ./tasks.yml probe - which
+// would have preregistered inputs from the wrong recipe entirely.
+func TestResolveTaskFileFromArgsStdin(t *testing.T) {
+	tests := []struct {
+		name string
+		argv []string
+	}{
+		{name: "--tasks -", argv: []string{"docket", "apply", "--tasks", "-"}},
+		{name: "--tasks=-", argv: []string{"docket", "apply", "--tasks=-"}},
+		{name: "bare positional", argv: []string{"docket", "apply", "-"}},
+		{name: "positional before flags", argv: []string{"docket", "apply", "-", "--json"}},
+		{name: "positional after flags", argv: []string{"docket", "apply", "--json", "-"}},
+	}
+
+	// A tasks.yml in the working directory is exactly what the os.Stat
+	// fallthrough used to resolve to; "-" must still win.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte("---\n- tasks: []\n"), 0o644); err != nil {
+		t.Fatalf("seed tasks.yml: %v", err)
+	}
+
+	withCwd(t, dir, func() {
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				path, format := resolveTaskFileFromArgs(tt.argv)
+				if path != taskFileStdin {
+					t.Errorf("path = %q, want %q", path, taskFileStdin)
+				}
+				if format != "" {
+					t.Errorf("format = %q, want empty so the caller sniffs stdin", format)
+				}
+			})
+		}
+	})
+}
+
+// TestResolveTaskFileFromArgsStdinNotAFlagValue: a "-" that is the value
+// of a value-taking flag is that flag's value, not the recipe. Testing
+// the ordering of the bare-"-" check against the skipNext check.
+func TestResolveTaskFileFromArgsStdinNotAFlagValue(t *testing.T) {
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "staging.yml")
+	if err := os.WriteFile(recipe, []byte("---\n- tasks: []\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	for _, flagName := range []string{"--play", "--vars-file", "--host", "--start-at-task", "--tasks-format"} {
+		t.Run(flagName, func(t *testing.T) {
+			path, _ := resolveTaskFileFromArgs([]string{"docket", "apply", flagName, "-", recipe})
+			if path != recipe {
+				t.Errorf("path = %q, want %q (the %s value must not be read as the recipe)", path, recipe, flagName)
+			}
+		})
+	}
+}
+
+func TestTasksFormatFromArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{name: "absent", argv: []string{"docket", "apply", "-"}, want: ""},
+		{name: "space separated", argv: []string{"docket", "apply", "--tasks-format", "json5", "-"}, want: "json5"},
+		{name: "equals separated", argv: []string{"docket", "apply", "--tasks-format=yaml", "-"}, want: "yaml"},
+		{name: "trailing flag with no value", argv: []string{"docket", "apply", "--tasks-format"}, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tasksFormatFromArgs(tt.argv); got != tt.want {
+				t.Errorf("tasksFormatFromArgs(%v) = %q, want %q", tt.argv, got, tt.want)
+			}
+		})
 	}
 }
 
