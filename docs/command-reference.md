@@ -235,6 +235,13 @@ On error, the message prints on a `!`-prefixed line and the run aborts with exit
 [`--fail-fast`](recipes.md#error-handling-across-plays) is off and only the play aborts). The
 summary still prints with partial counts.
 
+By default `apply` exits `0` whether or not anything changed, because "the server now matches the
+recipe" is the same outcome either way. Pass `--detailed-exitcode` when the caller needs to know:
+`0` means nothing changed, `2` means at least one task changed, and `1` still means an error. Errors
+win over changes, matching `plan`. An error swallowed by
+[`ignore_errors`](task-envelope.md#ignore_errors-continue-past-a-failure) is not an error for this
+purpose. `--list-tasks` returns before any task runs, so it is unaffected.
+
 | Flag | Effect |
 |------|--------|
 | `--tasks <path>` | Use a specific recipe. Accepts a local path, an `http(s)://` URL (fetched over HTTP), or `-` for stdin. |
@@ -242,6 +249,7 @@ summary still prints with partial counts.
 | `--tasks-format <fmt>` | Parse the recipe as `yaml` or `json5` instead of detecting it. |
 | `--verbose` | After each task, echo every resolved Dokku command it ran, one per `→` line. Masked against sensitive values. Ignored with `--json` (which already includes commands). |
 | `--json` | Emit JSON-lines events instead of the human formatter. See [JSON output](json-output.md). |
+| `--detailed-exitcode` | Exit `0` when nothing changed, `2` when something did, `1` on error. Errors win over changes. |
 | `--vars-file <path>` | Load input values from a file (repeatable). See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | Run only the named play. Composes with `--tags`. |
 | `--tags <list>` | Run only tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |

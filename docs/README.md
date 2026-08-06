@@ -19,5 +19,6 @@ Complete documentation for docket, a declarative way to pre-package and ship app
 - [Remote execution](remote-execution.md) -- drive a remote Dokku server over SSH
 - [Migration](migration.md) -- move a Dokku setup to a new server
 - [JSON output](json-output.md) -- the `--json` event schema for `apply` and `plan`
+- [Wrapping docket from ansible-dokku](ansible-dokku.md) -- the contract for driving docket from another tool
 - [Writing tasks](writing-tasks.md) -- contribute a new task type
 - [Roadmap](roadmap.md) -- ideas for where docket could go next

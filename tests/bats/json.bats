@@ -8,6 +8,7 @@ setup() {
   dokku_clean_app docket-test-json
   dokku_clean_app docket-test-json-clean
   dokku_clean_app docket-test-json-drift
+  dokku_clean_app docket-test-json-exit
   dokku_clean_app docket-test-json-mut
   dokku_clean_app docket-test-json-norestart
   dokku_clean_app docket-test-json-restart
@@ -17,6 +18,7 @@ teardown() {
   dokku_clean_app docket-test-json
   dokku_clean_app docket-test-json-clean
   dokku_clean_app docket-test-json-drift
+  dokku_clean_app docket-test-json-exit
   dokku_clean_app docket-test-json-mut
   dokku_clean_app docket-test-json-norestart
   dokku_clean_app docket-test-json-restart
@@ -258,6 +260,62 @@ EOF
     [ -z "$line" ] && continue
     echo "$line" | jq . >/dev/null || fail "invalid JSON: $line"
   done <<<"$output"
+}
+
+@test "docket apply --detailed-exitcode returns 2 when a task changed" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: docket-test-json-exit
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --detailed-exitcode
+  [ "$status" -eq 2 ] || fail "expected exit 2 on change, got $status: $output"
+}
+
+@test "docket apply --detailed-exitcode returns 0 when nothing changed" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: docket-test-json-exit
+EOF
+  "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --detailed-exitcode
+  assert_success
+}
+
+@test "docket apply default exit code stays 0 even when a task changed" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: docket-test-json-exit
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "1 changed"
+}
+
+@test "docket apply --json --detailed-exitcode composes" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: docket-test-json-exit
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --json --detailed-exitcode
+  [ "$status" -eq 2 ] || fail "expected exit 2 on change, got $status"
+  summary=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    echo "$line" | jq . >/dev/null || fail "invalid JSON: $line"
+    if [ "$(echo "$line" | jq -r '.type')" = "summary" ]; then
+      summary="$line"
+    fi
+  done <<<"$output"
+  [ -n "$summary" ] || fail "no summary event found"
+  echo "$summary" | jq -e '.changed == 1' >/dev/null || fail "summary should report 1 changed: $summary"
 }
 
 @test "docket apply --json masks sensitive values in commands" {

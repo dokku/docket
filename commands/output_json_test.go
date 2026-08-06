@@ -19,7 +19,9 @@ func emitterTestUI() (*JSONEmitter, *cli.MockUi) {
 }
 
 // decodeOnly parses the captured stdout as a single JSON-lines event and
-// returns the resulting map. Fails the test on any parse error.
+// returns the resulting map. Fails the test on any parse error, and on
+// any drift from docs/schemas/events-v1.schema.json - every test in this
+// file doubles as a conformance check on the published schema.
 func decodeOnly(t *testing.T, out string) map[string]interface{} {
 	t.Helper()
 	out = strings.TrimRight(out, "\n")
@@ -27,10 +29,12 @@ func decodeOnly(t *testing.T, out string) map[string]interface{} {
 	if err := json.Unmarshal([]byte(out), &ev); err != nil {
 		t.Fatalf("invalid JSON: %v\nraw: %q", err, out)
 	}
+	assertMatchesSchema(t, eventsSchemaPath, out)
 	return ev
 }
 
-// decodeLines parses every newline-delimited JSON event from out.
+// decodeLines parses every newline-delimited JSON event from out, and
+// validates each against the published event schema.
 func decodeLines(t *testing.T, out string) []map[string]interface{} {
 	t.Helper()
 	var events []map[string]interface{}
@@ -42,6 +46,7 @@ func decodeLines(t *testing.T, out string) []map[string]interface{} {
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			t.Fatalf("invalid JSON line %q: %v", line, err)
 		}
+		assertMatchesSchema(t, eventsSchemaPath, line)
 		events = append(events, ev)
 	}
 	return events

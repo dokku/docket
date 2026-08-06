@@ -216,6 +216,76 @@ func TestPlanListTasksWorks(t *testing.T) {
 // TestApplyStartAtTaskUnknownErrors pins the up-front guard:
 // --start-at-task pointing at a name that does not exist returns 1
 // with the available-names hint.
+// TestListTasksJSONMatchesSchema drives every branch of the
+// --list-tasks --json emitter through one recipe and holds each line to
+// docs/schemas/list-tasks-v1.schema.json. That stream is deliberately
+// not the same shape as the apply/plan run stream - its play_skipped
+// carries `play` where the run stream's carries `name`, and it has no
+// `ts` - which is why it has its own schema file.
+func TestListTasksJSONMatchesSchema(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, `---
+- name: skipped play
+  when: 'false'
+  tasks:
+    - name: never listed
+      dokku_stub: { key: a }
+
+- name: listed play
+  tasks:
+    - name: tagged
+      tags: [core]
+      dokku_stub: { key: a }
+    - name: looped
+      loop: [one, two]
+      dokku_stub: { key: a }
+    - name: when false
+      when: 'false'
+      dokku_stub: { key: a }
+    - name: when registered
+      when: 'registered.nothing.Changed'
+      dokku_stub: { key: a }
+    - name: deprecated
+      dokku_storage_ensure:
+        app: api
+    - name: group
+      block:
+        - name: in block
+          dokku_stub: { key: a }
+      rescue:
+        - name: in rescue
+          dokku_stub: { key: a }
+      always:
+        - name: in always
+          dokku_stub: { key: a }
+`)
+
+	stdout, stderr, exit := runApply(t, path, "--list-tasks", "--json")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	assertLinesMatchSchema(t, listTasksSchemaPath, stdout)
+
+	// Guard against the recipe silently losing a branch: if any of these
+	// stop appearing, the schema is no longer being exercised end to end.
+	for _, want := range []string{
+		`"type":"play_skipped"`,
+		`"tags":`,
+		`"loop_index":`,
+		`"skipped":true`,
+		`"unknown":true`,
+		`"deprecated":true`,
+		`"group":true`,
+		`"phase":"block"`,
+		`"phase":"rescue"`,
+		`"phase":"always"`,
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("expected %s somewhere in the stream; got:\n%s", want, stdout)
+		}
+	}
+}
+
 func TestApplyStartAtTaskUnknownErrors(t *testing.T) {
 	defer stubReset()
 	path := writeTasksFile(t, `---
