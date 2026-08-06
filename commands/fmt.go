@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,6 +30,9 @@ type FmtCommand struct {
 	check bool
 	diff  bool
 	color string
+	// tasksFormatFlag is the raw --tasks-format value, overriding both
+	// the per-file extension detection and the stdin content sniff.
+	tasksFormatFlag string
 }
 
 func (c *FmtCommand) Name() string {
@@ -54,6 +56,7 @@ func (c *FmtCommand) Examples() map[string]string {
 		"Print the diff without writing":          fmt.Sprintf("%s %s --diff", appName, c.Name()),
 		"CI gate: print diff and fail on bad":     fmt.Sprintf("%s %s --check --diff", appName, c.Name()),
 		"Read from stdin, write to stdout":        fmt.Sprintf("cat tasks.yml | %s %s -", appName, c.Name()),
+		"Force the format of a flow-style recipe": fmt.Sprintf("cat tasks.yml | %s %s --tasks-format yaml -", appName, c.Name()),
 		"Format every yaml under recipes/":        fmt.Sprintf("%s %s 'recipes/*.yml'", appName, c.Name()),
 		"Format every JSON5 file under recipes/":  fmt.Sprintf("%s %s 'recipes/*.json5'", appName, c.Name()),
 		"Force colorized diff in a pipe":          fmt.Sprintf("%s %s --diff --color always", appName, c.Name()),
@@ -77,6 +80,7 @@ func (c *FmtCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.check, "check", false, "exit non-zero if any file is not canonically formatted; do not write")
 	f.BoolVar(&c.diff, "diff", false, "print a unified diff for any file that is not canonically formatted; do not write")
 	f.StringVar(&c.color, "color", "auto", "when to colorize diff output: auto, always, never")
+	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "format the recipe as this format (yaml or json5) instead of detecting it from the file extension, or from the first byte when reading stdin. Needed for a flow-style YAML recipe, which starts with [ and would otherwise sniff as JSON5.")
 	return f
 }
 
@@ -84,9 +88,10 @@ func (c *FmtCommand) AutocompleteFlags() complete.Flags {
 	return command.MergeAutocompleteFlags(
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
-			"--check": complete.PredictNothing,
-			"--diff":  complete.PredictNothing,
-			"--color": complete.PredictSet("auto", "always", "never"),
+			"--check":        complete.PredictNothing,
+			"--diff":         complete.PredictNothing,
+			"--color":        complete.PredictSet("auto", "always", "never"),
+			"--tasks-format": tasksFormatAutocomplete(),
 		},
 	)
 }
@@ -111,9 +116,25 @@ func (c *FmtCommand) Run(args []string) int {
 		return 1
 	}
 
+	formatOverride, err := parseTasksFormatFlag(c.tasksFormatFlag)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
 	positional := flags.Args()
-	if len(positional) == 1 && positional[0] == "-" {
-		return c.runStdin()
+	if len(positional) == 1 && positional[0] == taskFileStdin {
+		return c.runStdin(formatOverride)
+	}
+	// stdin produces one stream, so it cannot be combined with named
+	// files. Without this the "-" falls through to expandPaths, matches
+	// no glob, and dies on a confusing `os.ReadFile("-")`. apply, plan,
+	// and validate reject the same mix in resolveTaskFileArg.
+	for _, arg := range positional {
+		if arg == taskFileStdin {
+			c.Ui.Error("cannot mix - with other paths; stdin is a single recipe")
+			return 1
+		}
 	}
 
 	paths, err := expandPaths(positional)
@@ -124,7 +145,7 @@ func (c *FmtCommand) Run(args []string) int {
 
 	exit := 0
 	for _, path := range paths {
-		if status := c.formatPath(path); status > exit {
+		if status := c.formatPath(path, formatOverride); status > exit {
 			exit = status
 		}
 	}
@@ -138,14 +159,16 @@ func (c *FmtCommand) Run(args []string) int {
 // Stdin has no filename to drive format detection, so it sniffs the
 // first non-trivia byte: a leading [ or { signals JSON5; anything else
 // (including the typical `---` document marker or a leading comment-
-// only YAML file) goes through the YAML formatter.
-func (c *FmtCommand) runStdin() int {
-	src, err := io.ReadAll(os.Stdin)
+// only YAML file) goes through the YAML formatter. formatOverride, from
+// --tasks-format, wins over the sniff - a flow-style YAML recipe starts
+// with [ and would otherwise be reformatted as JSON5.
+func (c *FmtCommand) runStdin(formatOverride string) int {
+	src, err := readStdinRecipe()
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read stdin: %v", err))
 		return 1
 	}
-	formatted, err := formatTaskFileBytes(src, sniffStdinFormat(src))
+	formatted, err := formatTaskFileBytes(src, taskFileFormatFor("", formatOverride, src))
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("format error: %v", err))
 		return 1
@@ -180,14 +203,14 @@ func (c *FmtCommand) runStdin() int {
 // formatPath formats a single file. Returns 0 on success, 1 on any
 // error or --check mismatch. Errors are reported via c.Ui and the
 // caller picks the worst-of exit code across all paths.
-func (c *FmtCommand) formatPath(path string) int {
+func (c *FmtCommand) formatPath(path, formatOverride string) int {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read %s: %v", path, err))
 		return 1
 	}
 
-	formatted, err := formatTaskFileBytes(src, detectTaskFileFormat(path))
+	formatted, err := formatTaskFileBytes(src, taskFileFormatFor(detectTaskFileFormat(path), formatOverride, src))
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("%s: %v", path, err))
 		return 1

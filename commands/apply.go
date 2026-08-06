@@ -18,7 +18,10 @@ import (
 type ApplyCommand struct {
 	command.Meta
 
-	tasksFile         string
+	tasksFile string
+	// tasksFormatFlag is the raw --tasks-format value; tasksFormat is
+	// the format actually used, after override / extension / sniff.
+	tasksFormatFlag   string
 	tasksFormat       string
 	verbose           bool
 	json              bool
@@ -62,6 +65,7 @@ func (c *ApplyCommand) Examples() map[string]string {
 		"Apply tasks from a specific YAML file":  fmt.Sprintf("%s %s --tasks path/to/task.yml", appName, c.Name()),
 		"Apply tasks from a JSON5 file":          fmt.Sprintf("%s %s --tasks path/to/tasks.json", appName, c.Name()),
 		"Apply tasks from a remote URL":          fmt.Sprintf("%s %s --tasks http://dokku.com/docket/example.yml", appName, c.Name()),
+		"Apply a recipe piped in on stdin":       fmt.Sprintf("%s export --output - | %s %s -", appName, appName, c.Name()),
 		"Override a task input":                  fmt.Sprintf("%s %s --name lollipop", appName, c.Name()),
 	}
 }
@@ -80,7 +84,8 @@ func (c *ApplyCommand) ParsedArguments(args []string) (map[string]command.Argume
 
 func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
-	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory. An http(s):// URL is fetched over HTTP.")
+	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. Pass - to read the recipe from stdin. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory. An http(s):// URL is fetched over HTTP.")
+	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format (yaml or json5) instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
 	f.BoolVar(&c.verbose, "verbose", false, "echo the resolved dokku command for each task as a continuation line. Values from inputs declared `sensitive: true` and from task struct fields tagged `sensitive:\"true\"` are masked as `***`. Ignored when --json is set; the JSON output already includes the resolved commands.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
@@ -94,13 +99,12 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without running. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
 	f.StringVar(&c.startAtTask, "start-at-task", "", "skip every task before the matched name; the matched task and successors run normally. Filter order: --start-at-task -> --tags/--skip-tags -> per-task when: at execution. The name search walks every play in source order, narrowed by --play.")
 
-	taskFile, format := resolveTaskFileFromArgs(os.Args)
-	data, err := readTaskFileData(taskFile)
-	if err != nil {
+	data, format, source := preloadRecipeForFlags(os.Args, true)
+	if data == nil {
 		return f
 	}
 	c.tasksData = data
-	c.tasksDataSource = taskFile
+	c.tasksDataSource = source
 
 	arguments, err := registerInputFlags(f, data, format)
 	if err != nil {
@@ -116,6 +120,7 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--tasks":                taskFileAutocomplete(),
+			"--tasks-format":         tasksFormatAutocomplete(),
 			"--verbose":              complete.PredictNothing,
 			"--json":                 complete.PredictNothing,
 			"--host":                 complete.PredictAnything,
@@ -149,29 +154,28 @@ func (c *ApplyCommand) Run(args []string) int {
 
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
 
+	formatOverride, err := parseTasksFormatFlag(c.tasksFormatFlag)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
 	taskFile, err := resolveTaskFileArg(c.tasksFile, flags.Args())
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
 	}
-	resolvedPath, resolvedFormat, err := resolveTaskFilePath(taskFile)
+	// The cached bytes are the ones FlagSet already read for this source
+	// (see tasksData); for a --tasks URL this avoids a second HTTP fetch
+	// of the same recipe.
+	recipe, err := loadRecipe(taskFile, formatOverride, true, c.tasksData, c.tasksDataSource)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1
 	}
-	c.tasksFile = resolvedPath
-	c.tasksFormat = resolvedFormat
-
-	// Reuse the bytes FlagSet already read for this source (see tasksData);
-	// for a --tasks URL this avoids a second HTTP fetch of the same recipe.
-	data := c.tasksData
-	if data == nil || c.tasksDataSource != c.tasksFile {
-		data, err = readTaskFileData(c.tasksFile)
-		if err != nil {
-			c.Ui.Error(fmt.Sprintf("read error: %v", err))
-			return 1
-		}
-	}
+	c.tasksFile = recipe.Path
+	c.tasksFormat = recipe.Format
+	data := recipe.Data
 
 	context := make(map[string]interface{})
 	var sensitiveValues []string

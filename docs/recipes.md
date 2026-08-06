@@ -59,6 +59,28 @@ docket apply --tasks deploy/production.yml
 docket apply --tasks deploy/production.json
 ```
 
+### Piping a recipe in
+
+A recipe does not have to be a file. Pass `-` and docket reads it from stdin, which is how you feed
+it a recipe another tool just generated:
+
+```bash
+docket export --output - | docket apply -
+docket init --output - | docket validate -
+```
+
+The format is sniffed from the first non-whitespace byte - `[`, `{`, `//`, or `/*` means JSON5,
+anything else means YAML. Pass `--tasks-format yaml` or `--tasks-format json5` when that guess would
+be wrong, which happens with a YAML recipe written in flow style, since it opens with `[`. The same
+flag overrides a misleading file extension:
+
+```bash
+docket validate --tasks recipe.txt --tasks-format json5
+```
+
+A piped recipe behaves like any other: its `inputs:` still become `--<name>` flags, and it wins over
+a `tasks.yml` in the current directory.
+
 ## Plays
 
 A recipe is a **list of plays**. A play is a named group of tasks that share settings. The

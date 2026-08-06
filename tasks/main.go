@@ -345,6 +345,7 @@ var RegisteredTasks map[string]Task
 // sync with the real flag sets.
 var ReservedInputNames = map[string]bool{
 	"tasks":                true,
+	"tasks-format":         true,
 	"host":                 true,
 	"verbose":              true,
 	"json":                 true,
