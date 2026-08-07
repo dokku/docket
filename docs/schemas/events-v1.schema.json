@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/dokku/docket/main/docs/schemas/events-v1.schema.json",
+  "title": "docket apply/plan JSON-lines event",
+  "description": "One event emitted by `docket apply --json` or `docket plan --json`. The stream is JSON-lines: validate each line against this schema independently. See docs/json-output.md.",
+  "type": "object",
+  "required": ["version", "type"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Wire-format version. Branch on this before reading any other field."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["play_start", "play_skipped", "warning", "task", "summary"]
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/play_start" },
+    { "$ref": "#/$defs/play_skipped" },
+    { "$ref": "#/$defs/warning" },
+    { "$ref": "#/$defs/apply_task" },
+    { "$ref": "#/$defs/plan_task" },
+    { "$ref": "#/$defs/apply_summary" },
+    { "$ref": "#/$defs/plan_summary" }
+  ],
+  "$defs": {
+    "version": { "type": "integer", "const": 1 },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 UTC instant."
+    },
+    "commands": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Resolved dokku command lines, masked. plan reports what apply would run; apply reports what it did run."
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["block", "rescue", "always"],
+      "description": "Set when the task is a child of a block/rescue/always group."
+    },
+    "group": {
+      "type": "boolean",
+      "const": true,
+      "description": "Set when the event describes the group envelope itself rather than a leaf task."
+    },
+
+    "play_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "type", "name", "ts"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "play_start" },
+        "name": { "type": "string", "description": "Play name, masked." },
+        "ts": { "$ref": "#/$defs/timestamp" },
+        "host": {
+          "type": "string",
+          "description": "Remote target, present only when --host or DOKKU_HOST is in effect."
+        }
+      }
+    },
+
+    "play_skipped": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "type", "name", "ts"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "play_skipped" },
+        "name": { "type": "string" },
+        "ts": { "$ref": "#/$defs/timestamp" },
+        "when": {
+          "type": "string",
+          "description": "The play predicate source, masked. Absent when the play carried no when:."
+        },
+        "reason": { "type": "string" }
+      }
+    },
+
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "type", "play", "name", "reason", "message", "ts"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "warning" },
+        "play": { "type": "string" },
+        "name": { "type": "string" },
+        "reason": {
+          "type": "string",
+          "enum": ["deprecated", "unknown_property", "probe_rejected"],
+          "description": "Stable machine key for the warning category."
+        },
+        "message": { "type": "string" },
+        "ts": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+
+    "apply_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "type",
+        "play",
+        "name",
+        "status",
+        "changed",
+        "state",
+        "desired_state",
+        "duration_ms",
+        "ts"
+      ],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "task" },
+        "play": { "type": "string" },
+        "name": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["ok", "changed", "skipped", "error"]
+        },
+        "changed": {
+          "type": "boolean",
+          "description": "Whether this task mutated server state. This is the per-task signal an Ansible wrapper maps onto `changed`."
+        },
+        "state": { "type": "string" },
+        "desired_state": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "ts": { "$ref": "#/$defs/timestamp" },
+        "error": { "type": "string", "description": "Present when status is error." },
+        "skip_reason": {
+          "type": "string",
+          "description": "Present when status is skipped and a reason was recorded."
+        },
+        "stdout": {
+          "type": "string",
+          "description": "Captured stdout of the failing command. Errors only."
+        },
+        "stderr": {
+          "type": "string",
+          "description": "Captured stderr of the failing command. Errors only."
+        },
+        "exit_code": {
+          "type": "integer",
+          "description": "Exit code of the failing command. Errors only."
+        },
+        "ignored": {
+          "type": "boolean",
+          "const": true,
+          "description": "Set when ignore_errors swallowed this error. The task does not count toward the run's error total or its exit code."
+        },
+        "commands": { "$ref": "#/$defs/commands" },
+        "phase": { "$ref": "#/$defs/phase" },
+        "group": { "$ref": "#/$defs/group" }
+      }
+    },
+
+    "plan_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "type",
+        "play",
+        "name",
+        "status",
+        "would_change",
+        "state",
+        "desired_state",
+        "duration_ms",
+        "ts"
+      ],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "task" },
+        "play": { "type": "string" },
+        "name": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["ok", "+", "~", "-", "skipped", "error"]
+        },
+        "would_change": {
+          "type": "boolean",
+          "description": "Whether apply would mutate server state. This is the per-task signal a check_mode wrapper maps onto `changed`."
+        },
+        "state": {
+          "type": "string",
+          "description": "Mirrors desired_state: plan never reads back a post-mutation state."
+        },
+        "desired_state": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "ts": { "$ref": "#/$defs/timestamp" },
+        "error": { "type": "string", "description": "Present when status is error." },
+        "reason": {
+          "type": "string",
+          "description": "Human summary of the drift, present on a drifting task."
+        },
+        "mutations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Itemised operations apply would perform. Maps onto an Ansible diff."
+        },
+        "commands": { "$ref": "#/$defs/commands" },
+        "phase": { "$ref": "#/$defs/phase" },
+        "group": { "$ref": "#/$defs/group" }
+      }
+    },
+
+    "apply_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "type",
+        "tasks",
+        "changed",
+        "ok",
+        "skipped",
+        "errors",
+        "plays_skipped",
+        "duration_ms"
+      ],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "summary" },
+        "tasks": { "type": "integer", "minimum": 0 },
+        "changed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tasks that changed state. Greater than zero is equivalent to `apply --detailed-exitcode` returning 2."
+        },
+        "ok": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 },
+        "plays_skipped": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "plan_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "type",
+        "tasks",
+        "would_change",
+        "in_sync",
+        "skipped",
+        "errors",
+        "plays_skipped",
+        "duration_ms"
+      ],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "summary" },
+        "tasks": { "type": "integer", "minimum": 0 },
+        "would_change": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tasks that would change. Greater than zero is equivalent to `plan --detailed-exitcode` returning 2."
+        },
+        "in_sync": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 },
+        "plays_skipped": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

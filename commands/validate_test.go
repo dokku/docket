@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -91,36 +92,115 @@ func TestFormatProblemHumanOutput(t *testing.T) {
 	}
 }
 
-// TestValidateJSONEventShape constructs a Problem and round-trips it through
-// the JSON encoder used by --json output to confirm that consumers can rely
-// on the documented fields.
+// TestValidateJSONEventShape runs `validate --json` over recipes that
+// trip a spread of problem categories and holds every emitted line to
+// docs/schemas/validate-v1.schema.json. That schema is what an
+// ansible-dokku-style wrapper parses to turn a bad module argument into
+// an Ansible failure, so a renamed field or an unlisted `code` must fail
+// here rather than in the wrapper.
 func TestValidateJSONEventShape(t *testing.T) {
-	event := map[string]interface{}{
-		"version": 1,
-		"type":    "validate_problem",
-		"code":    "unknown_task_type",
-		"message": "unknown task type \"dokku_appp\"",
-		"play":    "play #1",
-		"task":    "task #2",
-		"line":    8,
-		"column":  7,
-		"hint":    "did you mean \"dokku_app\"?",
+	recipes := map[string]struct {
+		recipe string
+		codes  []string
+	}{
+		"unknown task type": {
+			recipe: `---
+- tasks:
+    - name: typo
+      dokku_appp:
+        app: api
+`,
+			codes: []string{"unknown_task_type"},
+		},
+		"missing required field": {
+			recipe: `---
+- tasks:
+    - name: no app
+      dokku_config:
+        restart: true
+`,
+			codes: []string{"missing_required_field"},
+		},
+		"conditional input rule": {
+			recipe: `---
+- tasks:
+    - name: cert without material
+      dokku_certs:
+        app: api
+`,
+			codes: []string{"invalid_task_input"},
+		},
+		"no task-type key": {
+			recipe: `---
+- tasks:
+    - name: nothing here
+`,
+			codes: []string{"task_entry_shape"},
+		},
+		"empty task body": {
+			recipe: `---
+- tasks:
+    - name: null body
+      dokku_app:
+`,
+			codes: []string{"empty_task_body"},
+		},
+		"reserved input name": {
+			recipe: `---
+- inputs:
+    - name: tasks
+  tasks:
+    - name: create app
+      dokku_app:
+        app: api
+`,
+			codes: []string{"reserved_input_name"},
+		},
 	}
-	b, err := json.Marshal(event)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
+
+	for name, tt := range recipes {
+		t.Run(name, func(t *testing.T) {
+			exit, out := runValidateOverStdin(t, tt.recipe, []string{"-", "--json"})
+			if exit != 1 {
+				t.Fatalf("exit = %d, want 1; output:\n%s", exit, out)
+			}
+			assertLinesMatchSchema(t, validateSchemaPath, out)
+
+			var codes []string
+			for _, line := range jsonLines(out) {
+				var ev map[string]interface{}
+				if err := json.Unmarshal([]byte(line), &ev); err != nil {
+					t.Fatalf("invalid JSON line %q: %v", line, err)
+				}
+				// Not a type assertion with the comma-ok dropped:
+				// assertLinesMatchSchema above reports a missing or
+				// non-string `code` with t.Errorf, so execution
+				// reaches here and a bare assertion would panic the
+				// whole test binary instead of failing this case.
+				code, ok := ev["code"].(string)
+				if !ok {
+					t.Fatalf("line %q has no string \"code\" field", line)
+				}
+				codes = append(codes, code)
+			}
+			for _, want := range tt.codes {
+				if !slices.Contains(codes, want) {
+					t.Errorf("expected a %q problem, got codes %v\noutput:\n%s", want, codes, out)
+				}
+			}
+		})
 	}
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(b, &decoded); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
+}
+
+// TestValidateJSONEmitsNothingOnSuccess pins the other half of the
+// contract: a clean recipe produces an empty stdout and exit 0, so a
+// wrapper can treat "any output at all" as failure.
+func TestValidateJSONEmitsNothingOnSuccess(t *testing.T) {
+	exit, out := runValidateOverStdin(t, stdinYAMLRecipe, []string{"-", "--json"})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; output:\n%s", exit, out)
 	}
-	if v, ok := decoded["version"].(float64); !ok || int(v) != 1 {
-		t.Errorf("expected version=1, got %v", decoded["version"])
-	}
-	if decoded["type"] != "validate_problem" {
-		t.Errorf("expected type=validate_problem, got %v", decoded["type"])
-	}
-	if decoded["code"] != "unknown_task_type" {
-		t.Errorf("expected code=unknown_task_type, got %v", decoded["code"])
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("expected no output on a clean recipe, got:\n%s", out)
 	}
 }

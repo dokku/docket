@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/dokku/docket/main/docs/schemas/validate-v1.schema.json",
+  "title": "docket validate JSON-lines problem",
+  "description": "One problem emitted by `docket validate --json`. A clean recipe emits nothing at all and exits 0; each problem is one line and the command exits 1. See docs/json-output.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "type", "code", "message"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Wire-format version. Branch on this before reading any other field."
+    },
+    "type": { "const": "validate_problem" },
+    "code": {
+      "type": "string",
+      "description": "Stable machine key for the problem category.",
+      "enum": [
+        "argument_error",
+        "block_empty",
+        "block_orphan_clause",
+        "block_shape",
+        "block_with_task_type",
+        "duplicate_key",
+        "duplicate_task_name",
+        "empty_task_body",
+        "envelope_key_type",
+        "envelope_key_unsupported",
+        "expr_compile",
+        "input_missing",
+        "invalid_input_name",
+        "invalid_task_input",
+        "json5_parse",
+        "loop_var_outside_loop",
+        "missing_required_field",
+        "read_error",
+        "recipe_shape",
+        "register_duplicate",
+        "reserved_input_name",
+        "task_body_decode",
+        "task_entry_shape",
+        "template_render",
+        "unknown_key",
+        "unknown_play_reference",
+        "unknown_start_at_task",
+        "unknown_task_type",
+        "unsafe_input_value",
+        "vars_file_error",
+        "yaml_parse"
+      ]
+    },
+    "message": { "type": "string", "description": "Human-readable description, masked." },
+    "play": {
+      "type": "string",
+      "description": "Play label, e.g. `play #1` or the play's name. Absent on problems that precede play parsing."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label, e.g. `task #2 \"create app\"`. Absent on play-level and file-level problems."
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-indexed line in the recipe. Absent when the problem has no source position. For a JSON5 recipe this indexes into the normalised YAML form, not the JSON5 source."
+    },
+    "column": { "type": "integer", "minimum": 1 },
+    "hint": {
+      "type": "string",
+      "description": "Optional remediation hint, e.g. a did-you-mean suggestion for a misspelled task type."
+    }
+  }
+}

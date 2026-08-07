@@ -35,6 +35,7 @@ type ApplyCommand struct {
 	failFast          bool
 	listTasks         bool
 	startAtTask       string
+	detailedExitCode  bool
 	arguments         map[string]*Argument
 
 	// tasksData caches the recipe bytes read while building the FlagSet (to
@@ -98,6 +99,7 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.failFast, "fail-fast", false, "abort the entire run on the first task error. By default, an error aborts only the current play and the next play still runs.")
 	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without running. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
 	f.StringVar(&c.startAtTask, "start-at-task", "", "skip every task before the matched name; the matched task and successors run normally. Filter order: --start-at-task -> --tags/--skip-tags -> per-task when: at execution. The name search walks every play in source order, narrowed by --play.")
+	f.BoolVar(&c.detailedExitCode, "detailed-exitcode", false, "exit 0 when nothing changed, 2 when at least one task changed, 1 on error. Without this flag apply exits 0 whether or not anything changed.")
 
 	data, format, source := preloadRecipeForFlags(os.Args, true)
 	if data == nil {
@@ -133,10 +135,27 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 			"--fail-fast":            complete.PredictNothing,
 			"--list-tasks":           complete.PredictNothing,
 			"--start-at-task":        complete.PredictAnything,
+			"--detailed-exitcode":    complete.PredictNothing,
 		},
 	)
 }
 
+// Run executes every task in the parsed recipe against the live server,
+// printing a one-line summary per task plus a final summary line.
+//
+// Exit codes (default):
+//
+//	0 - the run completed without errors, whether or not anything changed
+//	1 - read error, parse error, or at least one task errored
+//
+// Exit codes (--detailed-exitcode):
+//
+//	0 - the run completed cleanly; nothing changed
+//	1 - read error, parse error, or at least one task errored (errors win)
+//	2 - the run completed; at least one task changed server state
+//
+// --list-tasks returns before any task runs, so it is unaffected by
+// --detailed-exitcode and still exits 0 or 1.
 func (c *ApplyCommand) Run(args []string) int {
 	flags := c.FlagSet()
 	flags.Usage = func() { c.Ui.Output(c.Help()) }
@@ -334,8 +353,12 @@ playLoop:
 	}
 
 	emitter.ApplySummary(counts, time.Since(start))
+
 	if hasError {
 		return 1
+	}
+	if c.detailedExitCode && counts.Changed > 0 {
+		return 2
 	}
 	return 0
 }

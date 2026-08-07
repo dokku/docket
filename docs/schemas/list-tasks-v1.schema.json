@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/dokku/docket/main/docs/schemas/list-tasks-v1.schema.json",
+  "title": "docket --list-tasks JSON-lines event",
+  "description": "One event emitted by `docket apply --list-tasks --json` or `docket plan --list-tasks --json`. This is a separate stream from the apply/plan run stream: no task runs, no server is contacted, and there is no summary event. Its `play_skipped` carries `play` where the run stream's carries `name`, and no `ts`. See docs/json-output.md.",
+  "type": "object",
+  "required": ["version", "type"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "type": { "type": "string", "enum": ["play_skipped", "list_task"] }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/play_skipped" },
+    { "$ref": "#/$defs/list_task" }
+  ],
+  "$defs": {
+    "version": { "type": "integer", "const": 1 },
+
+    "play_skipped": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "type", "play", "when", "reason"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "play_skipped" },
+        "play": { "type": "string" },
+        "when": { "type": "string", "description": "The play predicate source." },
+        "reason": {
+          "type": "string",
+          "description": "Either `when: <src>` for a false predicate or `when error: <err>` for one that failed to evaluate."
+        }
+      }
+    },
+
+    "list_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "type", "play", "name", "index"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "type": { "const": "list_task" },
+        "play": { "type": "string" },
+        "name": { "type": "string", "description": "Resolved display name of the task." },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Position within the play, or within the enclosing block/rescue/always clause."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Present only when the task carries tags."
+        },
+        "group": {
+          "type": "boolean",
+          "const": true,
+          "description": "Set when the entry is a block/rescue/always group rather than a leaf task."
+        },
+        "phase": {
+          "type": "string",
+          "enum": ["block", "rescue", "always"],
+          "description": "Set on a child of a group, naming the clause it belongs to."
+        },
+        "deprecated": { "type": "boolean", "const": true },
+        "deprecation": {
+          "type": "string",
+          "description": "The deprecation notice. --list-tasks --json carries it here instead of emitting a separate warning event."
+        },
+        "skipped": {
+          "type": "boolean",
+          "const": true,
+          "description": "The task's when: evaluated false against the inputs."
+        },
+        "unknown": {
+          "type": "boolean",
+          "const": true,
+          "description": "The task's when: references a registered value, so it cannot be resolved without running."
+        },
+        "when_error": {
+          "type": "boolean",
+          "const": true,
+          "description": "The task's when: failed to evaluate."
+        },
+        "when": {
+          "type": "string",
+          "description": "The predicate source. Present with skipped, unknown, or when_error."
+        },
+        "loop_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Present on an expanded loop iteration."
+        },
+        "loop_item": {
+          "description": "The loop item for this iteration. Any JSON value."
+        }
+      }
+    }
+  }
+}
