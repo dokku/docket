@@ -70,8 +70,8 @@ EOF
     [ -z "$line" ] && continue
     echo "$line" | jq . >/dev/null || fail "invalid JSON: $line"
   done <<<"$output"
-  echo "$output" | jq -e 'select(.type == "list_task") | .name == "set config on api"' >/dev/null \
-    || fail "expected the task name echoed back: $output"
+  echo "$output" | jq -e 'select(.type == "list_task") | .name == "set config on api"' >/dev/null ||
+    fail "expected the task name echoed back: $output"
 }
 
 @test "a bad payload reports validate_problem events a wrapper can branch on" {

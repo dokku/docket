@@ -20,27 +20,27 @@ REPO="dokku/docket"
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$os" in
-  linux | darwin) ;;
-  mingw* | msys* | cygwin*) os="windows" ;;
-  *)
-    echo "error: unsupported OS: $os" >&2
-    exit 1
-    ;;
+linux | darwin) ;;
+mingw* | msys* | cygwin*) os="windows" ;;
+*)
+  echo "error: unsupported OS: $os" >&2
+  exit 1
+  ;;
 esac
 
 arch="$(uname -m)"
 case "$arch" in
-  x86_64 | amd64) arch="amd64" ;;
-  aarch64 | arm64) arch="arm64" ;;
-  *)
-    echo "error: unsupported architecture: $arch" >&2
-    exit 1
-    ;;
+x86_64 | amd64) arch="amd64" ;;
+aarch64 | arm64) arch="arm64" ;;
+*)
+  echo "error: unsupported architecture: $arch" >&2
+  exit 1
+  ;;
 esac
 
 if [ -z "${VERSION:-}" ]; then
-  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | sed -n 's/.*"tag_name": "\(.*\)".*/\1/p' | head -n1)"
+  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" |
+    sed -n 's/.*"tag_name": "\(.*\)".*/\1/p' | head -n1)"
 fi
 
 if [ -z "$VERSION" ]; then
@@ -99,7 +99,7 @@ maybe_sudo install -m 0755 "${tmpdir}/docket${ext}" "$dest"
 
 echo "installed docket ${VERSION} to ${dest}"
 case ":${PATH}:" in
-  *":${BIN_DIR}:"*) ;;
-  *) echo "note: ${BIN_DIR} is not on your PATH; add it to run 'docket' directly" >&2 ;;
+*":${BIN_DIR}:"*) ;;
+*) echo "note: ${BIN_DIR} is not on your PATH; add it to run 'docket' directly" >&2 ;;
 esac
 echo "try: docket version"
