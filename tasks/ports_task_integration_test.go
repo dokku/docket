@@ -82,6 +82,49 @@ func TestIntegrationPortsAddAndRemove(t *testing.T) {
 	}
 }
 
+// TestIntegrationPortsPresentRejectsSchemeHostCollision pins the half of
+// dokku's reuse check that needs the probe: docket refuses the add itself
+// rather than letting ports:add fail, and leaves the bound mapping alone.
+func TestIntegrationPortsPresentRejectsSchemeHostCollision(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-ports-collision"
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	seedTask := PortsTask{
+		App:          appName,
+		PortMappings: []PortMapping{{Scheme: "http", Host: 8080, Container: 5000}},
+		State:        StatePresent,
+	}
+	if result := seedTask.Execute(); result.Error != nil {
+		t.Fatalf("failed to seed ports: %v", result.Error)
+	}
+
+	collidingTask := PortsTask{
+		App:          appName,
+		PortMappings: []PortMapping{{Scheme: "http", Host: 8080, Container: 6000}},
+		State:        StatePresent,
+	}
+	result := collidingTask.Execute()
+	if result.Error == nil {
+		t.Fatal("expected an error when adding a mapping on an already-bound scheme:host pair")
+	}
+	if !strings.Contains(result.Error.Error(), "http:8080:6000 conflicts with the existing mapping http:8080:5000") {
+		t.Errorf("unexpected error: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected changed=false when the add is refused")
+	}
+
+	mappings := getReportedPorts(appName)
+	if len(mappings) != 1 || mappings[0] != "http:8080:5000" {
+		t.Errorf("expected the seeded mapping to survive, got %v", mappings)
+	}
+}
+
 func TestIntegrationPortsSetAndClear(t *testing.T) {
 	skipIfNoDokkuT(t)
 

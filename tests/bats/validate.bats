@@ -102,6 +102,45 @@ EOF
   assert_output --partial "'port_mappings' must not be empty for state 'set'"
 }
 
+@test "docket validate exits 1 on two port mappings sharing a scheme and host port (#432)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ports:
+        app: web
+        port_mappings:
+          - scheme: http
+            host: 80
+            container: 5000
+          - scheme: http
+            host: 80
+            container: 6000
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "port_mappings[1] reuses the scheme and host port of port_mappings[0] (http:80)"
+}
+
+@test "docket validate exits 0 on a reused scheme and host port under state absent" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ports:
+        app: web
+        state: absent
+        port_mappings:
+          - scheme: http
+            host: 80
+            container: 5000
+          - scheme: http
+            host: 80
+            container: 6000
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
 @test "docket validate exits 1 on git_from_image email without username" {
   write_tasks_file <<EOF
 ---

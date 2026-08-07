@@ -13,7 +13,7 @@ Supported.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `port_mappings` | list | no |  |  | Port mappings to set; omit for state 'clear'. Each item has: scheme, host, container. |
+| `port_mappings` | list | no |  |  | Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port. Each item has: scheme, host, container. |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the ports |
 
 ## Examples
