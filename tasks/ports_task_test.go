@@ -87,6 +87,47 @@ func TestPortsTaskValidatePerItem(t *testing.T) {
 			task:    PortsTask{App: "web", PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}}, State: StateClear},
 			wantErr: "'port_mappings' must not be set for state 'clear'",
 		},
+		{
+			name: "reused scheme and host port is rejected",
+			task: PortsTask{App: "web", PortMappings: []PortMapping{
+				{Scheme: "http", Host: 80, Container: 5000},
+				{Scheme: "http", Host: 80, Container: 6000},
+			}},
+			wantErr: "port_mappings[1] reuses the scheme and host port of port_mappings[0] (http:80)",
+		},
+		{
+			name: "reused scheme and host port is rejected for set",
+			task: PortsTask{App: "web", PortMappings: []PortMapping{
+				{Scheme: "https", Host: 443, Container: 5000},
+				{Scheme: "http", Host: 80, Container: 5000},
+				{Scheme: "https", Host: 443, Container: 6000},
+			}, State: StateSet},
+			wantErr: "port_mappings[2] reuses the scheme and host port of port_mappings[0] (https:443)",
+		},
+		{
+			name: "an exact duplicate mapping is rejected",
+			task: PortsTask{App: "web", PortMappings: []PortMapping{
+				{Scheme: "http", Host: 80, Container: 5000},
+				{Scheme: "http", Host: 80, Container: 5000},
+			}},
+			wantErr: "port_mappings[1] reuses the scheme and host port of port_mappings[0] (http:80)",
+		},
+		{
+			// ports:remove runs no reuse check: at most one of the two can be
+			// bound, so the other is a no-op the plan already drops.
+			name: "absent accepts a reused scheme and host port",
+			task: PortsTask{App: "web", PortMappings: []PortMapping{
+				{Scheme: "http", Host: 80, Container: 5000},
+				{Scheme: "http", Host: 80, Container: 6000},
+			}, State: StateAbsent},
+		},
+		{
+			name: "the same host port under different schemes is accepted",
+			task: PortsTask{App: "web", PortMappings: []PortMapping{
+				{Scheme: "http", Host: 80, Container: 5000},
+				{Scheme: "https", Host: 80, Container: 5000},
+			}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -254,6 +295,48 @@ func TestPortsPresentPlansOnlyTheMissingMappings(t *testing.T) {
 	want := []string{"add https:443:5000"}
 	if !reflect.DeepEqual(plan.Mutations, want) {
 		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+func TestPortsPresentRejectsCollisionWithAnExistingMapping(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		portsReportKey: "http:80:5000",
+	}))()
+
+	plan := PortsTask{
+		App:          "web",
+		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 6000}},
+		State:        StatePresent,
+	}.Plan()
+	if plan.Error == nil {
+		t.Fatal("expected an error when the scheme:host pair is already bound to another container port")
+	}
+	if !strings.Contains(plan.Error.Error(), "http:80:6000 conflicts with the existing mapping http:80:5000") {
+		t.Errorf("unexpected error: %v", plan.Error)
+	}
+	if len(plan.Commands) != 0 {
+		t.Errorf("expected no planned commands, got %v", plan.Commands)
+	}
+}
+
+func TestPortsPresentAllowsTheSameHostPortUnderAnotherScheme(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		portsReportKey: "http:80:5000",
+	}))()
+
+	plan := PortsTask{
+		App:          "web",
+		PortMappings: []PortMapping{{Scheme: "https", Host: 80, Container: 5000}},
+		State:        StatePresent,
+	}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected exactly one planned command, got %v", plan.Commands)
+	}
+	if !strings.HasSuffix(plan.Commands[0], "ports:add web https:80:5000") {
+		t.Errorf("expected ports:add for the differing scheme, got %q", plan.Commands[0])
 	}
 }
 

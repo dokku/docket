@@ -15,7 +15,7 @@ type PortsTask struct {
 	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// PortMappings are the port mappings to set
-	PortMappings []PortMapping `required:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'"`
+	PortMappings []PortMapping `required:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port"`
 
 	// State is the desired state of the ports
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ports"`
@@ -50,6 +50,13 @@ type PortMapping struct {
 // String returns the string representation of the port mapping
 func (p PortMapping) String() string {
 	return fmt.Sprintf("%s:%d:%d", p.Scheme, p.Host, p.Container)
+}
+
+// schemeHost returns the scheme:host pair dokku binds a single container port
+// to. Two mappings sharing this key cannot coexist, which is what dokku's
+// reusesSchemeHostPort refuses in ports:add and ports:set.
+func (p PortMapping) schemeHost() string {
+	return fmt.Sprintf("%s:%d", p.Scheme, p.Host)
 }
 
 // Doc returns the docblock for the ports task
@@ -150,6 +157,21 @@ func (t PortsTask) Validate() error {
 			return fmt.Errorf("'container' must be a port between 1 and 65535 for port_mappings[%d]", i)
 		}
 	}
+	// dokku binds one container port per scheme:host pair and refuses a
+	// ports:add or ports:set whose mappings reuse one, so a list that does is
+	// rejected here rather than at apply. ports:remove has no such check: at
+	// most one of the colliding mappings can be bound, and planPortsAbsent
+	// already drops the ones the server does not have.
+	if t.State != StateAbsent {
+		seen := map[string]int{}
+		for i, m := range t.PortMappings {
+			key := m.schemeHost()
+			if first, ok := seen[key]; ok {
+				return fmt.Errorf("port_mappings[%d] reuses the scheme and host port of port_mappings[%d] (%s); dokku binds one container port per scheme:host pair", i, first, key)
+			}
+			seen[key] = i
+		}
+	}
 	return nil
 }
 
@@ -172,13 +194,26 @@ func planPortsPresent(t PortsTask) PlanResult {
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
+	// dokku validates the existing and new mappings together, so an add whose
+	// scheme:host pair is already bound to a different container port is
+	// refused. Mappings the server already has are skipped below, which leaves
+	// a collision with an existing mapping as the only way the combined list
+	// can reuse a pair; Validate() covers a collision within the recipe.
+	currentBySchemeHost := map[string]PortMapping{}
+	for _, pm := range currentPorts {
+		currentBySchemeHost[pm.schemeHost()] = pm
+	}
 	toAdd := []string{}
 	mutations := []string{}
 	for _, pm := range t.PortMappings {
-		if _, ok := currentPorts[pm.String()]; !ok {
-			toAdd = append(toAdd, pm.String())
-			mutations = append(mutations, fmt.Sprintf("add %s", pm.String()))
+		if _, ok := currentPorts[pm.String()]; ok {
+			continue
 		}
+		if existing, ok := currentBySchemeHost[pm.schemeHost()]; ok {
+			return planErr(fmt.Errorf("%s conflicts with the existing mapping %s; dokku binds one container port per scheme:host pair, so remove %s first or use state 'set' with the full desired list", pm.String(), existing.String(), existing.String()))
+		}
+		toAdd = append(toAdd, pm.String())
+		mutations = append(mutations, fmt.Sprintf("add %s", pm.String()))
 	}
 	if len(toAdd) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
