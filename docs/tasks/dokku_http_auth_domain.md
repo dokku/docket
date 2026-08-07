@@ -17,7 +17,7 @@ Supported.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `domains` | list | no |  |  | List of domains to restrict HTTP auth to |
+| `domains` | list | no |  |  | List of domains to restrict HTTP auth to; omit for state 'clear' |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the HTTP auth domain entries |
 
 ## Examples
@@ -57,7 +57,6 @@ dokku_http_auth_domain:
 ```yaml
 dokku_http_auth_domain:
     app: hello-world
-    domains: []
     state: clear
 ```
 

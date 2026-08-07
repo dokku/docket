@@ -1,8 +1,28 @@
 package tasks
 
 import (
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
+
+// getReportedPorts queries dokku ports:report to get the current mappings for
+// an app, so assertions do not lean on the task's own probe.
+func getReportedPorts(appName string) []string {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "ports:report", appName, "--ports-map"},
+	})
+	if err != nil {
+		return nil
+	}
+
+	mappings := strings.Fields(result.StdoutContents())
+	sort.Strings(mappings)
+	return mappings
+}
 
 func TestIntegrationPortsAddAndRemove(t *testing.T) {
 	skipIfNoDokkuT(t)
@@ -59,5 +79,85 @@ func TestIntegrationPortsAddAndRemove(t *testing.T) {
 	}
 	if result.Changed {
 		t.Error("expected changed=false for nonexistent port")
+	}
+}
+
+func TestIntegrationPortsSetAndClear(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-ports-set-clear"
+
+	destroyApp(appName)
+	createApp(appName)
+	defer destroyApp(appName)
+
+	// seed two mappings so set has something to replace
+	seedTask := PortsTask{
+		App: appName,
+		PortMappings: []PortMapping{
+			{Scheme: "http", Host: 8080, Container: 5000},
+			{Scheme: "http", Host: 8081, Container: 5000},
+		},
+		State: StatePresent,
+	}
+	if result := seedTask.Execute(); result.Error != nil {
+		t.Fatalf("failed to seed ports: %v", result.Error)
+	}
+
+	// set replaces the whole list rather than adding to it
+	setTask := PortsTask{
+		App:          appName,
+		PortMappings: []PortMapping{{Scheme: "http", Host: 8082, Container: 5000}},
+		State:        StateSet,
+	}
+	result := setTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to set ports: %v", result.Error)
+	}
+	if result.State != StateSet {
+		t.Errorf("expected state 'set', got '%s'", result.State)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for set ports")
+	}
+
+	mappings := getReportedPorts(appName)
+	if len(mappings) != 1 || mappings[0] != "http:8082:5000" {
+		t.Fatalf("expected exactly [http:8082:5000] after set, got %v", mappings)
+	}
+
+	// set again (idempotent)
+	result = setTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("idempotent set failed: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected changed=false when the mappings already match")
+	}
+
+	// clear drops every mapping in one call
+	clearTask := PortsTask{App: appName, State: StateClear}
+	result = clearTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to clear ports: %v", result.Error)
+	}
+	if result.State != StateClear {
+		t.Errorf("expected state 'clear', got '%s'", result.State)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for clear ports")
+	}
+
+	if mappings := getReportedPorts(appName); len(mappings) != 0 {
+		t.Errorf("expected 0 mappings after clear, got %d: %v", len(mappings), mappings)
+	}
+
+	// clear again (idempotent)
+	result = clearTask.Execute()
+	if result.Error != nil {
+		t.Fatalf("idempotent clear failed: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected changed=false when there is nothing to clear")
 	}
 }

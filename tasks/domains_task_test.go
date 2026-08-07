@@ -46,6 +46,19 @@ func TestDomainsTaskEmptyDomains(t *testing.T) {
 	}
 }
 
+func TestDomainsTaskClearRejectsDomains(t *testing.T) {
+	// domains:clear takes no domains, so a list here would be silently
+	// discarded rather than removed.
+	task := DomainsTask{App: "test-app", Domains: []string{"example.com"}, State: StateClear}
+	err := task.Validate()
+	if err == nil {
+		t.Fatal("expected an error when domains are supplied with state 'clear'")
+	}
+	if !strings.Contains(err.Error(), "'domains' must not be set for state 'clear'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestDomainsTaskClearNoDomains(t *testing.T) {
 	task := DomainsTask{App: "test-app", State: StateClear}
 	result := task.Execute()

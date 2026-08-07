@@ -17,7 +17,7 @@ type HttpAuthDomainTask struct {
 	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// Domains is the list of domains to restrict HTTP auth to
-	Domains []string `required:"false" yaml:"domains" description:"List of domains to restrict HTTP auth to"`
+	Domains []string `required:"false" yaml:"domains,omitempty" description:"List of domains to restrict HTTP auth to; omit for state 'clear'"`
 
 	// State is the desired state of the HTTP auth domain entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the HTTP auth domain entries"`
@@ -106,6 +106,11 @@ func (t HttpAuthDomainTask) Validate() error {
 	}
 	if t.State == StateSet && len(t.Domains) == 0 {
 		return fmt.Errorf("'domains' must not be empty for state 'set'")
+	}
+	// http-auth:set-domains is called with no domains to clear, so a list
+	// supplied alongside it would be silently discarded rather than removed.
+	if t.State == StateClear && len(t.Domains) > 0 {
+		return fmt.Errorf("'domains' must not be set for state 'clear'")
 	}
 	return nil
 }

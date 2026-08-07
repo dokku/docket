@@ -13,8 +13,8 @@ Supported.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `port_mappings` | list | yes |  |  | Port mappings to set. Each item has: scheme, host, container. |
-| `state` | string | no | present | present, absent | Desired state of the ports |
+| `port_mappings` | list | no |  |  | Port mappings to set; omit for state 'clear'. Each item has: scheme, host, container. |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the ports |
 
 ## Examples
 
@@ -53,6 +53,26 @@ dokku_ports:
           host: 80
           container: 5000
     state: absent
+```
+
+### Replace every port mapping on an app
+
+```yaml
+dokku_ports:
+    app: node-js-app
+    port_mappings:
+        - scheme: https
+          host: 443
+          container: 5000
+    state: set
+```
+
+### Clear all port mappings from an app
+
+```yaml
+dokku_ports:
+    app: node-js-app
+    state: clear
 ```
 
 ## Return Values

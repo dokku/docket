@@ -15,10 +15,10 @@ type PortsTask struct {
 	App string `required:"true" yaml:"app" description:"Name of the app"`
 
 	// PortMappings are the port mappings to set
-	PortMappings []PortMapping `required:"true" yaml:"port_mappings" description:"Port mappings to set"`
+	PortMappings []PortMapping `required:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'"`
 
 	// State is the desired state of the ports
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the ports"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ports"`
 }
 
 // PortsTaskExample contains an example of a PortsTask
@@ -94,10 +94,27 @@ func (t PortsTask) Examples() ([]Doc, error) {
 				State: StateAbsent,
 			},
 		},
+		{
+			Name: "Replace every port mapping on an app",
+			PortsTask: PortsTask{
+				App: "node-js-app",
+				PortMappings: []PortMapping{
+					{Scheme: "https", Host: 443, Container: 5000},
+				},
+				State: StateSet,
+			},
+		},
+		{
+			Name: "Clear all port mappings from an app",
+			PortsTask: PortsTask{
+				App:   "node-js-app",
+				State: StateClear,
+			},
+		},
 	})
 }
 
-// Execute sets or unsets the ports
+// Execute manages the app's port mappings
 func (t PortsTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
@@ -107,8 +124,16 @@ func (t PortsTask) Validate() error {
 	if t.App == "" {
 		return errors.New("'app' is required")
 	}
+	// ports:clear takes no mappings, so a list supplied alongside it would be
+	// silently discarded rather than removed. Every other state consumes one.
+	if t.State == StateClear {
+		if len(t.PortMappings) > 0 {
+			return errors.New("'port_mappings' must not be set for state 'clear'")
+		}
+		return nil
+	}
 	if len(t.PortMappings) == 0 {
-		return errors.New("no port mappings provided")
+		return fmt.Errorf("'port_mappings' must not be empty for state '%s'", t.State)
 	}
 	// Each mapping renders as scheme:host:container, so an unknown or
 	// misspelled key (silently ignored by the YAML decode) or a missing
@@ -134,79 +159,164 @@ func (t PortsTask) Plan() PlanResult {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult {
-			currentPorts, err := getPorts(t.App)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			toAdd := []PortMapping{}
-			mutations := []string{}
-			for _, pm := range t.PortMappings {
-				if _, ok := currentPorts[pm.String()]; !ok {
-					toAdd = append(toAdd, pm)
-					mutations = append(mutations, fmt.Sprintf("add %s", pm.String()))
-				}
-			}
-			if len(toAdd) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
-			}
-			status := PlanStatusModify
-			if len(currentPorts) == 0 {
-				status = PlanStatusCreate
-			}
-			args := []string{"--quiet", "ports:add", t.App}
-			for _, pm := range toAdd {
-				args = append(args, pm.String())
-			}
-			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
-				InSync:    false,
-				Status:    status,
-				Reason:    fmt.Sprintf("%d port mapping(s) to add", len(toAdd)),
-				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
-				},
-			}
-		},
-		StateAbsent: func() PlanResult {
-			currentPorts, err := getPorts(t.App)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			toRemove := []PortMapping{}
-			mutations := []string{}
-			for _, pm := range t.PortMappings {
-				if _, ok := currentPorts[pm.String()]; ok {
-					toRemove = append(toRemove, pm)
-					mutations = append(mutations, fmt.Sprintf("remove %s", pm.String()))
-				}
-			}
-			if len(toRemove) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
-			}
-			args := []string{"--quiet", "ports:remove", t.App}
-			for _, pm := range toRemove {
-				args = append(args, pm.String())
-			}
-			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
-				InSync:    false,
-				Status:    PlanStatusDestroy,
-				Reason:    fmt.Sprintf("%d port mapping(s) to remove", len(toRemove)),
-				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
-				},
-			}
-		},
+		StatePresent: func() PlanResult { return planPortsPresent(t) },
+		StateAbsent:  func() PlanResult { return planPortsAbsent(t) },
+		StateSet:     func() PlanResult { return planPortsSet(t) },
+		StateClear:   func() PlanResult { return planPortsClear(t) },
 	})
+}
+
+// planPortsPresent reports drift for the present-state mapping add.
+func planPortsPresent(t PortsTask) PlanResult {
+	currentPorts, err := getPorts(t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	toAdd := []string{}
+	mutations := []string{}
+	for _, pm := range t.PortMappings {
+		if _, ok := currentPorts[pm.String()]; !ok {
+			toAdd = append(toAdd, pm.String())
+			mutations = append(mutations, fmt.Sprintf("add %s", pm.String()))
+		}
+	}
+	if len(toAdd) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	status := PlanStatusModify
+	if len(currentPorts) == 0 {
+		status = PlanStatusCreate
+	}
+	inputs := dokkuArgsInputs("ports:add", t.App, toAdd)
+	return PlanResult{
+		InSync:    false,
+		Status:    status,
+		Reason:    fmt.Sprintf("%d port mapping(s) to add", len(toAdd)),
+		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
+		apply:     applyDokkuArgs("ports:add", t.App, toAdd, StatePresent, StateAbsent),
+	}
+}
+
+// planPortsAbsent reports drift for the absent-state mapping remove.
+func planPortsAbsent(t PortsTask) PlanResult {
+	currentPorts, err := getPorts(t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	toRemove := []string{}
+	mutations := []string{}
+	for _, pm := range t.PortMappings {
+		if _, ok := currentPorts[pm.String()]; ok {
+			toRemove = append(toRemove, pm.String())
+			mutations = append(mutations, fmt.Sprintf("remove %s", pm.String()))
+		}
+	}
+	if len(toRemove) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	inputs := dokkuArgsInputs("ports:remove", t.App, toRemove)
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("%d port mapping(s) to remove", len(toRemove)),
+		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
+		apply:     applyDokkuArgs("ports:remove", t.App, toRemove, StateAbsent, StatePresent),
+	}
+}
+
+// planPortsSet reports drift for the set-state full replacement. The itemized
+// mutations are the adds and removes the replacement works out to; the command
+// itself always carries the complete desired list.
+func planPortsSet(t PortsTask) PlanResult {
+	currentPorts, err := getPorts(t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	desired := map[string]bool{}
+	for _, pm := range t.PortMappings {
+		desired[pm.String()] = true
+	}
+	mutations := []string{}
+	for _, pm := range t.PortMappings {
+		if _, ok := currentPorts[pm.String()]; !ok {
+			mutations = append(mutations, fmt.Sprintf("add %s", pm.String()))
+		}
+	}
+	for _, mapping := range sortedPortMappings(currentPorts) {
+		if !desired[mapping] {
+			mutations = append(mutations, fmt.Sprintf("remove %s", mapping))
+		}
+	}
+	if len(mutations) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	status := PlanStatusModify
+	if len(currentPorts) == 0 {
+		status = PlanStatusCreate
+	}
+	args := portMappingArgs(t.PortMappings)
+	inputs := dokkuArgsInputs("ports:set", t.App, args)
+	return PlanResult{
+		InSync:    false,
+		Status:    status,
+		Reason:    fmt.Sprintf("%d port mapping change(s)", len(mutations)),
+		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
+		apply:     applyDokkuArgs("ports:set", t.App, args, StateSet, StateAbsent),
+	}
+}
+
+// planPortsClear reports drift for the clear-state operation.
+func planPortsClear(t PortsTask) PlanResult {
+	currentPorts, err := getPorts(t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	if len(currentPorts) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	mappings := sortedPortMappings(currentPorts)
+	mutations := make([]string, 0, len(mappings))
+	for _, mapping := range mappings {
+		mutations = append(mutations, fmt.Sprintf("remove %s", mapping))
+	}
+	inputs := dokkuArgsInputs("ports:clear", t.App, nil)
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("clear %d port mapping(s)", len(currentPorts)),
+		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
+		apply:     applyDokkuArgs("ports:clear", t.App, nil, StateClear, StatePresent),
+	}
+}
+
+// portMappingArgs renders mappings as the scheme:host:container arguments the
+// ports subcommands take.
+func portMappingArgs(mappings []PortMapping) []string {
+	args := make([]string, 0, len(mappings))
+	for _, pm := range mappings {
+		args = append(args, pm.String())
+	}
+	return args
+}
+
+// sortedPortMappings returns the mapping strings of a getPorts result in a
+// stable order, since the probe hands back a map.
+func sortedPortMappings(mappings map[string]PortMapping) []string {
+	keys := make([]string, 0, len(mappings))
+	for k := range mappings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // ExportApp reads the app's port mappings and returns a dokku_ports task, or
 // nil when none are configured. Mappings are sorted for deterministic output.
+// state:set replaces the whole mapping list for an exact match.
 func (t PortsTask) ExportApp(app string) ([]interface{}, error) {
 	mappings, err := getPorts(app)
 	if err != nil {
@@ -215,23 +325,19 @@ func (t PortsTask) ExportApp(app string) ([]interface{}, error) {
 	if len(mappings) == 0 {
 		return nil, nil
 	}
-	keys := make([]string, 0, len(mappings))
-	for k := range mappings {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	list := make([]PortMapping, 0, len(keys))
-	for _, k := range keys {
+	list := make([]PortMapping, 0, len(mappings))
+	for _, k := range sortedPortMappings(mappings) {
 		list = append(list, mappings[k])
 	}
-	return []interface{}{PortsTask{App: app, PortMappings: list}}, nil
+	return []interface{}{PortsTask{App: app, PortMappings: list, State: StateSet}}, nil
 }
 
 // getPorts gets the ports for a given app. A transport-level failure
 // (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit
 // (e.g. app does not exist) is treated as "no ports configured."
 func getPorts(appName string) (map[string]PortMapping, error) {
-	// todo: update dokku to add proper json output for this
+	// dokku master has a --ports-map-json that would replace this text parse,
+	// but it is not in a release yet; see #431.
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{

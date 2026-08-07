@@ -58,6 +58,50 @@ EOF
   assert_output --partial "'scheme' is required"
 }
 
+@test "docket validate exits 0 on ports state clear without port_mappings (#415)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ports:
+        app: web
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on ports state clear carrying port_mappings" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ports:
+        app: web
+        state: clear
+        port_mappings:
+          - scheme: http
+            host: 80
+            container: 5000
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'port_mappings' must not be set for state 'clear'"
+}
+
+@test "docket validate exits 1 on ports state set with an empty port_mappings" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ports:
+        app: web
+        state: set
+        port_mappings: []
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'port_mappings' must not be empty for state 'set'"
+}
+
 @test "docket validate exits 1 on git_from_image email without username" {
   write_tasks_file <<EOF
 ---
