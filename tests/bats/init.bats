@@ -125,6 +125,68 @@ CFG
   refute_output --partial "inputs:"
 }
 
+@test "docket init --format json5 writes tasks.json" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --format json5 --name api --repo https://example.com/repo.git
+  assert_success
+  assert_output --partial "Created tasks.json"
+  assert [ -f tasks.json ]
+  assert [ ! -f tasks.yml ]
+
+  run head -1 tasks.json
+  assert_output "["
+
+  run "$(docket_bin)" validate --tasks tasks.json
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket init --format json5 output validates with no --tasks" {
+  # tasks.json is in the probe list, so the Next steps block's bare
+  # `docket validate` still finds a JSON5 scaffold.
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init --format json5 --name api --repo https://example.com/repo.git
+  run "$(docket_bin)" validate
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket init --format yaml keeps the tasks.yml default" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --format yaml
+  assert_success
+  assert [ -f tasks.yml ]
+  assert [ ! -f tasks.json ]
+}
+
+@test "docket init --output - --format json5 streams JSON5 to stdout" {
+  cd "$BATS_TEST_TMPDIR"
+  run bash -c "\"$(docket_bin)\" init --output - --format json5 --name api --repo https://example.com/repo.git | head -1"
+  assert_success
+  assert_output "["
+  assert [ ! -f tasks.yml ]
+  assert [ ! -f tasks.json ]
+}
+
+@test "docket init --format json5 checks --force against tasks.json" {
+  cd "$BATS_TEST_TMPDIR"
+  echo "preserved" >tasks.json
+  run "$(docket_bin)" init --format json5
+  assert_failure
+  assert_output --partial "tasks.json already exists"
+  run cat tasks.json
+  assert_output "preserved"
+}
+
+@test "docket init rejects an unknown --format" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --format toml
+  assert_failure
+  assert_output --partial "yaml, json5"
+  assert [ ! -f tasks.yml ]
+  assert [ ! -f tasks.json ]
+}
+
 @test "docket init --name sets the play name so --play resolves" {
   cd "$BATS_TEST_TMPDIR"
   run "$(docket_bin)" init --name web --minimal

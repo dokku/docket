@@ -513,26 +513,10 @@ func TestInitOutputDashWritesToStdout(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	origStdout := os.Stdout
-	os.Stdout = w
-	defer func() { os.Stdout = origStdout }()
-
-	c := newTestInitCommand()
-	exitCh := make(chan int, 1)
-	go func() {
-		exitCh <- c.Run([]string{"--output", "-", "--name", "demo"})
-		w.Close()
-	}()
-
-	captured, err := readAllString(r)
-	if err != nil {
-		t.Fatalf("read pipe: %v", err)
-	}
-	if exit := <-exitCh; exit != 0 {
+	captured, exit := captureStdout(t, func() int {
+		return newTestInitCommand().Run([]string{"--output", "-", "--name", "demo"})
+	})
+	if exit != 0 {
 		t.Errorf("exit = %d, want 0", exit)
 	}
 
@@ -550,13 +534,247 @@ func TestInitOutputDashWritesToStdout(t *testing.T) {
 	}
 }
 
+// TestInitFormatJSON5WritesTasksJSON covers the headline of #410: asking
+// for JSON5 by name, with no --output, writes tasks.json rather than a
+// JSON5 document under a .yml name.
+func TestInitFormatJSON5WritesTasksJSON(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--format", "json5", "--name", "demo"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "tasks.yml")); err == nil {
+		t.Error("--format json5 should not write tasks.yml")
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "tasks.json"))
+	if err != nil {
+		t.Fatalf("tasks.json not written: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "[") {
+		t.Errorf("scaffold should open with a JSON5 array:\n%s", body)
+	}
+	if strings.HasPrefix(string(body), "---") {
+		t.Errorf("JSON5 scaffold should not carry the YAML document marker:\n%s", body)
+	}
+	if problems := tasks.Validate(body, tasks.ValidateOptions{Format: tasks.FormatNameJSON5}); len(problems) > 0 {
+		t.Errorf("scaffold did not validate: %+v", problems)
+	}
+	if out := ui.OutputWriter.String(); !strings.Contains(out, "Created tasks.json") {
+		t.Errorf("summary should name tasks.json:\n%s", out)
+	}
+	if warn := ui.ErrorWriter.String(); warn != "" {
+		t.Errorf("a matching extension should not warn:\n%s", warn)
+	}
+}
+
+// TestInitFormatJSONAliasWritesTasksJSON pins the consequence of sharing
+// one normaliser with --tasks-format: the json alias resolves to json5,
+// so it drives the default-path swap too.
+func TestInitFormatJSONAliasWritesTasksJSON(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if exit := newTestInitCommand().Run([]string{"--format", "json"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tasks.json")); err != nil {
+		t.Errorf("--format json should write tasks.json: %v", err)
+	}
+}
+
+// TestInitFormatYAMLKeepsDefaultPath guards the untouched default: only
+// json5 moves the path.
+func TestInitFormatYAMLKeepsDefaultPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if exit := newTestInitCommand().Run([]string{"--format", "yaml"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tasks.json")); err == nil {
+		t.Error("--format yaml should not write tasks.json")
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "tasks.yml"))
+	if err != nil {
+		t.Fatalf("tasks.yml not written: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "---\n") {
+		t.Errorf("YAML scaffold should keep its document marker:\n%s", body)
+	}
+}
+
+// TestInitExplicitOutputWinsOverFormatDefault pins the rule that a path
+// the user typed is never rewritten, even when --format would otherwise
+// have moved the default. The extension then disagrees with the bytes,
+// which is legal and warned about.
+func TestInitExplicitOutputWinsOverFormatDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--output", "recipe.yml", "--format", "json5"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tasks.json")); err == nil {
+		t.Error("an explicit --output should not be replaced by the json5 default")
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "recipe.yml"))
+	if err != nil {
+		t.Fatalf("recipe.yml not written: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "[") {
+		t.Errorf("--format json5 should have won over the .yml extension:\n%s", body)
+	}
+	if warn := ui.ErrorWriter.String(); !strings.Contains(warn, "--tasks-format json5") {
+		t.Errorf("a lying extension should warn how to read it back:\n%s", warn)
+	}
+}
+
+// TestInitFormatOverridesOutputExtension is the mirror case: --format
+// yaml beats a .json extension.
+func TestInitFormatOverridesOutputExtension(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.json")
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--output", path, "--format", "yaml"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("tasks.json not written: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "---\n") {
+		t.Errorf("--format yaml should have won over the .json extension:\n%s", body)
+	}
+	if problems := tasks.Validate(body, tasks.ValidateOptions{}); len(problems) > 0 {
+		t.Errorf("scaffold did not validate as YAML: %+v", problems)
+	}
+	if warn := ui.ErrorWriter.String(); !strings.Contains(warn, "--tasks-format yaml") {
+		t.Errorf("a lying extension should warn how to read it back:\n%s", warn)
+	}
+}
+
+// TestInitFormatJSON5ChecksForceOnAdjustedPath is the sequencing test:
+// the default-path swap has to happen before the exists / --force check,
+// or init would stat tasks.yml while writing tasks.json - refusing over
+// an unrelated file, then clobbering the relevant one.
+func TestInitFormatJSON5ChecksForceOnAdjustedPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	jsonPath := filepath.Join(dir, "tasks.json")
+	yamlPath := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(jsonPath, []byte("preserved\n"), 0o644); err != nil {
+		t.Fatalf("seed tasks.json: %v", err)
+	}
+	if err := os.WriteFile(yamlPath, []byte("yaml-preserved\n"), 0o644); err != nil {
+		t.Fatalf("seed tasks.yml: %v", err)
+	}
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--format", "json5"}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	if errOut := ui.ErrorWriter.String(); !strings.Contains(errOut, "tasks.json already exists") {
+		t.Errorf("error should name the adjusted path:\n%s", errOut)
+	}
+	if body, _ := os.ReadFile(jsonPath); string(body) != "preserved\n" {
+		t.Errorf("tasks.json was overwritten without --force: %q", body)
+	}
+
+	if exit := newTestInitCommand().Run([]string{"--format", "json5", "--force"}); exit != 0 {
+		t.Fatalf("--force exit = %d, want 0", exit)
+	}
+	body, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("read tasks.json: %v", err)
+	}
+	if !strings.Contains(string(body), "dokku_app") {
+		t.Errorf("--force should have rewritten tasks.json:\n%s", body)
+	}
+	if yaml, _ := os.ReadFile(yamlPath); string(yaml) != "yaml-preserved\n" {
+		t.Errorf("tasks.yml is not the target and must be left alone: %q", yaml)
+	}
+}
+
+// TestInitFormatJSON5ToStdout is the case #410 was filed for: before
+// --format, `--output -` could only ever emit YAML.
+func TestInitFormatJSON5ToStdout(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	captured, exit := captureStdout(t, func() int {
+		return newTestInitCommand().Run([]string{"--output", "-", "--format", "json5", "--name", "demo"})
+	})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if strings.HasPrefix(captured, "---") {
+		t.Errorf("JSON5 on stdout should not carry the YAML document marker:\n%s", captured)
+	}
+	if !strings.HasPrefix(captured, "[") {
+		t.Errorf("stdout should open with a JSON5 array:\n%s", captured)
+	}
+	if !strings.Contains(captured, "dokku_app") {
+		t.Errorf("stdout missing dokku_app:\n%s", captured)
+	}
+	if strings.Contains(captured, "==> Created") {
+		t.Errorf("stdout contains the success block (should be suppressed):\n%s", captured)
+	}
+	if _, err := tasks.UnmarshalRecipe([]byte(captured), tasks.FormatNameJSON5); err != nil {
+		t.Errorf("streamed scaffold did not parse as JSON5: %v", err)
+	}
+	for _, name := range []string{"tasks.yml", "tasks.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("--output - should not create %s on disk", name)
+		}
+	}
+}
+
+// TestInitRejectsUnknownFormat checks the value error names the flag the
+// user actually typed, not the --tasks-format it shares a parser with.
+func TestInitRejectsUnknownFormat(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--format", "toml"}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	errOut := ui.ErrorWriter.String()
+	if !strings.Contains(errOut, "--format") {
+		t.Errorf("error should name --format:\n%s", errOut)
+	}
+	if !strings.Contains(errOut, "yaml, json5") {
+		t.Errorf("error should name the valid values:\n%s", errOut)
+	}
+	for _, name := range []string{"tasks.yml", "tasks.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("a rejected --format should not create %s", name)
+		}
+	}
+}
+
 // newTestInitCommand wires up a Meta backed by cli.MockUi so c.Ui.* calls
 // don't nil-panic during Run. Tests assert via the file system or stdout
 // capture; MockUi's buffers are ignored.
 func newTestInitCommand() *InitCommand {
-	c := &InitCommand{}
-	c.Meta = command.Meta{Ui: cli.NewMockUi()}
+	c, _ := newTestInitCommandUi()
 	return c
+}
+
+// newTestInitCommandUi is newTestInitCommand for tests that also need to
+// read what the command said - the mismatch warning lands on the UI's
+// error buffer, not on stdout.
+func newTestInitCommandUi() (*InitCommand, *cli.MockUi) {
+	ui := cli.NewMockUi()
+	c := &InitCommand{}
+	c.Meta = command.Meta{Ui: ui}
+	return c, ui
 }
 
 func readAllString(r io.Reader) (string, error) {

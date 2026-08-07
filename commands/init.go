@@ -27,11 +27,15 @@ import (
 type InitCommand struct {
 	command.Meta
 
-	output  string
-	name    string
-	repo    string
-	force   bool
-	minimal bool
+	output string
+	// formatFlag is the raw --format value; it is normalised by
+	// parseRecipeFormatFlag in Run and then overrides whatever the
+	// --output extension would have implied.
+	formatFlag string
+	name       string
+	repo       string
+	force      bool
+	minimal    bool
 }
 
 func (c *InitCommand) Name() string {
@@ -49,14 +53,15 @@ func (c *InitCommand) Help() string {
 func (c *InitCommand) Examples() map[string]string {
 	appName := os.Getenv("CLI_APP_NAME")
 	return map[string]string{
-		"Scaffold tasks.yml using cwd defaults":   fmt.Sprintf("%s %s", appName, c.Name()),
-		"Scaffold a JSON5 tasks.json instead":     fmt.Sprintf("%s %s --output tasks.json", appName, c.Name()),
-		"Write a minimal one-task scaffold":       fmt.Sprintf("%s %s --minimal", appName, c.Name()),
-		"Override the play and app name":          fmt.Sprintf("%s %s --name web", appName, c.Name()),
-		"Override the git repository URL":         fmt.Sprintf("%s %s --repo git@example.com:owner/repo.git", appName, c.Name()),
-		"Write to a specific path":                fmt.Sprintf("%s %s --output path/to/tasks.yml", appName, c.Name()),
-		"Stream the rendered scaffold to stdout":  fmt.Sprintf("%s %s --output -", appName, c.Name()),
-		"Overwrite an existing file":              fmt.Sprintf("%s %s --force", appName, c.Name()),
+		"Scaffold tasks.yml using cwd defaults":  fmt.Sprintf("%s %s", appName, c.Name()),
+		"Scaffold a JSON5 tasks.json instead":    fmt.Sprintf("%s %s --format json5", appName, c.Name()),
+		"Write a minimal one-task scaffold":      fmt.Sprintf("%s %s --minimal", appName, c.Name()),
+		"Override the play and app name":         fmt.Sprintf("%s %s --name web", appName, c.Name()),
+		"Override the git repository URL":        fmt.Sprintf("%s %s --repo git@example.com:owner/repo.git", appName, c.Name()),
+		"Write to a specific path":               fmt.Sprintf("%s %s --output path/to/tasks.yml", appName, c.Name()),
+		"Stream the rendered scaffold to stdout": fmt.Sprintf("%s %s --output -", appName, c.Name()),
+		"Stream a JSON5 scaffold to stdout":      fmt.Sprintf("%s %s --output - --format json5", appName, c.Name()),
+		"Overwrite an existing file":             fmt.Sprintf("%s %s --force", appName, c.Name()),
 	}
 }
 
@@ -74,7 +79,8 @@ func (c *InitCommand) ParsedArguments(args []string) (map[string]command.Argumen
 
 func (c *InitCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
-	f.StringVar(&c.output, "output", "tasks.yml", "path to write the scaffold to; pass - to write to stdout")
+	f.StringVar(&c.output, "output", defaultRecipeOutput, "path to write the scaffold to; pass - to write to stdout")
+	f.StringVar(&c.formatFlag, "format", "", "write the scaffold as this format (yaml or json5) instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputJSON5+"; this is also the only way to get JSON5 on stdout.")
 	f.BoolVar(&c.force, "force", false, "overwrite an existing output file")
 	f.BoolVar(&c.minimal, "minimal", false, "emit a minimal one-task scaffold without an inputs block")
 	f.StringVar(&c.name, "name", defaultName(), "play name and default app input value")
@@ -87,6 +93,7 @@ func (c *InitCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--output":  taskFileAutocomplete(),
+			"--format":  recipeFormatAutocomplete(),
 			"--force":   complete.PredictNothing,
 			"--minimal": complete.PredictNothing,
 			"--name":    complete.PredictNothing,
@@ -109,7 +116,24 @@ func (c *InitCommand) Run(args []string) int {
 		return 1
 	}
 
-	toStdout := c.output == "-"
+	formatOverride, err := parseRecipeFormatFlag("--format", c.formatFlag)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	// Resolve the write target before anything else looks at it. With
+	// --format json5 and no explicit --output the default path becomes
+	// tasks.json, and the exists / --force check below has to stat that
+	// path, not the tasks.yml it would otherwise have defaulted to.
+	// flags.Changed is only meaningful after flags.Parse.
+	var format string
+	c.output, format = resolveRecipeOutput(c.output, formatOverride, flags.Changed("output"))
+	if msg := recipeOutputFormatMismatch(c.output, formatOverride); msg != "" {
+		c.Ui.Warn(msg)
+	}
+
+	toStdout := c.output == taskFileStdin
 
 	if !toStdout {
 		if _, err := os.Stat(c.output); err == nil {
@@ -121,14 +145,6 @@ func (c *InitCommand) Run(args []string) int {
 			c.Ui.Error(fmt.Sprintf("stat error: %v", err))
 			return 1
 		}
-	}
-
-	// Format is inferred from the --output extension: tasks.json /
-	// tasks.json5 -> JSON5, anything else -> YAML. Stdout (--output -)
-	// has no extension to inspect, so it falls through to YAML.
-	format := tasks.FormatYAML
-	if !toStdout {
-		format = detectTaskFileFormat(c.output)
 	}
 
 	rendered, err := renderInit(initOptions{

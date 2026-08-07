@@ -105,7 +105,7 @@ func (c *ValidateCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--tasks":         taskFileAutocomplete(),
-			"--tasks-format":  tasksFormatAutocomplete(),
+			"--tasks-format":  recipeFormatAutocomplete(),
 			"--json":          complete.PredictNothing,
 			"--strict":        complete.PredictNothing,
 			"--vars-file":     complete.PredictFiles("*"),
@@ -142,7 +142,7 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	formatOverride, err := parseTasksFormatFlag(c.tasksFormatFlag)
+	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
 	if err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{

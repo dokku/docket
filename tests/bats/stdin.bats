@@ -90,6 +90,15 @@ EOF
   assert_output --partial "is valid"
 }
 
+@test "docket init --output - --format json5 pipes into docket validate --tasks-format json5 -" {
+  # The writing side of the round trip #410 added: --format states the
+  # format of what init emits, --tasks-format states how validate reads it.
+  cd "$BATS_TEST_TMPDIR"
+  run bash -c "\"$(docket_bin)\" init --output - --format json5 --name api --repo https://example.com/repo.git | \"$(docket_bin)\" validate --tasks-format json5 -"
+  assert_success
+  assert_output --partial "is valid"
+}
+
 @test "docket apply --list-tasks reads a recipe from stdin" {
   cd "$BATS_TEST_TMPDIR"
   cat >input.yml <<'EOF'

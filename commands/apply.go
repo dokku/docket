@@ -122,7 +122,7 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--tasks":                taskFileAutocomplete(),
-			"--tasks-format":         tasksFormatAutocomplete(),
+			"--tasks-format":         recipeFormatAutocomplete(),
 			"--verbose":              complete.PredictNothing,
 			"--json":                 complete.PredictNothing,
 			"--host":                 complete.PredictAnything,
@@ -173,7 +173,7 @@ func (c *ApplyCommand) Run(args []string) int {
 
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
 
-	formatOverride, err := parseTasksFormatFlag(c.tasksFormatFlag)
+	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1

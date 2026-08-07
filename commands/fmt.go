@@ -91,7 +91,7 @@ func (c *FmtCommand) AutocompleteFlags() complete.Flags {
 			"--check":        complete.PredictNothing,
 			"--diff":         complete.PredictNothing,
 			"--color":        complete.PredictSet("auto", "always", "never"),
-			"--tasks-format": tasksFormatAutocomplete(),
+			"--tasks-format": recipeFormatAutocomplete(),
 		},
 	)
 }
@@ -116,7 +116,7 @@ func (c *FmtCommand) Run(args []string) int {
 		return 1
 	}
 
-	formatOverride, err := parseTasksFormatFlag(c.tasksFormatFlag)
+	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
