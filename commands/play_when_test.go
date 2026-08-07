@@ -232,6 +232,90 @@ func TestPlayWhenCannotSeeSiblingPlayInputs(t *testing.T) {
 	}
 }
 
+// playLines returns the `==> Play:` lines of out, in order. Task lines
+// are dropped because the two renderers describe tasks differently by
+// design (`[0] <name>` under --list-tasks, `[ok]` / `[changed]` under
+// plan); only play selection is being compared.
+func playLines(out string) []string {
+	var lines []string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "==> Play:") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// TestPlayWhenListTasksMatchesPlan pins that `plan` and
+// `plan --list-tasks` reach the same play-selection verdict. The two
+// resolve play `when:` in separate code paths - the plan loop in
+// plan.go against Formatter.PlaySkipped, and renderListTasks against
+// its own format strings in list_tasks.go - which agree today only by
+// convention. tests/bats/plays.bats asserts play scoping through
+// --list-tasks (it is the offline surface, #412), so a divergence there
+// would silently stop covering what plan actually does.
+//
+// Task bodies are dokku_stub, whose Plan() reads a fixture instead of
+// shelling out, so the plan side runs a play to completion without a
+// server. The recipe carries no sensitive values: the plan side masks
+// play names and --list-tasks does not, so a sensitive name would make
+// the two differ by design rather than by drift.
+func TestPlayWhenListTasksMatchesPlan(t *testing.T) {
+	defer stubReset()
+	path := writePlayTasks(t, `---
+- inputs:
+    - name: env
+      default: prod
+- name: api
+  inputs:
+    - name: app
+      default: api
+  when: 'env == "prod"'
+  tasks:
+    - dokku_stub: { key: a }
+- name: worker
+  when: 'env == "staging"'
+  tasks:
+    - dokku_stub: { key: b }
+- name: sibling
+  when: 'app == "api"'
+  tasks:
+    - dokku_stub: { key: c }
+`)
+
+	planOut, planErr, planExit := playOutput(t, path)
+	if planExit != 0 {
+		t.Fatalf("plan exit = %d, want 0; stdout=%s stderr=%s", planExit, planOut, planErr)
+	}
+	listOut, listErr, listExit := playOutput(t, path, "--list-tasks")
+	if listExit != 0 {
+		t.Fatalf("plan --list-tasks exit = %d, want 0; stdout=%s stderr=%s", listExit, listOut, listErr)
+	}
+
+	got := playLines(listOut)
+	want := playLines(planOut)
+	if len(want) != 3 {
+		t.Fatalf("expected 3 play lines from plan, got %d:\n%s", len(want), planOut)
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("--list-tasks and plan disagree on play selection\nplan:\n%s\n--list-tasks:\n%s",
+			strings.Join(want, "\n"), strings.Join(got, "\n"))
+	}
+
+	// Guard the comparison itself: two empty line sets would compare
+	// equal, so assert the three verdicts the recipe was built to
+	// produce actually appear.
+	if !strings.Contains(listOut, "==> Play: api") || strings.Contains(listOut, "==> Play: api  (skipped") {
+		t.Errorf("api should run (file-level default satisfies when:); got:\n%s", listOut)
+	}
+	if !strings.Contains(listOut, `==> Play: worker  (skipped: when "env == \"staging\"")`) {
+		t.Errorf("worker should be skipped by its false predicate; got:\n%s", listOut)
+	}
+	if !strings.Contains(listOut, `==> Play: sibling  (skipped: when "app == \"api\"")`) {
+		t.Errorf("sibling should be skipped (api's play-local input must not leak); got:\n%s", listOut)
+	}
+}
+
 // TestPlayWhenCannotSeeLoopVars: `.item` is a loop-iteration value;
 // it must not be available to a play-level `when:`. With `==` the
 // undefined identifier resolves to nil → comparison false → skipped.
