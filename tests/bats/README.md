@@ -36,6 +36,26 @@ bats tests/bats/
 Tests skip themselves when `dokku` is not available, so the suite is safe
 to run on a developer laptop without a local Dokku.
 
+## Gating on a server
+
+A test that reaches the server calls `require_dokku` as the first line of
+its body (or of `setup()`, when every test in the file needs one). Without
+it the test fails rather than skips on a machine with no `dokku` on
+`$PATH`, which is what happened in #412.
+
+Reach for the gate only when the assertion genuinely needs a server.
+Anything resolved before server contact should be asserted offline
+instead, so the coverage stays available to contributors without Dokku:
+
+- `validate` and `fmt` never contact a server.
+- `apply --list-tasks` / `plan --list-tasks` render the resolved plan -
+  play selection, `when:` evaluation, loop expansion, tag filtering,
+  interpolated task bodies - and return before any task is planned.
+
+`plan` is not itself offline: it probes the server for every play that
+runs, so a `plan` test asserting that a play ran needs either the gate or
+`--list-tasks`.
+
 ## CI
 
 `.github/workflows/test.yml` defines a `bats-test` job that installs Dokku

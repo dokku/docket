@@ -7,8 +7,9 @@ load test_helper
 # play in order, --play <name> filters to one play, --fail-fast reverts
 # to the abort-entire-run semantics, and a play-level when: predicate
 # skips the entire play. Variable-visibility scoping for play-level
-# when: is exercised against the plan path so tests do not require a
-# Dokku server.
+# when: is exercised through plan --list-tasks, which resolves play
+# selection and returns before any server contact, so those tests need
+# no Dokku server.
 
 setup() {
   docket_build
@@ -255,8 +256,13 @@ EOF
   assert_output --partial 'unexpected play key "invalidkey"'
 }
 
-# Variable-visibility tests for play-level when: drive the plan path so
-# they do not require a Dokku server. The pattern is:
+# Variable-visibility tests for play-level when: drive plan --list-tasks
+# so they do not require a Dokku server. Plain `plan` probes the server
+# for every play that actually runs, so a test asserting a play ran would
+# fail without dokku rather than skip (#412). --list-tasks resolves the
+# play when: against the same merged context and prints the same
+# `==> Play:` header and `(skipped: when ...)` marker, then returns
+# before any task is planned. The pattern is:
 #  - file-level input default is visible to play when: (truthy makes the
 #    play run; falsy makes it skip).
 #  - CLI / vars-file overrides win.
@@ -275,7 +281,7 @@ EOF
     - dokku_app:
         app: docket-test-noop
 EOF
-  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
   assert_success
   assert_output --partial "==> Play: api"
   refute_output --partial "==> Play: api  (skipped"
@@ -293,7 +299,7 @@ EOF
     - dokku_app:
         app: docket-test-noop
 EOF
-  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
   assert_success
   assert_output --partial '==> Play: api  (skipped: when "env == \"prod\"")'
 }
@@ -310,7 +316,7 @@ EOF
     - dokku_app:
         app: docket-test-noop
 EOF
-  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --env prod
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks --env prod
   assert_success
   assert_output --partial "==> Play: api"
   refute_output --partial "==> Play: api  (skipped"
@@ -331,7 +337,7 @@ EOF
   cat >"$BATS_TEST_TMPDIR/vars.yml" <<EOF
 env: prod
 EOF
-  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks --vars-file "$BATS_TEST_TMPDIR/vars.yml"
   assert_success
   assert_output --partial "==> Play: api"
   refute_output --partial "==> Play: api  (skipped"
@@ -349,7 +355,7 @@ EOF
     - dokku_app:
         app: docket-test-noop
 EOF
-  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
   assert_success
   assert_output --partial '(skipped:'
 }
@@ -372,12 +378,17 @@ EOF
       dokku_app:
         app: docket-test-noop-worker
 EOF
-  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
   assert_success
   assert_output --partial "==> Play: api"
   assert_output --partial '==> Play: worker  (skipped'
 }
 
+# The tasks here are deliberately unnamed: --list-tasks prints a
+# user-supplied name: verbatim, so a named task would render as `noop`
+# in both plays and hide the value under test. Unnamed, the listing
+# falls back to `<type>: <body identifier>` and shows the app each play
+# rendered from its own input.
 @test "plays: per-play inputs scope to their own play in task body" {
   write_tasks_file <<EOF
 ---
@@ -386,19 +397,17 @@ EOF
     - name: app
       default: docket-test-noop-api
   tasks:
-    - name: noop
-      dokku_app:
+    - dokku_app:
         app: "{{ .app }}"
 - name: worker
   inputs:
     - name: app
       default: docket-test-noop-worker
   tasks:
-    - name: noop
-      dokku_app:
+    - dokku_app:
         app: "{{ .app }}"
 EOF
-  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
   assert_success
   assert_output --partial "docket-test-noop-api"
   assert_output --partial "docket-test-noop-worker"
