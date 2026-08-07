@@ -31,7 +31,7 @@ func TestDetectTaskFileFormat(t *testing.T) {
 	}
 }
 
-func TestParseTasksFormatFlag(t *testing.T) {
+func TestParseRecipeFormatFlag(t *testing.T) {
 	valid := map[string]string{
 		"":      "",
 		"yaml":  taskFileFormatYAML,
@@ -43,21 +43,33 @@ func TestParseTasksFormatFlag(t *testing.T) {
 		" yaml": taskFileFormatYAML,
 	}
 	for value, want := range valid {
-		got, err := parseTasksFormatFlag(value)
+		got, err := parseRecipeFormatFlag("--tasks-format", value)
 		if err != nil {
-			t.Errorf("parseTasksFormatFlag(%q) returned error: %v", value, err)
+			t.Errorf("parseRecipeFormatFlag(%q) returned error: %v", value, err)
 			continue
 		}
 		if got != want {
-			t.Errorf("parseTasksFormatFlag(%q) = %q, want %q", value, got, want)
+			t.Errorf("parseRecipeFormatFlag(%q) = %q, want %q", value, got, want)
 		}
 	}
 
 	for _, value := range []string{"toml", "hcl", "ini", "yamlish"} {
-		if _, err := parseTasksFormatFlag(value); err == nil {
-			t.Errorf("parseTasksFormatFlag(%q) = nil error, want a rejection", value)
+		if _, err := parseRecipeFormatFlag("--tasks-format", value); err == nil {
+			t.Errorf("parseRecipeFormatFlag(%q) = nil error, want a rejection", value)
 		} else if !strings.Contains(err.Error(), "yaml, json5") {
-			t.Errorf("parseTasksFormatFlag(%q) error %q should name the valid values", value, err)
+			t.Errorf("parseRecipeFormatFlag(%q) error %q should name the valid values", value, err)
+		}
+	}
+
+	// The flag name in the message follows the caller, so --format and
+	// --tasks-format each blame themselves rather than the other.
+	for _, flagName := range []string{"--tasks-format", "--format"} {
+		_, err := parseRecipeFormatFlag(flagName, "toml")
+		if err == nil {
+			t.Fatalf("parseRecipeFormatFlag(%q, toml) = nil error, want a rejection", flagName)
+		}
+		if !strings.Contains(err.Error(), flagName) {
+			t.Errorf("error %q should name the flag it rejects (%s)", err, flagName)
 		}
 	}
 }
@@ -90,6 +102,94 @@ func TestTaskFileFormatFor(t *testing.T) {
 				t.Errorf("taskFileFormatFor(%q, %q, %q) = %q, want %q", tt.detected, tt.override, tt.data, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestResolveRecipeOutput pins the output-side precedence rule (#410):
+// an explicit --format beats the --output extension, which beats the
+// YAML fallback stdout is left with. It also pins the one case where the
+// format changes the path: --format json5 with an untouched --output
+// moves the default to tasks.json rather than writing a JSON5 document
+// into a file named tasks.yml.
+func TestResolveRecipeOutput(t *testing.T) {
+	tests := []struct {
+		name          string
+		output        string
+		override      string
+		outputChanged bool
+		wantPath      string
+		wantFormat    string
+	}{
+		{name: "default with no override", output: defaultRecipeOutput, wantPath: defaultRecipeOutput, wantFormat: taskFileFormatYAML},
+		{name: "default with json5 moves the path", output: defaultRecipeOutput, override: taskFileFormatJSON5, wantPath: defaultRecipeOutputJSON5, wantFormat: taskFileFormatJSON5},
+		{name: "default with yaml stays put", output: defaultRecipeOutput, override: taskFileFormatYAML, wantPath: defaultRecipeOutput, wantFormat: taskFileFormatYAML},
+		{name: "explicit path is never rewritten", output: "deploy/prod.yml", override: taskFileFormatJSON5, outputChanged: true, wantPath: "deploy/prod.yml", wantFormat: taskFileFormatJSON5},
+		{name: "explicit default path is never rewritten", output: defaultRecipeOutput, override: taskFileFormatJSON5, outputChanged: true, wantPath: defaultRecipeOutput, wantFormat: taskFileFormatJSON5},
+		{name: "override beats a json extension", output: "tasks.json", override: taskFileFormatYAML, outputChanged: true, wantPath: "tasks.json", wantFormat: taskFileFormatYAML},
+		{name: "extension decides with no override", output: "tasks.json5", outputChanged: true, wantPath: "tasks.json5", wantFormat: taskFileFormatJSON5},
+		{name: "unknown extension falls back to yaml", output: "recipe.txt", outputChanged: true, wantPath: "recipe.txt", wantFormat: taskFileFormatYAML},
+		{name: "stdin with no override is yaml", output: taskFileStdin, outputChanged: true, wantPath: taskFileStdin, wantFormat: taskFileFormatYAML},
+		{name: "stdin honours the override", output: taskFileStdin, override: taskFileFormatJSON5, outputChanged: true, wantPath: taskFileStdin, wantFormat: taskFileFormatJSON5},
+		{name: "stdin is never rewritten to a path", output: taskFileStdin, override: taskFileFormatJSON5, wantPath: taskFileStdin, wantFormat: taskFileFormatJSON5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPath, gotFormat := resolveRecipeOutput(tt.output, tt.override, tt.outputChanged)
+			if gotPath != tt.wantPath || gotFormat != tt.wantFormat {
+				t.Errorf("resolveRecipeOutput(%q, %q, %t) = (%q, %q), want (%q, %q)",
+					tt.output, tt.override, tt.outputChanged, gotPath, gotFormat, tt.wantPath, tt.wantFormat)
+			}
+		})
+	}
+}
+
+// TestResolveRecipeOutputDefaultsAreProbeCandidates is what makes the
+// path swap safe: init tells the user to run a bare `docket validate`
+// next, and that probes defaultTaskFileCandidates. A default output that
+// is not in that list would leave the scaffold unreachable.
+func TestResolveRecipeOutputDefaultsAreProbeCandidates(t *testing.T) {
+	for _, want := range []string{defaultRecipeOutput, defaultRecipeOutputJSON5} {
+		found := false
+		for _, candidate := range defaultTaskFileCandidates {
+			if candidate == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q is a default --output but not in defaultTaskFileCandidates %v", want, defaultTaskFileCandidates)
+		}
+	}
+}
+
+// TestRecipeOutputFormatMismatch pins when the extension-lies warning
+// fires. Only a recipe whose extension disagrees with --format earns
+// one; stdout has no extension to disagree with, and no --format means
+// the extension was the source of truth in the first place.
+func TestRecipeOutputFormatMismatch(t *testing.T) {
+	quiet := [][2]string{
+		{"tasks.yml", ""},
+		{taskFileStdin, taskFileFormatJSON5},
+		{"tasks.json", taskFileFormatJSON5},
+		{"tasks.json5", taskFileFormatJSON5},
+		{"tasks.yml", taskFileFormatYAML},
+		{"recipe.txt", taskFileFormatYAML},
+	}
+	for _, c := range quiet {
+		if got := recipeOutputFormatMismatch(c[0], c[1]); got != "" {
+			t.Errorf("recipeOutputFormatMismatch(%q, %q) = %q, want no warning", c[0], c[1], got)
+		}
+	}
+
+	got := recipeOutputFormatMismatch("tasks.yml", taskFileFormatJSON5)
+	if got == "" {
+		t.Fatal("recipeOutputFormatMismatch(tasks.yml, json5) = no warning, want one")
+	}
+	if !strings.Contains(got, "tasks.yml") {
+		t.Errorf("warning %q should name the path", got)
+	}
+	if !strings.Contains(got, "--tasks-format json5") {
+		t.Errorf("warning %q should name the flag needed to read it back", got)
 	}
 }
 

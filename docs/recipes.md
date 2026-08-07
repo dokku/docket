@@ -67,6 +67,7 @@ it a recipe another tool just generated:
 ```bash
 docket export --output - | docket apply -
 docket init --output - | docket validate -
+docket export --output - --format json5 | docket apply --tasks-format json5 -
 ```
 
 The format is sniffed from the first non-whitespace byte - `[`, `{`, `//`, or `/*` means JSON5,
@@ -77,6 +78,10 @@ flag overrides a misleading file extension:
 ```bash
 docket validate --tasks recipe.txt --tasks-format json5
 ```
+
+`--tasks-format` is the reading side. The writing side is `--format` on `init` and `export`, which
+states the format of what they emit - necessary when the destination is `-`, since there is no
+extension to infer from.
 
 A piped recipe behaves like any other: its `inputs:` still become `--<name>` flags, and it wins over
 a `tasks.yml` in the current directory.

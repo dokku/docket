@@ -37,11 +37,16 @@ const taskFileStdin = "-"
 // fall through to give JSON-native users a no-config setup.
 var defaultTaskFileCandidates = []string{"tasks.yml", "tasks.yaml", "tasks.json"}
 
-// parseTasksFormatFlag normalises a --tasks-format value to one of the
-// two canonical format identifiers. An empty value means "not set" and
-// leaves detection to taskFileFormatFor. Anything else is rejected
+// parseRecipeFormatFlag normalises a recipe-format flag value to one of
+// the two canonical format identifiers. An empty value means "not set"
+// and leaves the decision to the caller. Anything else is rejected
 // naming the accepted values, the way an invalid --color is.
-func parseTasksFormatFlag(value string) (string, error) {
+//
+// flagName is the spelling to blame in that rejection: the input side
+// (apply / plan / validate / fmt) passes "--tasks-format", the output
+// side (init / export, #410) passes "--format". One normaliser keeps the
+// two flags accepting exactly the same spellings.
+func parseRecipeFormatFlag(flagName, value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "":
 		return "", nil
@@ -50,14 +55,14 @@ func parseTasksFormatFlag(value string) (string, error) {
 	case "json", "json5":
 		return taskFileFormatJSON5, nil
 	}
-	return "", fmt.Errorf("invalid --tasks-format %q: must be one of yaml, json5", value)
+	return "", fmt.Errorf("invalid %s %q: must be one of yaml, json5", flagName, value)
 }
 
 // taskFileFormatFor resolves the format of a recipe from the three
 // signals available, in precedence order:
 //
 //  1. override - an explicit --tasks-format, already normalised by
-//     parseTasksFormatFlag
+//     parseRecipeFormatFlag
 //  2. detected - the extension of the path or URL, from
 //     detectTaskFileFormat; empty when the source is stdin, which has no
 //     name to key off
@@ -107,6 +112,75 @@ func detectTaskFileFormat(path string) string {
 	default:
 		return taskFileFormatYAML
 	}
+}
+
+// defaultRecipeOutput and defaultRecipeOutputJSON5 are the --output
+// defaults for the two commands that write a recipe (init, export).
+// resolveRecipeOutput swaps in the JSON5 spelling when --format json5 is
+// given without an explicit --output, so the file name matches its
+// contents and a later bare `docket validate` still finds it - both are
+// in defaultTaskFileCandidates.
+const (
+	defaultRecipeOutput      = "tasks.yml"
+	defaultRecipeOutputJSON5 = "tasks.json"
+)
+
+// resolveRecipeOutput reconciles an explicit --format with the --output
+// path a recipe-writing command is about to use, returning the path to
+// write and the format to write it in.
+//
+// Precedence, per #410:
+//
+//  1. override - an explicit --format, already normalised by
+//     parseRecipeFormatFlag. It always wins, including over an --output
+//     extension that says otherwise.
+//  2. the --output extension, via detectTaskFileFormat.
+//  3. YAML - all that is left for stdout, which has no extension. This is
+//     the gap #410 exists to close: before --format, `--output -` could
+//     only ever emit YAML.
+//
+// outputChanged is flags.Changed("output"), which is only meaningful
+// after flags.Parse. When --format asks for JSON5 and --output was left
+// at its default, the default path moves to defaultRecipeOutputJSON5
+// rather than dropping a JSON5 document into a .yml file. A path the user
+// typed - including "-" - is never rewritten.
+//
+// Callers must run this before their --force / --overwrite existence
+// checks: those have to test the path that will actually be written.
+func resolveRecipeOutput(output, override string, outputChanged bool) (string, string) {
+	if override == "" {
+		if output == taskFileStdin {
+			return output, taskFileFormatYAML
+		}
+		return output, detectTaskFileFormat(output)
+	}
+	if output != taskFileStdin && !outputChanged && override == taskFileFormatJSON5 {
+		output = defaultRecipeOutputJSON5
+	}
+	return output, override
+}
+
+// recipeOutputFormatMismatch returns the warning to print when --format
+// disagrees with what path's extension implies, or "" when there is
+// nothing to say. Writing a JSON5 recipe to tasks.yml is legal - --format
+// always wins - but nothing downstream can tell: the JSON5 formatter
+// emits unquoted keys, comments, and trailing commas, none of which parse
+// as YAML, and a later `docket validate --tasks tasks.yml` picks its
+// parser from the extension. Say it once, on stderr, instead of letting
+// the user find out from a parse error.
+//
+// The companion vars-file deliberately gets no warning: MarshalVars emits
+// plain JSON, which is valid YAML, so a .yml vars-file holding JSON still
+// loads.
+func recipeOutputFormatMismatch(path, override string) string {
+	if override == "" || path == taskFileStdin {
+		return ""
+	}
+	if detectTaskFileFormat(path) == override {
+		return ""
+	}
+	return fmt.Sprintf("warning: --format %s does not match the %s extension; reading %s back needs --tasks-format %s",
+		override, path, path, override)
 }
 
 // taskFileFetchTimeout bounds a remote recipe fetch so a hung server does
@@ -367,8 +441,8 @@ func preloadRecipeForFlags(argv []string, allowURL bool) (data []byte, format st
 	}
 	// The override is read straight from argv: pflag has not run, so
 	// the command's flag field is still empty. An unrecognised value is
-	// ignored here and rejected properly by parseTasksFormatFlag in Run.
-	override, _ := parseTasksFormatFlag(tasksFormatFromArgs(argv))
+	// ignored here and rejected properly by parseRecipeFormatFlag in Run.
+	override, _ := parseRecipeFormatFlag("--tasks-format", tasksFormatFromArgs(argv))
 	return data, taskFileFormatFor(detected, override, data), path
 }
 
@@ -403,10 +477,11 @@ func predictFilesByExtension(extensions []string) complete.Predictor {
 	})
 }
 
-// tasksFormatAutocomplete offers the two canonical --tasks-format
-// values. The yml / json aliases parseTasksFormatFlag also accepts are
+// recipeFormatAutocomplete offers the two canonical values shared by
+// --tasks-format on the reading side and --format on the writing side.
+// The yml / json aliases parseRecipeFormatFlag also accepts are
 // deliberately left out so completion suggests one spelling per format.
-func tasksFormatAutocomplete() complete.Predictor {
+func recipeFormatAutocomplete() complete.Predictor {
 	return complete.PredictSet(taskFileFormatYAML, taskFileFormatJSON5)
 }
 

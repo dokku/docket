@@ -25,6 +25,10 @@ type ExportCommand struct {
 
 	output     string
 	varsOutput string
+	// formatFlag is the raw --format value; it is normalised by
+	// parseRecipeFormatFlag in Run and then governs both the recipe and
+	// the companion vars-file, overriding either output's extension.
+	formatFlag string
 	overwrite  bool
 	redact     bool
 	apps       []string
@@ -52,6 +56,7 @@ func (c *ExportCommand) Examples() map[string]string {
 		"Export the local server to tasks.yml + tasks.vars.yml": fmt.Sprintf("%s %s", appName, c.Name()),
 		"Export a remote server over SSH":                       fmt.Sprintf("%s %s --host deploy@dokku.example.com", appName, c.Name()),
 		"Stream a self-contained recipe to stdout":              fmt.Sprintf("%s %s --output -", appName, c.Name()),
+		"Stream a JSON5 recipe to stdout":                       fmt.Sprintf("%s %s --output - --format json5", appName, c.Name()),
 		"Redact secrets into a fill-in-the-blanks vars-file":    fmt.Sprintf("%s %s --redact", appName, c.Name()),
 		"Export only a single app":                              fmt.Sprintf("%s %s --app my-app", appName, c.Name()),
 	}
@@ -71,8 +76,9 @@ func (c *ExportCommand) ParsedArguments(args []string) (map[string]command.Argum
 
 func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
-	f.StringVar(&c.output, "output", "tasks.yml", "path to write the recipe to; pass - to stream a self-contained recipe to stdout")
-	f.StringVar(&c.varsOutput, "vars-output", "", "path to write the companion vars-file to (defaults to <output-base>.vars.<ext>)")
+	f.StringVar(&c.output, "output", defaultRecipeOutput, "path to write the recipe to; pass - to stream a self-contained recipe to stdout")
+	f.StringVar(&c.formatFlag, "format", "", "write the recipe and vars-file as this format (yaml or json5) instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputJSON5+"; this is also the only way to get JSON5 on stdout.")
+	f.StringVar(&c.varsOutput, "vars-output", "", "path to write the companion vars-file to (defaults to <output-base>.vars.<ext>; --format overrides its format)")
 	f.BoolVar(&c.overwrite, "overwrite", false, "overwrite existing output files without prompting")
 	f.BoolVar(&c.redact, "redact", false, "write placeholder values into the vars-file instead of real secrets")
 	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app (repeatable)")
@@ -87,6 +93,7 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--output":               taskFileAutocomplete(),
+			"--format":               recipeFormatAutocomplete(),
 			"--vars-output":          taskFileAutocomplete(),
 			"--overwrite":            complete.PredictNothing,
 			"--redact":               complete.PredictNothing,
@@ -114,12 +121,31 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 
+	formatOverride, err := parseRecipeFormatFlag("--format", c.formatFlag)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	// Resolve the write target up front. --format json5 with no explicit
+	// --output moves the default to tasks.json (and, through
+	// deriveVarsOutput, tasks.vars.json), and every later use of c.output
+	// - the overwrite prompt, the write, the summary, the Next steps line
+	// - has to agree on one path. flags.Changed is only meaningful after
+	// flags.Parse. Validating here also means a typo'd --format fails
+	// before an SSH control master is opened or the server is read.
+	var recipeFormat string
+	c.output, recipeFormat = resolveRecipeOutput(c.output, formatOverride, flags.Changed("output"))
+	if msg := recipeOutputFormatMismatch(c.output, formatOverride); msg != "" {
+		c.Ui.Warn(msg)
+	}
+
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
 	if resolvedHost != "" {
 		defer subprocess.CloseSshControlMaster(resolvedHost)
 	}
 
-	toStdout := c.output == "-"
+	toStdout := c.output == taskFileStdin
 
 	res, err := tasks.ExportRecipe(tasks.ExportOptions{
 		Apps:   c.apps,
@@ -147,10 +173,6 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 
-	recipeFormat := taskFileFormatYAML
-	if !toStdout {
-		recipeFormat = detectTaskFileFormat(c.output)
-	}
 	recipeBytes, err := res.MarshalRecipe(recipeFormat)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("marshal recipe: %v", err))
@@ -168,6 +190,14 @@ func (c *ExportCommand) Run(args []string) int {
 	varsOutput := c.varsOutput
 	if varsOutput == "" {
 		varsOutput = deriveVarsOutput(c.output)
+	}
+	// --format governs the pair: when it is given, the vars-file matches
+	// the recipe even if --vars-output names another extension. Without
+	// it the vars-file keeps following its own extension, so
+	// `--output tasks.yml --vars-output vars.json` still writes JSON.
+	varsFormat := formatOverride
+	if varsFormat == "" {
+		varsFormat = detectTaskFileFormat(varsOutput)
 	}
 	writeVars := res.HasVars()
 
@@ -204,7 +234,7 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 	if writeVars {
-		varsBytes, err := res.MarshalVars(detectTaskFileFormat(varsOutput))
+		varsBytes, err := res.MarshalVars(varsFormat)
 		if err != nil {
 			c.Ui.Error(fmt.Sprintf("marshal vars: %v", err))
 			return 1

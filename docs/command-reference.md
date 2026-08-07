@@ -28,6 +28,7 @@ recipe declares still become real `--<name>` flags, and a `-` recipe takes prece
 docket export --output - | docket apply -
 docket init --output - | docket validate -
 cat tasks.yml | docket plan --tasks - --app api
+docket export --output - --format json5 | docket apply --tasks-format json5 -
 ```
 
 The format normally comes from the file extension, and for stdin from the first non-whitespace byte
@@ -35,6 +36,10 @@ The format normally comes from the file extension, and for stdin from the first 
 overrides both. Reach for it when the extension is absent or misleading (`--tasks recipe.txt`, or a
 URL whose path carries no extension), or when a YAML recipe written in flow style would be sniffed
 as JSON5 because it opens with `[`.
+
+`--tasks-format` is the reading side. On the writing side, `init` and `export` take
+`--format yaml|json5` to state the format of what they emit. Without it, stdout can only ever be
+YAML, since there is no extension to infer from.
 
 Reading the recipe from stdin consumes it, so a `dokku` command that would otherwise have inherited
 the terminal's stdin sees end-of-file instead. No task depends on this - every task that streams
@@ -47,24 +52,31 @@ contact and no `git` subprocess. The default scaffold ships four tasks (`dokku_a
 `dokku_config`, `dokku_domains`, `dokku_git_sync`) in a single play with `app` and `repo` inputs,
 and round-trips cleanly through `docket validate`.
 
-The output format follows the `--output` extension: `.json` / `.json5` writes a JSON5 scaffold with
-`// ...` comments, anything else writes YAML. Streaming to stdout (`--output -`) writes YAML.
+The output format follows `--format` when given, otherwise the `--output` extension: `.json` /
+`.json5` writes a JSON5 scaffold with `// ...` comments, anything else writes YAML. Streaming to
+stdout (`--output -`) has no extension to read, so it writes YAML unless `--format json5` says
+otherwise. Passing `--format json5` without an `--output` writes `./tasks.json` rather than a JSON5
+document under a `.yml` name.
 
 ```bash
 # Use the current directory name as the app and remote.origin.url as the repo.
 docket init
 
-# Same scaffold in JSON5.
-docket init --output tasks.json
+# Same scaffold in JSON5, written to ./tasks.json.
+docket init --format json5
 
 # Stream the scaffold to stdout for piping.
 docket init --output -
+
+# Stream a JSON5 scaffold to stdout.
+docket init --output - --format json5
 ```
 
 | Flag | Effect |
 |------|--------|
 | (default) | Write `./tasks.yml`; refuse if it already exists. |
-| `--output <path>` | Write to a path; `-` writes to stdout. Format inferred from the extension. |
+| `--output <path>` | Write to a path; `-` writes to stdout. Format inferred from the extension unless `--format` says otherwise. |
+| `--format <fmt>` | Write `yaml` or `json5` regardless of the `--output` extension. Without an explicit `--output`, `--format json5` writes `./tasks.json`. |
 | `--force` | Overwrite an existing file. |
 | `--name <name>` | Set the play and `app` input default (defaults to the directory name). |
 | `--repo <url>` | Set the `repo` input default (defaults to `remote.origin.url` in `./.git/config`). |
@@ -335,6 +347,9 @@ docket export --host deploy@dokku.example.com
 
 # Apply the exported pair somewhere else.
 docket apply --tasks tasks.yml --vars-file tasks.vars.yml
+
+# Stream a JSON5 recipe to stdout and pipe it straight back in.
+docket export --output - --format json5 | docket apply --tasks-format json5 -
 ```
 
 The correctness contract is idempotency: applying an exported pair back to the same server reports
@@ -343,6 +358,7 @@ no drift (`plan` shows every task `[ok]`).
 | Flag | Effect |
 |------|--------|
 | `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. |
+| `--format <fmt>` | Write `yaml` or `json5` regardless of the `--output` extension, for both the recipe and the vars-file. Without an explicit `--output`, `--format json5` writes `./tasks.json` and `./tasks.vars.json`. Required to stream JSON5 with `--output -`, which has no extension to read. |
 | `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). |
 | `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). |
 | `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in. |
@@ -351,8 +367,9 @@ no drift (`plan` shows every task `[ok]`).
 | `--sudo` | Wrap the remote `dokku` call in `sudo -n`. |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
 
-The output format follows the `--output` extension (`.json` / `.json5` writes JSON5, anything else
-YAML), and the vars-file matches. Which task types export is a per-task property: each task's
+The output format follows `--format` when given, otherwise the `--output` extension (`.json` /
+`.json5` writes JSON5, anything else YAML); the vars-file follows the recipe, or its own
+`--vars-output` extension when `--format` is not given. Which task types export is a per-task property: each task's
 reference page carries an **Export support** section stating whether it is supported, partial (for
 example a value that is lifted into the vars-file), or not exportable (write-only credentials such
 as `dokku_git_auth`, or `dokku_service_property`, which no datastore plugin can read back).

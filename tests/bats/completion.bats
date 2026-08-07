@@ -43,6 +43,25 @@ setup() {
   assert_output --partial 'json5'
 }
 
+@test "docket init --format completes the two recipe formats" {
+  cd "$BATS_TEST_TMPDIR"
+  export COMP_LINE='docket init --format '
+  run "$(docket_bin)" init --format
+  assert_success
+  assert_output --partial 'yaml'
+  assert_output --partial 'json5'
+}
+
+@test "docket export --format completes the two recipe formats" {
+  # Completion short-circuits before Run, so this needs no server.
+  cd "$BATS_TEST_TMPDIR"
+  export COMP_LINE='docket export --format '
+  run "$(docket_bin)" export --format
+  assert_success
+  assert_output --partial 'yaml'
+  assert_output --partial 'json5'
+}
+
 @test "docket fmt completes recipe files positionally (#340)" {
   cd "$BATS_TEST_TMPDIR"
   : >tasks.yml
