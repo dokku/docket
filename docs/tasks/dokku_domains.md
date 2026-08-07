@@ -14,7 +14,7 @@ Supported.
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | no |  |  | Name of the app |
 | `global` | bool | no |  |  | Flag indicating if the domains should be applied globally |
-| `domains` | list | no |  |  | List of domain names |
+| `domains` | list | no |  |  | List of domain names; omit for state 'clear' |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the domains |
 
 ## Examples
@@ -56,7 +56,6 @@ dokku_domains:
 ```yaml
 dokku_domains:
     app: example-app
-    domains: []
     state: clear
 ```
 

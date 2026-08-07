@@ -235,7 +235,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_letsencrypt` | `dokku_letsencrypt` | dokku-letsencrypt | Direct. |
 | `dokku_network` | `dokku_network` | | Direct. |
 | `dokku_network_property` | `dokku_network_property` | | docket adds `state`. |
-| `dokku_ports` | `dokku_ports` | | `mappings` strings become structured `port_mappings`; `state: clear` has no equivalent. |
+| `dokku_ports` | `dokku_ports` | | `mappings` strings become structured `port_mappings`. |
 | `dokku_proxy` | `dokku_proxy_toggle` | | `proxy:enable` / `proxy:disable`. |
 | `dokku_ps_scale` | `dokku_ps_scale` | | Direct. |
 | `dokku_registry` | `dokku_registry_auth` and `dokku_registry_property` | | Credentials go to `dokku_registry_auth` (`registry:login`); `image` and `server` go to `dokku_registry_property` as `image-repo` and `server`. The module still declares the old third-party `dokku-registry` plugin; docket treats `registry` as core. |
@@ -270,7 +270,7 @@ same file, and it is the spec that Ansible enforces. Those modules are `dokku_bu
 | `app` on `dokku_certs` | Required | Optional, but exactly one of `app` or `global` must be set | Nothing for the app case; the global case goes through the same task. |
 | `cert` / `key` | Optional in the spec | Optional, but `state: present` requires `cert` + `key` or `cert_content` + `key_content` | A `state: present` call with no material passes Ansible's arg spec and fails `docket validate`. Validate before applying. |
 | `phase` on `dokku_docker_options` | Required in the spec, optional in the docs | Required | Nothing; docket agrees with the spec. |
-| `mappings` / `port_mappings` | Optional list of `"http:80:5000"` strings | **Required** list of `{scheme, host, container}` objects | Parse each string and restructure it. An empty list is rejected too (`no port mappings provided`), so a module call that relied on omitting `mappings` has nothing to send. |
+| `mappings` / `port_mappings` | Optional list of `"http:80:5000"` strings | Optional list of `{scheme, host, container}` objects, but required and non-empty for `state: present`, `absent`, and `set` | Parse each string and restructure it. Omit the field entirely for `state: clear`, which rejects a list rather than ignoring one. |
 | `username` / `password` on `dokku_registry` | Both required, even for `state: absent` | Only `server` is required; credentials are required when `state: present` | A `state: absent` call carries credentials docket does not need. Drop them. |
 | `app` on `dokku_builder`, `dokku_network_property` | Required in the docs, optional in the spec | Optional, paired with `global` | Nothing. |
 | `app` on `dokku_storage` | Required | `dokku_storage_mount` requires `app` and `container_dir` | Split `mounts` into one task per entry, and split each `host:container` string. |
@@ -284,7 +284,7 @@ the same two defaults outright, so the behavior matches.
 
 ## What cannot be delegated yet
 
-Four things. Each is tracked, so a wrapper can keep the module implementation for now and drop it when
+Three things. Each is tracked, so a wrapper can keep the module implementation for now and drop it when
 the task lands.
 
 - **The `dokku_git_sync` module**
@@ -292,10 +292,6 @@ the task lands.
   plugin (`git-sync:set <app> remote`), which docket has no task for. Mind the name collision:
   docket's `dokku_git_sync` is core `git:sync`, which is what the `dokku_clone` module does. The two
   are unrelated.
-- **`dokku_ports` with `state: clear`**
-  ([#415](https://github.com/dokku/docket/issues/415)). `dokku_ports` handles `present` and `absent`
-  only, and rejects an empty `port_mappings` list, so clearing every mapping has to stay in the module
-  for now.
 - **Host-directory management in `dokku_storage`**
   ([#416](https://github.com/dokku/docket/issues/416)). With `create_host_dir`, the module does
   host-side `os.makedirs`, `chmod 0777`, and `chown` using the `user` / `group` options;

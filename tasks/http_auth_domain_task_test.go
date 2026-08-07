@@ -79,6 +79,19 @@ func TestHttpAuthDomainTaskSetEmptyDomains(t *testing.T) {
 	}
 }
 
+func TestHttpAuthDomainTaskClearRejectsDomains(t *testing.T) {
+	// The clear path calls http-auth:set-domains with no domains, so a list
+	// here would be silently discarded rather than removed.
+	task := HttpAuthDomainTask{App: "test-app", Domains: []string{"app.example.com"}, State: StateClear}
+	err := task.Validate()
+	if err == nil {
+		t.Fatal("expected an error when domains are supplied with state 'clear'")
+	}
+	if !strings.Contains(err.Error(), "'domains' must not be set for state 'clear'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestGetTasksHttpAuthDomainTaskParsedCorrectly(t *testing.T) {
 	data := []byte(`---
 - tasks:

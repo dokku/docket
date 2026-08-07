@@ -16,7 +16,7 @@ type DomainsTask struct {
 	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the domains should be applied globally"`
 
 	// Domains is the list of domain names
-	Domains []string `required:"false" yaml:"domains" description:"List of domain names"`
+	Domains []string `required:"false" yaml:"domains,omitempty" description:"List of domain names; omit for state 'clear'"`
 
 	// State is the desired state of the domains
 	State State `required:"false" yaml:"state" default:"present" options:"present,absent,set,clear" description:"Desired state of the domains"`
@@ -284,6 +284,11 @@ func validateDomainsTask(t DomainsTask, requireDomains bool) error {
 	}
 	if requireDomains && len(t.Domains) == 0 {
 		return fmt.Errorf("'domains' must not be empty for state '%s'", t.State)
+	}
+	// domains:clear takes no domains, so a list supplied alongside it would be
+	// silently discarded rather than removed.
+	if !requireDomains && len(t.Domains) > 0 {
+		return fmt.Errorf("'domains' must not be set for state '%s'", t.State)
 	}
 	return nil
 }

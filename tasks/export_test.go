@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -681,5 +682,51 @@ func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
 	recipe, _ := res.MarshalRecipe("yaml")
 	if strings.Contains(string(recipe), "dokku_certs") {
 		t.Errorf("recipe should not contain a certs task when the global cert is disabled:\n%s", recipe)
+	}
+}
+
+func TestExportPortsUsesStateSet(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet ports:report web --ports-map": "https:443:5000 http:80:5000",
+	}))()
+
+	// state:set replaces the whole mapping list, so re-applying an export
+	// converges an app that has extra mappings rather than adding to them.
+	bodies, err := PortsTask{}.ExportApp("web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	ports := bodies[0].(PortsTask)
+	if ports.State != StateSet {
+		t.Errorf("State = %q, want %q", ports.State, StateSet)
+	}
+	// The probe hands back a map, so the export sorts for a stable recipe.
+	want := []string{"http:80:5000", "https:443:5000"}
+	got := []string{}
+	for _, pm := range ports.PortMappings {
+		got = append(got, pm.String())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("PortMappings = %v, want %v", got, want)
+	}
+	if err := ports.Validate(); err != nil {
+		t.Errorf("exported ports task must be valid, got: %v", err)
+	}
+}
+
+func TestExportPortsEmitsNoTaskWithoutMappings(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet ports:report web --ports-map": "",
+	}))()
+
+	bodies, err := PortsTask{}.ExportApp("web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 0 {
+		t.Errorf("expected no exported task when the app has no mappings, got %v", bodies)
 	}
 }
