@@ -171,6 +171,36 @@ EOF
   assert_output --partial "'aws_signature_version' is required when 'endpoint_url' is set"
 }
 
+@test "docket validate exits 1 on service_create options under state absent" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: postgres
+        name: my-db
+        image: postgis/postgis
+        state: absent
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'image' must not be set for state 'absent'"
+}
+
+@test "docket validate exits 1 on a service_create custom_env delimiter" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: postgres
+        name: my-db
+        custom_env:
+          GREETING: "one;two"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'custom_env' value for \"GREETING\" must not contain ';'"
+}
+
 @test "docket validate exits 1 on a conditional input error" {
   write_tasks_file <<EOF
 ---

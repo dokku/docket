@@ -241,7 +241,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_registry` | `dokku_registry_auth` and `dokku_registry_property` | | Credentials go to `dokku_registry_auth` (`registry:login`); `image` and `server` go to `dokku_registry_property` as `image-repo` and `server`. The module still declares the old third-party `dokku-registry` plugin; docket treats `registry` as core. |
 | `dokku_resource_limit` | `dokku_resource_limit` | | Direct. |
 | `dokku_resource_reserve` | `dokku_resource_reserve` | | Direct. |
-| `dokku_service_create` | `dokku_service_create` | datastore plugin | docket adds `state: absent`. |
+| `dokku_service_create` | `dokku_service_create` | datastore plugin | docket adds `state: absent`, and exposes the create-time options as task fields (`image`, `image_version`, `custom_env`, and the rest) rather than through the environment. |
 | `dokku_service_link` | `dokku_service_link` | datastore plugin | Direct. |
 | `dokku_storage` | `dokku_storage_mount`, `dokku_storage_entry`, `dokku_storage_ensure` | | One `dokku_storage_mount` per entry in `mounts`. Host-directory creation is only partly covered. |
 
@@ -250,6 +250,16 @@ while `dokku_registry_auth` drives `registry:login`, and `dokku_proxy` reads its
 `config:get <app> DOKKU_DISABLE_PROXY` while docket reads the proxy plugin's report. In both cases
 the intent matches even though the wire calls differ, which is the point of delegating - docket's
 side is the one that stays current with dokku.
+
+One mapping is not a field at all on the module side. `dokku_service_create` pins a service's image
+by reading `POSTGRES_IMAGE` and friends out of Ansible's `environment:` keyword; docket sends the
+same overrides as flags on `<service>:create`, so a wrapper translates them into task fields:
+`<SERVICE>_IMAGE` becomes `image`, `<SERVICE>_IMAGE_VERSION` becomes `image_version`,
+`<SERVICE>_CUSTOM_ENV` becomes the `custom_env` map, and `<SERVICE>_CONFIG_OPTIONS` becomes
+`config_options`. Flags rather than environment variables because docket may be driving the server
+over SSH, where variables put in front of the local process never reach the remote shell. The
+remaining create-time options (`memory`, `shm_size`, the three network fields, `password`, and
+`root_password`) have no module counterpart.
 
 ## Required and optional fields disagree
 
@@ -284,7 +294,7 @@ the same two defaults outright, so the behavior matches.
 
 ## What cannot be delegated yet
 
-Three things. Each is tracked, so a wrapper can keep the module implementation for now and drop it when
+Two things. Each is tracked, so a wrapper can keep the module implementation for now and drop it when
 the task lands.
 
 - **The `dokku_git_sync` module**
@@ -300,10 +310,6 @@ the task lands.
   no chmod and no host-directory removal. The module gets away with raw filesystem calls because
   Ansible is already running on the dokku host; docket may be driving it over SSH, so anything it does
   here has to go through a `dokku` subcommand.
-- **Custom service images**
-  ([#417](https://github.com/dokku/docket/issues/417)). `dokku_service_create` in the module reads
-  image overrides from Ansible's `environment:` (`POSTGRES_IMAGE` and friends) rather than from a
-  module argument. docket does not forward those.
 
 ## docket tasks with no ansible-dokku module
 
