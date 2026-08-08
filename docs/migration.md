@@ -87,7 +87,10 @@ code onto the new server with whichever deploy source your recipe uses:
 
 ## Step 4: Move service data (outside docket)
 
-[`dokku_service_create`](tasks/dokku_service_create.md) makes an *empty* service, and
+[`dokku_service_create`](tasks/dokku_service_create.md) makes an *empty* service - on the same image
+the old one was running, which export reads off the container so the new server does not silently
+pick up a different major version its plugin happens to default to. The other create-time options
+(`custom_env`, `memory`, the networks, and the passwords) cannot be read back and must be re-supplied.
 [`dokku_service_backup`](tasks/dokku_service_backup.md) only configures the S3 backup schedule and
 auth - there is no restore task. Export carries the schedule, bucket, and `use_iam` flag but not the
 AWS credentials or encryption passphrase (they cannot be read back), so re-add those before the

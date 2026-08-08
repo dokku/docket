@@ -44,6 +44,11 @@ type exampleReq struct {
 	// cleanupApps are extra apps the task creates (e.g. a clone target) that
 	// must be destroyed afterward.
 	cleanupApps []string
+	// cleanupServices are `<type>:<name>` datastore services the task's own
+	// examples create and do not destroy. ensureExampleService skips
+	// dokku_service_create, so its examples are the one place a service is
+	// left standing unless it is named here.
+	cleanupServices []string
 	// freshAppPerExample destroys and recreates the referenced app before each
 	// example, so a task whose examples are independent full deploys of the
 	// same app (git_from_archive) does not fail the second on unchanged content.
@@ -88,6 +93,10 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 		setup:      setupMaintenanceCustomPageExample,
 	},
 	"dokku_letsencrypt_property": {plugins: []string{"letsencrypt"}},
+
+	// service_create's examples create three services and destroy only one,
+	// so the survivors are torn down here.
+	"dokku_service_create": {cleanupServices: []string{"postgres:my-db", "redis:my-pinned-redis"}},
 
 	// Deploy-dependent tasks.
 	"dokku_app_clone":    {deployApps: []string{"node-js-app"}, cleanupApps: []string{"node-js-app-staging"}},
@@ -160,6 +169,11 @@ func TestIntegrationTaskExamples(t *testing.T) {
 				}
 				for _, app := range policy.cleanupApps {
 					destroyApp(app)
+				}
+				for _, svc := range policy.cleanupServices {
+					if parts := strings.SplitN(svc, ":", 2); len(parts) == 2 {
+						destroyService(parts[0], parts[1])
+					}
 				}
 			})
 			for _, app := range policy.ensureApps {

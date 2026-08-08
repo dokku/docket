@@ -104,6 +104,41 @@ func serviceDSN(service, name string) (string, error) {
 	return result.StdoutContents(), nil
 }
 
+// serviceImage returns the image a datastore service instance is running, split
+// into the image name and its version, read from `<service>:info <name>
+// --version`. dokku reports the container's `Config.Image` there (e.g.
+// `postgres:17.2`), which is exactly what `<service>:create`'s `--image` and
+// `--image-version` reconstruct on another server. A transport-level failure
+// (`*subprocess.SSHError`) is propagated; any other failure yields no image, as
+// does a service whose container is gone - dokku prints nothing in that case.
+func serviceImage(service, name string) (string, string, error) {
+	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", fmt.Sprintf("%s:info", service), name, "--version"},
+	})
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return "", "", err
+		}
+		return "", "", nil
+	}
+	image, version := splitImageRef(result.StdoutContents())
+	return image, version, nil
+}
+
+// splitImageRef splits a docker image reference into its name and tag. The
+// separator is the last colon, but only when it falls after the last slash:
+// in `registry.example.com:5000/postgres` that colon is a registry port, not a
+// tag. A reference carrying no tag yields an empty version.
+func splitImageRef(ref string) (string, string) {
+	colon := strings.LastIndex(ref, ":")
+	if colon < 0 || colon < strings.LastIndex(ref, "/") {
+		return ref, ""
+	}
+	return ref[:colon], ref[colon+1:]
+}
+
 // linkedServiceDSNs returns the set of datastore DSNs that service links have
 // injected into an app's config, so the config exporter can omit them: the
 // dokku_service_link task recreates those `<ALIAS>_URL` vars on apply (with the

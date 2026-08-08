@@ -27,7 +27,15 @@ type ExecCommandInput struct {
 	// DisableStdioBuffer disables the stdio buffer
 	DisableStdioBuffer bool
 
-	// Env is the environment variables to pass to the command
+	// Env is the environment variables to pass to the command.
+	//
+	// These reach the local process only. On the SSH path they decorate the
+	// local `ssh` client, which does not forward them (no SendEnv here, and
+	// the server would have to opt in with AcceptEnv anyway), so the remote
+	// `dokku` never sees them. A task that needs to influence a remote
+	// command must put it on the argv - see ServiceCreateTask, which renders
+	// its create-time options as `<service>:create` flags for this reason.
+	// Whether to make this work remotely or drop it is tracked in #436.
 	Env map[string]string
 
 	// Stdin is the stdin of the command
