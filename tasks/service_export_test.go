@@ -32,7 +32,9 @@ func TestListServicesParsesTypeAndName(t *testing.T) {
 
 func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
-		"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache",
+		"--quiet plugin:trigger service-list":   "postgres:my-db\nredis:cache",
+		"--quiet postgres:info my-db --version": "postgis/postgis:13-master",
+		"--quiet redis:info cache --version":    "redis:7.2.5",
 	}))()
 
 	bodies, err := ServiceCreateTask{}.ExportGlobal()
@@ -42,16 +44,69 @@ func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
 	if len(bodies) != 2 {
 		t.Fatalf("expected 2 create tasks, got %d", len(bodies))
 	}
-	got := map[string]string{}
+	got := map[string]ServiceCreateTask{}
 	for _, b := range bodies {
 		c := b.(ServiceCreateTask)
-		got[c.Name] = c.Service
+		got[c.Name] = c
 		if c.State != StatePresent {
 			t.Errorf("expected present state, got %q", c.State)
 		}
 	}
-	if got["my-db"] != "postgres" || got["cache"] != "redis" {
+	if got["my-db"].Service != "postgres" || got["cache"].Service != "redis" {
 		t.Errorf("unexpected create tasks: %+v", got)
+	}
+	// The image a service is actually running is pinned, so recreating it on
+	// another server does not silently pick up that server's plugin default.
+	if got["my-db"].Image != "postgis/postgis" || got["my-db"].ImageVersion != "13-master" {
+		t.Errorf("postgres image = %q:%q, want postgis/postgis:13-master", got["my-db"].Image, got["my-db"].ImageVersion)
+	}
+	if got["cache"].Image != "redis" || got["cache"].ImageVersion != "7.2.5" {
+		t.Errorf("redis image = %q:%q, want redis:7.2.5", got["cache"].Image, got["cache"].ImageVersion)
+	}
+}
+
+// TestExportServiceCreateOmitsUnreadableImage covers a service whose container
+// is gone: dokku prints nothing for --version, and the export must leave both
+// image fields empty rather than emitting a half-formed pin.
+func TestExportServiceCreateOmitsUnreadableImage(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet plugin:trigger service-list": "redis:cache",
+	}))()
+
+	bodies, err := ServiceCreateTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 create task, got %d", len(bodies))
+	}
+	c := bodies[0].(ServiceCreateTask)
+	if c.Image != "" || c.ImageVersion != "" {
+		t.Errorf("expected no image, got %q:%q", c.Image, c.ImageVersion)
+	}
+}
+
+func TestSplitImageRef(t *testing.T) {
+	cases := []struct {
+		ref         string
+		wantImage   string
+		wantVersion string
+	}{
+		{"postgres:17.2", "postgres", "17.2"},
+		{"postgis/postgis:13-master", "postgis/postgis", "13-master"},
+		// The colon here is a registry port, not a tag.
+		{"registry.example.com:5000/postgres", "registry.example.com:5000/postgres", ""},
+		{"registry.example.com:5000/postgres:17.2", "registry.example.com:5000/postgres", "17.2"},
+		{"postgres", "postgres", ""},
+		{"", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ref, func(t *testing.T) {
+			image, version := splitImageRef(tc.ref)
+			if image != tc.wantImage || version != tc.wantVersion {
+				t.Errorf("splitImageRef(%q) = %q, %q; want %q, %q", tc.ref, image, version, tc.wantImage, tc.wantVersion)
+			}
+		})
 	}
 }
 
@@ -256,6 +311,7 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 		"--quiet postgres:info my-db --exposed-ports": "5432->5432",
 		"--quiet postgres:links my-db":                "web",
 		"--quiet postgres:info my-db --dsn":           "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db",
+		"--quiet postgres:info my-db --version":       "postgres:17.2",
 	}))()
 
 	res, err := ExportRecipe(ExportOptions{})
@@ -272,6 +328,9 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 		"dokku_service_create",
 		"dokku_service_expose",
 		"dokku_service_link",
+		// The exported create carries the image the service is running.
+		"image: postgres",
+		"image_version: \"17.2\"",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("recipe missing %q:\n%s", want, out)

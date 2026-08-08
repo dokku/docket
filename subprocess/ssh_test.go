@@ -269,6 +269,42 @@ func TestBuildSshArgvQuotesInjection(t *testing.T) {
 	}
 }
 
+// TestBuildSshArgvQuotesServiceCreateFlags covers the create-time options
+// dokku_service_create renders onto `<service>:create`. They are argv entries
+// rather than environment assignments precisely so the remote path works:
+// ExecCommandInput.Env only decorates the local ssh process. The semicolon
+// delimiters inside a --custom-env token are the sharp edge - unquoted they
+// would be command separators on the remote login shell.
+func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
+	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
+	t.Setenv("DOKKU_SUDO", "")
+
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(target, []string{
+		"dokku", "--quiet", "postgres:create", "my-db",
+		"--image", "postgis/postgis",
+		"--image-version", "13-master",
+		"--custom-env", "GREETING=hello there;TZ=UTC",
+	})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
+	dashIdx := indexOf(argv, "--")
+	if dashIdx < 0 {
+		t.Fatalf("argv missing -- separator: %v", argv)
+	}
+	post := argv[dashIdx+1:]
+	want := []string{
+		"dokku", "--quiet", "postgres:create", "my-db",
+		"--image", "postgis/postgis",
+		"--image-version", "13-master",
+		"--custom-env", "'GREETING=hello there;TZ=UTC'",
+	}
+	if !equalStrings(post, want) {
+		t.Errorf("post-`--` argv = %v, want %v", post, want)
+	}
+}
+
 func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
 	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
 	t.Setenv("DOKKU_SUDO", "")

@@ -10,7 +10,7 @@ Creates or destroys a dokku service
 
 ## Export support
 
-Supported.
+Partial - the service and the image it is running are exported; the remaining create-time options (config_options, custom_env, memory, shm_size, the networks, and the passwords) have no read command and must be re-supplied.
 
 ## Parameters
 
@@ -18,6 +18,17 @@ Supported.
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | yes |  |  | Type of service to create (e.g. redis, postgres, mysql) |
 | `name` | string | yes |  |  | Name of the service instance |
+| `image` | string | no |  |  | Image to start the service with, e.g. postgis/postgis. Applied only when the service is created. |
+| `image_version` | string | no |  |  | Image tag to start the service with. Applied only when the service is created. |
+| `config_options` | string | no |  |  | Extra arguments to pass to the container create command. Applied only when the service is created. |
+| `custom_env` | dict | no |  |  | Map of environment variables to start the service with. Applied only when the service is created. (sensitive) |
+| `memory` | int | no |  |  | Container memory limit in megabytes. Applied only when the service is created. |
+| `shm_size` | string | no |  |  | Shared memory size for the service container. Applied only when the service is created. |
+| `initial_network` | string | no |  |  | Network to attach the service to initially. Applied only when the service is created. |
+| `post_create_network` | list | no |  |  | Networks to attach the service container to after creation. Applied only when the service is created. |
+| `post_start_network` | list | no |  |  | Networks to attach the service container to after start. Applied only when the service is created. |
+| `password` | string | no |  |  | Override the user-level service password. Applied only when the service is created. (sensitive) |
+| `root_password` | string | no |  |  | Override the root-level service password. Applied only when the service is created. (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the service |
 
 ## Examples
@@ -36,6 +47,16 @@ dokku_service_create:
 dokku_service_create:
     service: postgres
     name: my-db
+```
+
+### Create a redis service on a pinned image
+
+```yaml
+dokku_service_create:
+    service: redis
+    name: my-pinned-redis
+    image: redis
+    image_version: 7.2.5
 ```
 
 ### Destroy a redis service named my-redis
