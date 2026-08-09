@@ -105,8 +105,8 @@ func (c *InitCommand) AutocompleteFlags() complete.Flags {
 // Run renders the scaffold and writes it. Exit codes:
 //
 //	0 - scaffold written
-//	1 - flag parse error, output file already exists without --force,
-//	    template render error, IO error
+//	1 - flag parse error, --force combined with --output -, output file
+//	    already exists without --force, template render error, IO error
 func (c *InitCommand) Run(args []string) int {
 	flags := c.FlagSet()
 	flags.Usage = func() { c.Ui.Output(c.Help()) }
@@ -131,6 +131,17 @@ func (c *InitCommand) Run(args []string) int {
 	c.output, format = resolveRecipeOutput(c.output, formatOverride, flags.Changed("output"))
 	if msg := recipeOutputFormatMismatch(c.output, formatOverride); msg != "" {
 		c.Ui.Warn(msg)
+	}
+
+	// --force only means "replace the file that is there", and the exists
+	// check below is skipped entirely when streaming, so the flag would
+	// otherwise be read and dropped - the same silence #419 reports on
+	// export.
+	if err := stdoutInertFlagError(flags, c.output, []stdoutInertFlag{
+		{name: "force", reason: "a streamed recipe writes no files"},
+	}); err != nil {
+		c.Ui.Error(err.Error())
+		return 1
 	}
 
 	toStdout := c.output == taskFileStdin

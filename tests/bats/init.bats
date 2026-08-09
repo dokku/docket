@@ -107,6 +107,16 @@ CFG
   assert [ ! -f tasks.yml ]
 }
 
+@test "docket init --output - rejects --force" {
+  # #419: --force governs an exists check that streaming skips entirely,
+  # so the flag would otherwise be read and dropped.
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --output - --force
+  assert_failure
+  assert_output --partial "--force cannot be used with --output -"
+  assert [ ! -f tasks.yml ]
+}
+
 @test "docket init output validates" {
   cd "$BATS_TEST_TMPDIR"
   "$(docket_bin)" init

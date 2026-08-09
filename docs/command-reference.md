@@ -94,9 +94,9 @@ Next steps:
 | Flag | Effect |
 |------|--------|
 | (default) | Write `./tasks.yml`; refuse if it already exists. |
-| `--output <path>` | Write to a path; `-` writes to stdout. Format inferred from the extension unless `--format` says otherwise. |
+| `--output <path>` | Write to a path; `-` writes to stdout. Format inferred from the extension unless `--format` says otherwise. A stream touches no file on disk, so combining `-` with `--force` is an error rather than a silently ignored flag. |
 | `--format <fmt>` | Write `yaml` or `json5` regardless of the `--output` extension. Without an explicit `--output`, `--format json5` writes `./tasks.json`. |
-| `--force` | Overwrite an existing file. |
+| `--force` | Overwrite an existing file. Not valid with `--output -`. |
 | `--name <name>` | Set the play and `app` input default (defaults to the directory name). |
 | `--repo <url>` | Set the `repo` input default (defaults to `remote.origin.url` in `./.git/config`). |
 | `--minimal` | A one-task example with no `inputs:` block. |
@@ -376,10 +376,10 @@ no drift (`plan` shows every task `[ok]`).
 
 | Flag | Effect |
 |------|--------|
-| `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. |
+| `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. Because a stream has no vars-file and touches no file on disk, combining `-` with `--vars-output` or `--overwrite` is an error rather than a silently ignored flag. |
 | `--format <fmt>` | Write `yaml` or `json5` regardless of the `--output` extension, for both the recipe and the vars-file. Without an explicit `--output`, `--format json5` writes `./tasks.json` and `./tasks.vars.json`. Required to stream JSON5 with `--output -`, which has no extension to read. |
-| `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). |
-| `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). |
+| `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). Not valid with `--output -`. When the server holds nothing sensitive there is no vars-file to write, and an explicit path is reported as unwritten rather than passed over. |
+| `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). Not valid with `--output -`. |
 | `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in. |
 | `--app <name>` | Restrict the export to the named app. Repeatable. |
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
