@@ -15,9 +15,9 @@ import (
 // accept them as flags on `<service>:create` (the same set ansible-dokku's
 // module reaches through Ansible's `environment:` keyword, e.g.
 // POSTGRES_IMAGE). They are rendered onto the argv rather than passed as
-// environment variables so they behave identically locally and over SSH -
-// subprocess.ExecCommandInput.Env only decorates the local process and never
-// reaches the remote shell.
+// environment variables so they behave identically locally and over SSH - a
+// variable put in front of the local process never reaches the remote shell,
+// so the argv is the only carrier both transports share.
 //
 // They apply only when the service is created. The task probes
 // `<service>:exists`, so a service that already exists is in sync whatever

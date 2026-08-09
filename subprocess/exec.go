@@ -2,7 +2,6 @@ package subprocess
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -23,20 +22,6 @@ type ExecCommandInput struct {
 
 	// Args are the arguments to pass to the command
 	Args []string
-
-	// DisableStdioBuffer disables the stdio buffer
-	DisableStdioBuffer bool
-
-	// Env is the environment variables to pass to the command.
-	//
-	// These reach the local process only. On the SSH path they decorate the
-	// local `ssh` client, which does not forward them (no SendEnv here, and
-	// the server would have to opt in with AcceptEnv anyway), so the remote
-	// `dokku` never sees them. A task that needs to influence a remote
-	// command must put it on the argv - see ServiceCreateTask, which renders
-	// its create-time options as `<service>:create` flags for this reason.
-	// Whether to make this work remotely or drop it is tracked in #436.
-	Env map[string]string
 
 	// Stdin is the stdin of the command
 	Stdin io.Reader
@@ -59,9 +44,6 @@ type ExecCommandInput struct {
 
 	// Sudo runs the command with sudo -n -u root
 	Sudo bool
-
-	// WorkingDirectory is the working directory to run the command in
-	WorkingDirectory string
 
 	// Host, when non-empty, routes the command through an `ssh` subprocess
 	// against [user@]host[:port] instead of executing locally. Only used
@@ -263,19 +245,9 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		cancel()
 	}()
 
-	// hack: colors do not work natively with io.MultiWriter
-	// as it isn't detected as a tty. If the output isn't
-	// being captured, then color output can be forced.
+	// isatty reports whether our own stdout is a terminal, which is the
+	// signal used below to decide whether the child may read the terminal.
 	isatty := !color.NoColor
-	env := os.Environ()
-	if isatty && input.DisableStdioBuffer {
-		env = append(env, "FORCE_TTY=1")
-	}
-	if input.Env != nil {
-		for k, v := range input.Env {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-	}
 
 	command := input.Command
 	commandArgs := input.Args
@@ -284,15 +256,14 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		command = "sudo"
 	}
 
+	// Env and Cwd are deliberately left unset: go-execute only overrides the
+	// child's environment and directory when they are non-empty, so the child
+	// inherits docket's own. Nothing is layered on top, because anything that
+	// must influence a dokku invocation has to be on the argv - the only form
+	// that survives the SSH transport.
 	cmd := execute.ExecTask{
-		Command:            command,
-		Args:               commandArgs,
-		Env:                env,
-		DisableStdioBuffer: input.DisableStdioBuffer,
-	}
-
-	if input.WorkingDirectory != "" {
-		cmd.Cwd = input.WorkingDirectory
+		Command: command,
+		Args:    commandArgs,
 	}
 
 	if os.Getenv("DOKKU_TRACE") == "1" {
