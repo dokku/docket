@@ -142,13 +142,40 @@ CFG
 }
 
 @test "docket init --format json5 output validates with no --tasks" {
-  # tasks.json is in the probe list, so the Next steps block's bare
-  # `docket validate` still finds a JSON5 scaffold.
+  # tasks.json is the only candidate here, so a bare `docket validate`
+  # finds it even though the Next steps block now names it explicitly.
   cd "$BATS_TEST_TMPDIR"
   "$(docket_bin)" init --format json5 --name api --repo https://example.com/repo.git
   run "$(docket_bin)" validate
   assert_success
   assert_output --partial "is valid"
+}
+
+@test "docket init next steps stay bare for the default tasks.yml" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init
+  assert_success
+  assert_output --partial "Next steps:"
+  assert_output --partial "\$ docket validate          # offline check"
+  refute_output --partial "--tasks"
+}
+
+@test "docket init next steps name a scaffold the probe would not find" {
+  # The #420 reproduction: a stale tasks.yml wins the probe, so the block
+  # has to name the tasks.json that was just written.
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init --name stale
+  run "$(docket_bin)" init --output tasks.json --name api --repo https://example.com/repo.git
+  assert_success
+  assert_output --partial "Created tasks.json"
+  assert_output --partial "\$ docket validate --tasks tasks.json"
+  assert_output --partial "\$ docket plan --tasks tasks.json"
+  assert_output --partial "\$ docket apply --tasks tasks.json"
+
+  # The printed command reports on the new file, not the stale one.
+  run "$(docket_bin)" validate --tasks tasks.json
+  assert_success
+  assert_output --partial "tasks.json is valid"
 }
 
 @test "docket init --format yaml keeps the tasks.yml default" {

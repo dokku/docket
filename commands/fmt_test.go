@@ -419,6 +419,53 @@ func TestFmtRejectsStdinMixedWithPaths(t *testing.T) {
 	}
 }
 
+// TestFmtWarnsOnAmbiguousDefaultProbe: `docket fmt` with no argument
+// formats exactly one file, chosen by the same silent probe #420 is
+// about. A directory holding both candidates gets told which one was
+// picked.
+func TestFmtWarnsOnAmbiguousDefaultProbe(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(canonicalTasksYAML), 0o644); err != nil {
+		t.Fatalf("write tasks.yml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), []byte(canonicalTasksJSON5), 0o644); err != nil {
+		t.Fatalf("write tasks.json: %v", err)
+	}
+
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--check"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	warn := c.Ui.(*cli.MockUi).ErrorWriter.String()
+	for _, want := range []string{"tasks.yml", "tasks.json", "both exist"} {
+		if !strings.Contains(warn, want) {
+			t.Errorf("warning missing %q:\n%s", want, warn)
+		}
+	}
+}
+
+// TestFmtDoesNotWarnForNamedPaths: named arguments select their own
+// files, so there is no probe to be ambiguous about.
+func TestFmtDoesNotWarnForNamedPaths(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(canonicalTasksYAML), 0o644); err != nil {
+		t.Fatalf("write tasks.yml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), []byte(canonicalTasksJSON5), 0o644); err != nil {
+		t.Fatalf("write tasks.json: %v", err)
+	}
+
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--check", "tasks.json"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	if warn := c.Ui.(*cli.MockUi).ErrorWriter.String(); warn != "" {
+		t.Errorf("a named path is unambiguous; should not warn:\n%s", warn)
+	}
+}
+
 func TestFmtGlobExpandsMatches(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.yml", "b.yml", "c.yaml"} {

@@ -759,6 +759,122 @@ func TestInitRejectsUnknownFormat(t *testing.T) {
 	}
 }
 
+// TestInitNextStepsDefaultOutputStaysBare pins the common case: the
+// scaffold lands on defaultTaskFileCandidates[0], so the bare commands
+// the block prints probe their way straight to it and naming the file
+// would be noise. The literal lines are asserted because the padding is
+// what keeps the three comments in one column.
+func TestInitNextStepsDefaultOutputStaysBare(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run(nil); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+
+	out := ui.OutputWriter.String()
+	for _, want := range []string{
+		"  $ docket validate          # offline check",
+		"  $ docket plan              # preview against the server",
+		"  $ docket apply             # apply",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("next steps missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "--tasks") {
+		t.Errorf("tasks.yml is the first probe candidate, so no --tasks is needed:\n%s", out)
+	}
+}
+
+// TestInitNextStepsNameNonDefaultOutput is the #420 regression: a
+// scaffold written anywhere but the first probe candidate has to be named
+// in the commands, or `docket validate` silently reports on a stale
+// tasks.yml sitting next to it.
+func TestInitNextStepsNameNonDefaultOutput(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "format json5 moves the default path", args: []string{"--format", "json5"}, want: "--tasks tasks.json"},
+		{name: "explicit json output", args: []string{"--output", "recipe.json"}, want: "--tasks recipe.json"},
+		{name: "another yaml spelling", args: []string{"--output", "tasks.yaml"}, want: "--tasks tasks.yaml"},
+		{name: "subdirectory", args: []string{"--output", "staging/tasks.yml"}, want: "--tasks staging/tasks.yml"},
+		{name: "path needing shell quotes", args: []string{"--output", "my recipes.yml"}, want: `--tasks 'my recipes.yml'`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			if err := os.MkdirAll(filepath.Join(dir, "staging"), 0o755); err != nil {
+				t.Fatalf("mkdir staging: %v", err)
+			}
+
+			c, ui := newTestInitCommandUi()
+			if exit := c.Run(tc.args); exit != 0 {
+				t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+			}
+
+			out := ui.OutputWriter.String()
+			for _, verb := range []string{"validate", "plan", "apply"} {
+				line := "  $ docket " + verb + " " + tc.want
+				if !strings.Contains(out, line) {
+					t.Errorf("next steps missing %q:\n%s", line, out)
+				}
+			}
+		})
+	}
+}
+
+// TestInitNextStepsCleansRelativeDefault: "./tasks.yml" is the first
+// probe candidate spelled differently, so it stays on the bare path.
+func TestInitNextStepsCleansRelativeDefault(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--output", "./tasks.yml"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+	if out := ui.OutputWriter.String(); strings.Contains(out, "--tasks") {
+		t.Errorf("./tasks.yml is the default candidate; no --tasks needed:\n%s", out)
+	}
+}
+
+// TestInitNextStepsCommentsStayAligned: the block is only readable while
+// the three comments share a column, and the --tasks suffix must not
+// break that.
+func TestInitNextStepsCommentsStayAligned(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--format", "json5"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+
+	column := -1
+	for _, line := range strings.Split(ui.OutputWriter.String(), "\n") {
+		if !strings.HasPrefix(line, "  $ ") {
+			continue
+		}
+		at := strings.Index(line, "#")
+		if at < 0 {
+			t.Fatalf("next-steps line has no comment: %q", line)
+		}
+		if column == -1 {
+			column = at
+			continue
+		}
+		if at != column {
+			t.Errorf("comment column = %d, want %d (line %q)", at, column, line)
+		}
+	}
+	if column == -1 {
+		t.Fatal("no next-steps lines were printed")
+	}
+}
+
 // newTestInitCommand wires up a Meta backed by cli.MockUi so c.Ui.* calls
 // don't nil-panic during Run. Tests assert via the file system or stdout
 // capture; MockUi's buffers are ignored.

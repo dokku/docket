@@ -192,6 +192,9 @@ func (c *ApplyCommand) Run(args []string) int {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1
 	}
+	if msg := ambiguousTaskFileWarning(recipe.Path, recipe.Ambiguous); msg != "" {
+		c.Ui.Warn(msg)
+	}
 	c.tasksFile = recipe.Path
 	c.tasksFormat = recipe.Format
 	data := recipe.Data

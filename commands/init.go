@@ -180,12 +180,27 @@ func (c *InitCommand) Run(args []string) int {
 		return 1
 	}
 
+	// The commands below run with no --tasks, so they probe
+	// defaultTaskFileCandidates and take the first that exists - which
+	// describes the scaffold only when it landed on that first candidate.
+	// Anywhere else (tasks.json from --format json5, an --output in
+	// another directory) the block has to name the file, or it quietly
+	// tells the reader to inspect a stale tasks.yml instead (#420).
+	//
+	// The suffix is spliced in ahead of the padding rather than appended,
+	// so it is the same width on all three lines and the comments stay
+	// lined up without recomputing the column.
+	tasksArg := ""
+	if filepath.Clean(c.output) != defaultTaskFileCandidates[0] {
+		tasksArg = " --tasks " + shellQuotePath(c.output)
+	}
+
 	c.Ui.Output(fmt.Sprintf("==> Created %s (%s, %s)", c.output, pluralize(taskCount, "task"), pluralize(playCount, "play")))
 	c.Ui.Output("")
 	c.Ui.Output("Next steps:")
-	c.Ui.Output(fmt.Sprintf("  $ %s validate          # offline check", appName()))
-	c.Ui.Output(fmt.Sprintf("  $ %s plan              # preview against the server", appName()))
-	c.Ui.Output(fmt.Sprintf("  $ %s apply             # apply", appName()))
+	c.Ui.Output(fmt.Sprintf("  $ %s validate%s          # offline check", appName(), tasksArg))
+	c.Ui.Output(fmt.Sprintf("  $ %s plan%s              # preview against the server", appName(), tasksArg))
+	c.Ui.Output(fmt.Sprintf("  $ %s apply%s             # apply", appName(), tasksArg))
 	return 0
 }
 

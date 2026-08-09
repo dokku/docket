@@ -180,6 +180,9 @@ func (c *ValidateCommand) Run(args []string) int {
 		}
 		return 1
 	}
+	if msg := ambiguousTaskFileWarning(recipe.Path, recipe.Ambiguous); msg != "" {
+		c.Ui.Warn(msg)
+	}
 	c.tasksFile = recipe.Path
 	c.tasksDisplay = recipe.Display
 	c.tasksFormat = recipe.Format

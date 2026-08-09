@@ -93,6 +93,32 @@ func taskFileDisplayName(path string) string {
 	return path
 }
 
+// shellQuotePath renders path so a printed command survives a paste into
+// a POSIX shell. A path made only of characters the shell leaves alone
+// comes back untouched; anything else is single-quoted, with an embedded
+// single quote spelled '\''.
+//
+// The safe set is an allowlist rather than a list of metacharacters to
+// escape, the same rule as Python's shlex.quote: a character nobody
+// thought about ends up quoted instead of ending up in the command.
+func shellQuotePath(path string) string {
+	if path != "" && !strings.ContainsFunc(path, shellUnsafeRune) {
+		return path
+	}
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+}
+
+// shellUnsafeRune reports whether r needs the surrounding path quoted.
+func shellUnsafeRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return false
+	case strings.ContainsRune("@%_+=:,./-", r):
+		return false
+	}
+	return true
+}
+
 // detectTaskFileFormat returns "json5" when path's extension is .json or
 // .json5 (case-insensitive), and "yaml" otherwise. Unknown extensions
 // default to YAML so explicit paths like `--tasks recipe.txt` keep the
@@ -307,6 +333,58 @@ func hasTaskFileExtension(path string) bool {
 	return false
 }
 
+// probeDefaultTaskFile stats defaultTaskFileCandidates in order and
+// returns the first one that exists (chosen) together with every later
+// candidate that also exists (others). An empty chosen and a nil error
+// means none of them exist; whether that is fatal is the caller's call -
+// resolveTaskFilePath turns it into an error, expandPaths and
+// resolveTaskFileFromArgs fall back to defaultTaskFileCandidates[0].
+//
+// A stat error other than "does not exist" is reported only when it
+// happens before any candidate has matched. That is what the probe has
+// always done by returning on its first hit: an unreadable tasks.json
+// sitting next to a perfectly good tasks.yml has never been fatal, and
+// collecting others must not make it so.
+func probeDefaultTaskFile() (string, []string, error) {
+	var existing []string
+	for _, candidate := range defaultTaskFileCandidates {
+		_, err := os.Stat(candidate)
+		if err == nil {
+			existing = append(existing, candidate)
+			continue
+		}
+		if len(existing) == 0 && !errors.Is(err, os.ErrNotExist) {
+			return "", nil, fmt.Errorf("stat %s: %w", candidate, err)
+		}
+	}
+	if len(existing) == 0 {
+		return "", nil, nil
+	}
+	return existing[0], existing[1:], nil
+}
+
+// ambiguousTaskFileWarning returns the warning to print when the default
+// probe had more than one candidate to choose from, or "" when it did
+// not. A directory holding both tasks.yml and tasks.json is ambiguous for
+// every command that probes, and the choice is invisible in the output:
+// `docket validate` reporting "tasks.yml is valid" reads as confirmation
+// that the tasks.json next to it is fine (#420). Say which file was read
+// and how to pick the other one.
+func ambiguousTaskFileWarning(chosen string, others []string) string {
+	if chosen == "" || len(others) == 0 {
+		return ""
+	}
+	// "both" for a pair, "all" once there are three; naming every file
+	// keeps the message useful when the directory is worse than expected.
+	quantifier := "both"
+	if len(others) > 1 {
+		quantifier = "all"
+	}
+	names := append([]string{chosen}, others...)
+	return fmt.Sprintf("warning: %s %s exist; using %s (pass --tasks to choose)",
+		strings.Join(names, ", "), quantifier, chosen)
+}
+
 // resolveTaskFilePath returns the path to use as the task file plus its
 // detected format. When explicit is non-empty it is used as-is and the
 // format is inferred from its extension; the file's existence is not
@@ -315,25 +393,28 @@ func hasTaskFileExtension(path string) bool {
 // defaultTaskFileCandidates in order and returns the first one that
 // exists. If none exist the returned error names every candidate so the
 // user can see which paths were tried.
-func resolveTaskFilePath(explicit string) (string, string, error) {
+//
+// The third return value carries the other candidates the probe found,
+// for ambiguousTaskFileWarning; it is nil whenever the probe did not run.
+func resolveTaskFilePath(explicit string) (string, string, []string, error) {
 	if explicit == taskFileStdin {
 		// stdin has no name to detect a format from; the empty format
 		// tells taskFileFormatFor to sniff the bytes instead. Probing
 		// the default candidates here would silently prefer ./tasks.yml
 		// over the recipe the user actually piped in.
-		return taskFileStdin, "", nil
+		return taskFileStdin, "", nil, nil
 	}
 	if explicit != "" {
-		return explicit, detectTaskFileFormat(explicit), nil
+		return explicit, detectTaskFileFormat(explicit), nil, nil
 	}
-	for _, candidate := range defaultTaskFileCandidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, detectTaskFileFormat(candidate), nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", "", fmt.Errorf("stat %s: %w", candidate, err)
-		}
+	chosen, others, err := probeDefaultTaskFile()
+	if err != nil {
+		return "", "", nil, err
 	}
-	return "", "", fmt.Errorf("no task file found; looked for %s", strings.Join(defaultTaskFileCandidates, ", "))
+	if chosen == "" {
+		return "", "", nil, fmt.Errorf("no task file found; looked for %s", strings.Join(defaultTaskFileCandidates, ", "))
+	}
+	return chosen, detectTaskFileFormat(chosen), others, nil
 }
 
 // resolveTaskFileArg reconciles the --tasks flag value with any positional
@@ -368,6 +449,11 @@ type recipeSource struct {
 	// Format is always taskFileFormatYAML or taskFileFormatJSON5, never
 	// empty. See taskFileFormatFor.
 	Format string
+	// Ambiguous holds the default candidates the probe passed over
+	// because Path won. It is empty unless the probe actually ran, so an
+	// explicit --tasks, a positional path, a URL, and stdin never
+	// populate it. Feed it to ambiguousTaskFileWarning.
+	Ambiguous []string
 }
 
 // loadRecipe resolves, reads, and format-detects the recipe for a
@@ -384,7 +470,7 @@ type recipeSource struct {
 //
 // allowURL is threaded through to readRecipeBytes; see its doc comment.
 func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, cachedSource string) (recipeSource, error) {
-	path, detected, err := resolveTaskFilePath(taskFile)
+	path, detected, ambiguous, err := resolveTaskFilePath(taskFile)
 	if err != nil {
 		return recipeSource{}, err
 	}
@@ -405,10 +491,11 @@ func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, c
 	}
 
 	return recipeSource{
-		Path:    path,
-		Display: taskFileDisplayName(path),
-		Data:    data,
-		Format:  taskFileFormatFor(detected, formatOverride, data),
+		Path:      path,
+		Display:   taskFileDisplayName(path),
+		Data:      data,
+		Format:    taskFileFormatFor(detected, formatOverride, data),
+		Ambiguous: ambiguous,
 	}, nil
 }
 
