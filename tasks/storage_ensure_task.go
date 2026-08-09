@@ -92,15 +92,19 @@ func (t StorageEnsureTask) Validate() error {
 	return nil
 }
 
-// validChown reports whether a chown value is one dokku's
-// storage:ensure-directory accepts: a named ownership preset or a raw
-// numeric uid. dokku's ResolveChownID maps the presets to uids and parses
-// a numeric value with strconv.ParseUint(value, 10, 16), so docket mirrors
-// that here - accepting a uid in 0-65535 - while still catching typos in
-// non-numeric values before dispatch. dokku's deprecated 'packeto' alias is
+// validChown reports whether a chown value is one dokku accepts: a named
+// ownership preset or a raw numeric uid. dokku's ResolveChownID maps the
+// presets to uids and parses a numeric value with
+// strconv.ParseUint(value, 10, 16), so docket mirrors that here -
+// accepting a uid in 0-65535 - while still catching typos in non-numeric
+// values before dispatch. dokku's deprecated 'packeto' alias is
 // intentionally not accepted so the typo surfaces at validate time. The raw
 // string is validated with the same base-10 parser dokku applies to the
 // --chown argument, so docket's decision always matches dokku's runtime parse.
+//
+// ResolveChownID backs both --chown flags, so this is shared by
+// dokku_storage_ensure's storage:ensure-directory and
+// dokku_storage_entry's storage:create.
 func validChown(chown string) bool {
 	switch chown {
 	case "heroku", "herokuish", "paketo", "root", "false":

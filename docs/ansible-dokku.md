@@ -243,7 +243,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_resource_reserve` | `dokku_resource_reserve` | | Direct. |
 | `dokku_service_create` | `dokku_service_create` | datastore plugin | docket adds `state: absent`, and exposes the create-time options as task fields (`image`, `image_version`, `custom_env`, and the rest) rather than through the environment. |
 | `dokku_service_link` | `dokku_service_link` | datastore plugin | Direct. |
-| `dokku_storage` | `dokku_storage_mount`, `dokku_storage_entry`, `dokku_storage_ensure` | | One `dokku_storage_mount` per entry in `mounts`. Host-directory creation is only partly covered. |
+| `dokku_storage` | `dokku_storage_mount`, `dokku_storage_entry`, `dokku_storage_ensure` | | One `dokku_storage_mount` per entry in `mounts`. Host directories go to `dokku_storage_entry`; see [host directories](#host-directories). |
 
 The mapping is not always command-for-command. `dokku_registry` drives `registry:set <app> username`
 while `dokku_registry_auth` drives `registry:login`, and `dokku_proxy` reads its current state from
@@ -260,6 +260,34 @@ same overrides as flags on `<service>:create`, so a wrapper translates them into
 over SSH, where variables put in front of the local process never reach the remote shell. The
 remaining create-time options (`memory`, `shm_size`, the three network fields, `password`, and
 `root_password`) have no module counterpart.
+
+### Host directories
+
+`dokku_storage` does raw filesystem work alongside its `storage:mount` calls, which it gets
+away with because Ansible has already connected to the dokku host and is running there.
+docket may be driving that host over SSH, where a local filesystem call would touch the wrong
+machine entirely, so everything it does goes through a `dokku` subcommand. That caps it at
+what `storage:create` expresses, and `storage:create` is exactly what `dokku_storage_entry`
+wraps.
+
+| `dokku_storage` | docket | Notes |
+|-----------------|--------|-------|
+| `create_host_dir: true` | `dokku_storage_entry` | `storage:create` creates the directory. Emit one entry task per distinct host directory, ahead of the `dokku_storage_mount` tasks that reference it. |
+| the host path itself | `dokku_storage_entry.path` | Omit it to get dokku's default, `/var/lib/dokku/data/storage/<name>`. |
+| `user` and `group` | `dokku_storage_entry.chown` | One value, not two: dokku's helper runs `chown -R <id>:<id>`, so a module call whose `user` and `group` differ cannot be expressed. The module's `"32767"` default is `chown: herokuish`. |
+| `os.chmod(host_dir, 0o777)` | **stays in the wrapper** | dokku creates the directory `0755` and has no mode flag ([dokku/dokku#8913](https://github.com/dokku/dokku/issues/8913)). |
+| `destroy_host_dir: true` | **stays in the wrapper** | `storage:destroy` deregisters the entry and leaves the docker-local directory on disk; nothing in dokku removes it ([dokku/dokku#8913](https://github.com/dokku/dokku/issues/8913)). `dokku_storage_entry` with `state: absent` covers the deregistration half. |
+| `os.lexists("/home/dokku/<app>")` | nothing to forward | The module stats the filesystem to decide whether the app exists. docket asks dokku, so a wrapper drops the probe rather than translating it. |
+
+Two constraints on `chown` are worth knowing before a wrapper leans on it. dokku refuses the
+flag outright when the entry sits at a non-default `path`, and asks the operator to chown that
+path themselves. And it is applied when the entry is created, not on every run: an entry that
+already exists is left alone, so changing `chown` in a recipe is currently a no-op
+([#439](https://github.com/dokku/docket/issues/439)).
+
+Everything else `storage:create` accepts is a field on the task - `scheduler`, `size`,
+`access_mode`, `storage_class`, `namespace`, `reclaim_policy`, `annotations`, and `labels` -
+none of which the module has a counterpart for.
 
 ## Required and optional fields disagree
 
@@ -284,6 +312,7 @@ same file, and it is the spec that Ansible enforces. Those modules are `dokku_bu
 | `username` / `password` on `dokku_registry` | Both required, even for `state: absent` | Only `server` is required; credentials are required when `state: present` | A `state: absent` call carries credentials docket does not need. Drop them. |
 | `app` on `dokku_builder`, `dokku_network_property` | Required in the docs, optional in the spec | Optional, paired with `global` | Nothing. |
 | `app` on `dokku_storage` | Required | `dokku_storage_mount` requires `app` and `container_dir` | Split `mounts` into one task per entry, and split each `host:container` string. |
+| `user` / `group` on `dokku_storage` | Two options, both defaulting to `"32767"` | `dokku_storage_entry.chown` is one value, and rejects anything that is not an ownership preset or a uid in 0-65535 | Collapse the pair into one value, and fail the module call when they differ - dokku chowns the owner and the group to the same id. |
 | `build` on `dokku_clone` | Defaults to `true` | `dokku_git_sync.build` has no default, so it is off | Send `build: true` explicitly to preserve module behavior. |
 | `state` on `dokku_image`, `dokku_service_create`, `dokku_network_property` | No `state` option at all | Present on all three | Nothing; each docket default matches the module's only behavior. Note that `dokku_git_from_image.state` defaults to `deployed`, not `present`, so do not send `present`. |
 
@@ -294,22 +323,18 @@ the same two defaults outright, so the behavior matches.
 
 ## What cannot be delegated yet
 
-Two things. Each is tracked, so a wrapper can keep the module implementation for now and drop it when
-the task lands.
+One module, and it is tracked, so a wrapper can keep its implementation for now and drop it when the
+task lands.
 
 - **The `dokku_git_sync` module**
   ([#414](https://github.com/dokku/docket/issues/414)). It targets the commercial `dokku-git-sync`
   plugin (`git-sync:set <app> remote`), which docket has no task for. Mind the name collision:
   docket's `dokku_git_sync` is core `git:sync`, which is what the `dokku_clone` module does. The two
   are unrelated.
-- **Host-directory management in `dokku_storage`**
-  ([#416](https://github.com/dokku/docket/issues/416)). With `create_host_dir`, the module does
-  host-side `os.makedirs`, `chmod 0777`, and `chown` using the `user` / `group` options;
-  `destroy_host_dir` does an `os.rmdir` before unmounting. `dokku_storage_entry` creates the entry's
-  host directory and takes a `chown` preset or numeric uid, which covers the common case, but there is
-  no chmod and no host-directory removal. The module gets away with raw filesystem calls because
-  Ansible is already running on the dokku host; docket may be driving it over SSH, so anything it does
-  here has to go through a `dokku` subcommand.
+
+Separately, two pieces of `dokku_storage` stay in the wrapper permanently rather than pending a task:
+the `0o777` chmod and the `destroy_host_dir` removal, neither of which dokku exposes a command for.
+See [host directories](#host-directories).
 
 ## docket tasks with no ansible-dokku module
 

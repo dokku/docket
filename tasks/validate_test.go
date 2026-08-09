@@ -614,6 +614,124 @@ func TestValidateStorageEnsureNumericChownValid(t *testing.T) {
 	}
 }
 
+func TestValidateStorageEntryInvalidChown(t *testing.T) {
+	// dokku_storage_entry forwards --chown to storage:create, so it shares
+	// the same preset-or-uid rule dokku_storage_ensure enforces.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        chown: packeto
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'chown' must be one of") {
+		t.Errorf("expected message to mention the allowed chown values, got: %q", p.Message)
+	}
+}
+
+func TestValidateStorageEntryDockerLocalRejectsK3sFields(t *testing.T) {
+	// The scheduler default is applied before Validate runs, so a recipe
+	// that never names a scheduler is still checked against dokku's
+	// docker-local rules.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        size: 2Gi
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'size' must not be set for scheduler 'docker-local'") {
+		t.Errorf("expected message to name the scheduler, got: %q", p.Message)
+	}
+}
+
+func TestValidateStorageEntryK3sRequiresSize(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        scheduler: k3s
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'size' is required for scheduler 'k3s'") {
+		t.Errorf("expected message to require a size, got: %q", p.Message)
+	}
+}
+
+func TestValidateStorageEntryAbsentRejectsCreateOptions(t *testing.T) {
+	// storage:destroy takes only the entry name, so a chown alongside
+	// state 'absent' would be silently discarded.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        chown: herokuish
+        state: absent
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'chown' must not be set for state 'absent'") {
+		t.Errorf("expected message to name the discarded field, got: %q", p.Message)
+	}
+}
+
+func TestValidateStorageEntryAnnotationsValid(t *testing.T) {
+	// The annotations and labels maps reach dokku as repeated
+	// `--annotation key=value` flags; a clean map validates.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        scheduler: k3s
+        size: 2Gi
+        annotations:
+          team: platform
+        labels:
+          tier: data
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateStorageEntryAnnotationKeyWithComma(t *testing.T) {
+	// The flag is a pflag string slice, so a comma splits the pair before
+	// dokku ever parses it.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        scheduler: k3s
+        size: 2Gi
+        annotations:
+          "team,owner": platform
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'annotations' key") {
+		t.Errorf("expected message to name the annotations key, got: %q", p.Message)
+	}
+}
+
 func TestValidateInvalidTaskInputSkippedWhenRequiredMissing(t *testing.T) {
 	// When a required field is missing, only missing_required_field is
 	// reported; the conditional Validate() check (which depends on that

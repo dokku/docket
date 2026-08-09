@@ -13,14 +13,16 @@ Supported.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `name` | string | yes |  |  | Name of the storage entry |
-| `path` | string | no |  |  | Host path for the entry (docker-local scheduler; defaults to the dokku storage root joined with the entry name) |
-| `scheduler` | string | no | docker-local |  | Scheduler that backs the entry |
-| `size` | string | no |  |  | Volume size (scheduler-dependent) |
-| `access_mode` | string | no |  |  | Volume access mode (scheduler-dependent) |
-| `storage_class` | string | no |  |  | Storage class name (scheduler-dependent) |
+| `path` | string | no |  |  | Host path for the entry: an absolute path, or a docker named volume on docker-local. Defaults to the dokku storage root joined with the entry name |
+| `scheduler` | string | no | docker-local | docker-local, k3s | Scheduler that backs the entry |
+| `size` | string | no |  |  | Volume size (k3s scheduler; required there and rejected on docker-local) |
+| `access_mode` | string | no |  | ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod | Volume access mode (k3s scheduler; rejected on docker-local) |
+| `storage_class` | string | no |  |  | Storage class name (k3s scheduler; rejected on docker-local, and mutually exclusive with path) |
 | `namespace` | string | no |  |  | Namespace (scheduler-dependent) |
-| `chown` | string | no |  |  | Chown value applied when the entry's host directory is created |
-| `reclaim_policy` | string | no |  |  | Reclaim policy (scheduler-dependent) |
+| `chown` | string | no |  | heroku, herokuish, paketo, root, false | Ownership applied when the entry's host directory is created: an ownership preset or a numeric uid (0-65535). dokku sets the owner and the group to the same id, and refuses the value unless the entry sits at its default host path |
+| `reclaim_policy` | string | no |  | Retain, Delete | Reclaim policy applied to the underlying volume (k3s scheduler) |
+| `annotations` | dict | no |  |  | Map of annotations set on the underlying volume (k3s scheduler) |
+| `labels` | dict | no |  |  | Map of labels set on the underlying volume (k3s scheduler) |
 | `state` | string | no | present | present, absent | Desired state of the storage entry |
 
 ## Examples
