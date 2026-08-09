@@ -109,9 +109,9 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 // Exit codes:
 //
 //	0 - export written (or streamed to stdout)
-//	1 - flag parse error, read error, an output file exists without
-//	    --overwrite (and the prompt was declined or stdin is not interactive),
-//	    or an IO error
+//	1 - flag parse error, a file-only flag combined with --output -, read
+//	    error, an output file exists without --overwrite (and the prompt was
+//	    declined or stdin is not interactive), or an IO error
 func (c *ExportCommand) Run(args []string) int {
 	flags := c.FlagSet()
 	flags.Usage = func() { c.Ui.Output(c.Help()) }
@@ -138,6 +138,19 @@ func (c *ExportCommand) Run(args []string) int {
 	c.output, recipeFormat = resolveRecipeOutput(c.output, formatOverride, flags.Changed("output"))
 	if msg := recipeOutputFormatMismatch(c.output, formatOverride); msg != "" {
 		c.Ui.Warn(msg)
+	}
+
+	// A streamed recipe has no vars-file to place and no file on disk to
+	// replace, so both flags below would be silently dropped by the stdout
+	// branch further down (#419). Rejected here, before the SSH control
+	// master is opened and before the server is enumerated, so the failure
+	// is instant.
+	if err := stdoutInertFlagError(flags, c.output, []stdoutInertFlag{
+		{name: "vars-output", reason: "a streamed recipe inlines its values"},
+		{name: "overwrite", reason: "a streamed recipe writes no files"},
+	}); err != nil {
+		c.Ui.Error(err.Error())
+		return 1
 	}
 
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
@@ -251,6 +264,13 @@ func (c *ExportCommand) Run(args []string) int {
 		if c.redact {
 			c.Ui.Output("    (redacted; fill in the vars-file before applying)")
 		}
+	} else if flags.Changed("vars-output") {
+		// Asking for a vars-file at a named path and getting no file is the
+		// other half of #419. Here the flag was legitimate - there was just
+		// nothing sensitive to lift - so this is a note rather than an
+		// error. The derived default stays quiet: a path the user did not
+		// choose going unwritten is not news.
+		c.Ui.Output(fmt.Sprintf("    no sensitive values to export; %s not written", varsOutput))
 	}
 	c.Ui.Output("")
 	c.Ui.Output("Next steps:")

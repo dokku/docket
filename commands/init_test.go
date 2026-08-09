@@ -534,6 +534,31 @@ func TestInitOutputDashWritesToStdout(t *testing.T) {
 	}
 }
 
+// TestInitRejectsForceWithStdout is init's half of #419: the exists check
+// --force governs is skipped entirely when streaming, so the flag would
+// otherwise be read off the flag set and dropped.
+func TestInitRejectsForceWithStdout(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	c, ui := newTestInitCommandUi()
+	if exit := c.Run([]string{"--output", "-", "--force", "--name", "demo"}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	errOut := ui.ErrorWriter.String()
+	if !strings.Contains(errOut, "--force") {
+		t.Errorf("error should name --force:\n%s", errOut)
+	}
+	if !strings.Contains(errOut, "--output -") {
+		t.Errorf("error should name --output -:\n%s", errOut)
+	}
+	for _, name := range []string{"tasks.yml", "tasks.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("a rejected init should not write %s", name)
+		}
+	}
+}
+
 // TestInitFormatJSON5WritesTasksJSON covers the headline of #410: asking
 // for JSON5 by name, with no --output, writes tasks.json rather than a
 // JSON5 document under a .yml name.

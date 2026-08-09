@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/posener/complete"
+	flag "github.com/spf13/pflag"
 )
 
 func TestDetectTaskFileFormat(t *testing.T) {
@@ -191,6 +192,69 @@ func TestRecipeOutputFormatMismatch(t *testing.T) {
 	}
 	if !strings.Contains(got, "--tasks-format json5") {
 		t.Errorf("warning %q should name the flag needed to read it back", got)
+	}
+}
+
+// TestStdoutInertFlagError covers the #419 rejection: a flag that only
+// means something when there is a file to write must not be silently
+// dropped by --output -. The cases exercise a real pflag.FlagSet so the
+// Changed-after-Parse contract is the one being tested.
+func TestStdoutInertFlagError(t *testing.T) {
+	inert := []stdoutInertFlag{
+		{name: "vars-output", reason: "a streamed recipe inlines its values"},
+		{name: "overwrite", reason: "a streamed recipe writes no files"},
+	}
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantFlag string
+	}{
+		{name: "file output with no inert flags", args: []string{"--output", "tasks.yml"}},
+		{name: "file output with every inert flag", args: []string{"--output", "tasks.yml", "--vars-output", "vars.yml", "--overwrite"}},
+		{name: "stdout alone", args: []string{"--output", "-"}},
+		{name: "stdout with an unrelated flag", args: []string{"--output", "-", "--format", "json5"}},
+		{name: "stdout with vars-output", args: []string{"--output", "-", "--vars-output", "vars.yml"}, wantFlag: "--vars-output"},
+		{name: "stdout with an empty vars-output", args: []string{"--output", "-", "--vars-output", ""}, wantFlag: "--vars-output"},
+		{name: "stdout with overwrite", args: []string{"--output", "-", "--overwrite"}, wantFlag: "--overwrite"},
+		// The objection is to the combination, not the value: an
+		// explicitly false boolean is still a flag that cannot apply.
+		{name: "stdout with overwrite set false", args: []string{"--output", "-", "--overwrite=false"}, wantFlag: "--overwrite"},
+		// Slice order decides which conflict is reported when several are
+		// typed, so the message is stable rather than map-ordered.
+		{name: "stdout with both inert flags", args: []string{"--output", "-", "--overwrite", "--vars-output", "vars.yml"}, wantFlag: "--vars-output"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output, varsOutput, format string
+			var overwrite bool
+			flags := flag.NewFlagSet("export", flag.ContinueOnError)
+			flags.StringVar(&output, "output", defaultRecipeOutput, "")
+			flags.StringVar(&varsOutput, "vars-output", "", "")
+			flags.StringVar(&format, "format", "", "")
+			flags.BoolVar(&overwrite, "overwrite", false, "")
+			if err := flags.Parse(tt.args); err != nil {
+				t.Fatalf("parse %v: %v", tt.args, err)
+			}
+
+			err := stdoutInertFlagError(flags, output, inert)
+			if tt.wantFlag == "" {
+				if err != nil {
+					t.Fatalf("stdoutInertFlagError(%v) = %v, want no error", tt.args, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("stdoutInertFlagError(%v) = nil, want an error naming %s", tt.args, tt.wantFlag)
+			}
+			if !strings.Contains(err.Error(), tt.wantFlag) {
+				t.Errorf("error %q should name %s", err, tt.wantFlag)
+			}
+			if !strings.Contains(err.Error(), "--output -") {
+				t.Errorf("error %q should name the conflicting --output -", err)
+			}
+		})
 	}
 }
 

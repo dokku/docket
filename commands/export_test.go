@@ -419,6 +419,111 @@ func TestExportCommandRejectsUnknownFormatBeforeReadingServer(t *testing.T) {
 	}
 }
 
+// TestExportCommandRejectsStdoutInertFlags is the #419 regression. Like
+// TestExportCommandRejectsUnknownFormatBeforeReadingServer it installs no
+// fake exec runner, so passing proves the rejection lands before
+// tasks.ExportRecipe would have shelled out to dokku.
+func TestExportCommandRejectsStdoutInertFlags(t *testing.T) {
+	tests := []struct {
+		name     string
+		extra    []string
+		wantFlag string
+	}{
+		{name: "vars-output", extra: []string{"--vars-output", "VARS"}, wantFlag: "--vars-output"},
+		{name: "overwrite", extra: []string{"--overwrite"}, wantFlag: "--overwrite"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			vars := filepath.Join(dir, "secrets.yml")
+
+			args := []string{"--output", "-"}
+			for _, a := range tt.extra {
+				if a == "VARS" {
+					a = vars
+				}
+				args = append(args, a)
+			}
+
+			c, ui := newExportCommand()
+			if code := c.Run(args); code != 1 {
+				t.Fatalf("exit = %d, want 1", code)
+			}
+			errOut := ui.ErrorWriter.String()
+			if !strings.Contains(errOut, tt.wantFlag) {
+				t.Errorf("error should name %s:\n%s", tt.wantFlag, errOut)
+			}
+			if !strings.Contains(errOut, "--output -") {
+				t.Errorf("error should name --output -:\n%s", errOut)
+			}
+			if _, err := os.Stat(vars); err == nil {
+				t.Error("a rejected export should not write the vars-file")
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatalf("read dir: %v", err)
+			}
+			if len(entries) != 0 {
+				t.Errorf("a rejected export should write nothing, found %d entries", len(entries))
+			}
+		})
+	}
+}
+
+// TestExportCommandReportsUnusedVarsOutput covers the other half of #419:
+// an explicit --vars-output that goes unwritten because the server held
+// nothing sensitive is reported rather than passed over. The derived
+// default stays silent.
+func TestExportCommandReportsUnusedVarsOutput(t *testing.T) {
+	// The fixture's only sensitive value is the config entry; an empty
+	// config export leaves ExportResult.Vars empty and writeVars false.
+	fixture := exportCommandFixture()
+	fixture["--quiet config:export --format json web"] = "{}"
+
+	t.Run("explicit --vars-output is reported", func(t *testing.T) {
+		defer subprocess.SetExecRunner(fakeExecRunner(fixture))()
+
+		dir := t.TempDir()
+		recipe := filepath.Join(dir, "tasks.yml")
+		vars := filepath.Join(dir, "secrets.yml")
+
+		c, ui := newExportCommand()
+		if code := c.Run([]string{"--output", recipe, "--vars-output", vars}); code != 0 {
+			t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
+		}
+		if _, err := os.Stat(vars); !os.IsNotExist(err) {
+			t.Errorf("no sensitive values means no vars-file: %v", err)
+		}
+		out := ui.OutputWriter.String()
+		if !strings.Contains(out, "no sensitive values") {
+			t.Errorf("summary should say why the vars-file is missing:\n%s", out)
+		}
+		if !strings.Contains(out, vars) {
+			t.Errorf("summary should name the path that was asked for:\n%s", out)
+		}
+		// apply needs no --vars-file when there is no vars-file.
+		if strings.Contains(out, "--vars-file") {
+			t.Errorf("next steps should not offer a vars-file that was never written:\n%s", out)
+		}
+	})
+
+	t.Run("derived default stays quiet", func(t *testing.T) {
+		defer subprocess.SetExecRunner(fakeExecRunner(fixture))()
+
+		dir := t.TempDir()
+		recipe := filepath.Join(dir, "tasks.yml")
+
+		c, ui := newExportCommand()
+		if code := c.Run([]string{"--output", recipe}); code != 0 {
+			t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
+		}
+		if out := ui.OutputWriter.String(); strings.Contains(out, "no sensitive values") {
+			t.Errorf("a path the user did not choose should not be reported:\n%s", out)
+		}
+	})
+}
+
 func TestExportCommandSummaryExcludesGlobalPlay(t *testing.T) {
 	// #345: one app plus a global play must report "(1 app)", not "(2 apps)".
 	responses := exportCommandFixture()

@@ -13,6 +13,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/posener/complete"
+	flag "github.com/spf13/pflag"
 )
 
 // Task file format identifiers used throughout the commands package and
@@ -207,6 +208,43 @@ func recipeOutputFormatMismatch(path, override string) string {
 	}
 	return fmt.Sprintf("warning: --format %s does not match the %s extension; reading %s back needs --tasks-format %s",
 		override, path, path, override)
+}
+
+// stdoutInertFlag names a flag on a recipe-writing command that only means
+// something once there is a file to write, together with the clause
+// explaining why a stream cannot honour it.
+type stdoutInertFlag struct {
+	name   string
+	reason string
+}
+
+// stdoutInertFlagError rejects those flags when --output - has turned the
+// write into a stream. Both init and export return from their stdout
+// branch before the file-only flags are ever consulted, so without this
+// the flag is read off the flag set and dropped: `docket export --output -
+// --vars-output secrets.yml` exited 0, wrote nothing to that path, and said
+// nothing about it (#419). Erroring beats warning because there is no
+// reading of such a command line under which being ignored is what was
+// wanted.
+//
+// flags.Changed - not the parsed value - is the test, so this fires on the
+// flag having been typed rather than on what it was set to, and
+// `--overwrite=false --output -` is rejected too: the objection is to the
+// combination, not to the value. Changed is only meaningful after
+// flags.Parse, the same ordering constraint resolveRecipeOutput documents.
+//
+// Callers must run this after resolveRecipeOutput so output is the path
+// that will actually be written.
+func stdoutInertFlagError(flags *flag.FlagSet, output string, inert []stdoutInertFlag) error {
+	if output != taskFileStdin {
+		return nil
+	}
+	for _, f := range inert {
+		if flags.Changed(f.name) {
+			return fmt.Errorf("--%s cannot be used with --output -; %s", f.name, f.reason)
+		}
+	}
+	return nil
 }
 
 // taskFileFetchTimeout bounds a remote recipe fetch so a hung server does
