@@ -2,11 +2,16 @@ package commands
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dokku/docket/tasks"
+
+	"github.com/josegonzalez/cli-skeleton/command"
+	"github.com/mitchellh/cli"
 )
 
 func TestValidateCommandMetadata(t *testing.T) {
@@ -202,5 +207,80 @@ func TestValidateJSONEmitsNothingOnSuccess(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "" {
 		t.Errorf("expected no output on a clean recipe, got:\n%s", out)
+	}
+}
+
+// TestValidateWarnsOnAmbiguousDefaultProbe is the second half of #420:
+// "tasks.yml is valid" reads as a verdict on the whole directory, and
+// with a tasks.json sitting next to it that is wrong. The warning goes
+// to stderr, so a --json consumer reading stdout is unaffected.
+func TestValidateWarnsOnAmbiguousDefaultProbe(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeAmbiguousRecipes(t, dir)
+
+	ui := cli.NewMockUi()
+	c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+	if exit := c.Run(nil); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+
+	warn := ui.ErrorWriter.String()
+	for _, want := range []string{"tasks.yml", "tasks.json", "both exist", "--tasks"} {
+		if !strings.Contains(warn, want) {
+			t.Errorf("warning missing %q:\n%s", want, warn)
+		}
+	}
+	if out := ui.OutputWriter.String(); !strings.Contains(out, "tasks.yml is valid") {
+		t.Errorf("validate should still report on tasks.yml:\n%s", out)
+	}
+}
+
+// TestValidateDoesNotWarnWhenTasksIsExplicit: naming the recipe is the
+// remedy the warning suggests, so it must not fire once the user has
+// taken it. Nor should a directory with a single candidate warn.
+func TestValidateDoesNotWarnWhenTasksIsExplicit(t *testing.T) {
+	t.Run("explicit --tasks", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		writeAmbiguousRecipes(t, dir)
+
+		ui := cli.NewMockUi()
+		c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+		if exit := c.Run([]string{"--tasks", "tasks.json"}); exit != 0 {
+			t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+		}
+		if warn := ui.ErrorWriter.String(); strings.Contains(warn, "both exist") {
+			t.Errorf("an explicit --tasks resolves the ambiguity; should not warn:\n%s", warn)
+		}
+	})
+
+	t.Run("single candidate", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(stdinYAMLRecipe), 0o644); err != nil {
+			t.Fatalf("write tasks.yml: %v", err)
+		}
+
+		ui := cli.NewMockUi()
+		c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+		if exit := c.Run(nil); exit != 0 {
+			t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+		}
+		if warn := ui.ErrorWriter.String(); warn != "" {
+			t.Errorf("one candidate is unambiguous; should not warn:\n%s", warn)
+		}
+	})
+}
+
+// writeAmbiguousRecipes drops a valid tasks.yml and a valid tasks.json
+// into dir, the directory shape the probe cannot resolve on its own.
+func writeAmbiguousRecipes(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(stdinYAMLRecipe), 0o644); err != nil {
+		t.Fatalf("write tasks.yml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), []byte(stdinJSON5Recipe), 0o644); err != nil {
+		t.Fatalf("write tasks.json: %v", err)
 	}
 }

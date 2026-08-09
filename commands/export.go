@@ -254,10 +254,12 @@ func (c *ExportCommand) Run(args []string) int {
 	}
 	c.Ui.Output("")
 	c.Ui.Output("Next steps:")
+	// Quoted so a path with a space survives the copy-paste this line
+	// exists for.
 	if writeVars {
-		c.Ui.Output(fmt.Sprintf("  $ %s apply --tasks %s --vars-file %s", appName(), c.output, varsOutput))
+		c.Ui.Output(fmt.Sprintf("  $ %s apply --tasks %s --vars-file %s", appName(), shellQuotePath(c.output), shellQuotePath(varsOutput)))
 	} else {
-		c.Ui.Output(fmt.Sprintf("  $ %s apply --tasks %s", appName(), c.output))
+		c.Ui.Output(fmt.Sprintf("  $ %s apply --tasks %s", appName(), shellQuotePath(c.output)))
 	}
 	return c.exitForMissingApps(res)
 }

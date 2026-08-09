@@ -3,6 +3,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -217,7 +218,7 @@ func TestResolveTaskFilePathStdin(t *testing.T) {
 		t.Fatalf("write yml: %v", err)
 	}
 	withCwd(t, dir, func() {
-		path, format, err := resolveTaskFilePath(taskFileStdin)
+		path, format, ambiguous, err := resolveTaskFilePath(taskFileStdin)
 		if err != nil {
 			t.Fatalf("resolveTaskFilePath: %v", err)
 		}
@@ -226,6 +227,9 @@ func TestResolveTaskFilePathStdin(t *testing.T) {
 		}
 		if format != "" {
 			t.Errorf("format = %q, want empty so the caller sniffs", format)
+		}
+		if len(ambiguous) != 0 {
+			t.Errorf("ambiguous = %v, want none; stdin never runs the probe", ambiguous)
 		}
 	})
 }
@@ -305,7 +309,7 @@ func TestResolveTaskFilePathExplicit(t *testing.T) {
 	if err := os.WriteFile(path, []byte("[]"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	gotPath, gotFormat, err := resolveTaskFilePath(path)
+	gotPath, gotFormat, ambiguous, err := resolveTaskFilePath(path)
 	if err != nil {
 		t.Fatalf("resolveTaskFilePath: %v", err)
 	}
@@ -314,6 +318,9 @@ func TestResolveTaskFilePathExplicit(t *testing.T) {
 	}
 	if gotFormat != taskFileFormatJSON5 {
 		t.Errorf("format = %q, want %q", gotFormat, taskFileFormatJSON5)
+	}
+	if len(ambiguous) != 0 {
+		t.Errorf("ambiguous = %v, want none; an explicit path never runs the probe", ambiguous)
 	}
 }
 
@@ -326,7 +333,7 @@ func TestResolveTaskFilePathDefaultPrefersYAML(t *testing.T) {
 		t.Fatalf("write json: %v", err)
 	}
 	withCwd(t, dir, func() {
-		path, format, err := resolveTaskFilePath("")
+		path, format, ambiguous, err := resolveTaskFilePath("")
 		if err != nil {
 			t.Fatalf("resolveTaskFilePath: %v", err)
 		}
@@ -335,6 +342,9 @@ func TestResolveTaskFilePathDefaultPrefersYAML(t *testing.T) {
 		}
 		if format != taskFileFormatYAML {
 			t.Errorf("format = %q, want yaml", format)
+		}
+		if !slices.Equal(ambiguous, []string{"tasks.json"}) {
+			t.Errorf("ambiguous = %v, want [tasks.json]", ambiguous)
 		}
 	})
 }
@@ -345,7 +355,7 @@ func TestResolveTaskFilePathDefaultFallsThroughToJSON(t *testing.T) {
 		t.Fatalf("write json: %v", err)
 	}
 	withCwd(t, dir, func() {
-		path, format, err := resolveTaskFilePath("")
+		path, format, ambiguous, err := resolveTaskFilePath("")
 		if err != nil {
 			t.Fatalf("resolveTaskFilePath: %v", err)
 		}
@@ -355,13 +365,16 @@ func TestResolveTaskFilePathDefaultFallsThroughToJSON(t *testing.T) {
 		if format != taskFileFormatJSON5 {
 			t.Errorf("format = %q, want json5", format)
 		}
+		if len(ambiguous) != 0 {
+			t.Errorf("ambiguous = %v, want none; tasks.json was the only candidate", ambiguous)
+		}
 	})
 }
 
 func TestResolveTaskFilePathDefaultErrorsWhenNoneExist(t *testing.T) {
 	dir := t.TempDir()
 	withCwd(t, dir, func() {
-		_, _, err := resolveTaskFilePath("")
+		_, _, _, err := resolveTaskFilePath("")
 		if err == nil {
 			t.Fatal("expected error when no candidate task file exists")
 		}
@@ -369,6 +382,130 @@ func TestResolveTaskFilePathDefaultErrorsWhenNoneExist(t *testing.T) {
 			t.Errorf("error = %q, want substring 'no task file found'", err.Error())
 		}
 	})
+}
+
+// TestProbeDefaultTaskFile covers the shared probe every command reaches
+// through: which candidate wins, and which of the others were present
+// but passed over. The "others" half is what feeds the ambiguity warning
+// (#420) - before it existed the probe returned the winner and threw the
+// rest away silently.
+func TestProbeDefaultTaskFile(t *testing.T) {
+	cases := []struct {
+		name       string
+		present    []string
+		wantChosen string
+		wantOthers []string
+	}{
+		{name: "none", present: nil, wantChosen: ""},
+		{name: "yml only", present: []string{"tasks.yml"}, wantChosen: "tasks.yml"},
+		{name: "json only", present: []string{"tasks.json"}, wantChosen: "tasks.json"},
+		{
+			name:       "yml and json",
+			present:    []string{"tasks.yml", "tasks.json"},
+			wantChosen: "tasks.yml",
+			wantOthers: []string{"tasks.json"},
+		},
+		{
+			name:       "yaml and json",
+			present:    []string{"tasks.yaml", "tasks.json"},
+			wantChosen: "tasks.yaml",
+			wantOthers: []string{"tasks.json"},
+		},
+		{
+			name:       "all three keep probe order",
+			present:    []string{"tasks.json", "tasks.yaml", "tasks.yml"},
+			wantChosen: "tasks.yml",
+			wantOthers: []string{"tasks.yaml", "tasks.json"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, name := range tc.present {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte("[]"), 0o644); err != nil {
+					t.Fatalf("write %s: %v", name, err)
+				}
+			}
+			withCwd(t, dir, func() {
+				chosen, others, err := probeDefaultTaskFile()
+				if err != nil {
+					t.Fatalf("probeDefaultTaskFile: %v", err)
+				}
+				if chosen != tc.wantChosen {
+					t.Errorf("chosen = %q, want %q", chosen, tc.wantChosen)
+				}
+				if !slices.Equal(others, tc.wantOthers) {
+					t.Errorf("others = %v, want %v", others, tc.wantOthers)
+				}
+			})
+		})
+	}
+}
+
+func TestAmbiguousTaskFileWarning(t *testing.T) {
+	cases := []struct {
+		name   string
+		chosen string
+		others []string
+		want   string
+	}{
+		{name: "no probe", chosen: "", others: nil, want: ""},
+		{name: "single candidate", chosen: "tasks.yml", others: nil, want: ""},
+		{
+			name:   "a pair reads as both",
+			chosen: "tasks.yml",
+			others: []string{"tasks.json"},
+			want:   "warning: tasks.yml, tasks.json both exist; using tasks.yml (pass --tasks to choose)",
+		},
+		{
+			name:   "three reads as all",
+			chosen: "tasks.yml",
+			others: []string{"tasks.yaml", "tasks.json"},
+			want:   "warning: tasks.yml, tasks.yaml, tasks.json all exist; using tasks.yml (pass --tasks to choose)",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ambiguousTaskFileWarning(tc.chosen, tc.others); got != tc.want {
+				t.Errorf("ambiguousTaskFileWarning(%q, %v) = %q, want %q", tc.chosen, tc.others, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAmbiguousTaskFileWarningDoesNotMutateOthers guards the append in
+// the message builder: it starts from a one-element slice rather than
+// appending to the caller's, so recipeSource.Ambiguous is untouched.
+func TestAmbiguousTaskFileWarningDoesNotMutateOthers(t *testing.T) {
+	others := make([]string, 1, 4)
+	others[0] = "tasks.json"
+	ambiguousTaskFileWarning("tasks.yml", others)
+	if !slices.Equal(others, []string{"tasks.json"}) {
+		t.Errorf("others = %v, want [tasks.json] left untouched", others)
+	}
+}
+
+// TestShellQuotePath pins the paste-safety of the paths init and export
+// print in their next-steps blocks.
+func TestShellQuotePath(t *testing.T) {
+	cases := map[string]string{
+		"tasks.yml":            "tasks.yml",
+		"staging/tasks.json":   "staging/tasks.json",
+		"./tasks.yml":          "./tasks.yml",
+		"/abs/path/tasks.yml":  "/abs/path/tasks.yml",
+		"a_b-c.d+e=f@g%h:i,j":  "a_b-c.d+e=f@g%h:i,j",
+		"my recipes/tasks.yml": `'my recipes/tasks.yml'`,
+		"tasks$(id).yml":       `'tasks$(id).yml'`,
+		"it's.yml":             `'it'\''s.yml'`,
+		"":                     "''",
+	}
+	for in, want := range cases {
+		if got := shellQuotePath(in); got != want {
+			t.Errorf("shellQuotePath(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {

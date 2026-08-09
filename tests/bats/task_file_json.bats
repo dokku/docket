@@ -133,6 +133,51 @@ EOF
   assert_success
   assert_output --partial "yaml-task"
   refute_output --partial "json-task"
+  assert_output --partial "tasks.yml, tasks.json both exist"
+}
+
+@test "docket validate warns when both tasks.yml and tasks.json exist" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF'
+---
+- tasks:
+    - name: yaml-task
+      dokku_app:
+        app: api
+EOF
+  cat >tasks.json <<'EOF'
+[
+  { tasks: [{ name: "json-task", dokku_app: { app: "api" } }] },
+]
+EOF
+  run "$(docket_bin)" validate
+  assert_success
+  assert_output --partial "tasks.yml, tasks.json both exist"
+  assert_output --partial "pass --tasks to choose"
+  assert_output --partial "tasks.yml is valid"
+
+  # Naming the recipe is the remedy, so it silences the warning.
+  run "$(docket_bin)" validate --tasks tasks.json
+  assert_success
+  refute_output --partial "both exist"
+}
+
+@test "docket fmt warns when both tasks.yml and tasks.json exist" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF'
+---
+- tasks:
+    - name: yaml-task
+      dokku_app:
+        app: api
+EOF
+  cat >tasks.json <<'EOF'
+[
+  { tasks: [{ name: "json-task", dokku_app: { app: "api" } }] },
+]
+EOF
+  run "$(docket_bin)" fmt --check
+  assert_output --partial "tasks.yml, tasks.json both exist"
 }
 
 @test "docket fmt canonicalises a JSON5 tasks.json with comments preserved" {

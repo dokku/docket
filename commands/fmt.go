@@ -137,10 +137,15 @@ func (c *FmtCommand) Run(args []string) int {
 		}
 	}
 
-	paths, err := expandPaths(positional)
+	paths, ambiguous, err := expandPaths(positional)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
+	}
+	// Only the no-argument probe can be ambiguous, and it resolves to a
+	// single path, so paths[0] is the candidate the warning is about.
+	if len(ambiguous) > 0 {
+		c.Ui.Warn(ambiguousTaskFileWarning(paths[0], ambiguous))
 	}
 
 	exit := 0
@@ -289,14 +294,20 @@ func sniffStdinFormat(src []byte) string {
 // familiar "no such file" error message when nothing is present.
 // Each argument is passed through filepath.Glob; literal paths that
 // do not match the glob syntax flow through unchanged.
-func expandPaths(args []string) ([]string, error) {
+//
+// The second return value carries the other default candidates the probe
+// passed over, for ambiguousTaskFileWarning. Named arguments select their
+// own files, so it is only ever set for the empty-argument case.
+func expandPaths(args []string) ([]string, []string, error) {
 	if len(args) == 0 {
-		for _, candidate := range defaultTaskFileCandidates {
-			if _, err := os.Stat(candidate); err == nil {
-				return []string{candidate}, nil
-			}
+		chosen, others, err := probeDefaultTaskFile()
+		if err != nil {
+			return nil, nil, err
 		}
-		return []string{defaultTaskFileCandidates[0]}, nil
+		if chosen == "" {
+			return []string{defaultTaskFileCandidates[0]}, nil, nil
+		}
+		return []string{chosen}, others, nil
 	}
 
 	seen := map[string]bool{}
@@ -304,7 +315,7 @@ func expandPaths(args []string) ([]string, error) {
 	for _, arg := range args {
 		matches, err := filepath.Glob(arg)
 		if err != nil {
-			return nil, fmt.Errorf("invalid glob %q: %w", arg, err)
+			return nil, nil, fmt.Errorf("invalid glob %q: %w", arg, err)
 		}
 		if len(matches) == 0 {
 			// A literal path with no glob metacharacters that does
@@ -320,7 +331,7 @@ func expandPaths(args []string) ([]string, error) {
 		}
 	}
 	sort.Strings(paths)
-	return paths, nil
+	return paths, nil, nil
 }
 
 // applyColorMode resolves the --color flag value into the global

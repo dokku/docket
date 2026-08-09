@@ -190,10 +190,16 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 			return positional, detectTaskFileFormat(positional)
 		}
 	}
-	for _, candidate := range defaultTaskFileCandidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, detectTaskFileFormat(candidate)
-		}
+	// The other candidates the probe found, and any stat error, are both
+	// dropped here. This runs from preloadRecipeForFlags before pflag has
+	// parsed anything - more than once per invocation on the help and
+	// flag-error paths - so an ambiguity warning would print two or three
+	// times before the command started. Run warns once, off recipeSource.
+	// A stat error likewise belongs to Run, which re-resolves the recipe
+	// and reports it properly.
+	chosen, _, _ := probeDefaultTaskFile()
+	if chosen != "" {
+		return chosen, detectTaskFileFormat(chosen)
 	}
 	return defaultTaskFileCandidates[0], detectTaskFileFormat(defaultTaskFileCandidates[0])
 }
