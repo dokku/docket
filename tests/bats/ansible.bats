@@ -117,6 +117,54 @@ EOF
   assert_output --partial 'v=[{{ .Values.name }}]'
 }
 
+# The host-directory half of a dokku_storage module call: one
+# dokku_storage_entry per host directory, ahead of the mount tasks that
+# reference it. `create_host_dir` plus `user`/`group` collapse into the
+# entry's chown, which the wrapper must send as a single value.
+@test "a storage host-directory payload validates" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >storage.json <<'EOF'
+[
+  {
+    "name": "dokku_storage",
+    "tasks": [
+      {
+        "name": "create the host directory for hello-world",
+        "dokku_storage_entry": {
+          "name": "hello-world-data",
+          "chown": "herokuish",
+          "state": "present"
+        }
+      },
+      {
+        "name": "mount storage on hello-world",
+        "dokku_storage_mount": {
+          "app": "hello-world",
+          "entry_name": "hello-world-data",
+          "container_dir": "/data",
+          "state": "present"
+        }
+      }
+    ]
+  }
+]
+EOF
+  run bash -c "\"$(docket_bin)\" validate --tasks-format json5 - <storage.json"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "a bad storage chown reports a validate_problem a wrapper can branch on" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >storage.json <<'EOF'
+[{"tasks": [{"name": "bad chown", "dokku_storage_entry": {"name": "hello-world-data", "chown": "packeto"}}]}]
+EOF
+  run bash -c "\"$(docket_bin)\" validate --tasks-format json5 --json - <storage.json"
+  assert_failure
+  echo "$output" | jq -e '.code == "invalid_task_input"' >/dev/null || fail "expected invalid_task_input: $output"
+  echo "$output" | jq -e '.message | test("chown")' >/dev/null || fail "expected the message to name chown: $output"
+}
+
 @test "a load-time failure writes no JSON to stdout" {
   cd "$BATS_TEST_TMPDIR"
   cat >typo.json <<'EOF'
