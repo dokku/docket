@@ -292,8 +292,8 @@ func CallSshCommand(host string, input ExecCommandInput) (ExecCommandResponse, e
 
 // CallSshCommandWithContext executes a remote command over ssh against
 // host. The execution pipeline mirrors CallExecCommandWithContext (same
-// signal handling, env propagation, DOKKU_TRACE logging, masking, stdio
-// wiring) so callers see identical behavior aside from the transport.
+// signal handling, DOKKU_TRACE logging, masking, stdio wiring) so callers
+// see identical behavior aside from the transport.
 //
 // On exit code 255 (OpenSSH's transport-failure code), the returned
 // error is `*SSHError`. On any other non-zero exit, the returned error
@@ -319,16 +319,9 @@ func CallSshCommandWithContext(ctx context.Context, host string, input ExecComma
 		cancel()
 	}()
 
+	// isatty reports whether our own stdout is a terminal, which is the
+	// signal used below to decide whether the child may read the terminal.
 	isatty := !color.NoColor
-	env := os.Environ()
-	if isatty && input.DisableStdioBuffer {
-		env = append(env, "FORCE_TTY=1")
-	}
-	if input.Env != nil {
-		for k, v := range input.Env {
-			env = append(env, fmt.Sprintf("%s=%s", k, v))
-		}
-	}
 
 	remote := append([]string{input.Command}, input.Args...)
 	argv, err := buildSshArgv(target, remote)
@@ -336,14 +329,12 @@ func CallSshCommandWithContext(ctx context.Context, host string, input ExecComma
 		return ExecCommandResponse{}, &SSHError{Host: target.UserHost(), Command: remote, Err: err}
 	}
 
+	// The `ssh` client inherits docket's environment and directory; nothing is
+	// layered on top. Decorating this process would be pointless anyway, since
+	// only the argv assembled above crosses to the remote shell.
 	cmd := execute.ExecTask{
-		Command:            "ssh",
-		Args:               argv,
-		Env:                env,
-		DisableStdioBuffer: input.DisableStdioBuffer,
-	}
-	if input.WorkingDirectory != "" {
-		cmd.Cwd = input.WorkingDirectory
+		Command: "ssh",
+		Args:    argv,
 	}
 
 	if os.Getenv("DOKKU_TRACE") == "1" {

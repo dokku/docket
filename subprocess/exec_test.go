@@ -201,11 +201,15 @@ func TestCallExecCommandNotFound(t *testing.T) {
 	}
 }
 
-func TestCallExecCommandWithEnv(t *testing.T) {
-	resp, err := CallExecCommand(ExecCommandInput{
-		Command: "env",
-		Env:     map[string]string{"DOCKET_TEST_VAR": "test123"},
-	})
+// TestCallExecCommandInheritsProcessEnv locks the environment contract that
+// remains now that ExecCommandInput has no Env field: the child gets docket's
+// own environment, and nothing is layered on top. The inheritance itself is
+// implicit - go-execute leaves cmd.Env nil when ExecTask.Env is empty - so it
+// is worth asserting rather than assuming.
+func TestCallExecCommandInheritsProcessEnv(t *testing.T) {
+	t.Setenv("DOCKET_TEST_VAR", "test123")
+
+	resp, err := CallExecCommand(ExecCommandInput{Command: "env"})
 	if err != nil {
 		t.Fatalf("CallExecCommand failed: %v", err)
 	}

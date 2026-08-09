@@ -261,7 +261,6 @@ func getConfig(t ConfigTask) (map[string]string, error) {
 			"json",
 			t.App,
 		},
-		WorkingDirectory: "/tmp",
 	})
 	if err != nil {
 		return config, err

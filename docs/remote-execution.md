@@ -44,6 +44,18 @@ as they would when running locally. An argument that cannot be represented for a
 containing a tab, newline, or null byte) is rejected with an `ssh:` error rather than sent in a
 corrupted form.
 
+## Environment variables stay local
+
+Only the command line crosses to the server. Variables you set around docket - `FOO=bar docket
+apply --host ...`, or anything exported in your shell - decorate the local `ssh` process, and
+docket configures no `SendEnv`, so they reach the remote `dokku` only if your own `ssh` config
+forwards them and the server opts in with `AcceptEnv`. Do not rely on that.
+
+Values meant for the server belong in the recipe, where they become arguments docket sends
+explicitly: [`dokku_config`](tasks/dokku_config.md) for an app's config, and
+[`dokku_service_create`](tasks/dokku_service_create.md)'s `custom_env` for the environment a service
+container starts with.
+
 ## Reading errors
 
 Errors are categorized so you can tell which side failed. SSH-level failures (refused connection,

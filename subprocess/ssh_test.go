@@ -271,8 +271,8 @@ func TestBuildSshArgvQuotesInjection(t *testing.T) {
 
 // TestBuildSshArgvQuotesServiceCreateFlags covers the create-time options
 // dokku_service_create renders onto `<service>:create`. They are argv entries
-// rather than environment assignments precisely so the remote path works:
-// ExecCommandInput.Env only decorates the local ssh process. The semicolon
+// rather than environment assignments precisely so the remote path works: only
+// the argv assembled here crosses to the remote shell. The semicolon
 // delimiters inside a --custom-env token are the sharp edge - unquoted they
 // would be command separators on the remote login shell.
 func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
