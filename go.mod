@@ -7,7 +7,7 @@ require (
 	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/expr-lang/expr v1.17.8
 	github.com/fatih/color v1.19.0
-	github.com/gliderlabs/sigil v0.12.0
+	github.com/gliderlabs/sigil v0.12.1
 	github.com/gobuffalo/flect v1.0.3
 	github.com/josegonzalez/cli-skeleton v0.25.0
 	github.com/mattn/go-isatty v0.0.24
