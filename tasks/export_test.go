@@ -167,30 +167,77 @@ func TestExportRecipeFileMode(t *testing.T) {
 	}
 }
 
-func TestExportHttpAuthUserPasswordsBecomeInputs(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+// exportHttpAuthHash is the stored htpasswd entry the export tests read back
+// through http-auth:export-users.
+const exportHttpAuthHash = "$6$Xm3kx1s9$Zq8mQ0zH1p"
+
+// httpAuthExportFixture is a one-app server with http-auth serving for the
+// named users. Both the report and export-users have to answer: the report
+// drives dokku_http_auth, export-users drives dokku_http_auth_user.
+func httpAuthExportFixture(users, entries string) map[string]string {
+	return map[string]string{
 		"--quiet apps:list":                  "web",
-		"http-auth:report web --format json": `{"enabled":"true","users":"admin","allowed-ips":"","domains":""}`,
-	}))()
+		"http-auth:report web --format json": `{"enabled":"true","users":"` + users + `","allowed-ips":"","domains":""}`,
+		"--quiet http-auth:export-users web": entries,
+	}
+}
+
+// TestExportHttpAuthUserHashesBecomeVars is the payoff of #443: the users come
+// back carrying their htpasswd hashes, so the recipe reproduces them with no
+// operator-supplied password. The hash is still credential material, so it
+// lands in the vars-file behind a sensitive input rather than in the recipe.
+func TestExportHttpAuthUserHashesBecomeVars(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
+
+	bodies, err := HttpAuthUserTask{}.ExportApp("web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	users := bodies[0].(HttpAuthUserTask)
+	if len(users.Users) != 1 || users.Users[0].Hash != exportHttpAuthHash {
+		t.Fatalf("exported users = %+v, want admin carrying the stored hash", users.Users)
+	}
+	if users.Users[0].Password != "" {
+		t.Errorf("exported user must carry no cleartext password, got %q", users.Users[0].Password)
+	}
+	// State is explicit so the body is plannable straight out of the exporter.
+	if users.State != StatePresent {
+		t.Errorf("State = %q, want %q", users.State, StatePresent)
+	}
+	if err := users.Validate(); err != nil {
+		t.Errorf("exported task must be valid, got: %v", err)
+	}
+	if plan := users.Plan(); !plan.InSync {
+		t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
 
 	res, err := ExportRecipe(ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
-
-	// The password is not readable, so it is lifted to a required input with an
-	// empty placeholder in the vars map.
-	v, ok := res.Vars["web_http_auth_password_admin"]
-	if !ok || v != "" {
-		t.Errorf("expected empty placeholder for http-auth password, got %q (ok=%v)", v, ok)
+	if got := res.Vars["web_http_auth_hash_admin"]; got != exportHttpAuthHash {
+		t.Errorf("vars[web_http_auth_hash_admin] = %q, want the real hash", got)
+	}
+	if len(res.Report.Warnings) != 0 {
+		for _, w := range res.Report.Warnings {
+			if strings.Contains(w, "http-auth") {
+				t.Errorf("unexpected http-auth export warning: %q", w)
+			}
+		}
 	}
 
 	recipe, _ := res.MarshalRecipe("yaml")
 	out := string(recipe)
+	if strings.Contains(out, exportHttpAuthHash) {
+		t.Errorf("recipe leaked the hash instead of lifting it:\n%s", out)
+	}
 	for _, want := range []string{
 		"username: admin",
-		"{{ .web_http_auth_password_admin }}",
-		"name: web_http_auth_password_admin",
+		"{{ .web_http_auth_hash_admin }}",
+		"name: web_http_auth_hash_admin",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("recipe missing %q:\n%s", want, out)
@@ -198,14 +245,30 @@ func TestExportHttpAuthUserPasswordsBecomeInputs(t *testing.T) {
 	}
 }
 
+// TestExportHttpAuthUserRedactBlanksTheVar keeps the redacted pair usable: the
+// recipe still references the input, only the vars-file value is withheld.
+func TestExportHttpAuthUserRedactBlanksTheVar(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
+
+	res, err := ExportRecipe(ExportOptions{Redact: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	v, ok := res.Vars["web_http_auth_hash_admin"]
+	if !ok || v != "" {
+		t.Errorf("expected an empty placeholder under --redact, got %q (ok=%v)", v, ok)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	if !strings.Contains(string(recipe), "{{ .web_http_auth_hash_admin }}") {
+		t.Errorf("redacted recipe must still reference the input:\n%s", recipe)
+	}
+}
+
 // TestExportHttpAuthEnabledBecomesTask covers the first row of the export state
 // table (#428): an app serving http-auth emits dokku_http_auth with state
 // present, after the rest of the family so it is authoritative.
 func TestExportHttpAuthEnabledBecomesTask(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
-		"--quiet apps:list":                  "web",
-		"http-auth:report web --format json": `{"enabled":"true","users":"admin","allowed-ips":"","domains":""}`,
-	}))()
+	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
 	bodies, err := HttpAuthTask{}.ExportApp("web")
 	if err != nil {
@@ -256,10 +319,9 @@ func TestExportHttpAuthEnabledBecomesTask(t *testing.T) {
 // nothing else's enable side effect would restore it and this task is the only
 // thing that carries the state.
 func TestExportHttpAuthEnabledWithoutUsersBecomesTask(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
-		"--quiet apps:list":                  "web",
-		"http-auth:report web --format json": `{"enabled":"true","users":"","allowed-ips":"","domains":""}`,
-	}))()
+	// export-users is answered explicitly with nothing, so the "no user task"
+	// assertion below tests the empty htpasswd rather than a missing fixture.
+	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("", "")))()
 
 	bodies, err := HttpAuthTask{}.ExportApp("web")
 	if err != nil {
@@ -667,26 +729,61 @@ func TestExportMaintenanceCustomPageInlinesContent(t *testing.T) {
 	}
 }
 
-func TestExportHttpAuthUserInlineEmitsInputAndWarns(t *testing.T) {
-	// #334: stdout export can't read passwords back, so it emits an input block
-	// (a valid non-empty sigil) and warns that the passwords must be supplied.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
-		"--quiet apps:list":                  "web",
-		"http-auth:report web --format json": `{"enabled":"true","users":"admin","allowed-ips":"","domains":""}`,
-	}))()
+// TestExportHttpAuthUserInlineKeepsTheHash covers #410's pipe: a streamed
+// recipe has no companion vars-file, and now that the hash is readable it can
+// simply ride along, so `export --output - | apply` reproduces the users with
+// nothing supplied by hand.
+func TestExportHttpAuthUserInlineKeepsTheHash(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
 	res, err := ExportRecipe(ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
+	if len(res.Vars) != 0 {
+		t.Errorf("inline mode has no vars-file to write to, got %v", res.Vars)
+	}
 	recipe, _ := res.MarshalRecipe("yaml")
 	out := string(recipe)
+	if !strings.Contains(out, exportHttpAuthHash) {
+		t.Errorf("streamed recipe should carry the hash inline:\n%s", out)
+	}
+	if strings.Contains(out, "{{ .web_http_auth_hash_admin }}") {
+		t.Errorf("streamed recipe should not lift the hash into an input:\n%s", out)
+	}
+	for _, w := range res.Report.Warnings {
+		if strings.Contains(w, "http-auth") {
+			t.Errorf("nothing needs supplying by hand any more, got warning %q", w)
+		}
+	}
+}
+
+// TestExportHttpAuthUserInlineRedactLiftsAndWarns is the one combination with
+// nowhere to put the value: stdout has no vars-file, and blanking the hash
+// would emit a task that fails its own Validate. It is lifted into a required
+// input instead, and the caller is told the values still have to be supplied
+// (#334).
+func TestExportHttpAuthUserInlineRedactLiftsAndWarns(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
+
+	res, err := ExportRecipe(ExportOptions{Inline: true, Redact: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if len(res.Vars) != 0 {
+		t.Errorf("inline mode must not populate the vars map, got %v", res.Vars)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if strings.Contains(out, exportHttpAuthHash) {
+		t.Errorf("redacted recipe leaked the hash:\n%s", out)
+	}
 	for _, want := range []string{
-		"{{ .web_http_auth_password_admin }}",
-		"name: web_http_auth_password_admin",
+		"{{ .web_http_auth_hash_admin }}",
+		"name: web_http_auth_hash_admin",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("stdout recipe missing %q:\n%s", want, out)
+			t.Errorf("redacted stdout recipe missing %q:\n%s", want, out)
 		}
 	}
 	found := false
@@ -696,7 +793,7 @@ func TestExportHttpAuthUserInlineEmitsInputAndWarns(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected a warning about http-auth passwords, got %v", res.Report.Warnings)
+		t.Errorf("expected a warning that the hashes must be supplied, got %v", res.Report.Warnings)
 	}
 }
 

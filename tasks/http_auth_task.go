@@ -45,7 +45,7 @@ func (t HttpAuthTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t HttpAuthTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "the enabled state is exported; the seed credentials are not readable and come back as dokku_http_auth_user"}
+	return ExportSupport{Status: ExportPartial, Caveat: "the enabled state is exported; the seeded credentials are not carried on this task and come back as dokku_http_auth_user htpasswd hashes"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.

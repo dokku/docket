@@ -10,7 +10,7 @@ Manages HTTP authentication for a given dokku application
 
 ## Export support
 
-Partial - the enabled state is exported; the seed credentials are not readable and come back as dokku_http_auth_user.
+Partial - the enabled state is exported; the seeded credentials are not carried on this task and come back as dokku_http_auth_user htpasswd hashes.
 
 ## Parameters
 

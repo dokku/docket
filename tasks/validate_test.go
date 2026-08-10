@@ -772,8 +772,9 @@ func TestValidateInvalidTaskInputSkippedWithPlaceholder(t *testing.T) {
 }
 
 func TestValidateInvalidTaskInputNestedItem(t *testing.T) {
-	// http_auth_user validates each user in the list; a present user without
-	// a password is a conditional error the offline validator now catches.
+	// http_auth_user validates each user in the list; a present user with
+	// neither credential form is a conditional error the offline validator
+	// now catches.
 	data := []byte(`---
 - tasks:
     - dokku_http_auth_user:
@@ -787,8 +788,8 @@ func TestValidateInvalidTaskInputNestedItem(t *testing.T) {
 	if p == nil {
 		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
 	}
-	if !strings.Contains(p.Message, "'password' is required") {
-		t.Errorf("expected message to mention required password, got: %q", p.Message)
+	if !strings.Contains(p.Message, "one of 'password' or 'hash' is required") {
+		t.Errorf("expected message to mention the required credential, got: %q", p.Message)
 	}
 }
 

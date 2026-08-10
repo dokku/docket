@@ -181,7 +181,10 @@ type ExportOptions struct {
 	Apps []string
 
 	// Redact replaces sensitive values with placeholders instead of the real
-	// values (in the vars-file for file mode, in place for stdout mode).
+	// values (in the vars-file for file mode, in place for stdout mode). A
+	// value whose task would not validate when blank is lifted into a required
+	// input instead of being blanked, so the emitted recipe still parses and
+	// validates - see processHttpAuthUser and processMaintenanceCustomPage.
 	Redact bool
 
 	// Inline keeps sensitive values in the task bodies instead of lifting them
@@ -460,35 +463,59 @@ func yamlFieldName(field reflect.StructField) string {
 	return tag
 }
 
-// processHttpAuthUser lifts each user's password into a required input, since
-// http-auth:report never exposes password material. The recipe therefore always
-// needs the passwords supplied in the vars-file before apply.
+// processHttpAuthUser lifts each exported user's htpasswd hash out of the
+// recipe body. The hash is what reproduces the user without the password behind
+// it, so it is credential material and gets the same treatment a config value
+// does - except that blanking it is not an option, because an empty hash fails
+// HttpAuthUserTask.Validate() (#443).
+//
+// File mode lifts every hash into the vars-file behind a sensitive input.
+// Inline mode has no companion file, so the hash stays in the body and the
+// streamed recipe is self-contained enough to pipe straight into apply. Under
+// inline + --redact there is nowhere to put the value and nowhere to blank it
+// to, so it is lifted into a required input and the caller is told the values
+// have to be supplied at apply time (e.g. via a CLI --<name>=<value>) (#334).
 func (res *ExportResult) processHttpAuthUser(app string, b HttpAuthUserTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
 	if len(b.Users) == 0 {
 		return b, nil
 	}
-	// The password is never readable (http-auth stores an htpasswd hash), so it
-	// is always lifted into a required input rather than emitted as an empty
-	// string, which would fail HttpAuthUserTask.Validate(). Inline mode has no
-	// companion vars-file, so warn that the passwords must be supplied at apply
-	// time (e.g. via a CLI --<name>=<value> input) (#334).
+	if opts.Inline && !opts.Redact {
+		return b, nil
+	}
+
 	var inputs []map[string]interface{}
 	users := make([]HttpAuthUser, len(b.Users))
-	for i, u := range b.Users {
-		name := res.uniqueVarName(app, "http_auth_password_"+u.Username)
-		u.Password = "{{ ." + name + " }}"
-		users[i] = u
-		res.Vars[name] = "" // password is not readable; the user fills this in
+	copy(users, b.Users)
+	changed := false
+	for i, u := range users {
+		if u.Hash == "" {
+			continue
+		}
+		name := res.uniqueVarName(app, "http_auth_hash_"+u.Username)
+		users[i].Hash = "{{ ." + name + " }}"
+		changed = true
+		// Inline mode has no vars-file, so the value is withheld entirely
+		// rather than written anywhere.
+		if !opts.Inline {
+			if opts.Redact {
+				res.Vars[name] = ""
+			} else {
+				res.Vars[name] = u.Hash
+			}
+		}
 		inputs = append(inputs, map[string]interface{}{
 			"name":      name,
 			"required":  true,
 			"sensitive": true,
 		})
 	}
+	if !changed {
+		return b, nil
+	}
 	b.Users = users
 	if opts.Inline {
 		res.Report.Warnings = append(res.Report.Warnings,
-			fmt.Sprintf("%s: http-auth passwords are not readable; supply them as inputs before apply", app))
+			fmt.Sprintf("%s: http-auth hashes are redacted from the streamed recipe; supply them as inputs before apply", app))
 	}
 	return b, inputs
 }
