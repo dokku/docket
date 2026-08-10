@@ -66,7 +66,7 @@ func (t HttpAuthUserTask) ExportSupport() ExportSupport {
 
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthUserTask) Requirements() []string {
-	return []string{"dokku-http-auth plugin"}
+	return []string{"dokku-http-auth plugin >= 0.13.0"}
 }
 
 // SensitiveValues returns the per-user passwords so they are masked in

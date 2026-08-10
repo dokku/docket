@@ -55,7 +55,7 @@ jobs:
       - name: install dokku redis plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-redis.git redis
       - name: install dokku http-auth plugin
-        run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git http-auth
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git --committish 0.13.0 http-auth
       - name: install dokku global-cert plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git global-cert
       - name: install dokku letsencrypt plugin
@@ -96,7 +96,7 @@ jobs:
       - name: install dokku redis plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-redis.git redis
       - name: install dokku http-auth plugin
-        run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git http-auth
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git --committish 0.13.0 http-auth
       - name: install dokku global-cert plugin
         run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git global-cert
       - name: install dokku letsencrypt plugin
@@ -185,6 +185,8 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.22
           sudo dokku plugin:install-dependencies --core
+      - name: install dokku http-auth plugin
+        run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git --committish 0.13.0 http-auth
       - name: install bats
         run: sudo apt-get install -qq -y bats bats-support bats-assert
       - name: build docket

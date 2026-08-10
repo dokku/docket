@@ -6,7 +6,7 @@ Manages the set of IP addresses allowed to bypass HTTP auth for a dokku applicat
 
 ## Requirements
 
-- dokku-http-auth plugin
+- dokku-http-auth plugin >= 0.13.0
 
 ## Export support
 

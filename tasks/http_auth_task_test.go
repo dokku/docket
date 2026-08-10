@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dokku/docket/subprocess"
 	_ "github.com/gliderlabs/sigil/builtin"
 )
 
@@ -34,6 +35,37 @@ func TestHttpAuthTaskPresentWithoutPassword(t *testing.T) {
 	}
 	if !strings.Contains(result.Error.Error(), "password is required") {
 		t.Errorf("unexpected error: %v", result.Error)
+	}
+}
+
+// TestHttpAuthTaskPresentWithoutCredentialsIsValid pins the paired rule: the
+// plugin takes the credentials as optional trailing arguments and skips user
+// initialization without them, so a credential-free enable is valid. This is
+// what lets the exporter emit an app's auth state without duplicating the
+// password input dokku_http_auth_user already lifts (#428).
+func TestHttpAuthTaskPresentWithoutCredentialsIsValid(t *testing.T) {
+	task := HttpAuthTask{App: "test-app", State: StatePresent}
+	if err := task.Validate(); err != nil {
+		t.Errorf("credential-free present state should validate, got: %v", err)
+	}
+}
+
+func TestHttpAuthTaskEnableOmitsEmptyCredentials(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"http-auth:report test-app --format json": `{"enabled":"false"}`,
+	}))()
+
+	plan := HttpAuthTask{App: "test-app", State: StatePresent}.Plan()
+	if plan.Error != nil {
+		t.Fatalf("Plan: %v", plan.Error)
+	}
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected 1 planned command, got %v", plan.Commands)
+	}
+	// The command line ends at the app name: no empty positional arguments
+	// standing in for the credentials that were never supplied.
+	if !strings.HasSuffix(plan.Commands[0], "http-auth:enable test-app") {
+		t.Errorf("planned command should end at the app name, got %q", plan.Commands[0])
 	}
 }
 

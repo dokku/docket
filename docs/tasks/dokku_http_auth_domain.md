@@ -6,7 +6,7 @@ Manages the set of domains HTTP auth is restricted to for a dokku application
 
 ## Requirements
 
-- dokku-http-auth plugin
+- dokku-http-auth plugin >= 0.13.0
 
 ## Export support
 

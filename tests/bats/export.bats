@@ -92,6 +92,32 @@ teardown() {
   assert [ ! -f tasks.yml ]
 }
 
+@test "docket export captures http-auth state after the users" {
+  require_plugin http-auth
+  dokku apps:create docket-test-export
+  dokku http-auth:enable docket-test-export testuser testpass
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --app docket-test-export --output tasks.yml --vars-output tasks.vars.yml
+  assert_success
+
+  run grep -c 'dokku_http_auth:' tasks.yml
+  assert_output "1"
+  run grep -c 'dokku_http_auth_user:' tasks.yml
+  assert_output "1"
+
+  # add-user writes enabled=true as a side effect, so the task owning the
+  # enabled flag has to come last for the recipe's stated state to stick.
+  enable_line="$(grep -n 'dokku_http_auth:' tasks.yml | cut -d: -f1)"
+  users_line="$(grep -n 'dokku_http_auth_user:' tasks.yml | cut -d: -f1)"
+  assert [ "$enable_line" -gt "$users_line" ]
+
+  # The enable task carries no credentials, which only validates because the
+  # plugin takes them as optional trailing arguments.
+  run "$(docket_bin)" validate --tasks tasks.yml --vars-file tasks.vars.yml
+  assert_success
+  assert_output --partial "is valid"
+}
+
 @test "docket export reports a --vars-output left unwritten for want of secrets" {
   require_dokku
   # No config:set, so nothing is sensitive and no vars-file is produced.

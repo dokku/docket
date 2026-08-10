@@ -97,6 +97,18 @@ require_dokku() {
   fi
 }
 
+# require_plugin skips the current test when a dokku plugin is not
+# installed. Mirrors skipIfPluginMissingT in the Go integration tests, so a
+# plugin-gated bats test skips cleanly on a dev box or a CI job that does not
+# install it rather than failing.
+require_plugin() {
+  local plugin="$1"
+  require_dokku
+  if ! dokku plugin:list | awk '{print $1}' | grep -qx "$plugin"; then
+    skip "dokku plugin $plugin not installed"
+  fi
+}
+
 # require_remote_dokku skips the current test when SSH transport tests
 # cannot run. The localhost-ssh-to-dokku fixture is only wired up on
 # Linux CI; macOS dev boxes typically lack a local dokku and the

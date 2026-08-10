@@ -124,6 +124,11 @@ var appExportOrder = []string{
 	"dokku_http_auth_user",
 	"dokku_http_auth_allowed_ip",
 	"dokku_http_auth_domain",
+	// dokku_http_auth trails the rest of the http-auth family on purpose:
+	// http-auth:add-user, add-allowed-ip and add-domain each write enabled=true
+	// as a side effect, so the task that owns the enabled flag has to run last
+	// for the recipe's stated auth state to be the one that sticks.
+	"dokku_http_auth",
 	"dokku_acl_app",
 	"dokku_certs",
 	"dokku_letsencrypt",
