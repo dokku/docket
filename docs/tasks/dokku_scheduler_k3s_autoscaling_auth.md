@@ -8,6 +8,10 @@ Manages KEDA TriggerAuthentication metadata grouped under a single trigger for a
 
 Partial - trigger authentication metadata values are secrets, so they are written to the companion vars-file.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

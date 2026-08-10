@@ -42,6 +42,11 @@ func (t HaproxyPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t HaproxyPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the haproxy property task
 func (t HaproxyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]HaproxyPropertyTaskExample{

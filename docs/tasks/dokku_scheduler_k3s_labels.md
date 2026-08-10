@@ -8,6 +8,10 @@ Manages scheduler-k3s labels scoped to a (process_type, resource_type) pair for 
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

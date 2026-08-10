@@ -174,8 +174,10 @@ func renderListEnvelope(
 	skipMarker := evaluateListWhen(env, playExprCtx)
 	display := listingDisplayName(env, name)
 	deprecation := ""
+	var probe tasks.ProbeSupport
 	if env != nil && env.Task != nil {
 		deprecation = tasks.TaskDeprecation(env.Task)
+		probe, _ = tasks.TaskProbeSupport(env.Task)
 	}
 
 	if jsonOut {
@@ -197,6 +199,10 @@ func renderListEnvelope(
 		if deprecation != "" {
 			ev["deprecated"] = true
 			ev["deprecation"] = deprecation
+		}
+		if probe.Status == tasks.ProbeUnsupported || probe.Status == tasks.ProbePartial {
+			ev["probe"] = string(probe.Status)
+			ev["probe_caveat"] = probe.Caveat
 		}
 		switch skipMarker {
 		case "skipped":
@@ -241,6 +247,12 @@ func renderListEnvelope(
 		}
 		if deprecation != "" {
 			b.WriteString("  (deprecated)")
+		}
+		switch probe.Status {
+		case tasks.ProbeUnsupported:
+			b.WriteString("  (never converges)")
+		case tasks.ProbePartial:
+			b.WriteString("  (partial probe)")
 		}
 		if len(env.Tags) > 0 {
 			b.WriteString(fmt.Sprintf("  [tags=%s]", strings.Join(env.Tags, ",")))

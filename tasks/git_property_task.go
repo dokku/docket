@@ -42,6 +42,11 @@ func (t GitPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t GitPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the git property task
 func (t GitPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitPropertyTaskExample{

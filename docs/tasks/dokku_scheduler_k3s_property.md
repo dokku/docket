@@ -8,6 +8,10 @@ Manages the scheduler-k3s configuration for a given dokku application. chart.* p
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

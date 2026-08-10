@@ -42,6 +42,11 @@ func (t SchedulerPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t SchedulerPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the scheduler property task
 func (t SchedulerPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerPropertyTaskExample{

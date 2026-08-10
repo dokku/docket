@@ -42,6 +42,11 @@ func (t LogsPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t LogsPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the logs property task
 func (t LogsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]LogsPropertyTaskExample{

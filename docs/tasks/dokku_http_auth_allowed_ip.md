@@ -12,6 +12,10 @@ Manages the set of IP addresses allowed to bypass HTTP auth for a dokku applicat
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

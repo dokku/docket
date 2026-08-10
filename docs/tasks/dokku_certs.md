@@ -12,6 +12,10 @@ Manages SSL certificates for a dokku app or globally.
 
 Partial - app and global certificate PEM material is exported (via certs:show and global-cert:show) and written to the companion vars-file.
 
+## Probe support
+
+Partial - only whether a certificate is installed is probed; the certificate material is never read back, so replacing an existing certificate plans as in sync.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

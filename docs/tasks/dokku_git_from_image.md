@@ -8,6 +8,10 @@ Deploys a git repository from a docker image
 
 Partial - the image reference is written to the companion vars-file.
 
+## Probe support
+
+Partial - the recorded image reference is probed; the image digest is not, so a mutable tag that moved plans as in sync.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -8,6 +8,10 @@ Manages helm chart value overrides for a dokku scheduler-k3s bundled chart
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

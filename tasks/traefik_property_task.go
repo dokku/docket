@@ -42,6 +42,11 @@ func (t TraefikPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t TraefikPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run"}
+}
+
 // Examples returns the examples for the traefik property task
 func (t TraefikPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]TraefikPropertyTaskExample{

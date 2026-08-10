@@ -65,6 +65,46 @@ func TestApplyListTasksUnnamedTasksShowBodyIdentifier(t *testing.T) {
 	}
 }
 
+// TestApplyListTasksMarksProbeSupport pins the probe markers: a task type
+// that cannot read its own state plans as drift on every run, so --list-tasks
+// says so up front rather than leaving the user to infer it from a perpetual
+// `~` in plan output. The two markers are distinct because they mean different
+// things: `(never converges)` is total, `(partial probe)` converges for the
+// fields it does read. A task that probes everything it manages is unmarked.
+func TestApplyListTasksMarksProbeSupport(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: unprobeable
+      dokku_git_auth:
+        host: github.com
+        username: deploy-bot
+        password: examplepassword
+    - name: partially probed
+      dokku_git_from_image:
+        app: api
+        image: dokku/smoke-test-app:dockerfile
+    - name: fully probed
+      dokku_app: { app: api }
+`)
+	stdout, _, exit := runApply(t, path, "--list-tasks")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s", exit, stdout)
+	}
+	for _, want := range []string{
+		"[0] unprobeable  (never converges)",
+		"[1] partially probed  (partial probe)",
+		"[2] fully probed",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("expected %q in the listing; got:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "fully probed  (") {
+		t.Errorf("a fully probed task should carry no probe marker; got:\n%s", stdout)
+	}
+}
+
 // TestApplyListTasksHonorsTags pins the interaction with --tags: the
 // listing should omit tasks the tag filter would drop, just like the
 // executor does.
@@ -245,6 +285,10 @@ func TestListTasksJSONMatchesSchema(t *testing.T) {
     - name: deprecated
       dokku_storage_ensure:
         app: api
+    - name: partially probed
+      dokku_git_from_image:
+        app: api
+        image: dokku/smoke-test-app:dockerfile
     - name: group
       block:
         - name: in block
@@ -272,6 +316,9 @@ func TestListTasksJSONMatchesSchema(t *testing.T) {
 		`"skipped":true`,
 		`"unknown":true`,
 		`"deprecated":true`,
+		`"probe":"unsupported"`,
+		`"probe":"partial"`,
+		`"probe_caveat":`,
 		`"group":true`,
 		`"phase":"block"`,
 		`"phase":"rescue"`,

@@ -42,6 +42,11 @@ func (t NetworkPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t NetworkPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the network property task
 func (t NetworkPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkPropertyTaskExample{

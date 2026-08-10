@@ -4,42 +4,29 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-// TestPlanResultCommandsContractStatic walks every *_task.go (and the shared
-// helper files properties.go / toggle.go / resources.go) in the tasks package
-// and asserts that every PlanResult composite literal carrying a non-empty
-// `apply:` field also sets `Commands:`. Catches future tasks added without
-// populating Commands when drift is reported - a regression would silently
-// drop the `commands` array from `docket plan --json` output.
+// TestPlanResultCommandsContractStatic walks every non-test file in the tasks
+// package and asserts that every PlanResult composite literal carrying a
+// non-empty `apply:` field also sets `Commands:`. Catches future tasks added
+// without populating Commands when drift is reported - a regression would
+// silently drop the `commands` array from `docket plan --json` output.
+//
+// The walk deliberately has no file whitelist. It used to scan only *_task.go
+// plus properties.go / toggle.go / resources.go, which left the `apply:`
+// literals in pairs.go and scheduler_k3s_autoscaling_auth.go unchecked; they
+// happened to be correct, so the hole was silent. packageSourceFiles (see
+// probe_coverage_test.go) is the shared file list.
 //
 // The check is purely structural and runs without a Dokku server, complementing
 // the integration tests in plan_integration_test.go that exercise Plan() end
 // to end against a real server.
 func TestPlanResultCommandsContractStatic(t *testing.T) {
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
-	if err != nil {
-		t.Fatalf("glob: %v", err)
-	}
-
 	fs := token.NewFileSet()
-	for _, path := range files {
-		if strings.HasSuffix(path, "_test.go") {
-			continue
-		}
+	for _, path := range packageSourceFiles(t) {
 		base := filepath.Base(path)
-		if !strings.HasSuffix(base, "_task.go") &&
-			base != "properties.go" && base != "toggle.go" && base != "resources.go" {
-			continue
-		}
 
 		f, err := parser.ParseFile(fs, path, nil, parser.SkipObjectResolution)
 		if err != nil {

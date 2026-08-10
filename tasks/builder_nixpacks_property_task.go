@@ -42,6 +42,11 @@ func (t BuilderNixpacksPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t BuilderNixpacksPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the builder-nixpacks property task
 func (t BuilderNixpacksPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderNixpacksPropertyTaskExample{

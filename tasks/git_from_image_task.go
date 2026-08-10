@@ -55,6 +55,11 @@ func (t GitFromImageTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportPartial, Caveat: "the image reference is written to the companion vars-file"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t GitFromImageTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the recorded image reference is probed; the image digest is not, so a mutable tag that moved plans as in sync"}
+}
+
 // Examples returns the examples for the git from image task
 func (t GitFromImageTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromImageTaskExample{

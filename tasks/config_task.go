@@ -52,6 +52,11 @@ func (t ConfigTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportPartial, Caveat: "config values are written to the companion vars-file"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ConfigTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the config task
 func (t ConfigTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ConfigTaskExample{

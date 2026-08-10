@@ -47,6 +47,11 @@ func (t AclServiceTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t AclServiceTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // ExportGlobal reconstructs the dokku-acl access list of every datastore
 // service on the server. Discovery is via listServices; the members are read
 // from `acl:list-service <type> <name>` (reusing getAclServiceUsers). Note the

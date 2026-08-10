@@ -66,6 +66,15 @@
           "type": "string",
           "description": "The deprecation notice. --list-tasks --json carries it here instead of emitting a separate warning event."
         },
+        "probe": {
+          "type": "string",
+          "enum": ["partial", "unsupported"],
+          "description": "How much of its own state the task type can read. `unsupported` means it plans as drift on every run and never converges; `partial` means some of its fields do. Absent when the task probes everything it manages."
+        },
+        "probe_caveat": {
+          "type": "string",
+          "description": "Human-readable note naming what cannot be read. Present whenever `probe` is."
+        },
         "skipped": {
           "type": "boolean",
           "const": true,

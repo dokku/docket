@@ -10,6 +10,10 @@ Ensures the storage for a given dokku application
 
 Not supported - deprecated; storage state is exported via dokku_storage_mount.
 
+## Probe support
+
+Not supported - `storage:ensure-directory` has no read command, so the task plans as drift on every run.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -56,6 +56,11 @@ func (t SchedulerK3sChartTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t SchedulerK3sChartTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s chart task
 func (t SchedulerK3sChartTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sChartTaskExample{

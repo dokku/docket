@@ -93,6 +93,11 @@ func (t HttpAuthUserTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t HttpAuthUserTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "an existing user's htpasswd hash is probed; a cleartext password is not readable, so a user that already exists converges only when update_password forces it"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthUserTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin >= 0.13.0"}

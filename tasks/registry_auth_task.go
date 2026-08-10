@@ -53,6 +53,11 @@ func (t RegistryAuthTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportUnsupported, Caveat: "registry login credentials are write-only and cannot be read back"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t RegistryAuthTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeUnsupported, Caveat: "registry login state has no read command, so the task plans as drift on every run"}
+}
+
 // Examples returns the examples for the registry auth task
 func (t RegistryAuthTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryAuthTaskExample{

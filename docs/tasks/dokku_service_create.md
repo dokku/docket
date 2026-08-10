@@ -12,6 +12,10 @@ Creates or destroys a dokku service
 
 Partial - the service and the image it is running are exported; the remaining create-time options (config_options, custom_env, memory, shm_size, the networks, and the passwords) have no read command and must be re-supplied.
 
+## Probe support
+
+Partial - the service's existence and image are probed; config_options, custom_env, memory, shm_size, the networks, and the passwords have no read command and are not drift-detected.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

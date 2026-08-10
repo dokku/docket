@@ -60,6 +60,11 @@ func (t DockerOptionsTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t DockerOptionsTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // ExportApp reconstructs the app's docker options as one task per individual
 // option, per (phase, process type). Options are read from the structured
 // `<phase>-list` report keys (dokku/dokku#8799), so each stored option -

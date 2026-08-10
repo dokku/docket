@@ -53,6 +53,11 @@ func (t GitFromArchiveTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t GitFromArchiveTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the recorded archive source is probed; the archive contents are not hashed, so a changed archive at the same url plans as in sync"}
+}
+
 // Examples returns the examples for the git from archive task
 func (t GitFromArchiveTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromArchiveTaskExample{

@@ -58,6 +58,11 @@ func (t PluginTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t PluginTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the plugin task
 func (t PluginTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PluginTaskExample{

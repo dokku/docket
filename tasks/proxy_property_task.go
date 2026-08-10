@@ -42,6 +42,11 @@ func (t ProxyPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ProxyPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the proxy property task
 func (t ProxyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ProxyPropertyTaskExample{

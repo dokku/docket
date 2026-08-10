@@ -42,6 +42,11 @@ func (t AppsPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t AppsPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the apps property task
 func (t AppsPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppsPropertyTaskExample{

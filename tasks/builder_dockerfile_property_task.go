@@ -42,6 +42,11 @@ func (t BuilderDockerfilePropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t BuilderDockerfilePropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the builder-dockerfile property task
 func (t BuilderDockerfilePropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderDockerfilePropertyTaskExample{

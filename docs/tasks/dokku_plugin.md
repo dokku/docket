@@ -8,6 +8,10 @@ Installs or uninstalls a third-party dokku plugin. Installation is a root-level 
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

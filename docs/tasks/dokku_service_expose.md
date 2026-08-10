@@ -12,6 +12,10 @@ Exposes or unexposes a dokku service on host ports
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

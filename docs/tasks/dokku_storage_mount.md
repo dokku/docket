@@ -8,6 +8,10 @@ Attaches or detaches storage on a dokku application
 
 Supported.
 
+## Probe support
+
+Partial - the mount source, container path, and volume options are probed; phases, process_type, subpath, readonly, and volume_chown apply at mount time and are not drift-detected.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

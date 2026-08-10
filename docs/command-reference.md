@@ -208,9 +208,14 @@ Plan: 1 task(s); 1 would change, 0 in sync, 0 error(s).
 ```
 
 The same probe drives `apply`: each task reads the server once, and `apply` reuses that read to
-decide whether to mutate. A few tasks (notably `dokku_git_auth`, `dokku_registry_auth`, and
-`dokku_storage_ensure`) cannot read their state without running the underlying command, so they
-always report drift with a `(... not probed)` reason.
+decide whether to mutate. How much of its own state a task can read is a per-task property: each
+task's reference page carries a **Probe support** section stating whether it is supported, partial
+(some fields have no read command), or not supported. A task that is not supported reports drift on
+every run - it can never converge, so a recipe containing one never exits `0` under
+`--detailed-exitcode`, no matter how many times you apply it. The [tasks index](tasks/README.md)
+marks those with `(never converges)`, and `--list-tasks` marks them per recipe (see
+[Inspecting and resuming](#inspecting-and-resuming)). Gate a deploy on the rest by moving those
+tasks behind a tag and planning with `--skip-tags`.
 
 When the probe command cannot run at all - for example the local `dokku` CLI is not installed, or
 the configured SSH host is unreachable - the task renders `[!]` and `plan` exits `1`, rather than
@@ -324,6 +329,23 @@ $ docket apply --list-tasks
 A `when:` that is false against the inputs renders as `[skipped]`. A `when:` that references
 `.registered.<name>` cannot be decided without running earlier tasks, so it renders as `[unknown]`
 rather than guessing.
+
+A task whose type is deprecated is marked `(deprecated)`. A task whose type cannot read its own
+state is marked `(never converges)`, and one that can read only part of it is marked
+`(partial probe)` - both come from the same declaration the reference pages render as **Probe
+support**, so this is the way to find out which tasks in a recipe will report drift forever before
+running anything:
+
+```text
+$ docket apply --list-tasks
+==> Play: api
+[0] dokku apps:create api  [tags=core]
+[1] dokku git:auth github.com  (never converges)
+[2] dokku git:from-image api  (partial probe)
+```
+
+With `--json`, the same information is a `probe` field (`unsupported` or `partial`) plus a
+`probe_caveat` naming what cannot be read; a task that probes everything it manages carries neither.
 
 `--start-at-task <name>` takes an exact task `name:`. Earlier tasks render as `[skipped]` with a
 `(before --start-at-task)` reason and do not run; the matched task and everything after it run:

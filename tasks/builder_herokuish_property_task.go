@@ -42,6 +42,11 @@ func (t BuilderHerokuishPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t BuilderHerokuishPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the builder-herokuish property task
 func (t BuilderHerokuishPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderHerokuishPropertyTaskExample{

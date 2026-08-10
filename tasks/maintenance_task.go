@@ -74,6 +74,11 @@ func (t MaintenanceTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t MaintenanceTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t MaintenanceTask) Requirements() []string {
 	return []string{"dokku-maintenance plugin"}

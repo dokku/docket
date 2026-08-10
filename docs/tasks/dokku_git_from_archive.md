@@ -8,6 +8,10 @@ Deploys a git repository from an archive URL
 
 Supported.
 
+## Probe support
+
+Partial - the recorded archive source is probed; the archive contents are not hashed, so a changed archive at the same url plans as in sync.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

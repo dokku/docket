@@ -8,6 +8,10 @@ Manages an SSH public key for git push access via dokku's ssh-keys plugin
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

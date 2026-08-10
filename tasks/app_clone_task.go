@@ -45,6 +45,11 @@ func (t AppCloneTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportUnsupported, Caveat: "an imperative clone operation, not reconstructable state"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t AppCloneTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "only the target app's existence is probed; the clone source and the cloned contents are never read back"}
+}
+
 // Examples returns the examples for the app clone task
 func (t AppCloneTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppCloneTaskExample{

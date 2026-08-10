@@ -48,6 +48,11 @@ func (t ServiceExposeTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ServiceExposeTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // ExportGlobal reconstructs the exposed-ports state of every datastore service
 // on the server. Discovery is via listServices; the exposed host ports are read
 // from `<service>:info <name> --exposed-ports`. Services with no exposed ports

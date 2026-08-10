@@ -166,6 +166,66 @@ EOF
   assert_output --partial '"deprecation":"'
 }
 
+@test "--list-tasks marks task types that never converge" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: git auth
+      dokku_git_auth:
+        host: github.com
+        username: deploy-bot
+        password: examplepassword
+    - name: create app
+      dokku_app: { app: docket-test-list-1 }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "git auth  (never converges)"
+  refute_output --partial "create app  (never converges)"
+}
+
+@test "--list-tasks marks task types with a partial probe" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: deploy from image
+      dokku_git_from_image:
+        app: docket-test-list-1
+        image: dokku/smoke-test-app:dockerfile
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "deploy from image  (partial probe)"
+}
+
+@test "--list-tasks --json sets probe on tasks that cannot read their state" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: git auth
+      dokku_git_auth:
+        host: github.com
+        username: deploy-bot
+        password: examplepassword
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --json
+  assert_success
+  assert_output --partial '"probe":"unsupported"'
+  assert_output --partial '"probe_caveat":"'
+}
+
+@test "--list-tasks --json omits probe on fully probed tasks" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: create app
+      dokku_app: { app: docket-test-list-1 }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --json
+  assert_success
+  refute_output --partial '"probe"'
+}
+
 @test "--list-tasks works on plan as well" {
   write_tasks_file <<EOF
 ---

@@ -59,6 +59,11 @@ func (t ServicePropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportUnsupported, Caveat: "no datastore plugin exposes a machine-readable report of the properties set via `<service>:set`, so they cannot be read back (tracked upstream in dokku/dokku-datastore#98)"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ServicePropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeUnsupported, Caveat: "the service's existence is probed but the property value is not, so the task plans as drift on every run"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t ServicePropertyTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}

@@ -42,6 +42,11 @@ func (t CaddyPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t CaddyPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the caddy property task
 func (t CaddyPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]CaddyPropertyTaskExample{

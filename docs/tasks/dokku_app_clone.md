@@ -8,6 +8,10 @@ Clones an existing dokku app to a new app
 
 Not supported - an imperative clone operation, not reconstructable state.
 
+## Probe support
+
+Partial - only the target app's existence is probed; the clone source and the cloned contents are never read back.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

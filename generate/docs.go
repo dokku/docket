@@ -227,6 +227,35 @@ func exportSupportSection(task tasks.Task) string {
 	return "## Export support\n\n" + line + "."
 }
 
+// probeSupportSection renders the Probe support section, stating whether
+// `plan` can read the task's current state before deciding on drift. Every task
+// declares this via ProbeSupport(); the section is omitted only if a task does
+// not (the probe coverage test prevents that in practice). A task rendered as
+// "Not supported" here plans as drift on every run, so it never lets
+// `plan --detailed-exitcode` exit 0.
+func probeSupportSection(task tasks.Task) string {
+	support, ok := tasks.TaskProbeSupport(task)
+	if !ok {
+		return ""
+	}
+	var label string
+	switch support.Status {
+	case tasks.ProbeSupported:
+		label = "Supported"
+	case tasks.ProbePartial:
+		label = "Partial"
+	case tasks.ProbeUnsupported:
+		label = "Not supported"
+	default:
+		label = string(support.Status)
+	}
+	line := label
+	if support.Caveat != "" {
+		line += " - " + support.Caveat
+	}
+	return "## Probe support\n\n" + line + "."
+}
+
 // deprecationSection renders the Deprecated admonition for a task that
 // implements DeprecationDocer. The notice sits between the Synopsis and
 // the Requirements/Parameters sections so the reader sees it before
@@ -301,6 +330,9 @@ func renderPage(taskName string, task tasks.Task, examples []tasks.Doc) string {
 	if es := exportSupportSection(task); es != "" {
 		sections = append(sections, es)
 	}
+	if ps := probeSupportSection(task); ps != "" {
+		sections = append(sections, ps)
+	}
 	if pt := parametersSection(buildParams(rt)); pt != "" {
 		sections = append(sections, strings.TrimRight(pt, "\n"))
 	}
@@ -355,10 +387,14 @@ func main() {
 	var index strings.Builder
 	index.WriteString("# Tasks\n\n")
 	index.WriteString("Reference for every task type docket can run inside a recipe. Each page lists the task's fields and example usage. These pages are generated from the task definitions with `make docs`.\n\n")
+	index.WriteString("A task marked `(never converges)` cannot read its own state, so it plans as drift on every run. See the Probe support section on its page.\n\n")
 	for _, name := range names {
 		suffix := ""
 		if tasks.TaskDeprecation(registeredTasks[name]) != "" {
-			suffix = " (deprecated)"
+			suffix += " (deprecated)"
+		}
+		if support, ok := tasks.TaskProbeSupport(registeredTasks[name]); ok && support.Status == tasks.ProbeUnsupported {
+			suffix += " (never converges)"
 		}
 		index.WriteString(fmt.Sprintf("- [%s](%s.md) - %s%s\n", name, name, summarize(registeredTasks[name].Doc()), suffix))
 	}

@@ -79,6 +79,11 @@ func (t ServiceBackupTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportPartial, Caveat: "the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are write-only and must be re-supplied before the recipe can back up"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ServiceBackupTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the backup schedule and bucket are probed; the AWS credentials and the encryption passphrase have no read command and are re-applied on every run when supplied"}
+}
+
 // ExportGlobal reconstructs the backup schedule of every datastore service on
 // the server. Discovery is via listServices; the schedule, bucket, and use_iam
 // flag are parsed from `<service>:backup-schedule-cat <name>`. The AWS

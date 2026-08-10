@@ -12,6 +12,10 @@ Manages the letsencrypt configuration for a given dokku application
 
 Supported.
 
+## Probe support
+
+Partial - the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

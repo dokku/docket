@@ -39,6 +39,11 @@ func (t AppLockTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t AppLockTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the app lock task
 func (t AppLockTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppLockTaskExample{
