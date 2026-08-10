@@ -6,7 +6,7 @@ Manages the letsencrypt configuration for a given dokku application
 
 ## Requirements
 
-- dokku-letsencrypt plugin
+- dokku-letsencrypt plugin >= 0.25.0
 
 ## Export support
 
@@ -14,7 +14,7 @@ Supported.
 
 ## Probe support
 
-Partial - the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run.
+Supported.
 
 ## Parameters
 

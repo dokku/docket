@@ -865,6 +865,103 @@ func TestExportGlobalPropertiesReadsGlobalScope(t *testing.T) {
 	}
 }
 
+// TestExportLetsencryptDynamicPropertiesFromAppReport covers the export half of
+// #449: dns-provider-* rows cannot be enumerated in the key map, so they are
+// lifted straight out of the report. The app scope also carries the global and
+// computed variants of a key, and only the bare row is the app's own value.
+func TestExportLetsencryptDynamicPropertiesFromAppReport(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider":"namecheap","dns-provider-NAMECHEAP_API_USER":"deploy-bot","global-dns-provider-NAMECHEAP_API_KEY":"globalkey","computed-dns-provider-NAMECHEAP_API_USER":"deploy-bot"}`,
+	}))()
+
+	bodies, err := exportProperties("web", "letsencrypt:set", letsencryptPropertyKeys, func(app, property, value string) interface{} {
+		return LetsencryptPropertyTask{App: app, Property: property, Value: value}
+	})
+	if err != nil {
+		t.Fatalf("exportProperties: %v", err)
+	}
+	got := map[string]string{}
+	for _, b := range bodies {
+		p := b.(LetsencryptPropertyTask)
+		got[p.Property] = p.Value
+	}
+	if got["dns-provider-NAMECHEAP_API_USER"] != "deploy-bot" {
+		t.Errorf("dns-provider-NAMECHEAP_API_USER = %q, want deploy-bot", got["dns-provider-NAMECHEAP_API_USER"])
+	}
+	if got["email"] != "admin@example.com" || got["dns-provider"] != "namecheap" {
+		t.Errorf("mapped properties should still export, got %v", got)
+	}
+	for _, unwanted := range []string{"global-dns-provider-NAMECHEAP_API_KEY", "dns-provider-NAMECHEAP_API_KEY", "computed-dns-provider-NAMECHEAP_API_USER"} {
+		if _, ok := got[unwanted]; ok {
+			t.Errorf("%q is not the app's own value and must not export", unwanted)
+		}
+	}
+}
+
+func TestExportGlobalLetsencryptDynamicProperties(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report --global --format json": `{"global-email":"","global-dns-provider":"namecheap","global-dns-provider-NAMECHEAP_API_KEY":"globalkey"}`,
+	}))()
+
+	bodies, err := exportGlobalProperties("letsencrypt:set", letsencryptPropertyKeys, func(property, value string) interface{} {
+		return LetsencryptPropertyTask{Global: true, Property: property, Value: value}
+	})
+	if err != nil {
+		t.Fatalf("exportGlobalProperties: %v", err)
+	}
+	got := map[string]string{}
+	for _, b := range bodies {
+		p := b.(LetsencryptPropertyTask)
+		if !p.Global {
+			t.Errorf("expected Global:true for %q", p.Property)
+		}
+		got[p.Property] = p.Value
+	}
+	if got["dns-provider-NAMECHEAP_API_KEY"] != "globalkey" {
+		t.Errorf("dns-provider-NAMECHEAP_API_KEY = %q, want globalkey", got["dns-provider-NAMECHEAP_API_KEY"])
+	}
+	if _, ok := got["email"]; ok {
+		t.Error("an empty global property must be skipped")
+	}
+}
+
+// TestExportGlobalLetsencryptCredentialLiftedAsSensitiveInput proves the newly
+// exported credential never lands in the recipe in cleartext. Unlike the traefik
+// and scheduler-k3s property tasks, the letsencrypt one is lifted by
+// processSensitiveScalars (its Value field is tagged sensitive), so the input is
+// named after the field rather than the property - look the value up instead of
+// pinning the name.
+func TestExportGlobalLetsencryptCredentialLiftedAsSensitiveInput(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-NAMECHEAP_API_KEY":"s3cr3tkey"}`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	var lifted bool
+	for _, value := range res.Vars {
+		if value == "s3cr3tkey" {
+			lifted = true
+		}
+	}
+	if !lifted {
+		t.Errorf("expected the credential lifted into vars, got %v", res.Vars)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if strings.Contains(out, "s3cr3tkey") {
+		t.Errorf("recipe leaked the dns provider credential:\n%s", out)
+	}
+	for _, want := range []string{"dokku_letsencrypt_property", "dns-provider-NAMECHEAP_API_KEY", "sensitive: true"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestExportGlobalK3sTokenLiftedAsSensitiveInput(t *testing.T) {
 	// #327: the scheduler-k3s global token is core bootstrap state and must be
 	// exported - but as a secret, lifted into a sensitive input, never inline.
