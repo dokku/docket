@@ -98,10 +98,14 @@ A few conventions to follow:
   `ProbeUnsupported` (none do, so the task reports drift on every run and never converges). Name
   what cannot be read in the `Caveat`. The generator renders it in a Probe support section, the
   tasks index marks an unsupported task `(never converges)`, and `--list-tasks` marks it the same
-  way. `TestProbeSupportMatchesPlanWiring` cross-checks the declaration against the code: a task
-  that claims it converges must have an `InSync: true` result reachable from its `Plan()`, and one
-  that claims it cannot must not. Declare it for the task type, not for the run - a probe that
-  fails on a particular server is a `PlanWarning`, not a `ProbeUnsupported` task.
+  way. `TestProbeSupportMatchesPlanWiring` cross-checks the declaration against the code, and it
+  asks the question per `state:`, not per task: every branch of your `DispatchPlan` map must have
+  an `InSync: true` result reachable from it, and a task that claims it cannot converge must have
+  none. Adding a state you have no read command for therefore fails the build even when the task's
+  other states probe fine - there is no way to declare "converges for `present`, drifts forever for
+  `absent`". Branches reached through `planToggle`, `planProperty` and `planResource` count as your
+  task's own. Declare it for the task type, not for the run - a probe that fails on a particular
+  server is a `PlanWarning`, not a `ProbeUnsupported` task.
 - When a task has conditional or semantic input rules that a `required:"true"` tag cannot express -
   a list that must be non-empty only when `state: present`, mutually-exclusive fields, an enum, a
   per-item requirement on a slice field - put them in the optional `Validate() error` method (the

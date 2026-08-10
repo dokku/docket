@@ -50,7 +50,10 @@ type ProbeSupport struct {
 // Nothing in the plan or apply path reads this: drift is decided entirely by
 // each Plan() implementation. What keeps the declaration honest is
 // TestProbeSupportMatchesPlanWiring, which fails when a task claims it can
-// converge but its Plan() has no reachable in-sync result (or vice versa).
+// converge but one of its DispatchPlan branches has no reachable in-sync result
+// (or when it claims it cannot and some branch does). Asking per branch rather
+// than per Plan() is what stops a task that probes `present` and not `absent`
+// from passing on the strength of its `present` branch alone.
 type ProbeDocer interface {
 	ProbeSupport() ProbeSupport
 }
