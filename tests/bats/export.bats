@@ -145,14 +145,17 @@ teardown() {
 }
 
 @test "docket export round-trips http-auth users back onto the server" {
-  # The migration story end to end: export, drop the users, re-apply, and the
-  # stored htpasswd comes back byte-identical with no password supplied.
+  # The migration story end to end: export, drop the users, re-apply, and every
+  # credential comes back with no password supplied anywhere.
   require_plugin http-auth
   dokku apps:create docket-test-export
   dokku http-auth:enable docket-test-export testuser testpass
   dokku http-auth:add-user docket-test-export seconduser secondpass
   cd "$BATS_TEST_TMPDIR"
-  original="$(dokku http-auth:export-users docket-test-export)"
+  # Compared as a set of entries, not as a file: the exporter sorts users by
+  # username so its output is deterministic, which need not match the order the
+  # users happened to be added in. Position in an htpasswd carries no meaning.
+  dokku http-auth:export-users docket-test-export | sort >original.htpasswd
 
   run "$(docket_bin)" export --app docket-test-export --output tasks.yml --vars-output tasks.vars.yml
   assert_success
@@ -163,8 +166,9 @@ teardown() {
   run "$(docket_bin)" apply --tasks tasks.yml --vars-file tasks.vars.yml
   assert_success
 
-  restored="$(dokku http-auth:export-users docket-test-export)"
-  assert_equal "$restored" "$original"
+  dokku http-auth:export-users docket-test-export | sort >restored.htpasswd
+  run diff -u original.htpasswd restored.htpasswd
+  assert_success
 }
 
 @test "docket export --output - inlines http-auth hashes" {
