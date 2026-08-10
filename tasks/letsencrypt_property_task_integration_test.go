@@ -20,6 +20,11 @@ func TestIntegrationLetsencryptPropertyAll(t *testing.T) {
 		global   bool
 	}{
 		{"dns-provider", "cloudflare", true, true},
+		// A dns-provider-<ENV> credential has no map entry - its keys are
+		// synthesized from the property name - so it exercises the dynamic
+		// probe path added in #449. dokku-letsencrypt 0.25.0+ reports it, so
+		// it converges like any mapped property.
+		{"dns-provider-CLOUDFLARE_API_TOKEN", "token123", true, true},
 		{"email", "admin@example.com", true, true},
 		{"graceperiod", "2592000", true, true},
 		{"lego-args", "--key=value", true, true},
@@ -48,19 +53,4 @@ func TestIntegrationLetsencryptPropertyAll(t *testing.T) {
 			})
 		}
 	}
-
-	// dns-provider-* keys are dynamic (per-credential env var names) and
-	// have no probe key, so the task always reports Changed=true. Exercise
-	// set/unset without the idempotency assertion to confirm the dispatch
-	// path through isDynamicProperty works.
-	t.Run("dns-provider-CLOUDFLARE_API_TOKEN/dynamic", func(t *testing.T) {
-		set := LetsencryptPropertyTask{App: appName, Property: "dns-provider-CLOUDFLARE_API_TOKEN", Value: "token123", State: StatePresent}
-		if r := set.Execute(); r.Error != nil {
-			t.Fatalf("set dynamic dns-provider key: %v", r.Error)
-		}
-		unset := LetsencryptPropertyTask{App: appName, Property: "dns-provider-CLOUDFLARE_API_TOKEN", State: StateAbsent}
-		if r := unset.Execute(); r.Error != nil {
-			t.Fatalf("unset dynamic dns-provider key: %v", r.Error)
-		}
-	})
 }

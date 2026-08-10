@@ -14,6 +14,9 @@ type LetsencryptPropertyTask struct {
 	// Value is the value to set for the letsencrypt property. Tagged sensitive
 	// because some letsencrypt properties carry DNS-API credentials; benign
 	// property values get masked too, which is preferable to leaking secrets.
+	// The tag drives output masking only - export decides what to lift into a
+	// vars file from the property's PropertyKeys entry, so a benign value stays
+	// readable in the exported recipe (#451).
 	Value string `required:"false" sensitive:"true" yaml:"value,omitempty" description:"Value to set for the letsencrypt property"`
 
 	// State is the desired state of the letsencrypt configuration
@@ -45,13 +48,20 @@ func (t LetsencryptPropertyTask) ExportSupport() ExportSupport {
 }
 
 // ProbeSupport reports whether Plan() can read this task's current state.
+//
+// Supported without a caveat because dokku-letsencrypt 0.25.0+ reports the
+// dynamic `dns-provider-*` family alongside the mapped properties, so every
+// property this task manages is readable and converges (#449).
 func (t LetsencryptPropertyTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run"}
+	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Requirements lists the non-core dokku plugins this task depends on.
+// Requirements lists the non-core dokku plugins this task depends on. The
+// version floor is the release that surfaced `dns-provider-*` properties in
+// `letsencrypt:report`; below it those properties are absent from the report
+// and a `state: absent` task would read an unset property as already gone.
 func (t LetsencryptPropertyTask) Requirements() []string {
-	return []string{"dokku-letsencrypt plugin"}
+	return []string{"dokku-letsencrypt plugin >= 0.25.0"}
 }
 
 // Examples returns the examples for the letsencrypt property task
@@ -99,8 +109,9 @@ func (t LetsencryptPropertyTask) Execute() TaskOutputState {
 
 // letsencryptPropertyKeys maps letsencrypt property names to the JSON keys
 // emitted by `dokku letsencrypt:report --format json` on
-// dokku-letsencrypt v0.20.4+. The `dns-provider-*` family is dynamic and
-// handled by isDynamicProperty without a map entry.
+// dokku-letsencrypt v0.20.4+. The `dns-provider-*` family takes an arbitrary
+// provider env var name, so it cannot be enumerated here; its keys are
+// synthesized per property by dynamicPropertyKeys, which v0.25.0+ reports.
 var letsencryptPropertyKeys = map[string]PropertyKeys{
 	"dns-provider":        {PerApp: "dns-provider", Global: "global-dns-provider"},
 	"email":               {PerApp: "email", Global: "global-email"},

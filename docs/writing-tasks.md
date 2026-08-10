@@ -210,10 +210,18 @@ func (t NginxPropertyTask) Plan() PlanResult {
 ```
 
 Keep the `PropertyKeys` map in sync with the plugin's `:report` output - that mapping is how `plan`
-and `apply` detect drift without mutating. A property whose report key only appears after it is set
-(a dynamic family such as letsencrypt's `dns-provider-*`) skips probing and is applied
-unconditionally; those are recognized by `isDynamicProperty` in `tasks/properties.go`. A task whose
-key map has such a family is `ProbePartial`, not `ProbeSupported`.
+and `apply` detect drift without mutating. Some plugins take a dynamic family of properties whose
+names cannot be enumerated in the map, such as the `dns-provider-<ENV_VAR>` credentials letsencrypt
+and traefik accept. `isDynamicProperty` in `tasks/properties.go` recognizes those so validation
+accepts a name the map has never heard of, and how they plan depends on the plugin:
+
+- The plugin reports the family (letsencrypt on 0.25.0+ emits a row per set property): synthesize
+  the scope keys in `dynamicPropertyKeys` and the property probes like any mapped one. Because the
+  row only exists once the property has a value, an absent row reads as unset. Note the minimum
+  plugin version in `Requirements()`, and mark the synthesized entry `Sensitive` when the value is a
+  credential so the probed value never reaches a drift reason unmasked.
+- The plugin does not report it: the property skips probing and is applied unconditionally, and the
+  task is `ProbePartial` with a caveat naming the family.
 
 ## Regenerating the task docs
 

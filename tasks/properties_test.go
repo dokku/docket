@@ -254,14 +254,17 @@ func TestUnknownPropertyWarningIgnoresOtherErrors(t *testing.T) {
 	}
 }
 
+// TestUnknownPropertyWarningDynamicPropertySkipsWarning uses traefik because
+// letsencrypt's dns-provider-* family is probed now (#449) and its missing rows
+// never reach this branch; traefik is the family that still does.
 func TestUnknownPropertyWarningDynamicPropertySkipsWarning(t *testing.T) {
 	err := &errUnknownProperty{
-		plugin:    "letsencrypt",
-		property:  "dns-provider-NAMECHEAP_API_USER",
-		lookedFor: "dns-provider-NAMECHEAP_API_USER",
-		validKeys: []string{"email", "server"},
+		plugin:    "traefik",
+		property:  "dns-provider-CLOUDFLARE_API_TOKEN",
+		lookedFor: "dns-provider-CLOUDFLARE_API_TOKEN",
+		validKeys: []string{"global-dns-provider", "global-letsencrypt-email"},
 	}
-	if _, ok := unknownPropertyWarning("letsencrypt", "dns-provider-NAMECHEAP_API_USER", err); ok {
+	if _, ok := unknownPropertyWarning("traefik", "dns-provider-CLOUDFLARE_API_TOKEN", err); ok {
 		t.Error("dynamic property should not warn")
 	}
 }
@@ -338,6 +341,220 @@ func TestIsDynamicProperty(t *testing.T) {
 		got := isDynamicProperty(tc.plugin, tc.property)
 		if got != tc.want {
 			t.Errorf("isDynamicProperty(%q, %q) = %v; want %v", tc.plugin, tc.property, got, tc.want)
+		}
+	}
+}
+
+func TestDynamicPropertyKeys(t *testing.T) {
+	cases := []struct {
+		plugin   string
+		property string
+		want     PropertyKeys
+		wantOK   bool
+	}{
+		{"letsencrypt", "dns-provider-NAMECHEAP_API_USER", PropertyKeys{
+			PerApp:    "dns-provider-NAMECHEAP_API_USER",
+			Global:    "global-dns-provider-NAMECHEAP_API_USER",
+			Sensitive: true,
+		}, true},
+		// The mapped provider name is not dynamic, and neither is any other
+		// mapped property.
+		{"letsencrypt", "dns-provider", PropertyKeys{}, false},
+		{"letsencrypt", "email", PropertyKeys{}, false},
+		// traefik's family has the same shape but is still absent from
+		// traefik:report (#450), so it must stay unprobed.
+		{"traefik", "dns-provider-CLOUDFLARE_API_TOKEN", PropertyKeys{}, false},
+		{"nginx", "dns-provider-X", PropertyKeys{}, false},
+	}
+	for _, tc := range cases {
+		got, ok := dynamicPropertyKeys(tc.plugin, tc.property)
+		if ok != tc.wantOK {
+			t.Errorf("dynamicPropertyKeys(%q, %q) ok = %v; want %v", tc.plugin, tc.property, ok, tc.wantOK)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("dynamicPropertyKeys(%q, %q) = %+v; want %+v", tc.plugin, tc.property, got, tc.want)
+		}
+	}
+}
+
+// TestDynamicPropertiesFromReport pins the scope filtering the exporters rely
+// on: an app report also carries the global and computed variants of a key, and
+// only the bare row is the app's own value.
+func TestDynamicPropertiesFromReport(t *testing.T) {
+	appPayload := map[string]string{
+		"email":                                    "admin@example.com",
+		"dns-provider":                             "namecheap",
+		"dns-provider-NAMECHEAP_API_USER":          "deploy-bot",
+		"global-dns-provider-NAMECHEAP_API_KEY":    "globalkey",
+		"computed-dns-provider-NAMECHEAP_API_USER": "deploy-bot",
+		"computed-dns-provider-NAMECHEAP_API_KEY":  "globalkey",
+	}
+	got := dynamicPropertiesFromReport("letsencrypt", appPayload, false)
+	if !reflect.DeepEqual(got, []string{"dns-provider-NAMECHEAP_API_USER"}) {
+		t.Errorf("app scope = %v; want only the bare app row", got)
+	}
+
+	globalPayload := map[string]string{
+		"global-email":                           "",
+		"global-dns-provider":                    "namecheap",
+		"global-dns-provider-NAMECHEAP_API_USER": "deploy-bot",
+		"global-dns-provider-NAMECHEAP_API_KEY":  "globalkey",
+	}
+	got = dynamicPropertiesFromReport("letsencrypt", globalPayload, true)
+	want := []string{"dns-provider-NAMECHEAP_API_KEY", "dns-provider-NAMECHEAP_API_USER"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("global scope = %v; want %v", got, want)
+	}
+
+	// traefik is not probeable, so its report rows are never lifted.
+	if got := dynamicPropertiesFromReport("traefik", map[string]string{"global-dns-provider-CLOUDFLARE_API_TOKEN": "token"}, true); got != nil {
+		t.Errorf("traefik = %v; want nil", got)
+	}
+}
+
+// TestPlanPropertyDynamicLetsencryptInSync is the core of #449: a
+// dns-provider-* credential that already matches the recipe plans as in sync
+// instead of reporting drift on every run.
+func TestPlanPropertyDynamicLetsencryptInSync(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"token123"}`,
+	}))()
+
+	res := planProperty(StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123", "letsencrypt:set", letsencryptPropertyKeys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if !res.InSync {
+		t.Errorf("expected in sync, got status %q reason %q", res.Status, res.Reason)
+	}
+	if res.Status != PlanStatusOK {
+		t.Errorf("status = %q; want %q", res.Status, PlanStatusOK)
+	}
+}
+
+func TestPlanPropertyDynamicLetsencryptGlobalInSync(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-NAMECHEAP_API_USER":"deploy-bot"}`,
+	}))()
+
+	res := planProperty(StatePresent, "", true, "dns-provider-NAMECHEAP_API_USER", "deploy-bot", "letsencrypt:set", letsencryptPropertyKeys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if !res.InSync {
+		t.Errorf("expected in sync from the global row, got status %q reason %q", res.Status, res.Reason)
+	}
+}
+
+// TestPlanPropertyDynamicLetsencryptDriftMasksProbedValue guards the Sensitive
+// mark on the synthesized keys: the probed credential reaches the drift reason
+// and must be registered with the masker.
+func TestPlanPropertyDynamicLetsencryptDriftMasksProbedValue(t *testing.T) {
+	subprocess.SetGlobalSensitive(nil)
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"oldtoken"}`,
+	}))()
+
+	res := planProperty(StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "newtoken", "letsencrypt:set", letsencryptPropertyKeys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if res.Status != PlanStatusModify {
+		t.Errorf("status = %q; want %q", res.Status, PlanStatusModify)
+	}
+	if !strings.Contains(res.Reason, "drift") {
+		t.Errorf("reason = %q; want a drift reason", res.Reason)
+	}
+	if masked := subprocess.MaskString(res.Reason); strings.Contains(masked, "oldtoken") {
+		t.Errorf("drift reason leaked the probed credential: %q -> %q", res.Reason, masked)
+	}
+	for _, cmd := range res.Commands {
+		if masked := subprocess.MaskString(cmd); strings.Contains(masked, "newtoken") {
+			t.Errorf("command leaked the desired credential: %q -> %q", cmd, masked)
+		}
+	}
+}
+
+// TestPlanPropertyDynamicLetsencryptMissingRowPlansCreate covers the pre-set
+// state: the plugin only emits a row once the property holds a value, so an
+// absent row is an unset property and not a probe failure worth warning about.
+func TestPlanPropertyDynamicLetsencryptMissingRowPlansCreate(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com"}`,
+	}))()
+
+	res := planProperty(StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123", "letsencrypt:set", letsencryptPropertyKeys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if res.Status != PlanStatusCreate {
+		t.Errorf("status = %q; want %q (reason %q)", res.Status, PlanStatusCreate, res.Reason)
+	}
+	if !strings.Contains(res.Reason, "missing on myapp") {
+		t.Errorf("reason = %q; want a missing-on reason", res.Reason)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("an unset dynamic property must not warn, got %v", res.Warnings)
+	}
+}
+
+func TestPlanPropertyDynamicLetsencryptAbsentMissingRowIsInSync(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com"}`,
+	}))()
+
+	res := planProperty(StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "", "letsencrypt:set", letsencryptPropertyKeys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if !res.InSync {
+		t.Errorf("an already-unset credential must plan as in sync, got status %q reason %q", res.Status, res.Reason)
+	}
+}
+
+func TestPlanPropertyDynamicLetsencryptAbsentPlansDestroy(t *testing.T) {
+	subprocess.SetGlobalSensitive(nil)
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"livetoken"}`,
+	}))()
+
+	res := planProperty(StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "", "letsencrypt:set", letsencryptPropertyKeys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if res.Status != PlanStatusDestroy {
+		t.Errorf("status = %q; want %q", res.Status, PlanStatusDestroy)
+	}
+	if masked := subprocess.MaskString(res.Reason); strings.Contains(masked, "livetoken") {
+		t.Errorf("unset reason leaked the probed credential: %q -> %q", res.Reason, masked)
+	}
+}
+
+// TestPlanPropertyDynamicTraefikStaysUnprobed keeps the traefik half of the
+// family on the unprobed path while dokku/dokku#8928 is open (#450): it must not
+// even attempt a report read.
+func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
+	var ran []string
+	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		ran = append(ran, strings.Join(in.Args, " "))
+		return subprocess.ExecCommandResponse{}, nil
+	})()
+
+	res := planProperty(StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123", "traefik:set", traefikPropertyKeys)
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if !strings.Contains(res.Reason, "(no probe key)") {
+		t.Errorf("reason = %q; want the unprobed reason", res.Reason)
+	}
+	for _, cmd := range ran {
+		if strings.Contains(cmd, "traefik:report") {
+			t.Errorf("traefik dynamic properties must not be probed, ran %q", cmd)
 		}
 	}
 }

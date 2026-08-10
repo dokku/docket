@@ -84,6 +84,14 @@ func getProperty(subcommand, app string, global bool, property string, keys map[
 
 	value, ok := payload[lookup]
 	if !ok {
+		// A probeable dynamic property only gets a report row once it holds a
+		// value, so an absent row means the property is unset rather than that
+		// the key map is stale. The entry is compared against the synthesized
+		// one so a caller that passed a map without it - where lookup would be
+		// the empty string - still takes the error path (#449).
+		if dyn, dynamic := dynamicPropertyKeys(plugin, property); dynamic && entry == dyn {
+			return "", nil
+		}
 		keyList := make([]string, 0, len(payload))
 		for k := range payload {
 			keyList = append(keyList, k)
@@ -107,6 +115,10 @@ func getProperty(subcommand, app string, global bool, property string, keys map[
 // `computed-` key), so this naturally captures the non-default settings without
 // a defaults table. Read-only/computed keys are skipped because they are not in
 // keys.
+//
+// A probeable dynamic family cannot be enumerated in keys, so the properties the
+// payload happens to carry are synthesized into it first; without that a set
+// letsencrypt `dns-provider-<KEY>` credential is dropped from the export (#449).
 func exportProperties(app, subcommand string, keys map[string]PropertyKeys, factory func(app, property, value string) interface{}) ([]interface{}, error) {
 	plugin := pluginFromSubcommand(subcommand)
 	payload, err := readPropertyReport(plugin, app, false)
@@ -116,6 +128,7 @@ func exportProperties(app, subcommand string, keys map[string]PropertyKeys, fact
 	if payload == nil {
 		return nil, nil
 	}
+	keys = withDynamicProperties(plugin, keys, dynamicPropertiesFromReport(plugin, payload, false))
 
 	props := make([]string, 0, len(keys))
 	for prop := range keys {
@@ -144,7 +157,8 @@ func exportProperties(app, subcommand string, keys map[string]PropertyKeys, fact
 // Global key is present and non-empty, emits a task body (built by factory). A
 // property with no global form (an empty Global key) is skipped, so
 // globally-scoped state (for example scheduler-k3s bootstrap keys) is captured
-// instead of silently dropped (#327).
+// instead of silently dropped (#327). Probeable dynamic properties are
+// synthesized into keys the same way exportProperties does it.
 func exportGlobalProperties(subcommand string, keys map[string]PropertyKeys, factory func(property, value string) interface{}) ([]interface{}, error) {
 	plugin := pluginFromSubcommand(subcommand)
 	payload, err := readPropertyReport(plugin, "", true)
@@ -154,6 +168,7 @@ func exportGlobalProperties(subcommand string, keys map[string]PropertyKeys, fac
 	if payload == nil {
 		return nil, nil
 	}
+	keys = withDynamicProperties(plugin, keys, dynamicPropertiesFromReport(plugin, payload, true))
 
 	props := make([]string, 0, len(keys))
 	for prop := range keys {
@@ -234,7 +249,7 @@ func unknownPropertyWarning(plugin, property string, err error) (PlanWarning, bo
 	var unknown *errUnknownProperty
 	if errors.As(err, &unknown) {
 		// Skip the warning for known dynamic-property families (e.g.
-		// letsencrypt dns-provider-*) where missing-from-report is the
+		// traefik dns-provider-*) where missing-from-report is the
 		// normal pre-set state, not a typo.
 		if isDynamicProperty(plugin, property) {
 			return PlanWarning{}, false
@@ -266,7 +281,12 @@ func unknownPropertyWarning(plugin, property string, err error) (PlanWarning, bo
 //   - dokku-letsencrypt `dns-provider-*` (arbitrary env var names)
 //   - dokku traefik `dns-provider-*` (same shape, per-provider env vars)
 //
-// Dynamic property names are validated by `:set`, not the report schema.
+// Dynamic property names are validated by `:set`, not the report schema, so
+// this is what lets validateProperty accept a name that cannot be enumerated in
+// the key map. It says nothing about whether the property can be probed: a
+// family whose plugin reports its keys is probed through dynamicPropertyKeys,
+// and only the families that helper does not recognize skip the probe.
+//
 // scheduler-k3s `chart.*.*` used to live here but moved to the dedicated
 // dokku_scheduler_k3s_chart task; SchedulerK3sPropertyTask.Plan rejects
 // chart.* before reaching this helper.
@@ -276,6 +296,95 @@ func isDynamicProperty(plugin, property string) bool {
 		return strings.HasPrefix(property, "dns-provider-")
 	}
 	return false
+}
+
+// dynamicPropertyKeys returns the report keys for a dynamic property whose
+// plugin surfaces the family in its `:report` payload. dokku-letsencrypt
+// 0.25.0+ emits a `dns-provider-<KEY>` row for the app scope and a
+// `global-dns-provider-<KEY>` row for the global one per property that is set,
+// so the keys can be synthesized from the property name and probed like any
+// mapped property (#449). The values are DNS provider API credentials, hence
+// Sensitive: planProperty registers the probed value with the masker before it
+// can reach a `(was %q)` drift reason.
+//
+// traefik's `dns-provider-*` family has the same shape but is still absent from
+// `traefik:report` (dokku/dokku#8928, tracked for docket in #450), so it stays
+// on the unprobed path.
+func dynamicPropertyKeys(plugin, property string) (PropertyKeys, bool) {
+	if plugin != "letsencrypt" || !isDynamicProperty(plugin, property) {
+		return PropertyKeys{}, false
+	}
+	return PropertyKeys{PerApp: property, Global: "global-" + property, Sensitive: true}, true
+}
+
+// propertyEntry returns the PropertyKeys a plugin uses for one property,
+// falling back to the synthesized entry when the property belongs to a
+// probeable dynamic family the map cannot enumerate. Reading the map directly
+// instead would report a `dns-provider-<KEY>` credential as non-Sensitive and
+// export it in cleartext (#451).
+func propertyEntry(plugin, property string, keys map[string]PropertyKeys) PropertyKeys {
+	if entry, ok := keys[property]; ok {
+		return entry
+	}
+	entry, _ := dynamicPropertyKeys(plugin, property)
+	return entry
+}
+
+// withDynamicProperties returns keys plus a synthesized entry for every probeable
+// dynamic property in props. The map is copied only when there is something to
+// add, since the caller's map is a package-level singleton shared by every task
+// of that plugin.
+func withDynamicProperties(plugin string, keys map[string]PropertyKeys, props []string) map[string]PropertyKeys {
+	var merged map[string]PropertyKeys
+	for _, property := range props {
+		entry, ok := dynamicPropertyKeys(plugin, property)
+		if !ok {
+			continue
+		}
+		if merged == nil {
+			merged = make(map[string]PropertyKeys, len(keys)+len(props))
+			for k, v := range keys {
+				merged[k] = v
+			}
+		}
+		merged[property] = entry
+	}
+	if merged == nil {
+		return keys
+	}
+	return merged
+}
+
+// dynamicPropertiesFromReport returns the probeable dynamic property names a
+// report payload carries for the given scope, sorted. In the app scope the
+// payload also carries the `global-` and `computed-` variants of a key; only the
+// bare row is the app's own value, so a key is kept only when the scope's
+// synthesized lookup round-trips back to it.
+func dynamicPropertiesFromReport(plugin string, payload map[string]string, global bool) []string {
+	var props []string
+	for key := range payload {
+		property := key
+		if global {
+			property = strings.TrimPrefix(key, "global-")
+			if property == key {
+				continue
+			}
+		}
+		entry, ok := dynamicPropertyKeys(plugin, property)
+		if !ok {
+			continue
+		}
+		lookup := entry.PerApp
+		if global {
+			lookup = entry.Global
+		}
+		if lookup != key {
+			continue
+		}
+		props = append(props, property)
+	}
+	sort.Strings(props)
+	return props
 }
 
 // planProperty is the shared Plan() implementation for property tasks. It
@@ -324,6 +433,13 @@ func planProperty(state State, app string, global bool, property, value, subcomm
 	if global {
 		target = "--global"
 	}
+
+	// A dynamic property has no static map entry. When its plugin reports the
+	// family, synthesize the entry so the probe path below runs against it; the
+	// families that stay unreported keep falling through to the unprobed path.
+	// This has to happen before the Sensitive read below, which is what
+	// registers a synthesized credential with the masker.
+	keys = withDynamicProperties(plugin, keys, []string{property})
 
 	// A property flagged Sensitive carries a secret value. Register the desired
 	// value now so the command echo is masked; empties are dropped. The
@@ -456,7 +572,7 @@ func validateProperty(plugin, property string, global bool, keys map[string]Prop
 }
 
 // runUnprobedSet returns a PlanResult that runs `:set` unconditionally for
-// dynamic properties that have no probe key (e.g. letsencrypt dns-provider-*).
+// dynamic properties that have no probe key (e.g. traefik dns-provider-*).
 func runUnprobedSet(subcommand, target, property, value string) PlanResult {
 	inputs := propertySetInputs(subcommand, target, property, value)
 	return PlanResult{
