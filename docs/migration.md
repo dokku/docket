@@ -20,9 +20,9 @@ covered below.
 | Domains and ports (`dokku_domains`, `dokku_ports`) | DNS records |
 | Service structure (`dokku_service_create`, `dokku_service_expose`, `dokku_service_link`, backup schedule, `dokku_acl_service`) | letsencrypt-issued certificates |
 | Storage *mounts* (`dokku_storage_mount`) | Secret values not in the recipe |
-| HTTP basic auth (`dokku_http_auth`, `dokku_http_auth_user`, `dokku_http_auth_allowed_ip`, `dokku_http_auth_domain`) | HTTP auth passwords |
-| Manual certs inlined via `dokku_certs` `cert_content` / `key_content` | Host-level OS configuration |
-| Buildpacks, scheduler and proxy config | Datastore backup credentials and `dokku_service_property` values |
+| HTTP basic auth, credentials included (`dokku_http_auth`, `dokku_http_auth_user`, `dokku_http_auth_allowed_ip`, `dokku_http_auth_domain`) | Host-level OS configuration |
+| Manual certs inlined via `dokku_certs` `cert_content` / `key_content` | Datastore backup credentials and `dokku_service_property` values |
+| Buildpacks, scheduler and proxy config | |
 | SSH keys (`dokku_ssh_key`) | |
 | App code (`dokku_git_sync`, `dokku_git_from_image`, `dokku_git_from_archive`) | |
 
@@ -55,9 +55,10 @@ services are reconstructed into that same global play - the service itself, its 
 backup schedule, and its dokku-acl access list - with each app's service links emitted into the
 app's own play. Globally-set plugin properties are reconstructed into that global play too - for
 example the scheduler-k3s bootstrap keys such as the cluster token, ingress class, and letsencrypt
-emails. Sensitive values (config, the k3s token, and other secrets) are lifted into `tasks.vars.yml`;
-the recipe references them through inputs, so the pair is applied together with `--vars-file`. If you
-already maintain a recipe as the source of truth for the old server, skip this and use it directly.
+emails. Sensitive values (config, the k3s token, HTTP auth password hashes, and other secrets) are
+lifted into `tasks.vars.yml`; the recipe references them through inputs, so the pair is applied
+together with `--vars-file`. If you already maintain a recipe as the source of truth for the old
+server, skip this and use it directly.
 
 Some state cannot be read back and is left out with a warning - notably write-only credentials
 (`dokku_git_auth`, `dokku_registry_auth`, and datastore backup credentials), datastore service data,
@@ -65,9 +66,10 @@ and service properties (`dokku_service_property`), which you add by hand. Each t
 [reference page](tasks/README.md) has an Export support section noting its limits.
 
 HTTP basic auth is reconstructed in full - whether it is serving, its users, allowed IPs and auth
-domains - except for the passwords themselves, which the plugin only stores as hashes. Each user's
-password becomes a required input you fill in before applying
-([#443](https://github.com/dokku/docket/issues/443) tracks carrying the hashes across instead).
+domains. The plugin never stores a password, only its htpasswd hash, and export carries those
+hashes across: each user is emitted as a `hash` referencing a value in `tasks.vars.yml`, so the new
+server ends up with the same credentials working without anyone having to know the passwords behind
+them. Nothing about HTTP auth needs supplying by hand.
 
 ## Step 2: Apply the recipe to the new server
 

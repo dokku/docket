@@ -118,6 +118,80 @@ teardown() {
   assert_output --partial "is valid"
 }
 
+@test "docket export carries http-auth users as hashes, not password inputs" {
+  # #443: http-auth:export-users reads the stored htpasswd entries back, so the
+  # recipe reproduces the users with nothing for the operator to fill in.
+  require_plugin http-auth
+  dokku apps:create docket-test-export
+  dokku http-auth:enable docket-test-export testuser testpass
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --app docket-test-export --output tasks.yml --vars-output tasks.vars.yml
+  assert_success
+
+  # The credential is expressed as a hash, and the cleartext form is absent.
+  run grep -c 'hash:' tasks.yml
+  assert_output "1"
+  run grep -q 'password:' tasks.yml
+  assert_failure
+
+  # The hash itself lives in the vars-file, with a real value rather than the
+  # empty placeholder a required password input used to get.
+  run grep -c '^docket_test_export_http_auth_hash_testuser: .\+$' tasks.vars.yml
+  assert_output "1"
+
+  # ...and the recipe references it rather than carrying it.
+  run grep -q '{{ .docket_test_export_http_auth_hash_testuser }}' tasks.yml
+  assert_success
+}
+
+@test "docket export round-trips http-auth users back onto the server" {
+  # The migration story end to end: export, drop the users, re-apply, and every
+  # credential comes back with no password supplied anywhere.
+  require_plugin http-auth
+  dokku apps:create docket-test-export
+  dokku http-auth:enable docket-test-export testuser testpass
+  dokku http-auth:add-user docket-test-export seconduser secondpass
+  cd "$BATS_TEST_TMPDIR"
+  # Compared as a set of entries, not as a file: the exporter sorts users by
+  # username so its output is deterministic, which need not match the order the
+  # users happened to be added in. Position in an htpasswd carries no meaning.
+  dokku http-auth:export-users docket-test-export | sort >original.htpasswd
+
+  run "$(docket_bin)" export --app docket-test-export --output tasks.yml --vars-output tasks.vars.yml
+  assert_success
+
+  dokku http-auth:remove-user docket-test-export testuser
+  dokku http-auth:remove-user docket-test-export seconduser
+
+  run "$(docket_bin)" apply --tasks tasks.yml --vars-file tasks.vars.yml
+  assert_success
+
+  dokku http-auth:export-users docket-test-export | sort >restored.htpasswd
+  run diff -u original.htpasswd restored.htpasswd
+  assert_success
+}
+
+@test "docket export --output - inlines http-auth hashes" {
+  # A streamed recipe has no companion vars-file, so the hash rides along and
+  # the pipe stays self-contained.
+  require_plugin http-auth
+  dokku apps:create docket-test-export
+  dokku http-auth:enable docket-test-export testuser testpass
+  cd "$BATS_TEST_TMPDIR"
+  stored="$(dokku http-auth:export-users docket-test-export | cut -d: -f2-)"
+  run bash -c "\"$(docket_bin)\" export --app docket-test-export --output - > streamed.yml"
+  assert_success
+
+  run grep -qF "$stored" streamed.yml
+  assert_success
+  run grep -q 'http_auth_hash' streamed.yml
+  assert_failure
+
+  run "$(docket_bin)" apply --tasks streamed.yml --list-tasks
+  assert_success
+  assert_output --partial "dokku_http_auth_user"
+}
+
 @test "docket export reports a --vars-output left unwritten for want of secrets" {
   require_dokku
   # No config:set, so nothing is sensitive and no vars-file is produced.

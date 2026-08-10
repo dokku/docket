@@ -775,3 +775,51 @@ func TestIntegrationExportHttpAuth(t *testing.T) {
 		t.Errorf("expected no exported task once nothing is configured, got %v", bodies)
 	}
 }
+
+// TestIntegrationExportHttpAuthUserHashes proves the migration story #443 is
+// about, against a real plugin: the exported users carry their stored htpasswd
+// hashes, the emitted task is valid and reports no drift, and no password ever
+// has to be supplied. An app with no users still exports nothing.
+func TestIntegrationExportHttpAuthUserHashes(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "http-auth")
+
+	app := "docket-test-export-http-auth-user"
+	destroyApp(app)
+	createApp(app)
+	defer destroyApp(app)
+
+	if bodies, err := (HttpAuthUserTask{}).ExportApp(app); err != nil {
+		t.Fatalf("ExportApp on a fresh app: %v", err)
+	} else if len(bodies) != 0 {
+		t.Errorf("expected no exported task before any user exists, got %v", bodies)
+	}
+
+	if r := (HttpAuthTask{App: app, Username: "admin", Password: "secret", State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("enable http auth: %v", r.Error)
+	}
+
+	bodies, err := HttpAuthUserTask{}.ExportApp(app)
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	users := bodies[0].(HttpAuthUserTask)
+	if len(users.Users) != 1 || users.Users[0].Username != "admin" {
+		t.Fatalf("exported users = %+v, want just admin", users.Users)
+	}
+	if users.Users[0].Hash == "" {
+		t.Error("exported user must carry the stored htpasswd hash")
+	}
+	if users.Users[0].Password != "" {
+		t.Errorf("exported user must carry no cleartext password, got %q", users.Users[0].Password)
+	}
+	if err := users.Validate(); err != nil {
+		t.Errorf("exported task must be valid, got: %v", err)
+	}
+	if plan := users.Plan(); !plan.InSync {
+		t.Errorf("exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
