@@ -350,13 +350,18 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 		return res.processMaintenanceCustomPage(app, b, opts)
 	case SchedulerK3sAutoscalingAuthTask:
 		return res.processSchedulerK3sAutoscalingAuth(app, b, opts)
+	case LetsencryptPropertyTask:
+		return res.processPropertyValue(app, b, b.Property, b.Value, propertyEntry("letsencrypt", b.Property, letsencryptPropertyKeys).Sensitive, opts, func(v string) interface{} {
+			b.Value = v
+			return b
+		})
 	case SchedulerK3sPropertyTask:
-		return res.processPropertyValue(app, b, b.Property, b.Value, schedulerK3sPropertyKeys[b.Property].Sensitive, opts, func(v string) interface{} {
+		return res.processPropertyValue(app, b, b.Property, b.Value, propertyEntry("scheduler-k3s", b.Property, schedulerK3sPropertyKeys).Sensitive, opts, func(v string) interface{} {
 			b.Value = v
 			return b
 		})
 	case TraefikPropertyTask:
-		return res.processPropertyValue(app, b, b.Property, b.Value, traefikPropertyKeys[b.Property].Sensitive, opts, func(v string) interface{} {
+		return res.processPropertyValue(app, b, b.Property, b.Value, propertyEntry("traefik", b.Property, traefikPropertyKeys).Sensitive, opts, func(v string) interface{} {
 			b.Value = v
 			return b
 		})
@@ -366,10 +371,12 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 }
 
 // processPropertyValue lifts a sensitive property value (for example the
-// scheduler-k3s cluster token or a traefik basic-auth password) into a required
-// sensitive input in file mode, blanks it under inline+redact, and otherwise
-// keeps it inline (like a config value). A non-sensitive property value is
-// returned unchanged, so only secret-flagged properties are ever lifted (#327).
+// scheduler-k3s cluster token or a letsencrypt DNS provider credential) into a
+// required sensitive input in file mode, blanks it under inline+redact, and
+// otherwise keeps it inline (like a config value). A non-sensitive property
+// value is returned unchanged, so only secret-flagged properties are ever
+// lifted (#327), and the input is named after the property so a vars-file entry
+// says which property it fills (#451).
 func (res *ExportResult) processPropertyValue(app string, body interface{}, property, value string, sensitive bool, opts ExportOptions, rebuild func(string) interface{}) (interface{}, []map[string]interface{}) {
 	if !sensitive || value == "" {
 		return body, nil

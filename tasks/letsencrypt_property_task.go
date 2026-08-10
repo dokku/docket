@@ -14,6 +14,9 @@ type LetsencryptPropertyTask struct {
 	// Value is the value to set for the letsencrypt property. Tagged sensitive
 	// because some letsencrypt properties carry DNS-API credentials; benign
 	// property values get masked too, which is preferable to leaking secrets.
+	// The tag drives output masking only - export decides what to lift into a
+	// vars file from the property's PropertyKeys entry, so a benign value stays
+	// readable in the exported recipe (#451).
 	Value string `required:"false" sensitive:"true" yaml:"value,omitempty" description:"Value to set for the letsencrypt property"`
 
 	// State is the desired state of the letsencrypt configuration

@@ -926,39 +926,70 @@ func TestExportGlobalLetsencryptDynamicProperties(t *testing.T) {
 }
 
 // TestExportGlobalLetsencryptCredentialLiftedAsSensitiveInput proves the newly
-// exported credential never lands in the recipe in cleartext. Unlike the traefik
-// and scheduler-k3s property tasks, the letsencrypt one is lifted by
-// processSensitiveScalars (its Value field is tagged sensitive), so the input is
-// named after the field rather than the property - look the value up instead of
-// pinning the name.
+// exported credential never lands in the recipe in cleartext, and that the input
+// it is lifted into is named after the property rather than the `value` field
+// (#451). The benign properties alongside it are not secrets and stay inline, so
+// an exported recipe still describes the letsencrypt configuration and only asks
+// the operator for the credential.
 func TestExportGlobalLetsencryptCredentialLiftedAsSensitiveInput(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet apps:list": "",
-		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-NAMECHEAP_API_KEY":"s3cr3tkey"}`,
+		"--quiet letsencrypt:report --global --format json": `{"global-email":"admin@example.com","global-dns-provider":"namecheap","global-dns-provider-NAMECHEAP_API_KEY":"s3cr3tkey"}`,
 	}))()
 
 	res, err := ExportRecipe(ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
-	var lifted bool
-	for _, value := range res.Vars {
-		if value == "s3cr3tkey" {
-			lifted = true
-		}
+	if got := res.Vars["global_dns_provider_NAMECHEAP_API_KEY"]; got != "s3cr3tkey" {
+		t.Errorf("vars[global_dns_provider_NAMECHEAP_API_KEY] = %q, want the credential lifted (vars: %v)", got, res.Vars)
 	}
-	if !lifted {
-		t.Errorf("expected the credential lifted into vars, got %v", res.Vars)
+	if len(res.Vars) != 1 {
+		t.Errorf("only the credential should be lifted, got %v", res.Vars)
 	}
 	recipe, _ := res.MarshalRecipe("yaml")
 	out := string(recipe)
 	if strings.Contains(out, "s3cr3tkey") {
 		t.Errorf("recipe leaked the dns provider credential:\n%s", out)
 	}
-	for _, want := range []string{"dokku_letsencrypt_property", "dns-provider-NAMECHEAP_API_KEY", "sensitive: true"} {
+	for _, want := range []string{
+		"dokku_letsencrypt_property",
+		"dns-provider-NAMECHEAP_API_KEY",
+		"{{ .global_dns_provider_NAMECHEAP_API_KEY }}",
+		"sensitive: true",
+		"admin@example.com", // a benign property stays inline
+		"namecheap",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("recipe missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestExportLetsencryptBenignPropertyNotLifted keeps the app scope honest: only
+// the credential family is a secret, so a plain property must not turn into a
+// required input the operator has to re-supply on every apply (#451).
+func TestExportLetsencryptBenignPropertyNotLifted(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                            "web",
+		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"tok3n"}`,
+	}))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if got := res.Vars["web_dns_provider_CLOUDFLARE_API_TOKEN"]; got != "tok3n" {
+		t.Errorf("vars[web_dns_provider_CLOUDFLARE_API_TOKEN] = %q, want the credential lifted (vars: %v)", got, res.Vars)
+	}
+	for name, value := range res.Vars {
+		if value == "admin@example.com" {
+			t.Errorf("the email is not a secret and must not be lifted into input %q", name)
+		}
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	if out := string(recipe); !strings.Contains(out, "admin@example.com") {
+		t.Errorf("expected the email inline in the recipe:\n%s", out)
 	}
 }
 

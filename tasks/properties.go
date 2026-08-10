@@ -317,6 +317,19 @@ func dynamicPropertyKeys(plugin, property string) (PropertyKeys, bool) {
 	return PropertyKeys{PerApp: property, Global: "global-" + property, Sensitive: true}, true
 }
 
+// propertyEntry returns the PropertyKeys a plugin uses for one property,
+// falling back to the synthesized entry when the property belongs to a
+// probeable dynamic family the map cannot enumerate. Reading the map directly
+// instead would report a `dns-provider-<KEY>` credential as non-Sensitive and
+// export it in cleartext (#451).
+func propertyEntry(plugin, property string, keys map[string]PropertyKeys) PropertyKeys {
+	if entry, ok := keys[property]; ok {
+		return entry
+	}
+	entry, _ := dynamicPropertyKeys(plugin, property)
+	return entry
+}
+
 // withDynamicProperties returns keys plus a synthesized entry for every probeable
 // dynamic property in props. The map is copied only when there is something to
 // add, since the caller's map is a package-level singleton shared by every task
