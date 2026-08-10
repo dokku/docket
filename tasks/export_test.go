@@ -198,6 +198,174 @@ func TestExportHttpAuthUserPasswordsBecomeInputs(t *testing.T) {
 	}
 }
 
+// TestExportHttpAuthEnabledBecomesTask covers the first row of the export state
+// table (#428): an app serving http-auth emits dokku_http_auth with state
+// present, after the rest of the family so it is authoritative.
+func TestExportHttpAuthEnabledBecomesTask(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                  "web",
+		"http-auth:report web --format json": `{"enabled":"true","users":"admin","allowed-ips":"","domains":""}`,
+	}))()
+
+	bodies, err := HttpAuthTask{}.ExportApp("web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	auth := bodies[0].(HttpAuthTask)
+	if auth.State != StatePresent {
+		t.Errorf("State = %q, want %q", auth.State, StatePresent)
+	}
+	// The credentials are asserted on the struct, not by grepping the rendered
+	// recipe: the sibling dokku_http_auth_user task legitimately emits a
+	// username for each user, so a whole-recipe check would match that instead.
+	if auth.Username != "" || auth.Password != "" {
+		t.Errorf("exported enable task should carry no credentials, got username=%q password=%q", auth.Username, auth.Password)
+	}
+	if err := auth.Validate(); err != nil {
+		t.Errorf("exported http-auth task must be valid, got: %v", err)
+	}
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	for _, want := range []string{"dokku_http_auth:", "state: present"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+	// http-auth:add-user writes enabled=true as a side effect, so the task that
+	// owns the flag has to come last for the stated state to stick.
+	enable := strings.Index(out, "dokku_http_auth:")
+	users := strings.Index(out, "dokku_http_auth_user:")
+	if users < 0 {
+		t.Fatalf("recipe missing the user task:\n%s", out)
+	}
+	if enable < users {
+		t.Errorf("dokku_http_auth must be emitted after dokku_http_auth_user:\n%s", out)
+	}
+}
+
+// TestExportHttpAuthEnabledWithoutUsersBecomesTask covers the second row: a bare
+// `http-auth:enable <app>` leaves no users, allowed IPs or domains behind, so
+// nothing else's enable side effect would restore it and this task is the only
+// thing that carries the state.
+func TestExportHttpAuthEnabledWithoutUsersBecomesTask(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                  "web",
+		"http-auth:report web --format json": `{"enabled":"true","users":"","allowed-ips":"","domains":""}`,
+	}))()
+
+	bodies, err := HttpAuthTask{}.ExportApp("web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	if got := bodies[0].(HttpAuthTask).State; got != StatePresent {
+		t.Errorf("State = %q, want %q", got, StatePresent)
+	}
+	if err := bodies[0].(HttpAuthTask).Validate(); err != nil {
+		t.Errorf("exported http-auth task must be valid, got: %v", err)
+	}
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if !strings.Contains(out, "dokku_http_auth:") {
+		t.Errorf("recipe missing the enable task:\n%s", out)
+	}
+	if strings.Contains(out, "dokku_http_auth_user:") {
+		t.Errorf("no user task expected when the app has no http-auth users:\n%s", out)
+	}
+}
+
+// TestExportHttpAuthDisabledWithConfigBecomesAbsentTask covers the third row:
+// http-auth:disable leaves the users, allowed IPs and auth domains in place, and
+// re-applying those turns auth back on, so the export has to state absent
+// explicitly to undo it.
+func TestExportHttpAuthDisabledWithConfigBecomesAbsentTask(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		report string
+	}{
+		{"users remain", `{"enabled":"false","users":"admin","allowed-ips":"","domains":""}`},
+		{"allowed ips remain", `{"enabled":"false","users":"","allowed-ips":"192.0.2.1","domains":""}`},
+		{"auth domains remain", `{"enabled":"false","users":"","allowed-ips":"","domains":"web.example.com"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+				"--quiet apps:list":                  "web",
+				"http-auth:report web --format json": tc.report,
+			}))()
+
+			bodies, err := HttpAuthTask{}.ExportApp("web")
+			if err != nil {
+				t.Fatalf("ExportApp: %v", err)
+			}
+			if len(bodies) != 1 {
+				t.Fatalf("expected 1 exported task, got %d", len(bodies))
+			}
+			auth := bodies[0].(HttpAuthTask)
+			if auth.State != StateAbsent {
+				t.Errorf("State = %q, want %q", auth.State, StateAbsent)
+			}
+			if err := auth.Validate(); err != nil {
+				t.Errorf("exported http-auth task must be valid, got: %v", err)
+			}
+
+			res, err := ExportRecipe(ExportOptions{})
+			if err != nil {
+				t.Fatalf("ExportRecipe: %v", err)
+			}
+			recipe, _ := res.MarshalRecipe("yaml")
+			out := string(recipe)
+			if !strings.Contains(out, "dokku_http_auth:") {
+				t.Errorf("recipe missing the disable task:\n%s", out)
+			}
+			if !strings.Contains(out, "state: absent") {
+				t.Errorf("recipe missing the absent state:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestExportHttpAuthDisabledEmitsNoTask covers the fourth row: an app with auth
+// off and nothing configured is the default for every app on a server, so it
+// must not litter every play with a no-op disable task.
+func TestExportHttpAuthDisabledEmitsNoTask(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet apps:list":                  "web",
+		"http-auth:report web --format json": `{"enabled":"false","users":"","allowed-ips":"","domains":""}`,
+	}))()
+
+	bodies, err := HttpAuthTask{}.ExportApp("web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 0 {
+		t.Errorf("expected no exported task for an unconfigured app, got %v", bodies)
+	}
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	if strings.Contains(string(recipe), "dokku_http_auth:") {
+		t.Errorf("expected no dokku_http_auth task:\n%s", recipe)
+	}
+}
+
 func TestExportMaintenanceCustomPageBecomesInput(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet apps:list":                    "web",

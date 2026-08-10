@@ -717,3 +717,61 @@ func TestIntegrationExportLetsencrypt(t *testing.T) {
 		t.Errorf("expected no letsencrypt task for an inactive app, got %d", len(bodies))
 	}
 }
+
+// TestIntegrationExportHttpAuth walks the http-auth export state table against
+// a real server (#428): serving auth exports as present, disabling it leaves the
+// users behind so it exports as absent, and only once the users are gone does
+// the app fall out of the export entirely. Gated on the http-auth plugin.
+func TestIntegrationExportHttpAuth(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "http-auth")
+
+	app := "docket-test-export-http-auth"
+	destroyApp(app)
+	createApp(app)
+	defer destroyApp(app)
+
+	exported := func(t *testing.T, label string) []interface{} {
+		t.Helper()
+		bodies, err := HttpAuthTask{}.ExportApp(app)
+		if err != nil {
+			t.Fatalf("%s: ExportApp: %v", label, err)
+		}
+		return bodies
+	}
+	assertState := func(t *testing.T, label string, bodies []interface{}, want State) {
+		t.Helper()
+		if len(bodies) != 1 {
+			t.Fatalf("%s: expected 1 exported task, got %d", label, len(bodies))
+		}
+		auth := bodies[0].(HttpAuthTask)
+		if auth.State != want {
+			t.Errorf("%s: State = %q, want %q", label, auth.State, want)
+		}
+		if err := auth.Validate(); err != nil {
+			t.Errorf("%s: exported task must be valid, got: %v", label, err)
+		}
+		if plan := auth.Plan(); !plan.InSync {
+			t.Errorf("%s: exported task should report no drift, got status %v reason %q", label, plan.Status, plan.Reason)
+		}
+	}
+
+	if r := (HttpAuthTask{App: app, Username: "admin", Password: "secret", State: StatePresent}).Execute(); r.Error != nil {
+		t.Fatalf("enable http auth: %v", r.Error)
+	}
+	assertState(t, "enabled", exported(t, "enabled"), StatePresent)
+
+	// http-auth:disable only writes enabled=false; the htpasswd survives, so
+	// re-applying the exported users would turn auth back on without this.
+	if r := (HttpAuthTask{App: app, State: StateAbsent}).Execute(); r.Error != nil {
+		t.Fatalf("disable http auth: %v", r.Error)
+	}
+	assertState(t, "disabled with users", exported(t, "disabled with users"), StateAbsent)
+
+	if r := (HttpAuthUserTask{App: app, State: StateAbsent}).Execute(); r.Error != nil {
+		t.Fatalf("remove http auth users: %v", r.Error)
+	}
+	if bodies := exported(t, "disabled and unconfigured"); len(bodies) != 0 {
+		t.Errorf("expected no exported task once nothing is configured, got %v", bodies)
+	}
+}

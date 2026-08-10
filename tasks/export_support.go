@@ -33,8 +33,13 @@ type ExportSupport struct {
 // test enforces that so no task ships without an export decision - but it is
 // modelled as an optional interface to match DeprecationDocer and
 // RequirementsDocer. The docs generator renders the result in an Export
-// support section on the task's page; the export engine reads it to decide
-// whether to emit or skip (and warn) the task.
+// support section on the task's page.
+//
+// The export engine itself never reads this: emission is driven purely by
+// membership in appExportOrder/globalExportOrder plus the AppExporter/
+// GlobalExporter type assertion. What keeps the declaration honest is
+// TestExportSupportMatchesExportWiring, which fails when a task claims to be
+// exportable without being wired into an order list (or vice versa).
 type ExportDocer interface {
 	ExportSupport() ExportSupport
 }

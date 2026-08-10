@@ -6,19 +6,19 @@ Manages HTTP authentication for a given dokku application
 
 ## Requirements
 
-- dokku-http-auth plugin
+- dokku-http-auth plugin >= 0.13.0
 
 ## Export support
 
-Partial - credentials are not readable and become required inputs.
+Partial - the enabled state is exported; the seed credentials are not readable and come back as dokku_http_auth_user.
 
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `username` | string | no |  |  | HTTP auth username |
-| `password` | string | no |  |  | HTTP auth password (sensitive) |
+| `username` | string | no |  |  | HTTP auth username to seed when enabling; supplied together with password |
+| `password` | string | no |  |  | HTTP auth password for the seeded username; supplied together with username (sensitive) |
 | `state` | string | no | present | present, absent | State of the HTTP auth |
 
 ## Examples
@@ -30,6 +30,13 @@ dokku_http_auth:
     app: hello-world
     username: admin
     password: secret
+```
+
+### Enable HTTP authentication without seeding a user
+
+```yaml
+dokku_http_auth:
+    app: hello-world
 ```
 
 ### Disable HTTP authentication for an app

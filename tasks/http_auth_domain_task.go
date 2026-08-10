@@ -49,7 +49,7 @@ func (t HttpAuthDomainTask) ExportSupport() ExportSupport {
 
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthDomainTask) Requirements() []string {
-	return []string{"dokku-http-auth plugin"}
+	return []string{"dokku-http-auth plugin >= 0.13.0"}
 }
 
 // Examples returns a list of HttpAuthDomainTaskExamples as yaml

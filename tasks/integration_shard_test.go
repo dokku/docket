@@ -54,6 +54,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationGitSync":                                7.3,
 	"TestIntegrationHaproxyPropertyAll":                     6.7,
 	"TestIntegrationHttpAuth":                               8.3,
+	"TestIntegrationHttpAuthEnableWithoutCredentials":       7.0,
 	"TestIntegrationLetsencrypt":                            6.9,
 	"TestIntegrationLetsencryptPropertyAll":                 32.6,
 	"TestIntegrationLogsPropertyAll":                        11.9,

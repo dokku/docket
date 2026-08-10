@@ -20,6 +20,7 @@ covered below.
 | Domains and ports (`dokku_domains`, `dokku_ports`) | DNS records |
 | Service structure (`dokku_service_create`, `dokku_service_expose`, `dokku_service_link`, backup schedule, `dokku_acl_service`) | letsencrypt-issued certificates |
 | Storage *mounts* (`dokku_storage_mount`) | Secret values not in the recipe |
+| HTTP basic auth (`dokku_http_auth`, `dokku_http_auth_user`, `dokku_http_auth_allowed_ip`, `dokku_http_auth_domain`) | HTTP auth passwords |
 | Manual certs inlined via `dokku_certs` `cert_content` / `key_content` | Host-level OS configuration |
 | Buildpacks, scheduler and proxy config | Datastore backup credentials and `dokku_service_property` values |
 | SSH keys (`dokku_ssh_key`) | |
@@ -62,6 +63,11 @@ Some state cannot be read back and is left out with a warning - notably write-on
 (`dokku_git_auth`, `dokku_registry_auth`, and datastore backup credentials), datastore service data,
 and service properties (`dokku_service_property`), which you add by hand. Each task's
 [reference page](tasks/README.md) has an Export support section noting its limits.
+
+HTTP basic auth is reconstructed in full - whether it is serving, its users, allowed IPs and auth
+domains - except for the passwords themselves, which the plugin only stores as hashes. Each user's
+password becomes a required input you fill in before applying
+([#443](https://github.com/dokku/docket/issues/443) tracks carrying the hashes across instead).
 
 ## Step 2: Apply the recipe to the new server
 
