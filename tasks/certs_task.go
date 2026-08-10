@@ -61,6 +61,11 @@ func (t CertsTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportPartial, Caveat: "app and global certificate PEM material is exported (via certs:show and global-cert:show) and written to the companion vars-file"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t CertsTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "only whether a certificate is installed is probed; the certificate material is never read back, so replacing an existing certificate plans as in sync"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t CertsTask) Requirements() []string {
 	return []string{"dokku-global-cert plugin (required only when global: true)"}

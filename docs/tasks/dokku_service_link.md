@@ -12,6 +12,10 @@ Links or unlinks a dokku service to an app
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

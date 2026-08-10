@@ -194,10 +194,19 @@ Ansible's `check_mode` maps onto `plan`, which reads the server and reports what
 without mutating anything. Per task, `would_change` feeds `changed` and `mutations` - an itemized list
 of the operations `apply` would perform - feeds `diff`.
 
-A few tasks cannot read their state without running the underlying command (notably `dokku_git_auth`,
-`dokku_registry_auth`, and `dokku_storage_ensure`); they always report drift with a `(... not probed)`
-reason. When the probe itself fails - no `dokku` binary, unreachable host - the task reports
-`"status": "error"` and `plan` exits `1` rather than optimistically predicting a create.
+Some tasks cannot read their state without running the underlying command, so they report drift on
+every run and never converge. Which ones is a declared per-task property rather than a fixed list:
+each task's [reference page](tasks/README.md) carries a **Probe support** section, the tasks index
+marks them `(never converges)`, and `--list-tasks --json` carries a `probe` field
+(`unsupported` for a task that reads nothing, `partial` for one that reads only some of its fields)
+plus a `probe_caveat` naming what cannot be read. A wrapper that reports "no changes needed" should
+read that field rather than treating a perpetual `would_change` as a bug.
+
+That is a different thing from a probe that fails at runtime. When the probe itself fails - no
+`dokku` binary, unreachable host - the task reports `"status": "error"` and `plan` exits `1` rather
+than optimistically predicting a create. When a probe is merely inconclusive - an unknown property
+key, an older plugin that rejects `:report --format json` - the task emits a `warning` event and
+still mutates.
 
 ### Secrets
 

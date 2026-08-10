@@ -8,6 +8,10 @@ Manages the configuration for a given dokku application
 
 Partial - config values are written to the companion vars-file.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

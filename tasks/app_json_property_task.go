@@ -42,6 +42,11 @@ func (t AppJsonPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t AppJsonPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the app.json property task
 func (t AppJsonPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]AppJsonPropertyTaskExample{

@@ -12,6 +12,10 @@ Manages the dokku-acl access list for a dokku service
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -40,6 +40,11 @@ func (t LetsencryptTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t LetsencryptTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t LetsencryptTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin"}

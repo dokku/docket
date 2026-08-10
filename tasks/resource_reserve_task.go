@@ -43,6 +43,11 @@ func (t ResourceReserveTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ResourceReserveTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the resource reserve task
 func (t ResourceReserveTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceReserveTaskExample{

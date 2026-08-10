@@ -60,6 +60,11 @@ func (t MaintenanceCustomPageTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportPartial, Caveat: "export reads the current page back via maintenance:custom-page-export and inlines maintenance.html as content. Multi-file tarball pages collapse to that single content field, so extra assets are not captured. On an older dokku-maintenance without the export command the content cannot be read back and is lifted into a required content input the user supplies before apply"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t MaintenanceCustomPageTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the page checksum is probed when the plugin reports it; plugin versions that do not report it make the page plan as drift on every run"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t MaintenanceCustomPageTask) Requirements() []string {
 	return []string{"dokku-maintenance plugin"}

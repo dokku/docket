@@ -2,6 +2,8 @@
 
 Reference for every task type docket can run inside a recipe. Each page lists the task's fields and example usage. These pages are generated from the task definitions with `make docs`.
 
+A task marked `(never converges)` cannot read its own state, so it plans as drift on every run. See the Probe support section on its page.
+
 - [dokku_acl_app](dokku_acl_app.md) - Manages the dokku-acl access list for a dokku application
 - [dokku_acl_service](dokku_acl_service.md) - Manages the dokku-acl access list for a dokku service
 - [dokku_app](dokku_app.md) - Creates or destroys an app
@@ -28,7 +30,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_docker_options](dokku_docker_options.md) - Manages docker-options for a given dokku application
 - [dokku_domains](dokku_domains.md) - Manages the domains for a given dokku application or globally
 - [dokku_domains_toggle](dokku_domains_toggle.md) - Enables or disables the domains plugin for a given dokku application
-- [dokku_git_auth](dokku_git_auth.md) - Manages netrc credentials for a git host
+- [dokku_git_auth](dokku_git_auth.md) - Manages netrc credentials for a git host (never converges)
 - [dokku_git_from_archive](dokku_git_from_archive.md) - Deploys a git repository from an archive URL
 - [dokku_git_from_image](dokku_git_from_image.md) - Deploys a git repository from a docker image
 - [dokku_git_property](dokku_git_property.md) - Manages the git configuration for a given dokku application
@@ -53,7 +55,7 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_proxy_toggle](dokku_proxy_toggle.md) - Enables or disables the proxy plugin for a given dokku application
 - [dokku_ps_property](dokku_ps_property.md) - Manages the ps configuration for a given dokku application
 - [dokku_ps_scale](dokku_ps_scale.md) - Manages the process scale for a given dokku application
-- [dokku_registry_auth](dokku_registry_auth.md) - Manages docker registry authentication for a dokku application or globally
+- [dokku_registry_auth](dokku_registry_auth.md) - Manages docker registry authentication for a dokku application or globally (never converges)
 - [dokku_registry_property](dokku_registry_property.md) - Manages the registry configuration for a given dokku application
 - [dokku_resource_limit](dokku_resource_limit.md) - Manages the resource limits for a given dokku application
 - [dokku_resource_reserve](dokku_resource_reserve.md) - Manages the resource reservations for a given dokku application
@@ -69,9 +71,9 @@ Reference for every task type docket can run inside a recipe. Each page lists th
 - [dokku_service_create](dokku_service_create.md) - Creates or destroys a dokku service
 - [dokku_service_expose](dokku_service_expose.md) - Exposes or unexposes a dokku service on host ports
 - [dokku_service_link](dokku_service_link.md) - Links or unlinks a dokku service to an app
-- [dokku_service_property](dokku_service_property.md) - Manages a property for a given dokku service
+- [dokku_service_property](dokku_service_property.md) - Manages a property for a given dokku service (never converges)
 - [dokku_ssh_key](dokku_ssh_key.md) - Manages an SSH public key for git push access via dokku's ssh-keys plugin
-- [dokku_storage_ensure](dokku_storage_ensure.md) - Ensures the storage for a given dokku application (deprecated)
+- [dokku_storage_ensure](dokku_storage_ensure.md) - Ensures the storage for a given dokku application (deprecated) (never converges)
 - [dokku_storage_entry](dokku_storage_entry.md) - Creates or destroys a named storage registry entry
 - [dokku_storage_mount](dokku_storage_mount.md) - Attaches or detaches storage on a dokku application
 - [dokku_traefik_property](dokku_traefik_property.md) - Manages the traefik configuration for a given dokku application

@@ -8,6 +8,10 @@ Syncs a git repository to a dokku application
 
 Supported.
 
+## Probe support
+
+Partial - dokku records the resolved commit as `<remote>#<sha>`, which cannot be compared against a branch or tag name, so only the remote and the persisted deploy branch are probed.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

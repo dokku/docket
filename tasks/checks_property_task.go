@@ -42,6 +42,11 @@ func (t ChecksPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ChecksPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the checks property task
 func (t ChecksPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksPropertyTaskExample{

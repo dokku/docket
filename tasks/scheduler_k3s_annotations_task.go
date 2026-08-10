@@ -52,6 +52,11 @@ func (t SchedulerK3sAnnotationsTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t SchedulerK3sAnnotationsTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the scheduler-k3s annotations task
 func (t SchedulerK3sAnnotationsTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sAnnotationsTaskExample{

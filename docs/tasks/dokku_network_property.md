@@ -8,6 +8,10 @@ Manages the network property for a given dokku application
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

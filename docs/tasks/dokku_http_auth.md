@@ -12,6 +12,10 @@ Manages HTTP authentication for a given dokku application
 
 Partial - the enabled state is exported; the seeded credentials are not carried on this task and come back as dokku_http_auth_user htpasswd hashes.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

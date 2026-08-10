@@ -49,6 +49,11 @@ func (t PsScaleTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t PsScaleTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the ps scale task
 func (t PsScaleTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]PsScaleTaskExample{

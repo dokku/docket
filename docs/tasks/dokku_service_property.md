@@ -12,6 +12,10 @@ Manages a property for a given dokku service
 
 Not supported - no datastore plugin exposes a machine-readable report of the properties set via `<service>:set`, so they cannot be read back (tracked upstream in dokku/dokku-datastore#98).
 
+## Probe support
+
+Not supported - the service's existence is probed but the property value is not, so the task plans as drift on every run.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

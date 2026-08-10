@@ -42,6 +42,11 @@ func (t RegistryPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t RegistryPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the registry property task
 func (t RegistryPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryPropertyTaskExample{

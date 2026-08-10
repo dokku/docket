@@ -99,6 +99,11 @@ func (t StorageMountTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t StorageMountTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the mount source, container path, and volume options are probed; phases, process_type, subpath, readonly, and volume_chown apply at mount time and are not drift-detected"}
+}
+
 // Examples returns the examples for the storage mount task
 func (t StorageMountTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]StorageMountTaskExample{

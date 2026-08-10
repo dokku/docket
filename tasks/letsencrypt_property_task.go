@@ -44,6 +44,11 @@ func (t LetsencryptPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t LetsencryptPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run"}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t LetsencryptPropertyTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin"}

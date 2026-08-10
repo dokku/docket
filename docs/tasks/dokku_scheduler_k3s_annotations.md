@@ -8,6 +8,10 @@ Manages scheduler-k3s annotations scoped to a (process_type, resource_type) pair
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

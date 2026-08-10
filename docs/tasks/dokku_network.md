@@ -8,6 +8,10 @@ Creates or destroys a Docker network
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

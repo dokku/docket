@@ -8,6 +8,10 @@ Creates or destroys a named storage registry entry
 
 Supported.
 
+## Probe support
+
+Partial - idempotency is keyed on the entry name; scheduler, size, and chown changes to an existing entry are not drift-detected (tracked in dokku/docket#439).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

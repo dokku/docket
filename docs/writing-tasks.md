@@ -89,6 +89,19 @@ A few conventions to follow:
   `apply` and `plan` emit a one-time `warning` line above each deprecated task's result line.
   Keep the message short and name the replacement, e.g.
   `"use dokku_storage_entry instead; storage:ensure-directory has been deprecated"`.
+- Every task must implement `ExportSupport() ExportSupport`, declaring whether `docket export` can
+  reconstruct it from a live server: `ExportSupported`, `ExportPartial`, or `ExportUnsupported`,
+  with a `Caveat` explaining anything short of supported. The generator renders it in an Export
+  support section, and a coverage test fails the build if a task ships without a decision.
+- Every task must also implement `ProbeSupport() ProbeSupport`, declaring how much of its own state
+  `Plan()` can read back: `ProbeSupported`, `ProbePartial` (some fields have no read command), or
+  `ProbeUnsupported` (none do, so the task reports drift on every run and never converges). Name
+  what cannot be read in the `Caveat`. The generator renders it in a Probe support section, the
+  tasks index marks an unsupported task `(never converges)`, and `--list-tasks` marks it the same
+  way. `TestProbeSupportMatchesPlanWiring` cross-checks the declaration against the code: a task
+  that claims it converges must have an `InSync: true` result reachable from its `Plan()`, and one
+  that claims it cannot must not. Declare it for the task type, not for the run - a probe that
+  fails on a particular server is a `PlanWarning`, not a `ProbeUnsupported` task.
 - When a task has conditional or semantic input rules that a `required:"true"` tag cannot express -
   a list that must be non-empty only when `state: present`, mutually-exclusive fields, an enum, a
   per-item requirement on a slice field - put them in the optional `Validate() error` method (the
@@ -199,15 +212,17 @@ func (t NginxPropertyTask) Plan() PlanResult {
 Keep the `PropertyKeys` map in sync with the plugin's `:report` output - that mapping is how `plan`
 and `apply` detect drift without mutating. A property whose report key only appears after it is set
 (a dynamic family such as letsencrypt's `dns-provider-*`) skips probing and is applied
-unconditionally; those are recognized by `isDynamicProperty` in `tasks/properties.go`.
+unconditionally; those are recognized by `isDynamicProperty` in `tasks/properties.go`. A task whose
+key map has such a family is `ProbePartial`, not `ProbeSupported`.
 
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
-`Examples()`, and optional `Requirements()` methods plus its struct field tags - they are not
-hand-edited. Each page carries a Synopsis (from `Doc()`), a Requirements section (when the task
-implements `Requirements()`), a Parameters table (reflected from the field tags), the examples, and
-a shared Return Values table. After adding or changing a task, regenerate them:
+`Examples()`, `ExportSupport()`, `ProbeSupport()`, and optional `Requirements()` methods plus its
+struct field tags - they are not hand-edited. Each page carries a Synopsis (from `Doc()`), a
+Requirements section (when the task implements `Requirements()`), Export support and Probe support
+sections, a Parameters table (reflected from the field tags), the examples, and a shared Return
+Values table. After adding or changing a task, regenerate them:
 
 ```bash
 make docs

@@ -12,6 +12,10 @@ Manages the set of domains HTTP auth is restricted to for a dokku application
 
 Supported.
 
+## Probe support
+
+Supported.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

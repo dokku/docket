@@ -57,6 +57,11 @@ func (t GitSyncTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t GitSyncTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "dokku records the resolved commit as `<remote>#<sha>`, which cannot be compared against a branch or tag name, so only the remote and the persisted deploy branch are probed"}
+}
+
 // Examples returns the examples for the git sync task
 func (t GitSyncTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitSyncTaskExample{

@@ -42,6 +42,11 @@ func (t BuilderPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t BuilderPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the builder property task
 func (t BuilderPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderPropertyTaskExample{

@@ -44,6 +44,11 @@ func (t StorageEnsureTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportUnsupported, Caveat: "deprecated; storage state is exported via dokku_storage_mount"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t StorageEnsureTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeUnsupported, Caveat: "`storage:ensure-directory` has no read command, so the task plans as drift on every run"}
+}
+
 // Deprecation marks dokku_storage_ensure as deprecated. dokku's
 // underlying storage:ensure-directory subcommand has been deprecated in
 // favor of storage:create, which docket exposes through

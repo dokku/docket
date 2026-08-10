@@ -44,6 +44,11 @@ func (t ServiceLinkTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ServiceLinkTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // ExportApp reconstructs an app's datastore service links: it enumerates
 // services (listServices) and emits a dokku_service_link for each service the
 // app appears in (serviceLinkedApps). The link, not dokku_config, is the source

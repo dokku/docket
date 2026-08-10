@@ -41,6 +41,11 @@ func (t NetworkTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t NetworkTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns a list of NetworkTaskExamples as yaml
 func (t NetworkTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkTaskExample{

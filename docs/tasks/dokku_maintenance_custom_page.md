@@ -12,6 +12,10 @@ Installs or removes a custom maintenance page for a dokku application.
 
 Partial - export reads the current page back via maintenance:custom-page-export and inlines maintenance.html as content. Multi-file tarball pages collapse to that single content field, so extra assets are not captured. On an older dokku-maintenance without the export command the content cannot be read back and is lifted into a required content input the user supplies before apply.
 
+## Probe support
+
+Partial - the page checksum is probed when the plugin reports it; plugin versions that do not report it make the page plan as drift on every run.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

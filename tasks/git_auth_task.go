@@ -51,6 +51,11 @@ func (t GitAuthTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportUnsupported, Caveat: "netrc credentials are write-only and cannot be read back"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t GitAuthTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeUnsupported, Caveat: "netrc state has no read command, so the task plans as drift on every run"}
+}
+
 // Examples returns the examples for the git auth task
 func (t GitAuthTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]GitAuthTaskExample{

@@ -46,6 +46,11 @@ func (t BuildpacksTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t BuildpacksTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the buildpacks task
 func (t BuildpacksTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuildpacksTaskExample{

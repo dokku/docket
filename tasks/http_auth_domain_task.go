@@ -47,6 +47,11 @@ func (t HttpAuthDomainTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t HttpAuthDomainTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthDomainTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin >= 0.13.0"}

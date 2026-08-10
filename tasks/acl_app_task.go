@@ -43,6 +43,11 @@ func (t AclAppTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t AclAppTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t AclAppTask) Requirements() []string {
 	return []string{"dokku-acl plugin"}

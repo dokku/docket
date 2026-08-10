@@ -12,6 +12,10 @@ Manages the set of HTTP auth users for a dokku application
 
 Supported.
 
+## Probe support
+
+Partial - an existing user's htpasswd hash is probed; a cleartext password is not readable, so a user that already exists converges only when update_password forces it.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

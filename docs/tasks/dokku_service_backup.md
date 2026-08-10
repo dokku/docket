@@ -12,6 +12,10 @@ Manages the S3 backup schedule, authentication, and encryption for a dokku servi
 
 Partial - the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are write-only and must be re-supplied before the recipe can back up.
 
+## Probe support
+
+Partial - the backup schedule and bucket are probed; the AWS credentials and the encryption passphrase have no read command and are re-applied on every run when supplied.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

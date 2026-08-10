@@ -42,6 +42,11 @@ func (t BuilderLambdaPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t BuilderLambdaPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the builder-lambda property task
 func (t BuilderLambdaPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderLambdaPropertyTaskExample{

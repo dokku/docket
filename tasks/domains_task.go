@@ -46,6 +46,11 @@ func (t DomainsTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t DomainsTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the domains task
 func (t DomainsTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]DomainsTaskExample{

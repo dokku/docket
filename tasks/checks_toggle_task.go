@@ -76,6 +76,11 @@ func (t ChecksToggleTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ChecksToggleTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the checks toggle task
 func (t ChecksToggleTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksToggleTaskExample{

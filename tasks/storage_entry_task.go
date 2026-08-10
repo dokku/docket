@@ -88,6 +88,11 @@ func (t StorageEntryTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t StorageEntryTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "idempotency is keyed on the entry name; scheduler, size, and chown changes to an existing entry are not drift-detected (tracked in dokku/docket#439)"}
+}
+
 // Examples returns the examples for the storage entry task
 func (t StorageEntryTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEntryTaskExample{

@@ -55,6 +55,14 @@ example server stderr echoed by a rejected probe) renders as `***`. `--list-task
 emit a separate `warning` event; instead, the `list_task` event for a deprecated task carries
 `"deprecated": true` and a `deprecation` field with the message.
 
+`unknown_property` and `probe_rejected` are probe failures: this run could not read the state, and
+another run against a different server or a newer plugin might. A task type that can *never* read
+its state is a different thing, declared rather than discovered, and it is not a warning at all. The
+`list_task` event carries it as `"probe": "unsupported"` (the task reports drift on every run) or
+`"probe": "partial"` (only some of its fields are read), each with a `probe_caveat` naming what
+cannot be read. Both keys are absent for a task that probes everything it manages. A recipe
+containing an `unsupported` task never exits `0` under `--detailed-exitcode`.
+
 ## Commands
 
 Both `task` flavors include `commands` as an array of resolved, masked `dokku` command strings. It

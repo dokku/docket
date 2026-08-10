@@ -8,6 +8,10 @@ Manages docker registry authentication for a dokku application or globally
 
 Not supported - registry login credentials are write-only and cannot be read back.
 
+## Probe support
+
+Not supported - registry login state has no read command, so the task plans as drift on every run.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

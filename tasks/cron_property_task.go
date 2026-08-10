@@ -42,6 +42,11 @@ func (t CronPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t CronPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the cron property task
 func (t CronPropertyTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]CronPropertyTaskExample{

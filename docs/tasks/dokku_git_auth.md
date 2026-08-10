@@ -8,6 +8,10 @@ Manages netrc credentials for a git host
 
 Not supported - netrc credentials are write-only and cannot be read back.
 
+## Probe support
+
+Not supported - netrc state has no read command, so the task plans as drift on every run.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

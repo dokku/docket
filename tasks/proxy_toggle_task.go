@@ -65,6 +65,11 @@ func (t ProxyToggleTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ProxyToggleTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
 // Examples returns the examples for the proxy toggle task
 func (t ProxyToggleTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]ProxyToggleTaskExample{

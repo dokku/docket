@@ -92,6 +92,11 @@ func (t ServiceCreateTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportPartial, Caveat: "the service and the image it is running are exported; the remaining create-time options (config_options, custom_env, memory, shm_size, the networks, and the passwords) have no read command and must be re-supplied"}
 }
 
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ServiceCreateTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbePartial, Caveat: "the service's existence and image are probed; config_options, custom_env, memory, shm_size, the networks, and the passwords have no read command and are not drift-detected"}
+}
+
 // ExportGlobal reconstructs every datastore service instance on the server as a
 // dokku_service_create task. Discovery is via listServices (the `service-list`
 // plugin trigger). Like dokku_storage_mount, the service's data is migrated
