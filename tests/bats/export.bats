@@ -34,6 +34,50 @@ teardown() {
   assert_output --partial "docket-test-export"
 }
 
+@test "docket export --resource rejects a combination with --app" {
+  # No server needed: an address already names its app, so the two filters are
+  # rejected before anything is read.
+  run "$(docket_bin)" export --resource 'dokku_config[app=docket-test-export]' --app docket-test-export --output -
+  assert_failure
+  assert_output --partial "cannot be combined"
+}
+
+@test "docket export --resource rejects an unknown task type" {
+  run "$(docket_bin)" export --resource 'dokku_confg[app=docket-test-export]' --output -
+  assert_failure
+  assert_output --partial 'did you mean "dokku_config"'
+}
+
+@test "docket export --resource rejects a key the task does not declare" {
+  run "$(docket_bin)" export --resource 'dokku_config[application=docket-test-export]' --output -
+  assert_failure
+  assert_output --partial "is not an identity key of dokku_config"
+}
+
+@test "docket export --resource emits only the addressed resource" {
+  require_dokku
+  dokku apps:create docket-test-export
+  dokku config:set --no-restart docket-test-export EXPORT_ONE=1
+  dokku domains:add docket-test-export docket-test-export.example.com
+  run "$(docket_bin)" export --resource 'dokku_config[app=docket-test-export]' --output "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
+  run cat "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
+  assert_output --partial "dokku_config"
+  refute_output --partial "dokku_domains"
+  refute_output --partial "dokku_app:"
+}
+
+@test "docket export --resource fails on an address the server has nothing for" {
+  require_dokku
+  run "$(docket_bin)" export --resource 'dokku_config[app=docket-nonexistent-xyz]' --output "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_failure
+  assert_output --partial "dokku_config[app=docket-nonexistent-xyz]"
+  assert_output --partial "not found on server"
+  run test -f "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_failure
+}
+
 @test "docket export --app reports the app count without the global play" {
   require_dokku
   dokku apps:create docket-test-export

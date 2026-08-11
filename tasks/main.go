@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"crypto/rand"
 	"fmt"
 	"io"
 	"reflect"
@@ -656,25 +655,34 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 		}
 
 		exprCtx := buildExprContext(playCtx)
-		play.Tasks = OrderedStringEnvelopeMap{}
+		// Envelopes are collected before any is stored, because the
+		// generated-name dedupe needs to see the whole play - including group
+		// children, which never enter play.Tasks - before it can decide which
+		// names collide.
+		built := make([]*TaskEnvelope, 0, len(perPlay.Entries))
 		for _, entry := range perPlay.Entries {
-			envelopes, err := buildEnvelopesFromEntry(entry, playCtx, exprCtx)
+			envelopes, err := buildEnvelopesFromEntry(entry, "", playCtx, exprCtx)
 			if err != nil {
 				return nil, err
 			}
-			for _, env := range envelopes {
-				if play.Tasks.GetEnvelope(env.Name) != nil {
-					// Duplicate literal names are already rejected at parse
-					// time; reaching here means two loop expansions produced
-					// the same suffixed name (#307), which would otherwise
-					// silently drop the earlier iteration.
-					return nil, fmt.Errorf("task parse error: duplicate task name %q in play %q", env.Name, play.Name)
-				}
-				if len(play.Tags) > 0 {
-					env.Tags = mergePlayTags(env.Tags, play.Tags)
-				}
-				play.Tasks.Set(env.Name, env)
+			built = append(built, envelopes...)
+		}
+		dedupeGeneratedNames(built)
+
+		play.Tasks = OrderedStringEnvelopeMap{}
+		for _, env := range built {
+			if play.Tasks.GetEnvelope(env.Name) != nil {
+				// Duplicate literal names are already rejected at parse
+				// time, and generated ones are deduped above; reaching here
+				// means two loop expansions produced the same suffixed name
+				// (#307), which would otherwise silently drop the earlier
+				// iteration.
+				return nil, fmt.Errorf("task parse error: duplicate task name %q in play %q", env.Name, play.Name)
 			}
+			if len(play.Tags) > 0 {
+				env.Tags = mergePlayTags(env.Tags, play.Tags)
+			}
+			play.Tasks.Set(env.Name, env)
 		}
 
 		plays = append(plays, play)
@@ -797,7 +805,18 @@ func mergePlayTags(envTags, playTags []string) []string {
 // the task body via decodeTaskBytes, and recurses through group children.
 // Structural problems the shared parser collected on the entry fail fast
 // here, so the loader rejects exactly what `docket validate` flags.
-func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+//
+// groupPath is the naming path of the enclosing group clause ("" at the top
+// level, `group #3.block` inside one) and is only consulted when an unnamed
+// group entry needs a name. Leaf entries do not use it: an unnamed leaf is
+// named after the resource it addresses, which is decided after its body
+// decodes, and any collision is settled by dedupeGeneratedNames.
+//
+// Diagnostics here quote e.Label, never the envelope name. The two are
+// different things - the label is the entry's position in the file, which is
+// known before anything decodes - and coupling them is what used to render
+// `task #1 "task #1 3F2A9C1E4B7D0A55"` into a compile error.
+func buildEnvelopesFromEntry(e *parsedTaskEntry, groupPath string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
 	if len(e.Problems) > 0 {
 		return nil, problemToError(e.Problems[0])
 	}
@@ -811,20 +830,11 @@ func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[s
 		FailedWhen:   e.FailedWhen,
 		IgnoreErrors: e.IgnoreErrors,
 	}
-	index := e.Index
-
-	if envelope.Name == "" {
-		generated, err := generateTaskName(index)
-		if err != nil {
-			return nil, err
-		}
-		envelope.Name = generated
-	}
 
 	if e.LoopNode != nil {
 		var loop interface{}
 		if err := e.LoopNode.Decode(&loop); err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: loop decode error: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: loop decode error: %s", e.Label, err)
 		}
 		envelope.Loop = loop
 	}
@@ -832,7 +842,7 @@ func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[s
 	if envelope.When != "" {
 		prog, err := CompilePredicate(envelope.When)
 		if err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: when compile error: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: when compile error: %s", e.Label, err)
 		}
 		envelope.whenProgram = prog
 	}
@@ -840,7 +850,7 @@ func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[s
 	if envelope.ChangedWhen != "" {
 		prog, err := CompilePredicate(envelope.ChangedWhen)
 		if err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: changed_when compile error: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: changed_when compile error: %s", e.Label, err)
 		}
 		envelope.changedWhenProgram = prog
 	}
@@ -848,39 +858,48 @@ func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[s
 	if envelope.FailedWhen != "" {
 		prog, err := CompilePredicate(envelope.FailedWhen)
 		if err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: failed_when compile error: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: failed_when compile error: %s", e.Label, err)
 		}
 		envelope.failedWhenProgram = prog
 	}
 
 	if e.IsGroup {
+		// A group has no body and so addresses no resource. Its generated
+		// name is its path instead, which is unique by construction: group
+		// clauses restart their child indexes at 1, so a bare `group #1`
+		// would collide across nesting levels.
+		if envelope.Name == "" {
+			envelope.Name = generatedGroupName(groupPath, e.Index)
+			envelope.NameGenerated = true
+		}
+
 		if envelope.Loop != nil {
 			expanded, err := expandLoopGroup(envelope, e.BlockNode, e.RescueNode, e.AlwaysNode, sigilContext, exprContext)
 			if err != nil {
-				return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+				return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
 			}
 			return expanded, nil
 		}
 
 		envelope.TypeName = ""
-		blockChildren, err := buildGroupClause(e.Block, "block", sigilContext, exprContext)
+		blockChildren, err := buildGroupClause(e.Block, "block", envelope.Name, sigilContext, exprContext)
 		if err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
 		}
 		if len(blockChildren) == 0 {
-			return nil, fmt.Errorf("task parse error: task #%d %q: block: must contain at least one child task", index, envelope.Name)
+			return nil, fmt.Errorf("task parse error: %s: block: must contain at least one child task", e.Label)
 		}
 		envelope.Block = blockChildren
 
-		rescueChildren, err := buildGroupClause(e.Rescue, "rescue", sigilContext, exprContext)
+		rescueChildren, err := buildGroupClause(e.Rescue, "rescue", envelope.Name, sigilContext, exprContext)
 		if err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
 		}
 		envelope.Rescue = rescueChildren
 
-		alwaysChildren, err := buildGroupClause(e.Always, "always", sigilContext, exprContext)
+		alwaysChildren, err := buildGroupClause(e.Always, "always", envelope.Name, sigilContext, exprContext)
 		if err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
 		}
 		envelope.Always = alwaysChildren
 
@@ -891,16 +910,16 @@ func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[s
 
 	bodyBytes, err := yaml.Marshal(e.BodyNode)
 	if err != nil {
-		return nil, fmt.Errorf("task parse error: task #%d %q failed to marshal config to yaml - %s", index, envelope.Name, err)
+		return nil, fmt.Errorf("task parse error: %s failed to marshal config to yaml - %s", e.Label, err)
 	}
 
 	if envelope.Loop != nil {
 		expanded, err := expandLoop(envelope, bodyBytes, e.TypeKey, sigilContext, exprContext)
 		if err != nil {
-			return nil, fmt.Errorf("task parse error: task #%d %q: %s", index, envelope.Name, err)
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
 		}
 		for _, exp := range expanded {
-			if err := rejectLoopVarsInTask(index, exp.Name, exp.Task); err != nil {
+			if err := rejectLoopVarsInTask(e.Label, exp.Task); err != nil {
 				return nil, err
 			}
 		}
@@ -909,30 +928,114 @@ func buildEnvelopesFromEntry(e *parsedTaskEntry, sigilContext, exprContext map[s
 
 	task, err := decodeTaskBytes(e.TypeKey, bodyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("task parse error: task #%d %q failed to decode to %s - %s", index, envelope.Name, e.TypeKey, err)
+		return nil, fmt.Errorf("task parse error: %s failed to decode to %s - %s", e.Label, e.TypeKey, err)
 	}
 	envelope.Task = task
 
-	if err := rejectLoopVarsInTask(index, envelope.Name, task); err != nil {
+	// Naming happens here, after the decode, because the name is the address
+	// of the resource the body selects.
+	if envelope.Name == "" {
+		envelope.Name = IdentityAddress(e.TypeKey, task)
+		envelope.NameGenerated = true
+	}
+
+	if err := rejectLoopVarsInTask(e.Label, task); err != nil {
 		return nil, err
 	}
 
 	return []*TaskEnvelope{envelope}, nil
 }
 
+// generatedGroupName names an unnamed group entry after its position in the
+// envelope tree: `group #3` at the top level, `group #3.block[2]` for the
+// second child of that group's block clause.
+func generatedGroupName(groupPath string, index int) string {
+	if groupPath == "" {
+		return fmt.Sprintf("group #%d", index)
+	}
+	return fmt.Sprintf("%s[%d]", groupPath, index)
+}
+
 // buildGroupClause builds the child envelopes for one already-parsed
 // block / rescue / always clause, prefixing child errors with the clause
-// name and child position the way the legacy group decoder did.
-func buildGroupClause(children []*parsedTaskEntry, clause string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+// name and child position the way the legacy group decoder did. parentName
+// is the enclosing group's name, which children extend when they need a
+// generated name of their own.
+func buildGroupClause(children []*parsedTaskEntry, clause, parentName string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
 	out := make([]*TaskEnvelope, 0, len(children))
+	childPath := parentName + "." + clause
 	for i, child := range children {
-		childEnvelopes, err := buildEnvelopesFromEntry(child, sigilContext, exprContext)
+		childEnvelopes, err := buildEnvelopesFromEntry(child, childPath, sigilContext, exprContext)
 		if err != nil {
 			return nil, fmt.Errorf("%s[%d]: %s", clause, i, err)
 		}
 		out = append(out, childEnvelopes...)
 	}
 	return out, nil
+}
+
+// dedupeGeneratedNames makes every auto-generated name in a play unique.
+//
+// Two tasks can legitimately address one resource - `dokku_config` on an app
+// with `state: present` and another with `state: absent` - and before #427 the
+// random suffix in every generated name hid that. The first occurrence keeps
+// the bare address; later ones get ` #2`, ` #3`. Ordinals shift if a colliding
+// task is inserted ahead of them, which is the price of not putting `state:`
+// in the address; a recipe that needs a name pinned should write one.
+//
+// The two passes matter. Reserving every user-supplied name first is what
+// stops a generated name from displacing one a recipe author wrote when the
+// generated one happens to come first in the file.
+//
+// The walk recurses into block / rescue / always: group children never enter
+// play.Tasks, so nothing else would catch a collision between them, yet
+// EnvelopeContainsName resolves --start-at-task against them.
+func dedupeGeneratedNames(envs []*TaskEnvelope) {
+	var (
+		names     []string
+		generated []bool
+		ordered   []*TaskEnvelope
+	)
+	walkEnvelopes(envs, func(env *TaskEnvelope) {
+		names = append(names, env.Name)
+		generated = append(generated, env.NameGenerated)
+		ordered = append(ordered, env)
+	})
+	for i, name := range disambiguateNames(names, generated) {
+		ordered[i].Name = name
+	}
+}
+
+// disambiguateNames suffixes duplicate generated names with ` #2`, ` #3`, and
+// so on, leaving names the recipe author wrote untouched. names and generated
+// are parallel and in source order.
+//
+// Reserving every non-generated name before assigning any generated one is
+// what makes the result independent of which came first in the file.
+//
+// Shared with the validator so `validate --strict --start-at-task` resolves
+// the same names the loader will produce.
+func disambiguateNames(names []string, generated []bool) []string {
+	taken := make(map[string]bool, len(names))
+	for i, name := range names {
+		if !generated[i] {
+			taken[name] = true
+		}
+	}
+	out := make([]string, len(names))
+	for i, name := range names {
+		if !generated[i] {
+			out[i] = name
+			continue
+		}
+		candidate := name
+		for n := 2; taken[candidate]; n++ {
+			candidate = fmt.Sprintf("%s #%d", name, n)
+		}
+		out[i] = candidate
+		taken[candidate] = true
+	}
+	return out
 }
 
 // decodeTags coerces a yaml-parsed tags value into a []string. Supports
@@ -955,16 +1058,6 @@ func decodeTags(value interface{}) ([]string, error) {
 		return out, nil
 	}
 	return nil, fmt.Errorf("tags must be a list of strings, got %T", value)
-}
-
-// generateTaskName returns a unique task name when the user did not
-// supply one. The format mirrors the legacy `task #N XXXX` pattern.
-func generateTaskName(index int) (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("task parse error: task #%d had no task name and there was a failure to generate random task name - %s", index, err)
-	}
-	return fmt.Sprintf("task #%d %X", index, b), nil
 }
 
 // nearestEnvelopeOrTaskKey returns the envelope-allowlist or registered
@@ -1010,13 +1103,13 @@ func buildExprContext(context map[string]interface{}) map[string]interface{} {
 // and pipelined forms) and returns an error when it finds one. Loop
 // expansions render those tokens to real values, so any survivor implies
 // the user referenced a loop variable from a non-loop task.
-func rejectLoopVarsInTask(index int, name string, task Task) error {
+func rejectLoopVarsInTask(label string, task Task) error {
 	bytes, err := yaml.Marshal(task)
 	if err != nil {
 		return nil
 	}
 	if m := loopVarSentinelPattern.FindStringSubmatch(string(bytes)); m != nil {
-		return fmt.Errorf("task parse error: task #%d %q: .%s is only available inside a loop body", index, name, m[1])
+		return fmt.Errorf("task parse error: %s: .%s is only available inside a loop body", label, m[1])
 	}
 	return nil
 }

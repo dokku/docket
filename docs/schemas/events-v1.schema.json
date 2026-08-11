@@ -119,7 +119,10 @@
         "version": { "$ref": "#/$defs/version" },
         "type": { "const": "task" },
         "play": { "type": "string" },
-        "name": { "type": "string" },
+        "name": {
+          "type": "string",
+          "description": "The task's `name:`, or - when the recipe omits one - the address of the resource it manages (`dokku_config[app=api]`). Masked. Stable across runs of the same recipe, so it is the key for correlating one run with another."
+        },
         "status": {
           "type": "string",
           "enum": ["ok", "changed", "skipped", "error"]

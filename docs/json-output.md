@@ -14,6 +14,21 @@ interpolate a sensitive input). Masking applies to the `apply` / `plan` run stre
 `validate --json`; the `--list-tasks --json` stream is **not** masked, so do not route it anywhere a
 secret must not land.
 
+## Correlating runs
+
+`name` is the correlation key. Two runs of the same recipe emit the same `name` for the same task,
+so a dashboard or a CI job comparing `plan` to `apply` can line them up. A task with no `name:` in
+the recipe is named after the [resource it manages](task-envelope.md#names-and-resource-addresses) -
+`dokku_config[app=api]` - which is stable for the same reason.
+
+Two caveats on masking, both of which can make two distinct tasks indistinguishable in the stream:
+
+- A generated name embeds the task's identity field values. No field is ever both an identity key
+  and declared sensitive, but a `sensitive: true` input interpolated into one still reaches the
+  name - masked in this stream, in the clear in `--list-tasks --json`.
+- Masking is substring replacement. A short sensitive value can mask a large part of two different
+  names into the same `***`-bearing string. Pin a `name:` on the tasks a consumer must tell apart.
+
 ## Events
 
 One event is emitted per play start, per task, and one summary at the end. The fields differ

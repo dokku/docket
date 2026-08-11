@@ -1329,6 +1329,98 @@ func TestValidateStartAtTaskMatchesGroupChild(t *testing.T) {
 	}
 }
 
+// TestValidateStartAtTaskMatchesGeneratedName asserts the audit resolves the
+// names the loader generates, not only the ones a recipe author wrote. Since
+// #427 an unnamed task is named after the resource it addresses and that name
+// is a legal --start-at-task target, so reporting it as unknown would fail a
+// valid invocation.
+func TestValidateStartAtTaskMatchesGeneratedName(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - dokku_app: { app: api }
+    - dokku_config: { app: api, config: { A: "1" } }
+`)
+	problems := Validate(data, ValidateOptions{Strict: true, StartAtTask: "dokku_config[app=api]"})
+	if p := findProblem(problems, "unknown_start_at_task"); p != nil {
+		t.Fatalf("did not expect unknown_start_at_task for a generated name; got: %+v", *p)
+	}
+}
+
+// TestValidateStartAtTaskMatchesGeneratedCollisionOrdinal asserts the audit
+// applies the loader's disambiguation too, so the ` #2` a second task on the
+// same resource receives resolves as well.
+func TestValidateStartAtTaskMatchesGeneratedCollisionOrdinal(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - dokku_config: { app: api, config: { A: "1" } }
+    - dokku_config: { app: api, state: absent, config: { B: "" } }
+`)
+	problems := Validate(data, ValidateOptions{Strict: true, StartAtTask: "dokku_config[app=api] #2"})
+	if p := findProblem(problems, "unknown_start_at_task"); p != nil {
+		t.Fatalf("did not expect unknown_start_at_task for a disambiguated name; got: %+v", *p)
+	}
+}
+
+// TestValidateStartAtTaskGeneratedNameStillCatchesTypos asserts the audit did
+// not become vacuous: a name matching nothing is still reported, and the hint
+// lists the generated names so the user can see what to type.
+func TestValidateStartAtTaskGeneratedNameStillCatchesTypos(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - dokku_app: { app: api }
+`)
+	problems := Validate(data, ValidateOptions{Strict: true, StartAtTask: "dokku_app[app=web]"})
+	p := findProblem(problems, "unknown_start_at_task")
+	if p == nil {
+		t.Fatalf("expected unknown_start_at_task; got: %+v", problems)
+	}
+	if !strings.Contains(p.Hint, `"dokku_app[app=api]"`) {
+		t.Errorf("hint should list the generated name; got %q", p.Hint)
+	}
+}
+
+// TestValidateStartAtTaskSkippedWhenNamesCannotResolve covers the two shapes
+// that cannot be named offline. A `loop:` entry's per-iteration name and a
+// body still holding an input placeholder both depend on values only apply
+// time has, so the check stands down rather than reporting a valid name as
+// unknown. commands/apply.go remains authoritative.
+func TestValidateStartAtTaskSkippedWhenNamesCannotResolve(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data string
+		opts ValidateOptions
+	}{
+		{
+			name: "loop entry",
+			data: `---
+- tasks:
+    - name: deploy
+      loop: [a, b]
+      dokku_app: { app: "{{ .item }}" }
+`,
+			opts: ValidateOptions{Strict: true, StartAtTask: "deploy (item=a)"},
+		},
+		{
+			name: "unresolved input placeholder",
+			data: `---
+- inputs:
+    - name: appname
+      required: true
+  tasks:
+    - dokku_app: { app: "{{ .appname }}" }
+`,
+			opts: ValidateOptions{Strict: true, StartAtTask: "dokku_app[app=api]"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			problems := Validate([]byte(tt.data), tt.opts)
+			if p := findProblem(problems, "unknown_start_at_task"); p != nil {
+				t.Fatalf("expected the check to stand down; got: %+v", *p)
+			}
+		})
+	}
+}
+
 // TestValidateCLIReferencesSkippedWithoutStrict pins the gating
 // behaviour: passing --play/--start-at-task without --strict does not
 // trigger the cross-reference audit, matching the issue's contract

@@ -3,80 +3,11 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
-	"regexp"
 	"strings"
 
 	"github.com/dokku/docket/tasks"
 	"github.com/mitchellh/cli"
 )
-
-// autoNameRE matches the auto-generated task name format from
-// tasks/main.go:generateTaskName ("task #<index> <8-byte-hex>"). When a
-// listing line carries an auto-name, the display falls back to the
-// task's TypeName plus an identifying body field so the user sees
-// something meaningful instead of an opaque random suffix.
-var autoNameRE = regexp.MustCompile(`^task #\d+ [0-9A-F]{16}$`)
-
-// listingDisplayName returns the human-friendly label for env in
-// --list-tasks output. User-supplied names pass through untouched. An
-// auto-generated name (the loader's `task #N <hex>` form) is replaced
-// with `<TypeName>` plus the first identifying body field (App, Name,
-// Service, Repository, ...) when one is present, so a recipe with
-// unnamed tasks still reads back the body the user wrote.
-func listingDisplayName(env *tasks.TaskEnvelope, fallback string) string {
-	if env == nil {
-		return fallback
-	}
-	name := env.Name
-	if name == "" {
-		name = fallback
-	}
-	if !autoNameRE.MatchString(name) {
-		return name
-	}
-	if env.TypeName == "" {
-		return name
-	}
-	if id := identifyingBodyField(env.Task); id != "" {
-		return fmt.Sprintf("%s: %s", env.TypeName, id)
-	}
-	return env.TypeName
-}
-
-// identifyingBodyField walks the task struct (via reflection) for the
-// first non-empty string field whose name matches a common identifier
-// (App, Name, Service, Repository, Mount, Url). Returns "" if no such
-// field is present, in which case the caller falls back to TypeName
-// alone.
-func identifyingBodyField(task tasks.Task) string {
-	if task == nil {
-		return ""
-	}
-	v := reflect.ValueOf(task)
-	for v.Kind() == reflect.Ptr {
-		if v.IsNil() {
-			return ""
-		}
-		v = v.Elem()
-	}
-	if v.Kind() != reflect.Struct {
-		return ""
-	}
-	for _, candidate := range []string{"App", "Name", "Service", "Repository", "Mount", "Url"} {
-		f := v.FieldByName(candidate)
-		if !f.IsValid() {
-			continue
-		}
-		if f.Kind() != reflect.String {
-			continue
-		}
-		if s := f.String(); s != "" {
-			return s
-		}
-	}
-	return ""
-}
 
 // listTasksOptions captures everything renderListTasks needs to walk the
 // resolved play set and print one line per envelope. It is constructed by
@@ -149,8 +80,7 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 
 		idx := 0
 		for _, name := range tasks.FilterByTags(play.Tasks, opts.includes, opts.skips) {
-			env := play.Tasks.GetEnvelope(name)
-			renderListEnvelope(ui, play.Name, name, env, idx, "", 0, playExprCtx, opts.jsonOut)
+			renderListEnvelope(ui, play.Name, play.Tasks.GetEnvelope(name), idx, "", 0, playExprCtx, opts.jsonOut)
 			idx++
 		}
 	}
@@ -161,9 +91,17 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 // recursively renders its block / rescue / always children indented one
 // level. indent is the leading-space count; phase labels group children
 // (matching the executor's phase decoration).
+//
+// The displayed label is the envelope name as-is. Before #427 an unnamed task
+// carried a random `task #N <hex>` name, and this function substituted the
+// task type plus the first field named App / Name / Service / ... to keep the
+// listing readable - a heuristic that collapsed every phase and option of one
+// app's dokku_docker_options onto the same line. The loader now names an
+// unnamed task after the resource it addresses, so there is nothing to
+// substitute.
 func renderListEnvelope(
 	ui cli.Ui,
-	playName, name string,
+	playName string,
 	env *tasks.TaskEnvelope,
 	index int,
 	phase string,
@@ -172,7 +110,7 @@ func renderListEnvelope(
 	jsonOut bool,
 ) {
 	skipMarker := evaluateListWhen(env, playExprCtx)
-	display := listingDisplayName(env, name)
+	display := env.Name
 	deprecation := ""
 	var probe tasks.ProbeSupport
 	if env != nil && env.Task != nil {
@@ -262,25 +200,13 @@ func renderListEnvelope(
 
 	if env.IsGroup() {
 		for i, child := range env.Block {
-			childName := child.Name
-			if childName == "" {
-				childName = fmt.Sprintf("%s.block[%d]", name, i)
-			}
-			renderListEnvelope(ui, playName, childName, child, i, "block", indent+1, playExprCtx, jsonOut)
+			renderListEnvelope(ui, playName, child, i, "block", indent+1, playExprCtx, jsonOut)
 		}
 		for i, child := range env.Rescue {
-			childName := child.Name
-			if childName == "" {
-				childName = fmt.Sprintf("%s.rescue[%d]", name, i)
-			}
-			renderListEnvelope(ui, playName, childName, child, i, "rescue", indent+1, playExprCtx, jsonOut)
+			renderListEnvelope(ui, playName, child, i, "rescue", indent+1, playExprCtx, jsonOut)
 		}
 		for i, child := range env.Always {
-			childName := child.Name
-			if childName == "" {
-				childName = fmt.Sprintf("%s.always[%d]", name, i)
-			}
-			renderListEnvelope(ui, playName, childName, child, i, "always", indent+1, playExprCtx, jsonOut)
+			renderListEnvelope(ui, playName, child, i, "always", indent+1, playExprCtx, jsonOut)
 		}
 	}
 }

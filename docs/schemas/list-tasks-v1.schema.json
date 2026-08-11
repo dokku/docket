@@ -40,7 +40,10 @@
         "version": { "$ref": "#/$defs/version" },
         "type": { "const": "list_task" },
         "play": { "type": "string" },
-        "name": { "type": "string", "description": "Resolved display name of the task." },
+        "name": {
+          "type": "string",
+          "description": "The task's `name:`, or - when the recipe omits one - the address of the resource it manages (`dokku_config[app=api]`). Stable across runs of the same recipe."
+        },
         "index": {
           "type": "integer",
           "minimum": 0,

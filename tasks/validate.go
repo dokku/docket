@@ -248,7 +248,7 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 		problems = append(problems, validatePlay(play, inputs, opts, registerSeen)...)
 	}
 
-	problems = append(problems, validateCLIReferences(ast.Doc, opts)...)
+	problems = append(problems, validateCLIReferences(ast, opts)...)
 
 	return problems
 }
@@ -258,13 +258,23 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 // recipe. The audit runs only under --strict so casual `validate` runs
 // (without --strict) never error solely on missing CLI references.
 //
-// --start-at-task is checked against task `name:` fields walked through
-// every play's `tasks:` and through the block / rescue / always
-// children of group entries (#211). Loop expansions are not enumerated
-// here because their per-iteration suffix is only resolved at apply
-// time; the runtime check in commands/apply.go is authoritative.
-func validateCLIReferences(doc *yaml.Node, opts ValidateOptions) []Problem {
-	if doc == nil || !opts.Strict {
+// --start-at-task is checked against the names the loader will produce, not
+// just the `name:` fields written in the recipe: since #427 an unnamed task
+// is named after the resource it addresses, and that name is a legal
+// --start-at-task target. Resolving it means decoding the task body here, the
+// same decode validateTaskBody performs, and running the loader's
+// disambiguateNames over the result so collision ordinals line up.
+//
+// Two shapes cannot be resolved offline: a `loop:` entry, whose per-iteration
+// name depends on values only apply time has, and a body still carrying the
+// validatePlaceholder sentinel, whose address would name the placeholder
+// rather than the real input. Rather than report those as unknown, the whole
+// --start-at-task check is skipped when a play contains one. A missed typo is
+// recoverable - the runtime check in commands/apply.go is authoritative - but
+// failing a valid recipe is not. This also retires the pre-existing false
+// positive on `--start-at-task "deploy (item=a)"` against a named loop task.
+func validateCLIReferences(ast *parsedRecipe, opts ValidateOptions) []Problem {
+	if ast == nil || !opts.Strict {
 		return nil
 	}
 	if opts.PlayName == "" && opts.StartAtTask == "" {
@@ -274,36 +284,39 @@ func validateCLIReferences(doc *yaml.Node, opts ValidateOptions) []Problem {
 	var problems []Problem
 	var playNames []string
 	taskNamesByPlay := map[string][]string{}
+	unresolvedByPlay := map[string]bool{}
 	var allTaskNames []string
+	anyUnresolved := false
 	seen := map[string]bool{}
 
-	for i, play := range doc.Content {
-		if play.Kind != yaml.MappingNode {
-			continue
-		}
-		playLabel := scalarChild(play, "name")
+	for _, play := range ast.Plays {
+		playLabel := play.Name
 		if playLabel == "" {
-			playLabel = fmt.Sprintf("play #%d", i+1)
+			playLabel = play.Label
 		}
 		playNames = append(playNames, playLabel)
 
-		tasksNode := mappingValue(play, "tasks")
-		if tasksNode == nil || tasksNode.Kind != yaml.SequenceNode {
-			continue
+		var collected []entryName
+		unresolved := collectEntryNames(play.Entries, "", &collected)
+		unresolvedByPlay[playLabel] = unresolved
+		if unresolved {
+			anyUnresolved = true
 		}
-		var names []string
-		walkGroupEntries(tasksNode, playLabel, func(task *yaml.Node, _ string) {
-			n := scalarChild(task, "name")
-			if n == "" {
-				return
-			}
-			names = append(names, n)
+
+		raw := make([]string, len(collected))
+		generated := make([]bool, len(collected))
+		for i, entry := range collected {
+			raw[i] = entry.name
+			generated[i] = entry.generated
+		}
+		names := disambiguateNames(raw, generated)
+		taskNamesByPlay[playLabel] = names
+		for _, n := range names {
 			if !seen[n] {
 				seen[n] = true
 				allTaskNames = append(allTaskNames, n)
 			}
-		})
-		taskNamesByPlay[playLabel] = names
+		}
 	}
 
 	if opts.PlayName != "" {
@@ -325,9 +338,11 @@ func validateCLIReferences(doc *yaml.Node, opts ValidateOptions) []Problem {
 
 	if opts.StartAtTask != "" {
 		candidates := allTaskNames
+		incomplete := anyUnresolved
 		if opts.PlayName != "" {
 			if names, ok := taskNamesByPlay[opts.PlayName]; ok {
 				candidates = names
+				incomplete = unresolvedByPlay[opts.PlayName]
 			}
 		}
 		found := false
@@ -337,7 +352,7 @@ func validateCLIReferences(doc *yaml.Node, opts ValidateOptions) []Problem {
 				break
 			}
 		}
-		if !found {
+		if !found && !incomplete {
 			problems = append(problems, Problem{
 				Code:    "unknown_start_at_task",
 				Message: fmt.Sprintf("--start-at-task %q does not match any task in the recipe", opts.StartAtTask),
@@ -347,6 +362,84 @@ func validateCLIReferences(doc *yaml.Node, opts ValidateOptions) []Problem {
 	}
 
 	return problems
+}
+
+// entryName is one task name the loader will produce, and whether it was
+// derived rather than written in the recipe.
+type entryName struct {
+	name      string
+	generated bool
+}
+
+// collectEntryNames appends the name of every entry reachable from entries,
+// mirroring what buildEnvelopesFromEntry assigns: a written `name:` as-is, a
+// group named after its path, and a leaf named after the resource its body
+// addresses. Returns true when at least one entry could not be resolved
+// offline, which tells the caller its list is incomplete.
+func collectEntryNames(entries []*parsedTaskEntry, groupPath string, out *[]entryName) bool {
+	unresolved := false
+	for _, e := range entries {
+		if len(e.Problems) > 0 {
+			unresolved = true
+			continue
+		}
+		if e.LoopNode != nil {
+			unresolved = true
+			continue
+		}
+		if e.IsGroup {
+			name := e.Name
+			generated := false
+			if name == "" {
+				name = generatedGroupName(groupPath, e.Index)
+				generated = true
+			}
+			*out = append(*out, entryName{name: name, generated: generated})
+			if collectEntryNames(e.Block, name+".block", out) {
+				unresolved = true
+			}
+			if collectEntryNames(e.Rescue, name+".rescue", out) {
+				unresolved = true
+			}
+			if collectEntryNames(e.Always, name+".always", out) {
+				unresolved = true
+			}
+			continue
+		}
+		if e.Name != "" {
+			*out = append(*out, entryName{name: e.Name})
+			continue
+		}
+		address, ok := entryIdentityAddress(e)
+		if !ok {
+			unresolved = true
+			continue
+		}
+		*out = append(*out, entryName{name: address, generated: true})
+	}
+	return unresolved
+}
+
+// entryIdentityAddress decodes an entry's body and returns the address the
+// loader will name it after. Reports false when the body cannot be decoded
+// offline or still holds a required-no-default input's placeholder, whose
+// real value is unknown here.
+func entryIdentityAddress(e *parsedTaskEntry) (string, bool) {
+	if e.TypeKey == "" || e.BodyNode == nil {
+		return "", false
+	}
+	marshaled, err := yaml.Marshal(e.BodyNode)
+	if err != nil {
+		return "", false
+	}
+	if strings.Contains(string(marshaled), validatePlaceholder) {
+		return "", false
+	}
+	task, err := decodeTaskBytes(e.TypeKey, marshaled)
+	if err != nil {
+		return "", false
+	}
+	return IdentityAddress(e.TypeKey, task), true
 }
 
 // quotedNamesOrNone formats a slice of names as a comma-separated list
