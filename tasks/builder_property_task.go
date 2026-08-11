@@ -90,34 +90,42 @@ func (t BuilderPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// builderPropertyKeys maps builder property names to the JSON keys emitted
+// builderPropertyTable maps builder property names to the JSON keys emitted
 // by `dokku builder:report --format json` on dokku 0.38.8+.
-var builderPropertyKeys = map[string]PropertyKeys{
-	"build-dir":    {PerApp: "build-dir", Global: "global-build-dir"},
-	"selected":     {PerApp: "selected", Global: "global-selected"},
-	"skip-cleanup": {PerApp: "skip-cleanup", Global: "global-skip-cleanup"},
+var builderPropertyTable = PropertyTable{
+	Subcommand: "builder:set",
+	Keys: map[string]PropertyKeys{
+		"build-dir":    {PerApp: "build-dir", Global: "global-build-dir"},
+		"selected":     {PerApp: "selected", Global: "global-selected"},
+		"skip-cleanup": {PerApp: "skip-cleanup", Global: "global-skip-cleanup"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuilderPropertyTask) PropertyTable() PropertyTable {
+	return builderPropertyTable
 }
 
 // Validate checks the BuilderPropertyTask's inputs without contacting the server.
 func (t BuilderPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder:set", builderPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuilderPropertyTask would produce.
 func (t BuilderPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder:set", builderPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuilderPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "builder:set", builderPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuilderPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuilderPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("builder:set", builderPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuilderPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

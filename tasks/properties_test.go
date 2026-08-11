@@ -10,6 +10,20 @@ import (
 	"github.com/dokku/docket/subprocess"
 )
 
+// propertyTableTask is a PropertyTableDocer standing in for a real property
+// task, so a test can drive the shared helpers against a synthetic plugin. A
+// test exercising a real plugin's table passes the task type itself instead.
+type propertyTableTask struct {
+	table PropertyTable
+}
+
+func (p propertyTableTask) PropertyTable() PropertyTable { return p.table }
+
+// fakePropertyTask builds a propertyTableTask from a subcommand and key map.
+func fakePropertyTask(subcommand string, keys map[string]PropertyKeys) propertyTableTask {
+	return propertyTableTask{table: PropertyTable{Subcommand: subcommand, Keys: keys}}
+}
+
 func TestGetPropertyArgsPerApp(t *testing.T) {
 	got := getPropertyArgs("nginx", "myapp", false)
 	want := []string{"--quiet", "nginx:report", "myapp", "--format", "json"}
@@ -37,7 +51,7 @@ func TestPlanPropertyMasksSensitiveDriftValue(t *testing.T) {
 		"--quiet myplugin:report --global --format json": `{"global-secret-prop":"oldsecret"}`,
 	}))()
 
-	res := planProperty(StatePresent, "", true, "secret-prop", "newsecret", "myplugin:set", keys)
+	res := planProperty(fakePropertyTask("myplugin:set", keys), StatePresent, "", true, "secret-prop", "newsecret")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -73,7 +87,7 @@ func TestPlanPropertyAbsentMasksSensitiveOldValue(t *testing.T) {
 
 	// The absent path leaks the current server secret even without a sensitive
 	// recipe value (the value must be empty for absent).
-	res := planProperty(StateAbsent, "", true, "secret-prop", "", "myplugin:set", keys)
+	res := planProperty(fakePropertyTask("myplugin:set", keys), StateAbsent, "", true, "secret-prop", "")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -93,7 +107,7 @@ func TestPlanPropertyDoesNotMaskBenignDriftValue(t *testing.T) {
 		"--quiet myplugin:report --global --format json": `{"global-timeout":"60s"}`,
 	}))()
 
-	res := planProperty(StatePresent, "", true, "timeout", "90s", "myplugin:set", keys)
+	res := planProperty(fakePropertyTask("myplugin:set", keys), StatePresent, "", true, "timeout", "90s")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -105,10 +119,10 @@ func TestPlanPropertyDoesNotMaskBenignDriftValue(t *testing.T) {
 
 func TestSecretPropertiesAreMarkedSensitive(t *testing.T) {
 	// Guard the marks that close #336 so they are not accidentally dropped.
-	if !traefikPropertyKeys["basic-auth-password"].Sensitive {
+	if !traefikPropertyTable.Keys["basic-auth-password"].Sensitive {
 		t.Error("traefik basic-auth-password must be marked Sensitive")
 	}
-	if !schedulerK3sPropertyKeys["token"].Sensitive {
+	if !schedulerK3sPropertyTable.Keys["token"].Sensitive {
 		t.Error("scheduler-k3s token must be marked Sensitive")
 	}
 }
@@ -280,7 +294,7 @@ func TestPlanPropertyAttachesUnknownKeyWarning(t *testing.T) {
 		"--quiet nginx:report myapp --format json": `{"proxy-read-timeout":"60s"}`,
 	}))()
 
-	res := planProperty(StatePresent, "myapp", false, "hsts", "true", "nginx:set", keys)
+	res := planProperty(fakePropertyTask("nginx:set", keys), StatePresent, "myapp", false, "hsts", "true")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -307,7 +321,7 @@ func TestPlanPropertyAttachesRejectedProbeWarning(t *testing.T) {
 		return resp, &subprocess.ExecError{Response: resp, Err: errors.New("exit status 1"), Ran: true}
 	})()
 
-	res := planProperty(StatePresent, "myapp", false, "hsts", "true", "nginx:set", keys)
+	res := planProperty(fakePropertyTask("nginx:set", keys), StatePresent, "myapp", false, "hsts", "true")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -421,7 +435,7 @@ func TestPlanPropertyDynamicLetsencryptInSync(t *testing.T) {
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"token123"}`,
 	}))()
 
-	res := planProperty(StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123", "letsencrypt:set", letsencryptPropertyKeys)
+	res := planProperty(LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -438,7 +452,7 @@ func TestPlanPropertyDynamicLetsencryptGlobalInSync(t *testing.T) {
 		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-NAMECHEAP_API_USER":"deploy-bot"}`,
 	}))()
 
-	res := planProperty(StatePresent, "", true, "dns-provider-NAMECHEAP_API_USER", "deploy-bot", "letsencrypt:set", letsencryptPropertyKeys)
+	res := planProperty(LetsencryptPropertyTask{}, StatePresent, "", true, "dns-provider-NAMECHEAP_API_USER", "deploy-bot")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -458,7 +472,7 @@ func TestPlanPropertyDynamicLetsencryptDriftMasksProbedValue(t *testing.T) {
 		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"oldtoken"}`,
 	}))()
 
-	res := planProperty(StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "newtoken", "letsencrypt:set", letsencryptPropertyKeys)
+	res := planProperty(LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "newtoken")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -486,7 +500,7 @@ func TestPlanPropertyDynamicLetsencryptMissingRowPlansCreate(t *testing.T) {
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com"}`,
 	}))()
 
-	res := planProperty(StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123", "letsencrypt:set", letsencryptPropertyKeys)
+	res := planProperty(LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -506,7 +520,7 @@ func TestPlanPropertyDynamicLetsencryptAbsentMissingRowIsInSync(t *testing.T) {
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com"}`,
 	}))()
 
-	res := planProperty(StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "", "letsencrypt:set", letsencryptPropertyKeys)
+	res := planProperty(LetsencryptPropertyTask{}, StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -523,7 +537,7 @@ func TestPlanPropertyDynamicLetsencryptAbsentPlansDestroy(t *testing.T) {
 		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"livetoken"}`,
 	}))()
 
-	res := planProperty(StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "", "letsencrypt:set", letsencryptPropertyKeys)
+	res := planProperty(LetsencryptPropertyTask{}, StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -545,7 +559,7 @@ func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
 		return subprocess.ExecCommandResponse{}, nil
 	})()
 
-	res := planProperty(StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123", "traefik:set", traefikPropertyKeys)
+	res := planProperty(TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}

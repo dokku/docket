@@ -26,6 +26,14 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the buildpacks property |
 | `state` | string | no | present | present, absent | Desired state of the buildpacks configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku buildpacks:set-property`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `stack` | app, global | `stack` | `global-stack` |
+
 ## Examples
 
 ### Setting the stack value for an app

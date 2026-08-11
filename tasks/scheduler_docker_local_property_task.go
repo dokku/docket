@@ -79,28 +79,36 @@ func (t SchedulerDockerLocalPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// schedulerDockerLocalPropertyKeys maps scheduler-docker-local property
+// schedulerDockerLocalPropertyTable maps scheduler-docker-local property
 // names to the JSON keys emitted by
 // `dokku scheduler-docker-local:report --format json` on dokku 0.38.8+.
 // The task struct has no Global field today; map entries set Global="".
-var schedulerDockerLocalPropertyKeys = map[string]PropertyKeys{
-	"init-process":            {PerApp: "init-process", Global: ""},
-	"parallel-schedule-count": {PerApp: "parallel-schedule-count", Global: ""},
+var schedulerDockerLocalPropertyTable = PropertyTable{
+	Subcommand: "scheduler-docker-local:set",
+	Keys: map[string]PropertyKeys{
+		"init-process":            {PerApp: "init-process", Global: ""},
+		"parallel-schedule-count": {PerApp: "parallel-schedule-count", Global: ""},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t SchedulerDockerLocalPropertyTask) PropertyTable() PropertyTable {
+	return schedulerDockerLocalPropertyTable
 }
 
 // Validate checks the SchedulerDockerLocalPropertyTask's inputs without contacting the server.
 func (t SchedulerDockerLocalPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, false, t.Property, t.Value, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, false, t.Property, t.Value)
 }
 
 // Plan reports the drift the SchedulerDockerLocalPropertyTask would produce.
 func (t SchedulerDockerLocalPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, false, t.Property, t.Value, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys)
+	return planProperty(t, t.State, t.App, false, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t SchedulerDockerLocalPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "scheduler-docker-local:set", schedulerDockerLocalPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return SchedulerDockerLocalPropertyTask{App: app, Property: property, Value: value}
 	})
 }

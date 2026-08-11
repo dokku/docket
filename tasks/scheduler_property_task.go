@@ -82,33 +82,41 @@ func (t SchedulerPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// schedulerPropertyKeys maps scheduler property names to the JSON keys
+// schedulerPropertyTable maps scheduler property names to the JSON keys
 // emitted by `dokku scheduler:report --format json` on dokku 0.38.8+.
-var schedulerPropertyKeys = map[string]PropertyKeys{
-	"selected": {PerApp: "selected", Global: "global-selected"},
-	"shell":    {PerApp: "shell", Global: "global-shell"},
+var schedulerPropertyTable = PropertyTable{
+	Subcommand: "scheduler:set",
+	Keys: map[string]PropertyKeys{
+		"selected": {PerApp: "selected", Global: "global-selected"},
+		"shell":    {PerApp: "shell", Global: "global-shell"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t SchedulerPropertyTask) PropertyTable() PropertyTable {
+	return schedulerPropertyTable
 }
 
 // Validate checks the SchedulerPropertyTask's inputs without contacting the server.
 func (t SchedulerPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set", schedulerPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the SchedulerPropertyTask would produce.
 func (t SchedulerPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler:set", schedulerPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t SchedulerPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "scheduler:set", schedulerPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return SchedulerPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t SchedulerPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("scheduler:set", schedulerPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return SchedulerPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

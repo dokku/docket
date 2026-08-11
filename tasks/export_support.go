@@ -23,9 +23,11 @@ const (
 // ExportSupport describes a task's export behaviour. Status is required;
 // Caveat is a human-readable note explaining a partial or unsupported status
 // (and may be empty for a plainly supported task).
+//
+// The json tags are for the task catalog, which publishes this verbatim.
 type ExportSupport struct {
-	Status ExportStatus
-	Caveat string
+	Status ExportStatus `json:"status"`
+	Caveat string       `json:"caveat,omitempty"`
 }
 
 // ExportDocer is the interface a task implements to declare its export

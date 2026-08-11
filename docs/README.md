@@ -10,6 +10,7 @@ Complete documentation for docket, a declarative way to pre-package and ship app
 
 - [Command reference](command-reference.md) -- every command and flag
 - [Tasks](tasks/README.md) -- reference for every task type
+- [Task catalog](task-catalog.md) -- the `docket schema` document, the same reference for tooling
 
 ## Guides
 

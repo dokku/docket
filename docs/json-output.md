@@ -154,6 +154,12 @@ the whole stream: split on newlines and validate each line independently.
 | `apply --list-tasks --json`, `plan --list-tasks --json` | [`schemas/list-tasks-v1.schema.json`](schemas/list-tasks-v1.schema.json) |
 | `validate --json` | [`schemas/validate-v1.schema.json`](schemas/validate-v1.schema.json) |
 
+[`docket schema`](task-catalog.md) also emits JSON, but it is not one of these streams: it is a
+single document describing docket's task types rather than a line-per-event record of a run, and
+its schema - [`schemas/task-catalog-v1.schema.json`](schemas/task-catalog-v1.schema.json) -
+validates the whole document at once. Its `version` is its own, independent of the `version` on
+the events above.
+
 `--list-tasks --json` has its own schema because it is a different stream, not a subset of the run
 stream: no task executes, no server is contacted, its per-task event is `list_task` rather than
 `task`, there is no `summary`, and its `play_skipped` carries `play` where the run stream's carries
@@ -194,5 +200,6 @@ non-zero exit with empty stdout as a failure whose detail is on stderr, or run
 ## See also
 
 - [Command reference](command-reference.md) - the `--json` and `--detailed-exitcode` flags
+- [Task catalog](task-catalog.md) - the `docket schema` document, a separate JSON format
 - [Wrapping docket from ansible-dokku](ansible-dokku.md) - a worked consumer of these streams
 - [Task envelope](task-envelope.md#ignore_errors-continue-past-a-failure) - how `ignore_errors` shows up as `"ignored": true`

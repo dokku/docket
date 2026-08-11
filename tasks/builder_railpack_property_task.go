@@ -82,33 +82,41 @@ func (t BuilderRailpackPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// builderRailpackPropertyKeys maps builder-railpack property names to the
+// builderRailpackPropertyTable maps builder-railpack property names to the
 // JSON keys emitted by `dokku builder-railpack:report --format json` on
 // dokku 0.38.8+.
-var builderRailpackPropertyKeys = map[string]PropertyKeys{
-	"railpackjson-path": {PerApp: "railpackjson-path", Global: "global-railpackjson-path"},
+var builderRailpackPropertyTable = PropertyTable{
+	Subcommand: "builder-railpack:set",
+	Keys: map[string]PropertyKeys{
+		"railpackjson-path": {PerApp: "railpackjson-path", Global: "global-railpackjson-path"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuilderRailpackPropertyTask) PropertyTable() PropertyTable {
+	return builderRailpackPropertyTable
 }
 
 // Validate checks the BuilderRailpackPropertyTask's inputs without contacting the server.
 func (t BuilderRailpackPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set", builderRailpackPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuilderRailpackPropertyTask would produce.
 func (t BuilderRailpackPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-railpack:set", builderRailpackPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuilderRailpackPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "builder-railpack:set", builderRailpackPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuilderRailpackPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuilderRailpackPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("builder-railpack:set", builderRailpackPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuilderRailpackPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

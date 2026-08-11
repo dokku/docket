@@ -90,39 +90,47 @@ func (t GitPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// gitPropertyKeys maps git property names to the JSON keys emitted by
+// gitPropertyTable maps git property names to the JSON keys emitted by
 // `dokku git:report --format json` on dokku 0.38.9+. archive-max-files and
 // archive-max-size only surface a global key; rev-env-var and source-image
 // only surface a per-app key.
-var gitPropertyKeys = map[string]PropertyKeys{
-	"archive-max-files": {PerApp: "", Global: "global-archive-max-files"},
-	"archive-max-size":  {PerApp: "", Global: "global-archive-max-size"},
-	"deploy-branch":     {PerApp: "deploy-branch", Global: "global-deploy-branch"},
-	"keep-git-dir":      {PerApp: "keep-git-dir", Global: "global-keep-git-dir"},
-	"rev-env-var":       {PerApp: "rev-env-var", Global: ""},
-	"source-image":      {PerApp: "source-image", Global: ""},
+var gitPropertyTable = PropertyTable{
+	Subcommand: "git:set",
+	Keys: map[string]PropertyKeys{
+		"archive-max-files": {PerApp: "", Global: "global-archive-max-files"},
+		"archive-max-size":  {PerApp: "", Global: "global-archive-max-size"},
+		"deploy-branch":     {PerApp: "deploy-branch", Global: "global-deploy-branch"},
+		"keep-git-dir":      {PerApp: "keep-git-dir", Global: "global-keep-git-dir"},
+		"rev-env-var":       {PerApp: "rev-env-var", Global: ""},
+		"source-image":      {PerApp: "source-image", Global: ""},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t GitPropertyTask) PropertyTable() PropertyTable {
+	return gitPropertyTable
 }
 
 // Validate checks the GitPropertyTask's inputs without contacting the server.
 func (t GitPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "git:set", gitPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the GitPropertyTask would produce.
 func (t GitPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "git:set", gitPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t GitPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "git:set", gitPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return GitPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t GitPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("git:set", gitPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return GitPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

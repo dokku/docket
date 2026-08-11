@@ -26,6 +26,18 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the haproxy property |
 | `state` | string | no | present | present, absent | Desired state of the haproxy configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku haproxy:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `image` | global |  | `global-image` |
+| `letsencrypt-email` | global |  | `global-letsencrypt-email` |
+| `letsencrypt-server` | global |  | `global-letsencrypt-server` |
+| `log-level` | global |  | `global-log-level` |
+| `refresh-conf` | global |  | `global-refresh-conf` |
+
 ## Examples
 
 ### Setting the letsencrypt email globally

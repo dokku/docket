@@ -82,48 +82,56 @@ func (t TraefikPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// traefikPropertyKeys maps traefik property names to the JSON keys emitted
+// traefikPropertyTable maps traefik property names to the JSON keys emitted
 // by `dokku traefik:report --format json` on dokku 0.38.8+. All properties
 // are global-only. The `dns-provider-*` family is dynamic and handled by
 // isDynamicProperty without a map entry.
-var traefikPropertyKeys = map[string]PropertyKeys{
-	"api-enabled":             {PerApp: "", Global: "global-api-enabled"},
-	"api-entry-point":         {PerApp: "", Global: "global-api-entry-point"},
-	"api-entry-point-address": {PerApp: "", Global: "global-api-entry-point-address"},
-	"api-vhost":               {PerApp: "", Global: "global-api-vhost"},
-	"basic-auth-password":     {PerApp: "", Global: "global-basic-auth-password", Sensitive: true},
-	"basic-auth-username":     {PerApp: "", Global: "global-basic-auth-username"},
-	"challenge-mode":          {PerApp: "", Global: "global-challenge-mode"},
-	"dashboard-enabled":       {PerApp: "", Global: "global-dashboard-enabled"},
-	"dns-provider":            {PerApp: "", Global: "global-dns-provider"},
-	"http-entry-point":        {PerApp: "", Global: "global-http-entry-point"},
-	"https-entry-point":       {PerApp: "", Global: "global-https-entry-point"},
-	"image":                   {PerApp: "", Global: "global-image"},
-	"letsencrypt-email":       {PerApp: "", Global: "global-letsencrypt-email"},
-	"letsencrypt-server":      {PerApp: "", Global: "global-letsencrypt-server"},
-	"log-level":               {PerApp: "", Global: "global-log-level"},
+var traefikPropertyTable = PropertyTable{
+	Subcommand: "traefik:set",
+	Keys: map[string]PropertyKeys{
+		"api-enabled":             {PerApp: "", Global: "global-api-enabled"},
+		"api-entry-point":         {PerApp: "", Global: "global-api-entry-point"},
+		"api-entry-point-address": {PerApp: "", Global: "global-api-entry-point-address"},
+		"api-vhost":               {PerApp: "", Global: "global-api-vhost"},
+		"basic-auth-password":     {PerApp: "", Global: "global-basic-auth-password", Sensitive: true},
+		"basic-auth-username":     {PerApp: "", Global: "global-basic-auth-username"},
+		"challenge-mode":          {PerApp: "", Global: "global-challenge-mode"},
+		"dashboard-enabled":       {PerApp: "", Global: "global-dashboard-enabled"},
+		"dns-provider":            {PerApp: "", Global: "global-dns-provider"},
+		"http-entry-point":        {PerApp: "", Global: "global-http-entry-point"},
+		"https-entry-point":       {PerApp: "", Global: "global-https-entry-point"},
+		"image":                   {PerApp: "", Global: "global-image"},
+		"letsencrypt-email":       {PerApp: "", Global: "global-letsencrypt-email"},
+		"letsencrypt-server":      {PerApp: "", Global: "global-letsencrypt-server"},
+		"log-level":               {PerApp: "", Global: "global-log-level"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t TraefikPropertyTask) PropertyTable() PropertyTable {
+	return traefikPropertyTable
 }
 
 // Validate checks the TraefikPropertyTask's inputs without contacting the server.
 func (t TraefikPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set", traefikPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the TraefikPropertyTask would produce.
 func (t TraefikPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "traefik:set", traefikPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t TraefikPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "traefik:set", traefikPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return TraefikPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t TraefikPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("traefik:set", traefikPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return TraefikPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

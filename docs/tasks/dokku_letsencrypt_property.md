@@ -30,6 +30,21 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the letsencrypt property (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the letsencrypt configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku letsencrypt:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `dns-provider` | app, global | `dns-provider` | `global-dns-provider` |
+| `email` | app, global | `email` | `global-email` |
+| `graceperiod` | app, global | `graceperiod` | `global-graceperiod` |
+| `lego-args` | app, global | `lego-args` | `global-lego-args` |
+| `lego-docker-options` | app, global | `lego-docker-options` | `global-lego-docker-options` |
+| `server` | app, global | `server` | `global-server` |
+
+Names starting with `dns-provider-` are also accepted. dokku validates them through `letsencrypt:set` rather than through its report schema, so they cannot be listed above. The plugin reports each one it has been given, so they probe for drift like any listed property. Their values are treated as secrets and masked.
+
 ## Examples
 
 ### Setting the letsencrypt email for an app

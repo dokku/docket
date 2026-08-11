@@ -26,6 +26,16 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the apps property |
 | `state` | string | no | present | present, absent | Desired state of the apps configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku apps:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `deploy-source` | app | `deploy-source` |  |
+| `deploy-source-metadata` | app | `deploy-source-metadata` |  |
+| `disable-autocreation` | global |  | `global-disable-autocreation` |
+
 ## Examples
 
 ### Disabling app auto-creation globally

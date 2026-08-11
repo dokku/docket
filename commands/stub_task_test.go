@@ -21,10 +21,41 @@ type StubTask struct {
 	Key string `yaml:"key" required:"true" identity:"key"`
 }
 
-// Doc / Examples are not exercised by the apply / plan tests. They
-// exist so StubTask satisfies the Task interface.
-func (t StubTask) Doc() string                    { return "stub task for tests" }
-func (t StubTask) Examples() ([]tasks.Doc, error) { return nil, nil }
+// StubTaskExample wraps the stub under its recipe key, the way every real
+// task's example type does.
+type StubTaskExample struct {
+	// Name is the task name holding the StubTask description
+	Name string `yaml:"-"`
+
+	// StubTask is the StubTask configuration
+	StubTask StubTask `yaml:"dokku_stub"`
+}
+
+// GetName returns the name of the example
+func (e StubTaskExample) GetName() string { return e.Name }
+
+// Doc / Examples are not exercised by the apply / plan tests. They exist so
+// StubTask satisfies the Task interface.
+func (t StubTask) Doc() string { return "stub task for tests" }
+
+func (t StubTask) Examples() ([]tasks.Doc, error) {
+	return tasks.MarshalExamples([]StubTaskExample{
+		{Name: "Run the stub", StubTask: StubTask{Key: "example"}},
+	})
+}
+
+// ExportSupport / ProbeSupport are declared for the same reason every real
+// task declares them: the stub stands in for one, and anything that walks the
+// registry - the task catalog, --list-tasks - would otherwise see a task with
+// no declaration at all, which the coverage tests make impossible for a task
+// that actually ships.
+func (t StubTask) ExportSupport() tasks.ExportSupport {
+	return tasks.ExportSupport{Status: tasks.ExportUnsupported, Caveat: "a test fixture has no server state to read back"}
+}
+
+func (t StubTask) ProbeSupport() tasks.ProbeSupport {
+	return tasks.ProbeSupport{Status: tasks.ProbeSupported}
+}
 
 func (t StubTask) Plan() tasks.PlanResult {
 	fixture := stubGet(t.Key)

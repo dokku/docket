@@ -413,17 +413,17 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 	case SchedulerK3sAutoscalingAuthTask:
 		return res.processSchedulerK3sAutoscalingAuth(app, b, opts)
 	case LetsencryptPropertyTask:
-		return res.processPropertyValue(app, b, b.Property, b.Value, propertyEntry("letsencrypt", b.Property, letsencryptPropertyKeys).Sensitive, opts, func(v string) interface{} {
+		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
 			b.Value = v
 			return b
 		})
 	case SchedulerK3sPropertyTask:
-		return res.processPropertyValue(app, b, b.Property, b.Value, propertyEntry("scheduler-k3s", b.Property, schedulerK3sPropertyKeys).Sensitive, opts, func(v string) interface{} {
+		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
 			b.Value = v
 			return b
 		})
 	case TraefikPropertyTask:
-		return res.processPropertyValue(app, b, b.Property, b.Value, propertyEntry("traefik", b.Property, traefikPropertyKeys).Sensitive, opts, func(v string) interface{} {
+		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
 			b.Value = v
 			return b
 		})

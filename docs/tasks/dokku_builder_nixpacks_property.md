@@ -26,6 +26,14 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the builder-nixpacks property |
 | `state` | string | no | present | present, absent | Desired state of the builder-nixpacks configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku builder-nixpacks:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `nixpackstoml-path` | app, global | `nixpackstoml-path` | `global-nixpackstoml-path` |
+
 ## Examples
 
 ### Setting the nixpacks.toml path for an app

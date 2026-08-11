@@ -82,33 +82,41 @@ func (t BuilderDockerfilePropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// builderDockerfilePropertyKeys maps builder-dockerfile property names to
+// builderDockerfilePropertyTable maps builder-dockerfile property names to
 // the JSON keys emitted by `dokku builder-dockerfile:report --format json`
 // on dokku 0.38.8+.
-var builderDockerfilePropertyKeys = map[string]PropertyKeys{
-	"dockerfile-path": {PerApp: "dockerfile-path", Global: "global-dockerfile-path"},
+var builderDockerfilePropertyTable = PropertyTable{
+	Subcommand: "builder-dockerfile:set",
+	Keys: map[string]PropertyKeys{
+		"dockerfile-path": {PerApp: "dockerfile-path", Global: "global-dockerfile-path"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuilderDockerfilePropertyTask) PropertyTable() PropertyTable {
+	return builderDockerfilePropertyTable
 }
 
 // Validate checks the BuilderDockerfilePropertyTask's inputs without contacting the server.
 func (t BuilderDockerfilePropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set", builderDockerfilePropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuilderDockerfilePropertyTask would produce.
 func (t BuilderDockerfilePropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-dockerfile:set", builderDockerfilePropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuilderDockerfilePropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "builder-dockerfile:set", builderDockerfilePropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuilderDockerfilePropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuilderDockerfilePropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("builder-dockerfile:set", builderDockerfilePropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuilderDockerfilePropertyTask{Global: true, Property: property, Value: value}
 	})
 }

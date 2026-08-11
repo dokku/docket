@@ -82,35 +82,43 @@ func (t CronPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// cronPropertyKeys maps cron property names to the JSON keys emitted by
+// cronPropertyTable maps cron property names to the JSON keys emitted by
 // `dokku cron:report --format json` on dokku 0.38.8+. mailfrom/mailto are
 // global-only.
-var cronPropertyKeys = map[string]PropertyKeys{
-	"maintenance": {PerApp: "maintenance", Global: "global-maintenance"},
-	"mailfrom":    {PerApp: "", Global: "global-mailfrom"},
-	"mailto":      {PerApp: "", Global: "global-mailto"},
+var cronPropertyTable = PropertyTable{
+	Subcommand: "cron:set",
+	Keys: map[string]PropertyKeys{
+		"maintenance": {PerApp: "maintenance", Global: "global-maintenance"},
+		"mailfrom":    {PerApp: "", Global: "global-mailfrom"},
+		"mailto":      {PerApp: "", Global: "global-mailto"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t CronPropertyTask) PropertyTable() PropertyTable {
+	return cronPropertyTable
 }
 
 // Validate checks the CronPropertyTask's inputs without contacting the server.
 func (t CronPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "cron:set", cronPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the CronPropertyTask would produce.
 func (t CronPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "cron:set", cronPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t CronPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "cron:set", cronPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return CronPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t CronPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("cron:set", cronPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return CronPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

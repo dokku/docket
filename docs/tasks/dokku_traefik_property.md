@@ -26,6 +26,30 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the traefik property |
 | `state` | string | no | present | present, absent | Desired state of the traefik configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku traefik:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `api-enabled` | global |  | `global-api-enabled` |
+| `api-entry-point` | global |  | `global-api-entry-point` |
+| `api-entry-point-address` | global |  | `global-api-entry-point-address` |
+| `api-vhost` | global |  | `global-api-vhost` |
+| `basic-auth-password` (sensitive) | global |  | `global-basic-auth-password` |
+| `basic-auth-username` | global |  | `global-basic-auth-username` |
+| `challenge-mode` | global |  | `global-challenge-mode` |
+| `dashboard-enabled` | global |  | `global-dashboard-enabled` |
+| `dns-provider` | global |  | `global-dns-provider` |
+| `http-entry-point` | global |  | `global-http-entry-point` |
+| `https-entry-point` | global |  | `global-https-entry-point` |
+| `image` | global |  | `global-image` |
+| `letsencrypt-email` | global |  | `global-letsencrypt-email` |
+| `letsencrypt-server` | global |  | `global-letsencrypt-server` |
+| `log-level` | global |  | `global-log-level` |
+
+Names starting with `dns-provider-` are also accepted. dokku validates them through `traefik:set` rather than through its report schema, so they cannot be listed above. The plugin does not report them, so they are applied on every run and never converge.
+
 ## Examples
 
 ### Setting the letsencrypt email globally

@@ -26,6 +26,19 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the git property |
 | `state` | string | no | present | present, absent | Desired state of the git configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku git:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `archive-max-files` | global |  | `global-archive-max-files` |
+| `archive-max-size` | global |  | `global-archive-max-size` |
+| `deploy-branch` | app, global | `deploy-branch` | `global-deploy-branch` |
+| `keep-git-dir` | app, global | `keep-git-dir` | `global-keep-git-dir` |
+| `rev-env-var` | app | `rev-env-var` |  |
+| `source-image` | app | `source-image` |  |
+
 ## Examples
 
 ### Setting the deploy branch for an app

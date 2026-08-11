@@ -82,33 +82,41 @@ func (t BuilderNixpacksPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// builderNixpacksPropertyKeys maps builder-nixpacks property names to the
+// builderNixpacksPropertyTable maps builder-nixpacks property names to the
 // JSON keys emitted by `dokku builder-nixpacks:report --format json` on
 // dokku 0.38.8+.
-var builderNixpacksPropertyKeys = map[string]PropertyKeys{
-	"nixpackstoml-path": {PerApp: "nixpackstoml-path", Global: "global-nixpackstoml-path"},
+var builderNixpacksPropertyTable = PropertyTable{
+	Subcommand: "builder-nixpacks:set",
+	Keys: map[string]PropertyKeys{
+		"nixpackstoml-path": {PerApp: "nixpackstoml-path", Global: "global-nixpackstoml-path"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuilderNixpacksPropertyTask) PropertyTable() PropertyTable {
+	return builderNixpacksPropertyTable
 }
 
 // Validate checks the BuilderNixpacksPropertyTask's inputs without contacting the server.
 func (t BuilderNixpacksPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-nixpacks:set", builderNixpacksPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuilderNixpacksPropertyTask would produce.
 func (t BuilderNixpacksPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-nixpacks:set", builderNixpacksPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuilderNixpacksPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "builder-nixpacks:set", builderNixpacksPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuilderNixpacksPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuilderNixpacksPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("builder-nixpacks:set", builderNixpacksPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuilderNixpacksPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

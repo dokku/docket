@@ -82,32 +82,40 @@ func (t AppJsonPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// appJsonPropertyKeys maps app-json property names to the JSON keys emitted
+// appJsonPropertyTable maps app-json property names to the JSON keys emitted
 // by `dokku app-json:report --format json` on dokku 0.38.8+.
-var appJsonPropertyKeys = map[string]PropertyKeys{
-	"appjson-path": {PerApp: "appjson-path", Global: "global-appjson-path"},
+var appJsonPropertyTable = PropertyTable{
+	Subcommand: "app-json:set",
+	Keys: map[string]PropertyKeys{
+		"appjson-path": {PerApp: "appjson-path", Global: "global-appjson-path"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t AppJsonPropertyTask) PropertyTable() PropertyTable {
+	return appJsonPropertyTable
 }
 
 // Validate checks the AppJsonPropertyTask's inputs without contacting the server.
 func (t AppJsonPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "app-json:set", appJsonPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the AppJsonPropertyTask would produce.
 func (t AppJsonPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "app-json:set", appJsonPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t AppJsonPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "app-json:set", appJsonPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return AppJsonPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t AppJsonPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("app-json:set", appJsonPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return AppJsonPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

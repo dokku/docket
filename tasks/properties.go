@@ -30,6 +30,57 @@ type PropertyKeys struct {
 	Sensitive bool
 }
 
+// PropertyTable is the property schema one *_property task manages: the dokku
+// subcommand a set/unset runs, and the report keys for every property name the
+// task supports.
+//
+// It is the single source of truth for that task. Plan(), Validate(), the two
+// exporters and the machine-readable catalog all read the same value, because
+// the shared helpers below take the task through PropertyTableDocer rather than
+// taking a subcommand and a map as separate arguments. A task therefore cannot
+// declare one table to the catalog and run against another.
+type PropertyTable struct {
+	// Subcommand is the dokku subcommand a set or unset runs, for example
+	// "apps:set" or "buildpacks:set-property".
+	Subcommand string
+
+	// Keys maps each supported property name to the JSON keys
+	// `dokku <plugin>:report --format json` emits for it per scope.
+	Keys map[string]PropertyKeys
+}
+
+// Plugin returns the dokku plugin the table belongs to, derived from the
+// subcommand: "apps:set" -> "apps".
+func (p PropertyTable) Plugin() string {
+	return pluginFromSubcommand(p.Subcommand)
+}
+
+// PropertyTableDocer is implemented by every task that manages a dokku property
+// table.
+//
+// Unlike its siblings (ExportDocer, ProbeDocer) this one is not read only by
+// the docs generator: planProperty, validatePropertyInput and the property
+// exporters take it as their first argument, so a task cannot reach the shared
+// property machinery without declaring the table the catalog publishes.
+//
+// A task whose property names are validated by dokku rather than by docket -
+// dokku_service_property, whose names come from whichever datastore plugin
+// backs the service - deliberately does not implement it. See
+// TestEveryPropertyTaskDeclaresPropertyTable.
+type PropertyTableDocer interface {
+	PropertyTable() PropertyTable
+}
+
+// TaskPropertyTable returns t's property table and whether t declared one.
+// Centralised so the catalog, the docs generator and the coverage test share
+// one read site, mirroring TaskExportSupport and TaskProbeSupport.
+func TaskPropertyTable(t Task) (PropertyTable, bool) {
+	if d, ok := t.(PropertyTableDocer); ok {
+		return d.PropertyTable(), true
+	}
+	return PropertyTable{}, false
+}
+
 // pluginFromSubcommand returns the plugin component of a colon-separated
 // subcommand. For example, "nginx:set" -> "nginx", "buildpacks:set-property" ->
 // "buildpacks", "app-json:set" -> "app-json".
@@ -119,8 +170,10 @@ func getProperty(subcommand, app string, global bool, property string, keys map[
 // A probeable dynamic family cannot be enumerated in keys, so the properties the
 // payload happens to carry are synthesized into it first; without that a set
 // letsencrypt `dns-provider-<KEY>` credential is dropped from the export (#449).
-func exportProperties(app, subcommand string, keys map[string]PropertyKeys, factory func(app, property, value string) interface{}) ([]interface{}, error) {
-	plugin := pluginFromSubcommand(subcommand)
+func exportProperties(task PropertyTableDocer, app string, factory func(app, property, value string) interface{}) ([]interface{}, error) {
+	table := task.PropertyTable()
+	keys := table.Keys
+	plugin := table.Plugin()
 	payload, err := readPropertyReport(plugin, app, false)
 	if err != nil {
 		return nil, err
@@ -159,8 +212,10 @@ func exportProperties(app, subcommand string, keys map[string]PropertyKeys, fact
 // globally-scoped state (for example scheduler-k3s bootstrap keys) is captured
 // instead of silently dropped (#327). Probeable dynamic properties are
 // synthesized into keys the same way exportProperties does it.
-func exportGlobalProperties(subcommand string, keys map[string]PropertyKeys, factory func(property, value string) interface{}) ([]interface{}, error) {
-	plugin := pluginFromSubcommand(subcommand)
+func exportGlobalProperties(task PropertyTableDocer, factory func(property, value string) interface{}) ([]interface{}, error) {
+	table := task.PropertyTable()
+	keys := table.Keys
+	plugin := table.Plugin()
 	payload, err := readPropertyReport(plugin, "", true)
 	if err != nil {
 		return nil, err
@@ -275,46 +330,101 @@ func unknownPropertyWarning(plugin, property string, err error) (PlanWarning, bo
 	}, true
 }
 
-// isDynamicProperty reports whether a (plugin, property) pair represents a
-// dynamic property family whose JSON keys only appear after the property is
-// set. Examples:
-//   - dokku-letsencrypt `dns-provider-*` (arbitrary env var names)
-//   - dokku traefik `dns-provider-*` (same shape, per-provider env vars)
-//
-// Dynamic property names are validated by `:set`, not the report schema, so
-// this is what lets validateProperty accept a name that cannot be enumerated in
-// the key map. It says nothing about whether the property can be probed: a
-// family whose plugin reports its keys is probed through dynamicPropertyKeys,
-// and only the families that helper does not recognize skip the probe.
+// dynamicPropertyFamily is a family of property names a plugin validates
+// through `:set` rather than through its report schema, so the names cannot be
+// enumerated in a PropertyTable.
+type dynamicPropertyFamily struct {
+	// Prefix is what a member's name starts with.
+	Prefix string
+
+	// Probeable is true when the plugin emits a report row per set member, so
+	// the lookup keys can be synthesized from the property name and the member
+	// probes like any mapped property. False means the member is applied
+	// unconditionally and the task never converges for it.
+	Probeable bool
+
+	// Sensitive is true when docket treats members as secrets.
+	Sensitive bool
+}
+
+// dynamicPropertyFamilies is the whole set of dynamic families docket knows
+// about, keyed by plugin. It is a table rather than a switch so the catalog can
+// publish it: a consumer validating a recipe offline has to accept a name that
+// cannot be enumerated, and the only way to know which names those are is to be
+// told the prefix.
 //
 // scheduler-k3s `chart.*.*` used to live here but moved to the dedicated
 // dokku_scheduler_k3s_chart task; SchedulerK3sPropertyTask.Plan rejects
 // chart.* before reaching this helper.
+var dynamicPropertyFamilies = map[string][]dynamicPropertyFamily{
+	// dokku-letsencrypt 0.25.0+ emits a `dns-provider-<KEY>` row for the app
+	// scope and a `global-dns-provider-<KEY>` row for the global one per
+	// property that is set (#449). The values are DNS provider API
+	// credentials, hence Sensitive: planProperty registers the probed value
+	// with the masker before it can reach a `(was %q)` drift reason.
+	"letsencrypt": {{Prefix: "dns-provider-", Probeable: true, Sensitive: true}},
+
+	// traefik's family has the same shape but is still absent from
+	// `traefik:report` (dokku/dokku#8928, tracked for docket in #450), so it
+	// stays on the unprobed path. Its values are credentials too, but
+	// planProperty reads Sensitive off the synthesized key entry, which an
+	// unprobeable family never gets - so they are not masked today (#457).
+	// Left as-is here so this change is a pure refactor; the catalog reports
+	// the flag it actually has rather than the one it should.
+	"traefik": {{Prefix: "dns-provider-"}},
+}
+
+// isDynamicProperty reports whether a (plugin, property) pair belongs to a
+// dynamic property family. This is what lets validateProperty accept a name
+// that cannot be enumerated in the key map. It says nothing about whether the
+// property can be probed - that is the family's Probeable flag, read by
+// dynamicPropertyKeys.
 func isDynamicProperty(plugin, property string) bool {
-	switch plugin {
-	case "letsencrypt", "traefik":
-		return strings.HasPrefix(property, "dns-provider-")
+	_, ok := dynamicPropertyFamilyFor(plugin, property)
+	return ok
+}
+
+// DynamicPropertyFamilies returns the dynamic name families a plugin declares,
+// sorted by prefix, in the form the task catalog publishes. Exported so a
+// consumer validating a recipe offline knows which unenumerable names to
+// accept.
+func DynamicPropertyFamilies(plugin string) []DynamicPropertySchema {
+	families := dynamicPropertyFamilies[plugin]
+	if len(families) == 0 {
+		return nil
 	}
-	return false
+	out := make([]DynamicPropertySchema, 0, len(families))
+	for _, family := range families {
+		out = append(out, DynamicPropertySchema{
+			Prefix:    family.Prefix,
+			Probeable: family.Probeable,
+			Sensitive: family.Sensitive,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Prefix < out[j].Prefix })
+	return out
+}
+
+// dynamicPropertyFamilyFor returns the family a property belongs to, if any.
+func dynamicPropertyFamilyFor(plugin, property string) (dynamicPropertyFamily, bool) {
+	for _, family := range dynamicPropertyFamilies[plugin] {
+		if strings.HasPrefix(property, family.Prefix) {
+			return family, true
+		}
+	}
+	return dynamicPropertyFamily{}, false
 }
 
 // dynamicPropertyKeys returns the report keys for a dynamic property whose
-// plugin surfaces the family in its `:report` payload. dokku-letsencrypt
-// 0.25.0+ emits a `dns-provider-<KEY>` row for the app scope and a
-// `global-dns-provider-<KEY>` row for the global one per property that is set,
-// so the keys can be synthesized from the property name and probed like any
-// mapped property (#449). The values are DNS provider API credentials, hence
-// Sensitive: planProperty registers the probed value with the masker before it
-// can reach a `(was %q)` drift reason.
-//
-// traefik's `dns-provider-*` family has the same shape but is still absent from
-// `traefik:report` (dokku/dokku#8928, tracked for docket in #450), so it stays
-// on the unprobed path.
+// plugin surfaces the family in its `:report` payload, synthesized from the
+// property name. A family the plugin does not report has no keys to synthesize
+// and falls through to the unprobed path.
 func dynamicPropertyKeys(plugin, property string) (PropertyKeys, bool) {
-	if plugin != "letsencrypt" || !isDynamicProperty(plugin, property) {
+	family, ok := dynamicPropertyFamilyFor(plugin, property)
+	if !ok || !family.Probeable {
 		return PropertyKeys{}, false
 	}
-	return PropertyKeys{PerApp: property, Global: "global-" + property, Sensitive: true}, true
+	return PropertyKeys{PerApp: property, Global: "global-" + property, Sensitive: family.Sensitive}, true
 }
 
 // propertyEntry returns the PropertyKeys a plugin uses for one property,
@@ -328,6 +438,14 @@ func propertyEntry(plugin, property string, keys map[string]PropertyKeys) Proper
 	}
 	entry, _ := dynamicPropertyKeys(plugin, property)
 	return entry
+}
+
+// taskPropertyEntry is propertyEntry for a task that carries its own table, so
+// the export path does not have to repeat the plugin name and the map beside
+// the task type it already matched on.
+func taskPropertyEntry(task PropertyTableDocer, property string) PropertyKeys {
+	table := task.PropertyTable()
+	return propertyEntry(table.Plugin(), property, table.Keys)
 }
 
 // withDynamicProperties returns keys plus a synthesized entry for every probeable
@@ -404,14 +522,15 @@ func dynamicPropertiesFromReport(plugin string, payload map[string]string, globa
 // scope, and that a value is supplied only in the state that allows it. Both
 // planProperty and each property task's Validate() call it so plan and
 // validate report the same errors.
-func validatePropertyInput(state State, app string, global bool, property, value, subcommand string, keys map[string]PropertyKeys) error {
+func validatePropertyInput(task PropertyTableDocer, state State, app string, global bool, property, value string) error {
+	table := task.PropertyTable()
 	if !global && app == "" {
 		return errors.New("app is required when global is false")
 	}
 	if global && app != "" {
 		return fmt.Errorf("'app' must not be set when 'global' is set to true")
 	}
-	if err := validateProperty(pluginFromSubcommand(subcommand), property, global, keys); err != nil {
+	if err := validateProperty(table.Plugin(), property, global, table.Keys); err != nil {
 		return err
 	}
 	if state == StatePresent && value == "" {
@@ -423,12 +542,15 @@ func validatePropertyInput(state State, app string, global bool, property, value
 	return nil
 }
 
-func planProperty(state State, app string, global bool, property, value, subcommand string, keys map[string]PropertyKeys) PlanResult {
-	if err := validatePropertyInput(state, app, global, property, value, subcommand, keys); err != nil {
+func planProperty(task PropertyTableDocer, state State, app string, global bool, property, value string) PlanResult {
+	if err := validatePropertyInput(task, state, app, global, property, value); err != nil {
 		return planErr(err)
 	}
 
-	plugin := pluginFromSubcommand(subcommand)
+	table := task.PropertyTable()
+	keys := table.Keys
+	subcommand := table.Subcommand
+	plugin := table.Plugin()
 	target := app
 	if global {
 		target = "--global"

@@ -82,37 +82,45 @@ func (t HaproxyPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// haproxyPropertyKeys maps haproxy property names to the JSON keys emitted
+// haproxyPropertyTable maps haproxy property names to the JSON keys emitted
 // by `dokku haproxy:report --format json` on dokku 0.38.8+. All properties
 // are global-only.
-var haproxyPropertyKeys = map[string]PropertyKeys{
-	"image":              {PerApp: "", Global: "global-image"},
-	"letsencrypt-email":  {PerApp: "", Global: "global-letsencrypt-email"},
-	"letsencrypt-server": {PerApp: "", Global: "global-letsencrypt-server"},
-	"log-level":          {PerApp: "", Global: "global-log-level"},
-	"refresh-conf":       {PerApp: "", Global: "global-refresh-conf"},
+var haproxyPropertyTable = PropertyTable{
+	Subcommand: "haproxy:set",
+	Keys: map[string]PropertyKeys{
+		"image":              {PerApp: "", Global: "global-image"},
+		"letsencrypt-email":  {PerApp: "", Global: "global-letsencrypt-email"},
+		"letsencrypt-server": {PerApp: "", Global: "global-letsencrypt-server"},
+		"log-level":          {PerApp: "", Global: "global-log-level"},
+		"refresh-conf":       {PerApp: "", Global: "global-refresh-conf"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t HaproxyPropertyTask) PropertyTable() PropertyTable {
+	return haproxyPropertyTable
 }
 
 // Validate checks the HaproxyPropertyTask's inputs without contacting the server.
 func (t HaproxyPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set", haproxyPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the HaproxyPropertyTask would produce.
 func (t HaproxyPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "haproxy:set", haproxyPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t HaproxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "haproxy:set", haproxyPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return HaproxyPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t HaproxyPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("haproxy:set", haproxyPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return HaproxyPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

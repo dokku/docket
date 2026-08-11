@@ -1,6 +1,6 @@
 # Command reference
 
-docket has seven commands. Running `docket` with no subcommand prints the list:
+docket has eight commands. Running `docket` with no subcommand prints the list:
 
 | Command | What it does |
 |---------|--------------|
@@ -10,6 +10,7 @@ docket has seven commands. Running `docket` with no subcommand prints the list:
 | [`docket plan`](#docket-plan) | Preview what `apply` would change. |
 | [`docket apply`](#docket-apply) | Run the recipe, making changes as needed. |
 | [`docket export`](#docket-export) | Read a live server and write a recipe describing it. |
+| [`docket schema`](#docket-schema) | Print the machine-readable catalog of task types. |
 | [`docket version`](#docket-version) | Print the binary's version. |
 
 `apply`, `plan`, `validate`, and `fmt` all accept either YAML or JSON5 recipes. When `--tasks` is
@@ -464,6 +465,43 @@ example a value that is lifted into the vars-file), or not exportable (write-onl
 as `dokku_git_auth`, or `dokku_service_property`, which no datastore plugin can read back).
 Resources that cannot be read back are reported as warnings and left out of the recipe.
 
+## docket schema
+
+`docket schema` prints a machine-readable description of every task type docket registers - the
+recipe keys each one accepts, their types, defaults, choices and descriptions, which values are
+secrets, what resource the task addresses, its export and probe support, its documented examples,
+and for a property task the exact set of property names it accepts. It is the same data the
+[task reference](tasks/README.md) pages are rendered from, in a form something other than a reader
+can consume.
+
+The output is a single pretty-printed JSON document on stdout, described by
+[`schemas/task-catalog-v1.schema.json`](schemas/task-catalog-v1.schema.json). See
+[task catalog](task-catalog.md) for the key-by-key contract.
+
+```bash
+# Print the catalog.
+docket schema
+
+# List every task type.
+docket schema | jq -r '.tasks[].type'
+
+# What fields does dokku_config take?
+docket schema | jq '.tasks[] | select(.type=="dokku_config") | .fields'
+
+# Which property names does dokku_nginx_property accept?
+docket schema | jq -r '.tasks[] | select(.type=="dokku_nginx_property") | .property_schema.properties[].name'
+```
+
+Like `init` and `validate`, `schema` is offline: it opens no subprocess and contacts no server. It
+also reads no recipe, so it takes no `--tasks` and no positional argument. Two runs of the same
+binary emit byte-identical output, which is what makes diffing catalogs across docket versions
+useful.
+
+| Flag | Effect |
+|------|--------|
+| (default) | Write the catalog to stdout. |
+| `--output <path>` | Write to a path instead; `-` writes to stdout. An existing file is overwritten, since the catalog is wholly derived and holds nothing of yours. |
+
 ## docket version
 
 `docket version` prints the binary's version and exits.
@@ -477,4 +515,5 @@ docket version
 - [Recipes](recipes.md) - the recipe file, plays, and `--play` / `--fail-fast`
 - [Task envelope](task-envelope.md) - `tags`, `when`, `loop`, and the rest
 - [JSON output](json-output.md) - the `--json` event schema
+- [Task catalog](task-catalog.md) - the `docket schema` document
 - [Remote execution](remote-execution.md) - running against a remote server over SSH

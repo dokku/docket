@@ -26,6 +26,19 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the caddy property |
 | `state` | string | no | present | present, absent | Desired state of the caddy configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku caddy:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `image` | global |  | `global-image` |
+| `letsencrypt-email` | global |  | `global-letsencrypt-email` |
+| `letsencrypt-server` | global |  | `global-letsencrypt-server` |
+| `log-level` | global |  | `global-log-level` |
+| `polling-interval` | global |  | `global-polling-interval` |
+| `tls-internal` | app, global | `tls-internal` | `global-tls-internal` |
+
 ## Examples
 
 ### Enabling internal TLS for an app

@@ -82,33 +82,41 @@ func (t BuilderLambdaPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// builderLambdaPropertyKeys maps builder-lambda property names to the JSON
+// builderLambdaPropertyTable maps builder-lambda property names to the JSON
 // keys emitted by `dokku builder-lambda:report --format json` on dokku
 // 0.38.8+.
-var builderLambdaPropertyKeys = map[string]PropertyKeys{
-	"lambdayml-path": {PerApp: "lambdayml-path", Global: "global-lambdayml-path"},
+var builderLambdaPropertyTable = PropertyTable{
+	Subcommand: "builder-lambda:set",
+	Keys: map[string]PropertyKeys{
+		"lambdayml-path": {PerApp: "lambdayml-path", Global: "global-lambdayml-path"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuilderLambdaPropertyTask) PropertyTable() PropertyTable {
+	return builderLambdaPropertyTable
 }
 
 // Validate checks the BuilderLambdaPropertyTask's inputs without contacting the server.
 func (t BuilderLambdaPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set", builderLambdaPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuilderLambdaPropertyTask would produce.
 func (t BuilderLambdaPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-lambda:set", builderLambdaPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuilderLambdaPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "builder-lambda:set", builderLambdaPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuilderLambdaPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuilderLambdaPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("builder-lambda:set", builderLambdaPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuilderLambdaPropertyTask{Global: true, Property: property, Value: value}
 	})
 }
