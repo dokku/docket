@@ -10,7 +10,7 @@ import (
 // GitFromArchiveTask deploys a git repository from an archive URL
 type GitFromArchiveTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// ArchiveURL is the URL of the archive to deploy. Tagged sensitive
 	// because URLs can embed credentials (e.g. https://user:token@host/path).

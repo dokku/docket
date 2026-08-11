@@ -12,6 +12,10 @@ Supported.
 
 Partial - the recorded archive source is probed; the archive contents are not hashed, so a changed archive at the same url plans as in sync.
 
+## Identity
+
+Keyed by `app`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

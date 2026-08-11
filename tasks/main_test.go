@@ -113,6 +113,9 @@ func TestGetTasksTooManyProperties(t *testing.T) {
 	}
 }
 
+// TestGetTasksAutoGeneratesName pins the auto-name to the address of the
+// resource the task manages. Before #427 this was `task #1 <16 hex>`, which
+// differed on every run and so could correlate nothing.
 func TestGetTasksAutoGeneratesName(t *testing.T) {
 	data := []byte(`---
 - tasks:
@@ -131,8 +134,8 @@ func TestGetTasksAutoGeneratesName(t *testing.T) {
 		t.Fatalf("expected 1 task, got %d", len(keys))
 	}
 
-	if !strings.HasPrefix(keys[0], "task #1 ") {
-		t.Errorf("expected auto-generated name starting with 'task #1 ', got '%s'", keys[0])
+	if keys[0] != "dokku_app[app=test-app]" {
+		t.Errorf("expected auto-generated name 'dokku_app[app=test-app]', got '%s'", keys[0])
 	}
 }
 

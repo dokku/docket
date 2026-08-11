@@ -32,6 +32,7 @@ type ExportCommand struct {
 	overwrite  bool
 	redact     bool
 	apps       []string
+	resources  []string
 
 	host              string
 	sudo              bool
@@ -59,6 +60,8 @@ func (c *ExportCommand) Examples() map[string]string {
 		"Stream a JSON5 recipe to stdout":                       fmt.Sprintf("%s %s --output - --format json5", appName, c.Name()),
 		"Redact secrets into a fill-in-the-blanks vars-file":    fmt.Sprintf("%s %s --redact", appName, c.Name()),
 		"Export only a single app":                              fmt.Sprintf("%s %s --app my-app", appName, c.Name()),
+		"Export one resource":                                   fmt.Sprintf("%s %s --resource 'dokku_config[app=my-app]'", appName, c.Name()),
+		"Export every app's domains":                            fmt.Sprintf("%s %s --resource dokku_domains", appName, c.Name()),
 	}
 }
 
@@ -82,6 +85,7 @@ func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.overwrite, "overwrite", false, "overwrite existing output files without prompting")
 	f.BoolVar(&c.redact, "redact", false, "write placeholder values into the vars-file instead of real secrets")
 	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app (repeatable)")
+	f.StringArrayVar(&c.resources, "resource", nil, "restrict the export to the named resource address, e.g. 'dokku_config[app=my-app]' (repeatable); a bare task type exports every resource of that type")
 	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
 	f.BoolVar(&c.sudo, "sudo", false, "wrap the remote dokku call in sudo -n")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "trust an unknown SSH host key on first connect")
@@ -98,6 +102,7 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 			"--overwrite":            complete.PredictNothing,
 			"--redact":               complete.PredictNothing,
 			"--app":                  complete.PredictNothing,
+			"--resource":             complete.PredictNothing,
 			"--host":                 complete.PredictNothing,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
@@ -122,6 +127,22 @@ func (c *ExportCommand) Run(args []string) int {
 	}
 
 	formatOverride, err := parseRecipeFormatFlag("--format", c.formatFlag)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	// An address already names the app it belongs to, so combining the two
+	// filters can only express a contradiction or a redundancy.
+	if len(c.resources) > 0 && len(c.apps) > 0 {
+		c.Ui.Error("--resource and --app cannot be combined; a resource address already names its app")
+		return 1
+	}
+
+	// Addresses are parsed and checked against the registry here, before the
+	// SSH control master is opened, so a typo fails instantly rather than
+	// after a round trip to the server.
+	resources, err := tasks.ParseResourceSelectors(c.resources)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
@@ -161,9 +182,10 @@ func (c *ExportCommand) Run(args []string) int {
 	toStdout := c.output == taskFileStdin
 
 	res, err := tasks.ExportRecipe(tasks.ExportOptions{
-		Apps:   c.apps,
-		Redact: c.redact,
-		Inline: toStdout,
+		Apps:      c.apps,
+		Resources: resources,
+		Redact:    c.redact,
+		Inline:    toStdout,
 	})
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("export failed: %v", err))
@@ -178,9 +200,12 @@ func (c *ExportCommand) Run(args []string) int {
 	// otherwise the existing apps are exported and the missing names are reported
 	// with a non-zero exit at the end (#346).
 	if res.PlayCount() == 0 {
-		if len(res.Report.MissingApps) > 0 {
+		switch {
+		case len(res.Report.MissingApps) > 0:
 			c.Ui.Error(fmt.Sprintf("error: %s not found on server; nothing to export", strings.Join(res.Report.MissingApps, ", ")))
-		} else {
+		case len(res.Report.MissingResources) > 0:
+			c.Ui.Error(fmt.Sprintf("error: %s not found on server; nothing to export", strings.Join(res.Report.MissingResources, ", ")))
+		default:
 			c.Ui.Error("error: nothing to export")
 		}
 		return 1
@@ -284,14 +309,15 @@ func (c *ExportCommand) Run(args []string) int {
 	return c.exitForMissingApps(res)
 }
 
-// exitForMissingApps reports any --app names that were not found on the server
-// and returns a non-zero exit code, so a typo is surfaced even though the apps
-// that do exist were still exported (#346).
+// exitForMissingApps reports any --app names or --resource addresses that were
+// not found on the server and returns a non-zero exit code, so a typo is
+// surfaced even though what does exist was still exported (#346).
 func (c *ExportCommand) exitForMissingApps(res *tasks.ExportResult) int {
-	if len(res.Report.MissingApps) == 0 {
+	missing := append(append([]string(nil), res.Report.MissingApps...), res.Report.MissingResources...)
+	if len(missing) == 0 {
 		return 0
 	}
-	c.Ui.Error(fmt.Sprintf("error: %s not found on server", strings.Join(res.Report.MissingApps, ", ")))
+	c.Ui.Error(fmt.Sprintf("error: %s not found on server", strings.Join(missing, ", ")))
 	return 1
 }
 

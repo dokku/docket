@@ -12,10 +12,10 @@ import (
 // PortsTask manages the ports for a given dokku application
 type PortsTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// PortMappings are the port mappings to set
-	PortMappings []PortMapping `required:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port"`
+	PortMappings []PortMapping `required:"false" identity:"collection" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port"`
 
 	// State is the desired state of the ports
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ports"`
@@ -38,10 +38,10 @@ func (e PortsTaskExample) GetName() string {
 // PortMapping represents a port mapping
 type PortMapping struct {
 	// Scheme is the scheme of the port mapping
-	Scheme string `required:"true" yaml:"scheme" description:"Scheme of the port mapping"`
+	Scheme string `required:"true" identity:"key" yaml:"scheme" description:"Scheme of the port mapping"`
 
 	// Host is the host of the port mapping
-	Host int `required:"true" yaml:"host" description:"Host of the port mapping"`
+	Host int `required:"true" identity:"key" yaml:"host" description:"Host of the port mapping"`
 
 	// Container is the container of the port mapping
 	Container int `required:"true" yaml:"container" description:"Container of the port mapping"`

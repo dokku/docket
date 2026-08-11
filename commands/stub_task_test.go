@@ -15,8 +15,10 @@ import (
 // Execute(). Plan() returns a Drift / InSync result based on the
 // fixture's Changed flag plus its Error.
 type StubTask struct {
-	// Key is the lookup into stubFixtures. Required.
-	Key string `yaml:"key" required:"true"`
+	// Key is the lookup into stubFixtures. Required, and the stub's identity:
+	// one fixture per key is exactly the "which resource" question every real
+	// task answers with its `identity:"key"` fields.
+	Key string `yaml:"key" required:"true" identity:"key"`
 }
 
 // Doc / Examples are not exercised by the apply / plan tests. They

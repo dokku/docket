@@ -12,13 +12,13 @@ import (
 // ServiceExposeTask exposes or unexposes a dokku service on host ports
 type ServiceExposeTask struct {
 	// Service is the type of service to expose (e.g. redis, postgres, mysql)
-	Service string `required:"true" yaml:"service" description:"Type of service to expose (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to expose (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Ports are the host ports to expose the service on. Required when state is present.
-	Ports []string `required:"false" yaml:"ports,omitempty" description:"Host ports to expose the service on. Required when state is present."`
+	Ports []string `required:"false" identity:"collection" yaml:"ports,omitempty" description:"Host ports to expose the service on. Required when state is present."`
 
 	// State is the desired state of the service exposure
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service exposure"`

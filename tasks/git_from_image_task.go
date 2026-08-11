@@ -12,7 +12,7 @@ import (
 // GitFromImageTask deploys a git repository from a docker image
 type GitFromImageTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Image is the docker image to deploy. Tagged sensitive because image
 	// references can embed registry credentials (e.g. user:token@host/repo).

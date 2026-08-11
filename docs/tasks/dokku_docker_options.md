@@ -12,6 +12,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`, `phase`, `process_type`, and `option`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

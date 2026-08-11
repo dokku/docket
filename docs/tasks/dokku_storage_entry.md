@@ -12,6 +12,10 @@ Supported.
 
 Partial - idempotency is keyed on the entry name; scheduler, size, and chown changes to an existing entry are not drift-detected (tracked in dokku/docket#439).
 
+## Identity
+
+Keyed by `name`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -12,6 +12,10 @@ Supported.
 
 Partial - the mount source, container path, and volume options are probed; phases, process_type, subpath, readonly, and volume_chown apply at mount time and are not drift-detected.
 
+## Identity
+
+Keyed by `app` and `container_dir`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

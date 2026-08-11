@@ -180,6 +180,11 @@ type ExportOptions struct {
 	// Apps restricts the export to these app names; empty means every app.
 	Apps []string
 
+	// Resources restricts the export to specific resource addresses. Empty
+	// means every resource. Mutually exclusive with Apps: an address already
+	// says which app it belongs to.
+	Resources []ResourceSelector
+
 	// Redact replaces sensitive values with placeholders instead of the real
 	// values (in the vars-file for file mode, in place for stdout mode). A
 	// value whose task would not validate when blank is lifted into a required
@@ -200,6 +205,13 @@ type ExportReport struct {
 	// server. The export still proceeds for the apps that do exist; the command
 	// surfaces these and exits non-zero so a typo is not silently dropped (#346).
 	MissingApps []string
+
+	// MissingResources lists --resource addresses that matched nothing on the
+	// server, in the order they were given. Same contract as MissingApps: the
+	// export emits what it did find and the command exits non-zero, so an
+	// address that names a resource the server does not have is not mistaken
+	// for one that exports to nothing.
+	MissingResources []string
 }
 
 // ExportResult is the outcome of ExportRecipe: the assembled recipe (as a list
@@ -210,6 +222,10 @@ type ExportResult struct {
 	Report ExportReport
 
 	usedVarNames map[string]bool
+
+	// filter narrows emission to the --resource addresses. nil for an
+	// unrestricted export, where every check it performs answers "keep".
+	filter *resourceFilter
 }
 
 // ExportRecipe reads the live Dokku server (via the current subprocess host)
@@ -220,22 +236,44 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 	res := &ExportResult{
 		Vars:         map[string]string{},
 		usedVarNames: map[string]bool{},
+		filter:       newResourceFilter(opts.Resources),
 	}
+	inApp, inGlobal := exportOrderSets()
 
 	// Global resources come first, in a leading "global" play. Skipped when
-	// the export is narrowed to specific apps with --app.
-	if len(opts.Apps) == 0 {
+	// the export is narrowed to specific apps with --app, and when every
+	// --resource address is app-scoped.
+	if len(opts.Apps) == 0 && res.filter.wantsGlobalScope(inGlobal) {
 		if global := res.exportGlobalPlay(opts); global != nil {
 			res.plays = append(res.plays, global)
 		}
+	}
+
+	// An address that pins `app=` narrows the run the same way --app does, so
+	// an export of one app's config does not enumerate every app on the
+	// server. A run whose addresses are all global-scoped wants no app plays
+	// at all, which is distinct from "no restriction".
+	wantApps := opts.Apps
+	selectedApps, restricted := res.filter.appNames(inApp)
+	if restricted {
+		if len(selectedApps) == 0 {
+			res.Report.MissingResources = res.filter.unmatchedAddresses()
+			return res, nil
+		}
+		wantApps = selectedApps
 	}
 
 	apps, err := listApps()
 	if err != nil {
 		return nil, err
 	}
-	res.Report.MissingApps = missingApps(apps, opts.Apps)
-	apps = filterApps(apps, opts.Apps)
+	// A resource-driven run derives its app list from the addresses, so an app
+	// that does not exist is reported as the address the user actually typed
+	// rather than as an app name they never wrote.
+	if !restricted {
+		res.Report.MissingApps = missingApps(apps, wantApps)
+	}
+	apps = filterApps(apps, wantApps)
 	sort.Strings(apps)
 
 	for _, app := range apps {
@@ -244,6 +282,8 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 			res.plays = append(res.plays, play)
 		}
 	}
+
+	res.Report.MissingResources = res.filter.unmatchedAddresses()
 
 	return res, nil
 }
@@ -255,6 +295,9 @@ func (res *ExportResult) exportGlobalPlay(opts ExportOptions) map[string]interfa
 	var inputs []map[string]interface{}
 
 	for _, typeKey := range globalExportOrder {
+		if !res.filter.wantsType(typeKey) {
+			continue
+		}
 		proto, ok := RegisteredTasks[typeKey]
 		if !ok {
 			continue
@@ -270,6 +313,14 @@ func (res *ExportResult) exportGlobalPlay(opts ExportOptions) map[string]interfa
 			continue
 		}
 		for _, body := range bodies {
+			keep, err := res.filter.keepBody(typeKey, body)
+			if err != nil {
+				res.Report.Warnings = append(res.Report.Warnings,
+					fmt.Sprintf("global: %s: %v", typeKey, err))
+			}
+			if !keep {
+				continue
+			}
 			body, ins := res.processBody("global", body, opts)
 			taskList = append(taskList, map[string]interface{}{typeKey: body})
 			inputs = append(inputs, ins...)
@@ -295,6 +346,9 @@ func (res *ExportResult) exportAppPlay(app string, opts ExportOptions) map[strin
 	var inputs []map[string]interface{}
 
 	for _, typeKey := range appExportOrder {
+		if !res.filter.wantsType(typeKey) {
+			continue
+		}
 		proto, ok := RegisteredTasks[typeKey]
 		if !ok {
 			continue
@@ -319,6 +373,14 @@ func (res *ExportResult) exportAppPlay(app string, opts ExportOptions) map[strin
 			continue
 		}
 		for _, body := range bodies {
+			keep, err := res.filter.keepBody(typeKey, body)
+			if err != nil {
+				res.Report.Warnings = append(res.Report.Warnings,
+					fmt.Sprintf("%s: %s: %v", app, typeKey, err))
+			}
+			if !keep {
+				continue
+			}
 			body, ins := res.processBody(app, body, opts)
 			taskList = append(taskList, map[string]interface{}{typeKey: body})
 			inputs = append(inputs, ins...)

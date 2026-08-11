@@ -14,10 +14,10 @@ import (
 // dokku application
 type HttpAuthDomainTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Domains is the list of domains to restrict HTTP auth to
-	Domains []string `required:"false" yaml:"domains,omitempty" description:"List of domains to restrict HTTP auth to; omit for state 'clear'"`
+	Domains []string `required:"false" identity:"collection" yaml:"domains,omitempty" description:"List of domains to restrict HTTP auth to; omit for state 'clear'"`
 
 	// State is the desired state of the HTTP auth domain entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the HTTP auth domain entries"`

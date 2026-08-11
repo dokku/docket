@@ -12,6 +12,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `chart`. Manages the whole `values` collection; entries are identified by their key.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

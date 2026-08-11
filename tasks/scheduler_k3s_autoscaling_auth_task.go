@@ -4,21 +4,21 @@ package tasks
 // metadata stored under a single trigger for a dokku application or globally.
 type SchedulerK3sAutoscalingAuthTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the trigger authentication should be
 	// applied globally instead of on a single app.
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the trigger authentication should be applied globally"`
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the trigger authentication should be applied globally"`
 
 	// Trigger is the name of the KEDA trigger authentication resource that
 	// groups the metadata keys.
-	Trigger string `required:"true" yaml:"trigger" description:"Name of the KEDA trigger authentication resource"`
+	Trigger string `required:"true" identity:"key" yaml:"trigger" description:"Name of the KEDA trigger authentication resource"`
 
 	// Metadata is the set of metadata key/value pairs to apply to the
 	// trigger. On present, these keys are written and merged with any other
 	// keys dokku already stores under the trigger. On absent, only the listed
 	// keys are cleared; their values are ignored.
-	Metadata map[string]string `required:"false" yaml:"metadata,omitempty" description:"Map of metadata key to value for the trigger authentication. On absent, only the keys are read."`
+	Metadata map[string]string `required:"false" identity:"collection" yaml:"metadata,omitempty" description:"Map of metadata key to value for the trigger authentication. On absent, only the keys are read."`
 
 	// State is the desired state of the trigger authentication metadata.
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the trigger authentication metadata"`

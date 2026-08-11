@@ -14,10 +14,10 @@ import (
 // auth for a dokku application
 type HttpAuthAllowedIpTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// AllowedIps is the list of IP addresses to allow or remove
-	AllowedIps []string `required:"false" yaml:"allowed_ips" description:"List of IP addresses to allow or remove"`
+	AllowedIps []string `required:"false" identity:"collection" yaml:"allowed_ips" description:"List of IP addresses to allow or remove"`
 
 	// State is the desired state of the allowed IP entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the allowed IP entries"`

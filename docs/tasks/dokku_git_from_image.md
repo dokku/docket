@@ -12,6 +12,10 @@ Partial - the image reference is written to the companion vars-file.
 
 Partial - the recorded image reference is probed; the image digest is not, so a mutable tag that moved plans as in sync.
 
+## Identity
+
+Keyed by `app`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

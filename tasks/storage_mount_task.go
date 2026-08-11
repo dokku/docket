@@ -36,7 +36,7 @@ const storageDefaultProcessType = "_default_"
 // reconstructs every attribute in full.
 type StorageMountTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// EntryName is the named storage registry entry to attach. Mutually
 	// exclusive with host_dir.
@@ -47,7 +47,7 @@ type StorageMountTask struct {
 	HostDir string `required:"false" yaml:"host_dir,omitempty" description:"Host directory to mount in the legacy bind-mount form (mutually exclusive with entry_name)"`
 
 	// ContainerDir is the container directory to mount
-	ContainerDir string `required:"true" yaml:"container_dir" description:"Container directory to mount"`
+	ContainerDir string `required:"true" identity:"key" yaml:"container_dir" description:"Container directory to mount"`
 
 	// Phases is the deployment phases the attachment applies to (deploy, run).
 	// Empty defers to the dokku default (both phases).

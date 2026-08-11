@@ -11,7 +11,7 @@ import (
 // StorageEnsureTask manages the storage for a given dokku application
 type StorageEnsureTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Chown is the chown value to set
 	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Chown value to set: an ownership preset or a numeric uid (0-65535)"`

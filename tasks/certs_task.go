@@ -13,11 +13,11 @@ import (
 // CertsTask manages SSL certificates for a dokku app or globally
 type CertsTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the certificate should be applied globally
 	// via the dokku-global-cert plugin
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin"`
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin"`
 
 	// Cert is the path on the dokku server to the SSL certificate file
 	Cert string `required:"false" sensitive:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content."`

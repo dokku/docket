@@ -12,6 +12,10 @@ Supported.
 
 Partial - the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run.
 
+## Identity
+
+Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

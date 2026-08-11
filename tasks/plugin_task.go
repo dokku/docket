@@ -18,7 +18,7 @@ import (
 // committish on an already-installed plugin is not detected.
 type PluginTask struct {
 	// Name is the plugin name as it appears in plugin:list
-	Name string `required:"true" yaml:"name" description:"Plugin name as it appears in plugin:list"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Plugin name as it appears in plugin:list"`
 
 	// URL is the git URL to install from. Required when state is present.
 	URL string `required:"false" yaml:"url,omitempty" description:"Git URL to install the plugin from. Required when state is present."`

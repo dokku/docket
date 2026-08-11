@@ -27,7 +27,7 @@ import (
 // directory.
 type StorageEntryTask struct {
 	// Name is the name of the storage entry
-	Name string `required:"true" yaml:"name" description:"Name of the storage entry"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the storage entry"`
 
 	// Path is the host path for the entry. Optional; on docker-local it
 	// defaults to the dokku storage root + name.

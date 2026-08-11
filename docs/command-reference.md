@@ -326,6 +326,17 @@ $ docket apply --list-tasks
 [3] dokku ports:add api  [tags=deploy]
 ```
 
+Those are the `name:` values from the recipe. A task with no `name:` is listed by its
+[resource address](task-envelope.md#names-and-resource-addresses) instead:
+
+```text
+$ docket apply --list-tasks
+==> Play: api
+[0] dokku_app[app=api]
+[1] dokku_config[app=api]
+[2] dokku_docker_options[app=api,phase=deploy,option=--memory=512m]
+```
+
 A `when:` that is false against the inputs renders as `[skipped]`. A `when:` that references
 `.registered.<name>` cannot be decided without running earlier tasks, so it renders as `[unknown]`
 rather than guessing.
@@ -361,11 +372,22 @@ $ docket apply --start-at-task "dokku config:set api"
 Summary: 4 tasks · 1 changed · 1 ok · 2 skipped · 0 errors  (took 1.1s)
 ```
 
+A task with no `name:` is targeted by its resource address. Quote it - the brackets are shell glob
+characters:
+
+```bash
+docket apply --start-at-task 'dokku_config[app=api]'
+```
+
 Filters apply in this order: `--start-at-task` selects first, then `--tags` / `--skip-tags`, then
 per-task `when:` at execution time. The name search walks every play in source order, narrowed by
 `--play`. An unmatched name exits 1 with the available names listed. A `--start-at-task` target that
 is itself excluded by `--tags` / `--skip-tags` still establishes the resume point but does not itself
 run - tasks after it that pass the tag filter do.
+
+`validate --strict --start-at-task` checks the same names offline. It stands down for a play that
+contains a `loop:` entry or an input with no default, because neither can be named without the
+values a real run has; the check at apply time is the authoritative one.
 
 ## docket export
 
@@ -391,10 +413,35 @@ docket apply --tasks tasks.yml --vars-file tasks.vars.yml
 
 # Stream a JSON5 recipe to stdout and pipe it straight back in.
 docket export --output - --format json5 | docket apply --tasks-format json5 -
+
+# Read back a single resource instead of a whole app.
+docket export --resource 'dokku_config[app=api]' --output -
 ```
 
 The correctness contract is idempotency: applying an exported pair back to the same server reports
 no drift (`plan` shows every task `[ok]`).
+
+### Exporting one resource
+
+`--resource` takes a [resource address](task-envelope.md#names-and-resource-addresses) - the same
+string an unnamed task is named after - and exports only what it matches:
+
+```bash
+docket export --resource 'dokku_config[app=api]' --output -
+docket export --resource 'dokku_apps_property[global=true,property=disable-autocreation]' --output -
+```
+
+Drop the brackets to take every resource of a type, across every app:
+
+```bash
+docket export --resource dokku_domains --output -
+```
+
+The flag is repeatable and cannot be combined with `--app`, since an address already names its app.
+Each address is checked against the registry before the server is read, so an unknown task type, a
+type no exporter reaches, or a key the task does not declare fails immediately. An address that
+matches nothing on the server is reported by name and exits non-zero, the same way a nonexistent
+`--app` is.
 
 | Flag | Effect |
 |------|--------|
@@ -404,6 +451,7 @@ no drift (`plan` shows every task `[ok]`).
 | `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). Not valid with `--output -`. |
 | `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in. |
 | `--app <name>` | Restrict the export to the named app. Repeatable. |
+| `--resource <address>` | Restrict the export to a [resource address](task-envelope.md#names-and-resource-addresses), e.g. `dokku_config[app=api]`. A bare task type takes every resource of that type. Repeatable; not valid with `--app`. See [exporting one resource](#exporting-one-resource). |
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Wrap the remote `dokku` call in `sudo -n`. |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |

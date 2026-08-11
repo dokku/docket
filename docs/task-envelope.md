@@ -7,7 +7,7 @@ it you can apply it anywhere.
 
 | Key | What it does |
 |-----|--------------|
-| `name` | A human label for the task, shown in the output. Auto-generated when omitted. |
+| `name` | A human label for the task, shown in the output. [Derived from the resource](#names-and-resource-addresses) when omitted. |
 | `tags` | A tag list, filtered by `--tags` / `--skip-tags`. |
 | `when` | A condition; when false the task renders as `[skipped]`. |
 | `loop` | Expand one entry into many, once per item in a list. |
@@ -26,6 +26,57 @@ do not get confused:
 - **Task bodies** use [sigil](https://github.com/gliderlabs/sigil) templates: `{{ .app }}`.
 - **Envelope predicates** (`when`, `loop`, `changed_when`, `failed_when`) use
   [expr](https://github.com/expr-lang/expr): `app == "api"`.
+
+## Names and resource addresses
+
+A task's `name` is its identity in every output docket produces: the label in `apply` and `plan`
+output, the `name` field in the [`--json` event stream](json-output.md), and the argument
+`--start-at-task` takes.
+
+When you omit `name`, docket derives one from the resource the task manages - its **address**:
+
+```text
+dokku_config[app=api]
+dokku_apps_property[global=true,property=disable-autocreation]
+dokku_docker_options[app=api,phase=deploy,option=--memory=512m]
+```
+
+The keys are the fields that decide *which* resource the task addresses, listed in the **Identity**
+section of every [task reference page](tasks/README.md). A key you left empty is omitted, which is
+what distinguishes an app-scoped task from its global counterpart. A task with no key value at all
+is just its type: `dokku_domains`.
+
+Two properties follow, and both are the point:
+
+- **The same recipe produces the same names on every run.** A tool diffing one run against another -
+  a dashboard, a CI job comparing `plan` to `apply` - can line the tasks up by `name`. This matters
+  most for [`docket export`](command-reference.md#docket-export) output, which writes no `name:` on
+  any task.
+- **You can name an unnamed task on the command line.** Quote it, because the brackets are shell
+  glob characters:
+
+  ```bash
+  docket apply --start-at-task 'dokku_config[app=api]'
+  ```
+
+The desired state is deliberately *not* part of the address. `state: absent` on an app's config
+addresses the same resource as `state: present`, so changing a task's state does not rename it.
+
+That means two tasks in one play can share an address - setting some config keys and unsetting
+others is a normal thing to write. The first keeps the bare address and later ones get an ordinal:
+
+```yaml
+- tasks:
+    - dokku_config: { app: api, config: { A: "1" } }        # dokku_config[app=api]
+    - dokku_config: { app: api, state: absent, config: { B: "" } }  # dokku_config[app=api] #2
+```
+
+Those ordinals shift if you insert another colliding task ahead of them. When a name has to stay
+put, write a `name:` - a name you wrote is never renamed, even when it collides with an address
+docket would otherwise have generated.
+
+A `block:` / `rescue:` / `always:` group manages no resource of its own, so an unnamed group is
+named after its position instead: `group #3`, and `group #3.block[2]` for a group nested inside one.
 
 ## Tags
 

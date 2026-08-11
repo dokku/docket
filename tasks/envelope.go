@@ -17,9 +17,15 @@ import (
 // the keys today so #210 does not need to revisit the cap.
 type TaskEnvelope struct {
 	// Name is the user-supplied human label for the task. Auto-generated
-	// when the entry omits a name (see GetTasks). Loop-expansions append
-	// an `(item=<value>)` suffix to keep ordered-map keys unique.
+	// when the entry omits a name (see GetTasks): a leaf task is named after
+	// the resource it addresses (`dokku_config[app=api]`), a group after its
+	// position (`group #3`).
 	Name string
+
+	// NameGenerated records that Name was derived rather than written in the
+	// recipe. dedupeGeneratedNames renames only these, so a generated name
+	// can never displace one a recipe author wrote.
+	NameGenerated bool
 
 	// Tags is the list of tag strings on the entry. The --tags / --skip-tags
 	// CLI flags filter against this set.
@@ -244,6 +250,22 @@ func EnvelopeContainsName(env *TaskEnvelope, target string) bool {
 	return false
 }
 
+// walkEnvelopes visits every envelope reachable from envs in source order,
+// descending into block / rescue / always children. Group children live only
+// on their parent envelope, so any pass that has to see the whole play - name
+// deduplication, name collection - has to come through here.
+func walkEnvelopes(envs []*TaskEnvelope, visit func(env *TaskEnvelope)) {
+	for _, env := range envs {
+		if env == nil {
+			continue
+		}
+		visit(env)
+		walkEnvelopes(env.Block, visit)
+		walkEnvelopes(env.Rescue, visit)
+		walkEnvelopes(env.Always, visit)
+	}
+}
+
 // CollectEnvelopeNames returns every leaf and group envelope name
 // reachable from envs, walking block / rescue / always recursively.
 // Names appear in source order and are de-duplicated. Used by the
@@ -252,27 +274,12 @@ func EnvelopeContainsName(env *TaskEnvelope, target string) bool {
 func CollectEnvelopeNames(envs []*TaskEnvelope) []string {
 	seen := map[string]bool{}
 	var out []string
-	var walk func(env *TaskEnvelope)
-	walk = func(env *TaskEnvelope) {
-		if env == nil {
+	walkEnvelopes(envs, func(env *TaskEnvelope) {
+		if env.Name == "" || seen[env.Name] {
 			return
 		}
-		if env.Name != "" && !seen[env.Name] {
-			seen[env.Name] = true
-			out = append(out, env.Name)
-		}
-		for _, child := range env.Block {
-			walk(child)
-		}
-		for _, child := range env.Rescue {
-			walk(child)
-		}
-		for _, child := range env.Always {
-			walk(child)
-		}
-	}
-	for _, env := range envs {
-		walk(env)
-	}
+		seen[env.Name] = true
+		out = append(out, env.Name)
+	})
 	return out
 }

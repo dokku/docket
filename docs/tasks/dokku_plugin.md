@@ -12,6 +12,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `name`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -11,7 +11,7 @@ import (
 // NetworkTask creates or destroys a Docker network
 type NetworkTask struct {
 	// Name is the name of the network
-	Name string `required:"true" yaml:"name" description:"Name of the network"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the network"`
 
 	// State is the state of the network
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"State of the network"`

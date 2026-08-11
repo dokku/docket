@@ -8,13 +8,13 @@ import (
 // ServiceLinkTask links or unlinks a dokku service to an app
 type ServiceLinkTask struct {
 	// App is the name of the app to link the service to
-	App string `required:"true" yaml:"app" description:"Name of the app to link the service to"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app to link the service to"`
 
 	// Service is the type of service to link (e.g. redis, postgres, mysql)
-	Service string `required:"true" yaml:"service" description:"Type of service to link (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to link (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// State is the desired state of the service link
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service link"`

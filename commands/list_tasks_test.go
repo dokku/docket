@@ -39,12 +39,12 @@ func TestApplyListTasksPrintsResolvedPlan(t *testing.T) {
 	}
 }
 
-// TestApplyListTasksUnnamedTasksShowBodyIdentifier covers the unnamed
-// task path: a recipe with no `name:` produces an auto-generated name
-// like `task #1 <hex>` from the loader. --list-tasks substitutes a
-// `<TypeName>: <body identifier>` display so the listing stays
-// readable instead of leaking the random hex suffix.
-func TestApplyListTasksUnnamedTasksShowBodyIdentifier(t *testing.T) {
+// TestApplyListTasksUnnamedTasksShowResourceAddress covers the unnamed
+// task path: a recipe with no `name:` is named after the resource each task
+// addresses, so the listing reads back the body the user wrote. Before #427
+// the loader produced `task #1 <hex>` and this display substituted the task
+// type plus one guessed field.
+func TestApplyListTasksUnnamedTasksShowResourceAddress(t *testing.T) {
 	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
@@ -55,13 +55,37 @@ func TestApplyListTasksUnnamedTasksShowBodyIdentifier(t *testing.T) {
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0; stdout=%s", exit, stdout)
 	}
-	for _, want := range []string{"dokku_app: docket-test-list-1", "dokku_app: docket-test-list-2"} {
+	for _, want := range []string{"dokku_app[app=docket-test-list-1]", "dokku_app[app=docket-test-list-2]"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("listing should include %q; got:\n%s", want, stdout)
 		}
 	}
 	if strings.Contains(stdout, "task #") {
-		t.Errorf("auto-generated task name should be replaced; got:\n%s", stdout)
+		t.Errorf("no listing line should carry a positional auto-name; got:\n%s", stdout)
+	}
+}
+
+// TestApplyListTasksDistinguishesSameAppTasks is the case the old display
+// heuristic got wrong: it keyed on the first App-like field, so every phase
+// and option of one app's docker options collapsed onto the same label.
+func TestApplyListTasksDistinguishesSameAppTasks(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, `---
+- tasks:
+    - dokku_docker_options: { app: api, phase: deploy, option: "--memory=512m" }
+    - dokku_docker_options: { app: api, phase: build, option: "--shm-size=1g" }
+`)
+	stdout, _, exit := runApply(t, path, "--list-tasks")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s", exit, stdout)
+	}
+	for _, want := range []string{
+		"dokku_docker_options[app=api,phase=deploy,option=--memory=512m]",
+		"dokku_docker_options[app=api,phase=build,option=--shm-size=1g]",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("listing should include %q; got:\n%s", want, stdout)
+		}
 	}
 }
 

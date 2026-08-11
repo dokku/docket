@@ -93,6 +93,9 @@ EOF
 }
 
 @test "--list-tasks expands loops" {
+  # An unnamed loop whose item feeds an identity field names each iteration
+  # after the resource that iteration addresses (#427), which is both more
+  # informative than an (item=) suffix and the form --start-at-task accepts.
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -101,15 +104,32 @@ EOF
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
   assert_success
-  assert_output --partial "item=a"
-  assert_output --partial "item=b"
-  assert_output --partial "item=c"
+  assert_output --partial "dokku_app[app=docket-test-list-loop-a]"
+  assert_output --partial "dokku_app[app=docket-test-list-loop-b]"
+  assert_output --partial "dokku_app[app=docket-test-list-loop-c]"
+}
+
+@test "--list-tasks names a named loop by item" {
+  # A loop the recipe author named keeps the <name> (item=<value>) form: the
+  # author already said what to call it.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: create apps
+      loop: [a, b]
+      dokku_app: { app: "docket-test-list-named-{{ .item }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "create apps (item=a)"
+  assert_output --partial "create apps (item=b)"
 }
 
 @test "--list-tasks keeps both iterations for duplicate loop items" {
   # Duplicate scalar items used to collide into one envelope name and
   # trip the duplicate-name guard, dropping an iteration (#320). Both
-  # iterations must survive with disambiguated names.
+  # iterations must survive with disambiguated names - here each renders a
+  # different app, so each addresses a different resource.
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -118,9 +138,110 @@ EOF
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
   assert_success
-  assert_output --partial "(item=web) #0"
-  assert_output --partial "(item=web) #1"
+  assert_output --partial "dokku_app[app=docket-test-list-dup-0]"
+  assert_output --partial "dokku_app[app=docket-test-list-dup-1]"
   refute_output --partial "duplicate task name"
+}
+
+@test "--list-tasks falls back to item names when a loop addresses one resource" {
+  # Every iteration here sets a key on the same app, so every iteration
+  # addresses the same resource. The fallback is all-or-nothing so one loop
+  # never renders a mix of addresses and item suffixes.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - loop: [A, B]
+      dokku_config:
+        app: docket-test-list-same
+        config: { "{{ .item }}": "1" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "dokku_config (item=A)"
+  assert_output --partial "dokku_config (item=B)"
+  refute_output --partial "duplicate task name"
+}
+
+@test "--list-tasks names unnamed tasks after the resource they manage" {
+  # The old display heuristic keyed on the first App-like field, so every
+  # phase and option of one app collapsed onto the same label (#427).
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_docker_options:
+        app: docket-test-list-opts
+        phase: deploy
+        option: "--memory=512m"
+    - dokku_docker_options:
+        app: docket-test-list-opts
+        phase: build
+        option: "--shm-size=1g"
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "dokku_docker_options[app=docket-test-list-opts,phase=deploy,option=--memory=512m]"
+  assert_output --partial "dokku_docker_options[app=docket-test-list-opts,phase=build,option=--shm-size=1g]"
+  refute_output --partial "task #"
+}
+
+@test "--list-tasks output is identical across runs" {
+  # The correlation guarantee: a consumer diffing one run against another has
+  # to be able to line the tasks up. Before #427 unnamed tasks carried eight
+  # random bytes and nothing lined up.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app: { app: docket-test-list-stable }
+    - dokku_config: { app: docket-test-list-stable, config: { A: "1" } }
+    - dokku_config: { app: docket-test-list-stable, state: absent, config: { B: "" } }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  first="$output"
+  assert_output --partial "dokku_config[app=docket-test-list-stable]"
+  assert_output --partial "dokku_config[app=docket-test-list-stable] #2"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  [ "$output" = "$first" ]
+}
+
+@test "--start-at-task resumes at a generated name" {
+  # An unnamed task could not be named on the command line at all before
+  # #427, because its name differed on every run.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app: { app: docket-test-resume-1 }
+    - dokku_app: { app: docket-test-resume-2 }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --start-at-task 'dokku_app[app=docket-test-resume-2]'
+  assert_success
+  assert_output --partial "dokku_app[app=docket-test-resume-2]"
+}
+
+@test "validate --strict accepts a generated --start-at-task name" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app: { app: docket-test-validate-resume }
+    - dokku_config: { app: docket-test-validate-resume, config: { A: "1" } }
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --strict --start-at-task 'dokku_config[app=docket-test-validate-resume]'
+  assert_success
+  refute_output --partial "unknown_start_at_task"
+}
+
+@test "validate --strict still rejects an unknown --start-at-task name" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app: { app: docket-test-validate-typo }
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --strict --start-at-task 'dokku_app[app=nope]'
+  assert_failure
+  assert_output --partial 'does not match any task in the recipe'
+  assert_output --partial "dokku_app[app=docket-test-validate-typo]"
 }
 
 @test "--list-tasks shows [skipped] for when:false" {

@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`. Manages the whole `users` collection; entries are identified by value.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

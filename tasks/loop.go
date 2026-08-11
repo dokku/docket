@@ -38,8 +38,11 @@ func expandLoop(base *TaskEnvelope, bodyBytes []byte, typeKey string, sigilConte
 		return nil, err
 	}
 
-	names := loopExpansionNames(base.Name, items)
-	out := make([]*TaskEnvelope, 0, len(items))
+	// Bodies decode first so an unnamed loop can name each iteration after the
+	// resource that iteration addresses; the `.item` substitution has already
+	// happened by then, which is what a name assigned before expansion could
+	// not see.
+	decoded := make([]Task, len(items))
 	for i, item := range items {
 		iterCtx := make(map[string]interface{}, safeCap(len(sigilContext), 2))
 		for k, v := range sigilContext {
@@ -61,18 +64,54 @@ func expandLoop(base *TaskEnvelope, bodyBytes []byte, typeKey string, sigilConte
 		if err != nil {
 			return nil, fmt.Errorf("loop iteration %d: decode error: %w", i, err)
 		}
+		decoded[i] = task
+	}
 
+	names, generated := loopIterationNames(base.Name, typeKey, decoded, items)
+	out := make([]*TaskEnvelope, 0, len(items))
+	for i, item := range items {
 		expanded := *base
-		expanded.Task = task
+		expanded.Task = decoded[i]
 		expanded.Loop = nil
 		expanded.LoopItem = item
 		expanded.LoopIndex = i
 		expanded.IsLoopExpansion = true
 		expanded.Name = names[i]
+		expanded.NameGenerated = generated
 
 		out = append(out, &expanded)
 	}
 	return out, nil
+}
+
+// loopIterationNames derives one name per loop iteration and reports whether
+// the names were generated rather than taken from a `name:` in the recipe.
+//
+// A named loop keeps the `<name> (item=<value>)` scheme unchanged. An unnamed
+// one names each iteration after the resource it addresses, which is both
+// more useful than `(item=…)` when the item feeds an identity field and the
+// only form `--start-at-task` and `export --resource` can resolve.
+//
+// The decision is made once for the whole loop, never per iteration: when any
+// two iterations address the same resource - a loop over config values for one
+// app, say - every iteration falls back to the item-suffixed form. A loop that
+// rendered some names as addresses and others as `(item=…)` would be harder to
+// read and to predict than either form alone.
+func loopIterationNames(baseName, typeKey string, decoded []Task, items []interface{}) ([]string, bool) {
+	if baseName != "" {
+		return loopExpansionNames(baseName, items), false
+	}
+
+	addresses := make([]string, len(decoded))
+	seen := make(map[string]bool, len(decoded))
+	for i, task := range decoded {
+		addresses[i] = IdentityAddress(typeKey, task)
+		if seen[addresses[i]] {
+			return loopExpansionNames(typeKey, items), true
+		}
+		seen[addresses[i]] = true
+	}
+	return addresses, true
 }
 
 // expandLoopGroup produces one group TaskEnvelope per iteration the
@@ -121,7 +160,7 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 		iterCtx["item"] = item
 		iterCtx["index"] = i
 
-		blockChildren, err := renderAndDecodeGroupClause(blockBytes, "block", iterCtx, sigilContext, exprContext, base.Name, i)
+		blockChildren, err := renderAndDecodeGroupClause(blockBytes, "block", iterCtx, sigilContext, exprContext, names[i], i)
 		if err != nil {
 			return nil, err
 		}
@@ -131,7 +170,7 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 
 		var rescueChildren []*TaskEnvelope
 		if rescueBytes != nil {
-			rescueChildren, err = renderAndDecodeGroupClause(rescueBytes, "rescue", iterCtx, sigilContext, exprContext, base.Name, i)
+			rescueChildren, err = renderAndDecodeGroupClause(rescueBytes, "rescue", iterCtx, sigilContext, exprContext, names[i], i)
 			if err != nil {
 				return nil, err
 			}
@@ -139,7 +178,7 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 
 		var alwaysChildren []*TaskEnvelope
 		if alwaysBytes != nil {
-			alwaysChildren, err = renderAndDecodeGroupClause(alwaysBytes, "always", iterCtx, sigilContext, exprContext, base.Name, i)
+			alwaysChildren, err = renderAndDecodeGroupClause(alwaysBytes, "always", iterCtx, sigilContext, exprContext, names[i], i)
 			if err != nil {
 				return nil, err
 			}
@@ -166,7 +205,10 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 // task body sees the iteration value (per #211: each group iteration's
 // `.item` / `.index` is shared across all its children). The file-level
 // sigilContext stays available so other inputs continue to render.
-func renderAndDecodeGroupClause(body []byte, clause string, iterCtx, sigilContext, exprContext map[string]interface{}, baseName string, iter int) ([]*TaskEnvelope, error) {
+//
+// parentName is this iteration's group name; an unnamed child group extends
+// it, so children of two iterations of the same loop do not collide.
+func renderAndDecodeGroupClause(body []byte, clause string, iterCtx, sigilContext, exprContext map[string]interface{}, parentName string, iter int) ([]*TaskEnvelope, error) {
 	rendered, err := sigil.Execute(body, iterCtx, "loop")
 	if err != nil {
 		return nil, fmt.Errorf("loop iteration %d %s: render error: %w", iter, clause, err)
@@ -182,8 +224,9 @@ func renderAndDecodeGroupClause(body []byte, clause string, iterCtx, sigilContex
 	}
 
 	out := make([]*TaskEnvelope, 0, len(entries))
+	childPath := parentName + "." + clause
 	for i, entry := range entries {
-		envelopes, err := buildEnvelopesFromEntry(entry, sigilContext, exprContext)
+		envelopes, err := buildEnvelopesFromEntry(entry, childPath, sigilContext, exprContext)
 		if err != nil {
 			return nil, fmt.Errorf("loop iteration %d %s[%d]: %s", iter, clause, i, err)
 		}

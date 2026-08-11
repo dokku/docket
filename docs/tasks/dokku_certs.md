@@ -16,6 +16,10 @@ Partial - app and global certificate PEM material is exported (via certs:show an
 
 Partial - only whether a certificate is installed is probed; the certificate material is never read back, so replacing an existing certificate plans as in sync.
 
+## Identity
+
+Keyed by `app` and `global`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

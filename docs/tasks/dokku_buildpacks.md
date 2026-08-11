@@ -12,6 +12,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`. Manages the whole `buildpacks` collection; entries are identified by value.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -604,3 +604,77 @@ func TestExportCommandDeriveVarsOutput(t *testing.T) {
 		}
 	}
 }
+
+// TestExportCommandResourceSelectsOneResource covers the --resource flag end
+// to end: only the addressed task reaches the recipe.
+func TestExportCommandResourceSelectsOneResource(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeExecRunner(map[string]string{
+		"--quiet apps:list":                       "web",
+		"--quiet config:export --format json web": `{"LOG_LEVEL":"info"}`,
+		"domains:report web --domains-app-vhosts": "web.example.com",
+	}))()
+
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "tasks.yml")
+
+	c, ui := newExportCommand()
+	if code := c.Run([]string{"--output", recipe, "--resource", "dokku_config[app=web]"}); code != 0 {
+		t.Fatalf("Run exit = %d, want 0; stderr=%s", code, ui.ErrorWriter.String())
+	}
+
+	out, err := os.ReadFile(recipe)
+	if err != nil {
+		t.Fatalf("recipe not written: %v", err)
+	}
+	if !strings.Contains(string(out), "dokku_config") {
+		t.Errorf("recipe should hold the addressed task:\n%s", out)
+	}
+	if strings.Contains(string(out), "dokku_domains") {
+		t.Errorf("recipe should hold only the addressed task type:\n%s", out)
+	}
+}
+
+// TestExportCommandResourceRejectsAppCombination pins the mutual exclusion: an
+// address already names its app, so combining the two filters can only express
+// a contradiction or a redundancy.
+func TestExportCommandResourceRejectsAppCombination(t *testing.T) {
+	c, ui := newExportCommand()
+	code := c.Run([]string{"--output", "-", "--resource", "dokku_config[app=web]", "--app", "web"})
+	if code == 0 {
+		t.Fatal("expected a non-zero exit when --resource and --app are combined")
+	}
+	if !strings.Contains(ui.ErrorWriter.String(), "cannot be combined") {
+		t.Errorf("expected a clear rejection; got %q", ui.ErrorWriter.String())
+	}
+}
+
+// TestExportCommandResourceRejectsBadAddressBeforeReading asserts the address
+// is validated before the server is contacted: the fake runner is left unset,
+// so any read would answer empty and the run would fail later with a different
+// message.
+func TestExportCommandResourceRejectsBadAddressBeforeReading(t *testing.T) {
+	c, ui := newExportCommand()
+	code := c.Run([]string{"--output", "-", "--resource", "dokku_confg[app=web]"})
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for an unknown task type")
+	}
+	if !strings.Contains(ui.ErrorWriter.String(), `did you mean "dokku_config"`) {
+		t.Errorf("expected a did-you-mean hint; got %q", ui.ErrorWriter.String())
+	}
+}
+
+// TestExportCommandResourceUnmatchedExitsNonZero asserts an address the server
+// has nothing for is surfaced rather than silently exporting nothing, the same
+// contract a nonexistent --app has.
+func TestExportCommandResourceUnmatchedExitsNonZero(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+
+	c, ui := newExportCommand()
+	code := c.Run([]string{"--output", "-", "--resource", "dokku_config[app=missing]"})
+	if code == 0 {
+		t.Fatal("expected a non-zero exit for an address that matched nothing")
+	}
+	if !strings.Contains(ui.ErrorWriter.String(), "dokku_config[app=missing]") {
+		t.Errorf("expected the unmatched address to be named; got %q", ui.ErrorWriter.String())
+	}
+}

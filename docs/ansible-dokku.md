@@ -154,6 +154,16 @@ docket's view of the result to evaluate.
 `--list-tasks` returns before any task runs, so it is unaffected by `--detailed-exitcode` and exits
 `0` or `1`.
 
+### Correlating tasks across runs
+
+`name` is the key. It is stable for the same recipe: a task the wrapper emitted without a `name:`
+is named after the [resource it manages](task-envelope.md#names-and-resource-addresses), so the same
+task carries the same `name` in a `plan` run and the `apply` that follows it.
+
+A wrapper that generates recipes should still set `name:` explicitly when it has a meaningful label
+of its own - a hand-written name is never rewritten, whereas two generated names that address the
+same resource are disambiguated with an ordinal that shifts if a task is inserted between them.
+
 ### Deriving `changed`
 
 There are three signals, and they agree. Pick whichever fits the wrapper:
@@ -217,7 +227,9 @@ means a wrapper must not diff a returned value against the one it sent.
 
 The one exception is `--list-tasks`, which renders the resolved plan before any sensitive value is
 registered and does no masking at all: an interpolated secret comes back verbatim in `name`,
-`when`, and `loop_item`. Never surface that stream to an Ansible caller.
+`when`, and `loop_item`. Never surface that stream to an Ansible caller. No task field is ever both
+an identity key and `sensitive:"true"`, so a generated `name` never embeds a task-declared secret -
+but a `sensitive: true` input interpolated into an identity field still reaches it.
 
 ## Module mapping
 

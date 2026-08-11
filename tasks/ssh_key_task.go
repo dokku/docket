@@ -15,7 +15,7 @@ import (
 // core ssh-keys plugin.
 type SshKeyTask struct {
 	// Name identifies the key in dokku
-	Name string `required:"true" yaml:"name" description:"Name that identifies the key in dokku"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name that identifies the key in dokku"`
 
 	// Key is the public key contents. Required when state is present.
 	Key string `required:"false" yaml:"key,omitempty" description:"Public key contents. Required when state is present."`

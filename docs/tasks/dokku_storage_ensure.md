@@ -14,6 +14,10 @@ Not supported - deprecated; storage state is exported via dokku_storage_mount.
 
 Not supported - `storage:ensure-directory` has no read command, so the task plans as drift on every run.
 
+## Identity
+
+Keyed by `app`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

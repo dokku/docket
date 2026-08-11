@@ -12,6 +12,10 @@ Partial - trigger authentication metadata values are secrets, so they are writte
 
 Supported.
 
+## Identity
+
+Keyed by `app`, `global`, and `trigger`. Fields left empty are omitted from the address. Manages the whole `metadata` collection; entries are identified by their key.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

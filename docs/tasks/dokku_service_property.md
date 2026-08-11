@@ -16,6 +16,10 @@ Not supported - no datastore plugin exposes a machine-readable report of the pro
 
 Not supported - the service's existence is probed but the property value is not, so the task plans as drift on every run.
 
+## Identity
+
+Keyed by `service`, `name`, and `property`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

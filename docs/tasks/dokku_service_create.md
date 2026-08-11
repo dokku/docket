@@ -16,6 +16,10 @@ Partial - the service and the image it is running are exported; the remaining cr
 
 Partial - the service's existence and image are probed; config_options, custom_env, memory, shm_size, the networks, and the passwords have no read command and are not drift-detected.
 
+## Identity
+
+Keyed by `service` and `name`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

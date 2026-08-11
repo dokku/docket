@@ -16,6 +16,10 @@ Partial - export reads the current page back via maintenance:custom-page-export 
 
 Partial - the page checksum is probed when the plugin reports it; plugin versions that do not report it make the page plan as drift on every run.
 
+## Identity
+
+Keyed by `app`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |
