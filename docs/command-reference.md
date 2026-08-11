@@ -375,8 +375,8 @@ Summary: 4 tasks · 1 changed · 1 ok · 2 skipped · 0 errors  (took 1.1s)
 A task with no `name:` is targeted by its resource address. Quote it - the brackets are shell glob
 characters:
 
-```console
-$ docket apply --start-at-task 'dokku_config[app=api]'
+```bash
+docket apply --start-at-task 'dokku_config[app=api]'
 ```
 
 Filters apply in this order: `--start-at-task` selects first, then `--tags` / `--skip-tags`, then
@@ -426,15 +426,15 @@ no drift (`plan` shows every task `[ok]`).
 `--resource` takes a [resource address](task-envelope.md#names-and-resource-addresses) - the same
 string an unnamed task is named after - and exports only what it matches:
 
-```console
-$ docket export --resource 'dokku_config[app=api]' --output -
-$ docket export --resource 'dokku_apps_property[global=true,property=disable-autocreation]' --output -
+```bash
+docket export --resource 'dokku_config[app=api]' --output -
+docket export --resource 'dokku_apps_property[global=true,property=disable-autocreation]' --output -
 ```
 
 Drop the brackets to take every resource of a type, across every app:
 
-```console
-$ docket export --resource dokku_domains --output -
+```bash
+docket export --resource dokku_domains --output -
 ```
 
 The flag is repeatable and cannot be combined with `--app`, since an address already names its app.

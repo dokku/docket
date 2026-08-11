@@ -55,8 +55,8 @@ Two properties follow, and both are the point:
 - **You can name an unnamed task on the command line.** Quote it, because the brackets are shell
   glob characters:
 
-  ```console
-  $ docket apply --start-at-task 'dokku_config[app=api]'
+  ```bash
+  docket apply --start-at-task 'dokku_config[app=api]'
   ```
 
 The desired state is deliberately *not* part of the address. `state: absent` on an app's config
