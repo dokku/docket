@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

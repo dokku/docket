@@ -30,8 +30,9 @@ named `lollipop`, `tasks/lollipop_task.go` would contain:
 package main
 
 type LollipopTask struct {
-  App   string `required:"true" yaml:"app" description:"Name of the app"`
-  State State  `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the lollipop"`
+  App     string   `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+  Flavors []string `required:"false" identity:"collection" yaml:"flavors,omitempty" description:"Flavors to apply"`
+  State   State    `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the lollipop"`
 }
 
 func (t LollipopTask) Plan() PlanResult {
@@ -106,10 +107,46 @@ A few conventions to follow:
   `absent`". Branches reached through `planToggle`, `planProperty` and `planResource` count as your
   task's own. Declare it for the task type, not for the run - a probe that fails on a particular
   server is a `PlanWarning`, not a `ProbeUnsupported` task.
+- Every task must tag the fields that identify the resource it manages with `identity:"key"`. See
+  [declaring identity](#declaring-identity) below; a coverage test fails the build if a task ships
+  without one.
 - When a task has conditional or semantic input rules that a `required:"true"` tag cannot express -
   a list that must be non-empty only when `state: present`, mutually-exclusive fields, an enum, a
   per-item requirement on a slice field - put them in the optional `Validate() error` method (the
   `InputValidator` interface) and call it as the first line of `Plan()`. See below.
+
+## Declaring identity
+
+Two field tags say what a task addresses on the server. Nothing else in the struct does: a task's
+`required:"true"` fields describe what a recipe must supply, which is a different question.
+
+- `identity:"key"` marks a field that decides *which* resource the task manages. Declaration order
+  is key order.
+- `identity:"collection"` marks a collection the task manages wholesale. Item identity is inferred
+  from the type: the element value for a `[]string`, the map key for a map, and the element struct's
+  own `identity:"key"` fields for a slice of structs (see `PortMapping` and `HttpAuthUser`).
+
+The declaration drives three things: the **Identity** section the generator renders on the task's
+page, the name an unnamed task receives in the output and the
+[`--json` stream](task-envelope.md#names-and-resource-addresses), and what
+`docket export --resource` can select.
+
+Three rules decide what is a key, and none of them is "the required fields":
+
+- **The desired state is never a key.** `state:` says what you want done to the resource, not which
+  resource it is. Including it would rename a task when its state changed, and would give
+  `dokku_domains` four addresses for one app's domain list.
+- **A required field can be a payload rather than an address.** `dokku_git_from_image`'s `image` is
+  `required:"true"`; the task keys on `app`, because an app has one deploy source.
+- **A key need not be required.** `dokku_certs` and `dokku_domains` have no `required:"true"` field
+  at all - they key on the mutually exclusive `app` / `global` pair. An empty key is omitted from
+  the address, which is what makes the two scopes render differently.
+
+A field must never be both `identity:"key"` and `sensitive:"true"`. An identity key is rendered into
+the task name, and `--list-tasks` does not mask - `TestIdentityKeysAreNeverSensitive` enforces this.
+
+Leave a collection untagged when it is an *attribute* of the resource rather than the set of items
+the task manages: `dokku_storage_mount`'s `phases` narrows one mount, it is not a set of mounts.
 
 ## Validating inputs
 

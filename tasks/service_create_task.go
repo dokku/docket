@@ -26,10 +26,10 @@ import (
 // (tracked in #435).
 type ServiceCreateTask struct {
 	// Service is the type of service to create (e.g. redis, postgres, mysql)
-	Service string `required:"true" yaml:"service" description:"Type of service to create (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to create (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Image is the image the service container is started from.
 	Image string `required:"false" yaml:"image,omitempty" description:"Image to start the service with, e.g. postgis/postgis. Applied only when the service is created."`

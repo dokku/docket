@@ -12,10 +12,10 @@ import (
 // PsScaleTask manages the process scale for a given dokku application
 type PsScaleTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Scale is a map of process types to quantities
-	Scale map[string]int `required:"true" yaml:"scale" description:"Map of process types to quantities"`
+	Scale map[string]int `required:"true" identity:"collection" yaml:"scale" description:"Map of process types to quantities"`
 
 	// SkipDeploy skips the corresponding deploy. It is a *bool so the value
 	// survives decoding unchanged; nil defaults to false.

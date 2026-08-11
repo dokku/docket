@@ -12,6 +12,10 @@ Not supported - registry login credentials are write-only and cannot be read bac
 
 Not supported - registry login state has no read command, so the task plans as drift on every run.
 
+## Identity
+
+Keyed by `app`, `global`, and `server`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

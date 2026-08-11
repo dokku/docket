@@ -12,6 +12,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`. Manages the whole `port_mappings` collection; entries are identified by `scheme` and `host`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -3,13 +3,13 @@ package tasks
 // ResourceReserveTask manages the resource reservations for a given dokku application
 type ResourceReserveTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// ProcessType is the process type to set resource reservations for
-	ProcessType string `required:"false" yaml:"process_type,omitempty" description:"Process type to set resource reservations for"`
+	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to set resource reservations for"`
 
 	// Resources is a map of resource type to quantity
-	Resources map[string]string `yaml:"resources" description:"Map of resource type to quantity"`
+	Resources map[string]string `identity:"collection" yaml:"resources" description:"Map of resource type to quantity"`
 
 	// ClearBefore clears all resource reservations before applying new ones. It
 	// is a *bool so the value survives decoding unchanged; nil defaults to false.

@@ -13,12 +13,12 @@ import (
 // HttpAuthUserTask manages the set of HTTP auth users for a dokku application
 type HttpAuthUserTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Users is the list of HTTP auth users to add or remove. The docs generator
 	// lists an item's field names but cannot express that password and hash are
 	// alternatives, nor that both are secret, so this description carries it.
-	Users []HttpAuthUser `required:"false" yaml:"users" description:"List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive"`
+	Users []HttpAuthUser `required:"false" identity:"collection" yaml:"users" description:"List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive"`
 
 	// UpdatePassword re-issues http-auth:add-user for users that already exist
 	// so their password converges. Cleartext passwords are not exposed in the
@@ -42,7 +42,7 @@ type HttpAuthUserTask struct {
 // the task's SensitiveValues method is what actually masks these values.
 type HttpAuthUser struct {
 	// Username is the HTTP auth username
-	Username string `required:"true" yaml:"username" description:"HTTP auth username"`
+	Username string `required:"true" identity:"key" yaml:"username" description:"HTTP auth username"`
 
 	// Password is the cleartext HTTP auth password, applied with
 	// http-auth:add-user. Mutually exclusive with Hash.

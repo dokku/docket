@@ -20,13 +20,13 @@ import (
 // always reporting Changed=true, and its export can move off unsupported.
 type ServicePropertyTask struct {
 	// Service is the type of service to configure (e.g. redis, postgres, mysql)
-	Service string `required:"true" yaml:"service" description:"Type of service to configure (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to configure (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Property is the name of the property to set
-	Property string `required:"true" yaml:"property" description:"Name of the property to set"`
+	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the property to set"`
 
 	// Value is the value to set the property to. Required when state is present.
 	Value string `required:"false" yaml:"value,omitempty" description:"Value to set the property to. Required when state is present."`

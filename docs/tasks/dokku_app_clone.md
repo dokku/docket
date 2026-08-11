@@ -12,6 +12,10 @@ Not supported - an imperative clone operation, not reconstructable state.
 
 Partial - only the target app's existence is probed; the clone source and the cloned contents are never read back.
 
+## Identity
+
+Keyed by `app`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

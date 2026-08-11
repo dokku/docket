@@ -3,13 +3,13 @@ package tasks
 // OpenrestyPropertyTask manages the openresty configuration for a given dokku application
 type OpenrestyPropertyTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the openresty configuration should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the openresty configuration should be applied globally"`
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the openresty configuration should be applied globally"`
 
 	// Property is the name of the openresty property to set
-	Property string `required:"true" yaml:"property" description:"Name of the openresty property to set"`
+	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the openresty property to set"`
 
 	// Value is the value to set for the openresty property
 	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the openresty property"`

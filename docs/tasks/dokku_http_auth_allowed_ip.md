@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`. Manages the whole `allowed_ips` collection; entries are identified by value.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

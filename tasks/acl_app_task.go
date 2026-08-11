@@ -10,10 +10,10 @@ import (
 // AclAppTask manages the dokku-acl access list for a dokku application
 type AclAppTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Users is the list of users to add or remove from the ACL
-	Users []string `required:"false" yaml:"users" description:"List of users to add or remove from the ACL"`
+	Users []string `required:"false" identity:"collection" yaml:"users" description:"List of users to add or remove from the ACL"`
 
 	// State is the desired state of the ACL entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the ACL entries"`

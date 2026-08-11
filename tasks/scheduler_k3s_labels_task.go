@@ -4,23 +4,23 @@ package tasks
 // (process_type, resource_type) pair on a dokku application or globally.
 type SchedulerK3sLabelsTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the labels should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the labels should be applied globally"`
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the labels should be applied globally"`
 
 	// ProcessType narrows the labels to a specific process type. When empty,
 	// dokku stores the labels under its default global process type.
-	ProcessType string `required:"false" yaml:"process_type,omitempty" description:"Process type to scope the labels to. Defaults to the global process type when empty."`
+	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to scope the labels to. Defaults to the global process type when empty."`
 
 	// ResourceType narrows the labels to a specific kubernetes resource type
 	// (e.g. deployment, ingress, service). Required, mirroring dokku's own
 	// scheduler-k3s:labels:set rejection of empty resource types.
-	ResourceType string `required:"true" yaml:"resource_type" description:"Kubernetes resource type to scope the labels to (e.g. deployment, ingress)."`
+	ResourceType string `required:"true" identity:"key" yaml:"resource_type" description:"Kubernetes resource type to scope the labels to (e.g. deployment, ingress)."`
 
 	// Labels is the desired set of label key/value pairs to apply at the
 	// (process_type, resource_type) scope.
-	Labels map[string]string `required:"false" yaml:"labels,omitempty" description:"Map of label key to value to apply at the scope."`
+	Labels map[string]string `required:"false" identity:"collection" yaml:"labels,omitempty" description:"Map of label key to value to apply at the scope."`
 
 	// State is the desired state of the labels
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the labels"`

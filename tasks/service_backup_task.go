@@ -19,10 +19,10 @@ import (
 // no-probe pattern used by dokku_git_auth and dokku_registry_auth.
 type ServiceBackupTask struct {
 	// Service is the type of service to back up (e.g. redis, postgres, mysql)
-	Service string `required:"true" yaml:"service" description:"Type of service to back up (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to back up (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Schedule is the cron schedule for backups. Requires bucket.
 	Schedule string `required:"false" yaml:"schedule,omitempty" description:"Cron schedule for backups (requires bucket)"`

@@ -12,6 +12,10 @@ Not supported - netrc credentials are write-only and cannot be read back.
 
 Not supported - netrc state has no read command, so the task plans as drift on every run.
 
+## Identity
+
+Keyed by `host`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -12,6 +12,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app` and `global`. Fields left empty are omitted from the address. Manages the whole `domains` collection; entries are identified by value.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `service` and `type`. Fields left empty are omitted from the address. Manages the whole `users` collection; entries are identified by value.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -12,6 +12,10 @@ Partial - config values are written to the companion vars-file.
 
 Supported.
 
+## Identity
+
+Keyed by `app`. Manages the whole `config` collection; entries are identified by their key.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

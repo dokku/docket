@@ -18,7 +18,7 @@ import (
 type SchedulerK3sProfileTask struct {
 	// Name is the profile name. It is the lookup key both for the on-disk
 	// global property and for `scheduler-k3s:profiles:list --format json`.
-	Name string `required:"true" yaml:"name" description:"Name of the node profile."`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the node profile."`
 
 	// Role is the k3s role nodes joined with this profile take. Required and
 	// validated up front; dokku also rejects unknown values but failing in the

@@ -11,13 +11,13 @@ import (
 // AclServiceTask manages the dokku-acl access list for a dokku service
 type AclServiceTask struct {
 	// Service is the name of the service instance
-	Service string `required:"true" yaml:"service" description:"Name of the service instance"`
+	Service string `required:"true" identity:"key" yaml:"service" description:"Name of the service instance"`
 
 	// Type is the type of service (e.g. redis, postgres)
-	Type string `required:"true" yaml:"type" description:"Type of service (e.g. redis, postgres)"`
+	Type string `required:"true" identity:"key" yaml:"type" description:"Type of service (e.g. redis, postgres)"`
 
 	// Users is the list of users to add or remove from the ACL
-	Users []string `required:"false" yaml:"users" description:"List of users to add or remove from the ACL"`
+	Users []string `required:"false" identity:"collection" yaml:"users" description:"List of users to add or remove from the ACL"`
 
 	// State is the desired state of the ACL entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the ACL entries"`

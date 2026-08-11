@@ -12,7 +12,7 @@ import (
 // GitSyncTask syncs a git repository to a dokku application
 type GitSyncTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Remote is the git remote url to sync
 	Remote string `required:"true" yaml:"remote" description:"Git remote url to sync"`

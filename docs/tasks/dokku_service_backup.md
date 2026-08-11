@@ -16,6 +16,10 @@ Partial - the backup schedule, bucket, and use_iam flag are exported; the AWS cr
 
 Partial - the backup schedule and bucket are probed; the AWS credentials and the encryption passphrase have no read command and are re-applied on every run when supplied.
 
+## Identity
+
+Keyed by `service` and `name`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

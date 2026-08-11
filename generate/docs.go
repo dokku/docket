@@ -256,6 +256,58 @@ func probeSupportSection(task tasks.Task) string {
 	return "## Probe support\n\n" + line + "."
 }
 
+// identitySection renders the Identity section, naming the fields that select
+// the resource the task manages and, where the task owns a collection, what
+// identifies one entry in it. Every task declares at least one identity key;
+// the section is omitted only if a task declares none, which the identity
+// coverage test prevents.
+//
+// The address form is explained once in docs/task-envelope.md rather than
+// repeated on 73 pages; what a reader needs here is which fields go into it.
+func identitySection(task tasks.Task) string {
+	keys := tasks.IdentityKeyNames(task)
+	if len(keys) == 0 {
+		return ""
+	}
+
+	line := "Keyed by " + joinCodeNames(keys) + "."
+	if len(keys) > 1 {
+		line += " Fields left empty are omitted from the address."
+	}
+	for _, collection := range tasks.TaskIdentityCollections(task) {
+		line += fmt.Sprintf(" Manages the whole `%s` collection", collection.YAMLName)
+		switch collection.Item {
+		case tasks.ItemIdentityMapKey:
+			line += "; entries are identified by their key."
+		case tasks.ItemIdentityFields:
+			if len(collection.ItemKeys) > 0 {
+				line += "; entries are identified by " + joinCodeNames(collection.ItemKeys) + "."
+			} else {
+				line += "."
+			}
+		default:
+			line += "; entries are identified by value."
+		}
+	}
+	return "## Identity\n\n" + line
+}
+
+// joinCodeNames renders a list of field names as backticked, comma-separated
+// prose with a trailing "and".
+func joinCodeNames(names []string) string {
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = "`" + name + "`"
+	}
+	switch len(quoted) {
+	case 1:
+		return quoted[0]
+	case 2:
+		return quoted[0] + " and " + quoted[1]
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + ", and " + quoted[len(quoted)-1]
+}
+
 // deprecationSection renders the Deprecated admonition for a task that
 // implements DeprecationDocer. The notice sits between the Synopsis and
 // the Requirements/Parameters sections so the reader sees it before
@@ -332,6 +384,9 @@ func renderPage(taskName string, task tasks.Task, examples []tasks.Doc) string {
 	}
 	if ps := probeSupportSection(task); ps != "" {
 		sections = append(sections, ps)
+	}
+	if id := identitySection(task); id != "" {
+		sections = append(sections, id)
 	}
 	if pt := parametersSection(buildParams(rt)); pt != "" {
 		sections = append(sections, strings.TrimRight(pt, "\n"))

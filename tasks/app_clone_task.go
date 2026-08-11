@@ -9,7 +9,7 @@ import (
 // AppCloneTask clones an existing dokku app to a new app
 type AppCloneTask struct {
 	// App is the name of the new (target) app
-	App string `required:"true" yaml:"app" description:"Name of the new (target) app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the new (target) app"`
 
 	// SourceApp is the name of the existing app to clone from
 	SourceApp string `required:"true" yaml:"source_app" description:"Name of the existing app to clone from"`

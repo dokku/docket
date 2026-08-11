@@ -5,24 +5,24 @@ package tasks
 // globally.
 type SchedulerK3sAnnotationsTask struct {
 	// App is the name of the app. Required if Global is false.
-	App string `required:"false" yaml:"app" description:"Name of the app. Required if Global is false."`
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
 
 	// Global is a flag indicating if the annotations should be applied globally
-	Global bool `required:"false" yaml:"global,omitempty" description:"Flag indicating if the annotations should be applied globally"`
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the annotations should be applied globally"`
 
 	// ProcessType narrows the annotations to a specific process type. When
 	// empty, dokku stores the annotations under its default global process
 	// type.
-	ProcessType string `required:"false" yaml:"process_type,omitempty" description:"Process type to scope the annotations to. Defaults to the global process type when empty."`
+	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to scope the annotations to. Defaults to the global process type when empty."`
 
 	// ResourceType narrows the annotations to a specific kubernetes resource
 	// type (e.g. deployment, ingress, service). Required, mirroring dokku's
 	// own scheduler-k3s:annotations:set rejection of empty resource types.
-	ResourceType string `required:"true" yaml:"resource_type" description:"Kubernetes resource type to scope the annotations to (e.g. deployment, ingress)."`
+	ResourceType string `required:"true" identity:"key" yaml:"resource_type" description:"Kubernetes resource type to scope the annotations to (e.g. deployment, ingress)."`
 
 	// Annotations is the desired set of annotation key/value pairs to apply at
 	// the (process_type, resource_type) scope.
-	Annotations map[string]string `required:"false" yaml:"annotations,omitempty" description:"Map of annotation key to value to apply at the scope."`
+	Annotations map[string]string `required:"false" identity:"collection" yaml:"annotations,omitempty" description:"Map of annotation key to value to apply at the scope."`
 
 	// State is the desired state of the annotations
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the annotations"`

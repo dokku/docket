@@ -12,6 +12,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`, `global`, `process_type`, and `resource_type`. Fields left empty are omitted from the address. Manages the whole `labels` collection; entries are identified by their key.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

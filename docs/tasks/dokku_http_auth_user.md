@@ -16,6 +16,10 @@ Supported.
 
 Partial - an existing user's htpasswd hash is probed; a cleartext password is not readable, so a user that already exists converges only when update_password forces it.
 
+## Identity
+
+Keyed by `app`. Manages the whole `users` collection; entries are identified by `username`.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -13,10 +13,10 @@ import (
 // BuildpacksTask manages the buildpacks for a given dokku application
 type BuildpacksTask struct {
 	// App is the name of the app
-	App string `required:"true" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Buildpacks is the list of buildpack URLs
-	Buildpacks []string `required:"false" yaml:"buildpacks" description:"List of buildpack URLs"`
+	Buildpacks []string `required:"false" identity:"collection" yaml:"buildpacks" description:"List of buildpack URLs"`
 
 	// State is the desired state of the buildpacks
 	State State `required:"false" yaml:"state" default:"present" options:"present,absent" description:"Desired state of the buildpacks"`

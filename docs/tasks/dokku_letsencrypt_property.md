@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Identity
+
+Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the address.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |
