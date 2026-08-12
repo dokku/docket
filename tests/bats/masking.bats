@@ -140,6 +140,31 @@ EOF
   assert_output --partial "***"
 }
 
+@test "docket plan masks a traefik dns-provider credential" {
+  # traefik does not report its dns-provider-* family, so the property takes the
+  # unprobed path and no traefik state is read or written here. The value is a
+  # DNS provider credential all the same and must not reach the mutation line or
+  # the --json commands array (#457).
+  write_tasks_file <<'EOF'
+---
+- tasks:
+    - name: set a traefik dns provider credential
+      dokku_traefik_property:
+        global: true
+        property: dns-provider-CLOUDFLARE_API_TOKEN
+        value: traefiktokenzzz
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  refute_output --partial "traefiktokenzzz"
+  assert_output --partial "***"
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --json
+  assert_success
+  refute_output --partial "traefiktokenzzz"
+  assert_output --partial "***"
+}
+
 @test "docket plan output never echoes dokku_config map values" {
   # Create the app first so the dokku_config plan probe succeeds; otherwise
   # the missing-app probe error short-circuits the test before the masking

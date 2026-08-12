@@ -48,7 +48,7 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `letsencrypt-server` | global |  | `global-letsencrypt-server` |
 | `log-level` | global |  | `global-log-level` |
 
-Names starting with `dns-provider-` are also accepted. dokku validates them through `traefik:set` rather than through its report schema, so they cannot be listed above. The plugin does not report them, so they are applied on every run and never converge.
+Names starting with `dns-provider-` are also accepted. dokku validates them through `traefik:set` rather than through its report schema, so they cannot be listed above. The plugin does not report them, so they are applied on every run and never converge. Their values are treated as secrets and masked.
 
 ## Examples
 

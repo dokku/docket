@@ -155,6 +155,23 @@ func TestDynamicPropertyFamiliesArePublished(t *testing.T) {
 	}
 }
 
+// TestDynamicFamilySensitivityIsIndependentOfProbing asserts every family's
+// Sensitive mark survives the lookup planProperty and the exporters make.
+// Sensitivity used to be read off an entry only a probeable family ever got, so
+// an unprobeable credential reached argv in cleartext (#457); this fails the
+// build if that coupling comes back.
+func TestDynamicFamilySensitivityIsIndependentOfProbing(t *testing.T) {
+	for plugin, families := range dynamicPropertyFamilies {
+		for _, family := range families {
+			property := family.Prefix + "EXAMPLE"
+			if got := propertyEntry(plugin, property, nil).Sensitive; got != family.Sensitive {
+				t.Errorf("propertyEntry(%q, %q).Sensitive = %v; want %v (probeable: %v)",
+					plugin, property, got, family.Sensitive, family.Probeable)
+			}
+		}
+	}
+}
+
 // TestPropertyTablesAreDistinct asserts no two property tasks share a table.
 // Copying a task file and forgetting to rename the table var would otherwise
 // give two tasks the same properties and the same :set subcommand, and every
