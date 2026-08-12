@@ -30,6 +30,41 @@ type PropertyKeys struct {
 	Sensitive bool
 }
 
+// RejectedPropertyFamily is a family of property names, matched by prefix, that
+// a task deliberately refuses because another task owns them.
+//
+// It is not the same as a name simply being absent from Keys. An absent name is
+// a typo, and the right answer is the list of names that are supported; a
+// rejected family is a name the user meant, written against the wrong task, and
+// the only useful answer is which task to write it against instead. Offering
+// the supported list there sends the user looking for something that is not on
+// it (#458).
+//
+// Declaring it on the table rather than guarding inside Plan() is what keeps
+// plan, apply and validate on the same message: validatePropertyInput is the
+// one function both paths reach, and it is where the family is checked.
+type RejectedPropertyFamily struct {
+	// Prefix is what a member's name starts with, for example "chart.".
+	Prefix string
+
+	// Replacement is the task type that manages the family instead, for
+	// example "dokku_scheduler_k3s_chart".
+	Replacement string
+
+	// Reason says why this task does not manage it, as a clause that reads
+	// after a semicolon: "the scheduler-k3s:set path for chart values is
+	// deprecated in dokku".
+	Reason string
+}
+
+// err returns the error a member of the family is rejected with. All three
+// fields are required; TestRejectedPropertyFamiliesAreWellFormed fails the
+// build for a family that leaves one empty, so there is nothing to branch on
+// here.
+func (f RejectedPropertyFamily) err() error {
+	return fmt.Errorf("%s* properties are managed by %s; %s", f.Prefix, f.Replacement, f.Reason)
+}
+
 // PropertyTable is the property schema one *_property task manages: the dokku
 // subcommand a set/unset runs, and the report keys for every property name the
 // task supports.
@@ -47,6 +82,22 @@ type PropertyTable struct {
 	// Keys maps each supported property name to the JSON keys
 	// `dokku <plugin>:report --format json` emits for it per scope.
 	Keys map[string]PropertyKeys
+
+	// Rejected are the name families this task refuses outright because
+	// another task manages them. Checked before Keys, so a member is
+	// answered with the task that owns it rather than with the list of
+	// names this one supports.
+	Rejected []RejectedPropertyFamily
+}
+
+// rejectedFamilyFor returns the family that refuses a property, if any.
+func (p PropertyTable) rejectedFamilyFor(property string) (RejectedPropertyFamily, bool) {
+	for _, family := range p.Rejected {
+		if strings.HasPrefix(property, family.Prefix) {
+			return family, true
+		}
+	}
+	return RejectedPropertyFamily{}, false
 }
 
 // Plugin returns the dokku plugin the table belongs to, derived from the
@@ -369,8 +420,9 @@ func (f dynamicPropertyFamily) keysFor(property string) PropertyKeys {
 // told the prefix.
 //
 // scheduler-k3s `chart.*.*` used to live here but moved to the dedicated
-// dokku_scheduler_k3s_chart task; SchedulerK3sPropertyTask.Plan rejects
-// chart.* before reaching this helper.
+// dokku_scheduler_k3s_chart task; it is now a RejectedPropertyFamily on
+// schedulerK3sPropertyTable, so validatePropertyInput turns it away before
+// reaching this helper.
 var dynamicPropertyFamilies = map[string][]dynamicPropertyFamily{
 	// dokku-letsencrypt 0.25.0+ emits a `dns-provider-<KEY>` row for the app
 	// scope and a `global-dns-provider-<KEY>` row for the global one per
@@ -413,6 +465,26 @@ func DynamicPropertyFamilies(plugin string) []DynamicPropertySchema {
 			Prefix:    family.Prefix,
 			Probeable: family.Probeable,
 			Sensitive: family.Sensitive,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Prefix < out[j].Prefix })
+	return out
+}
+
+// RejectedPropertyFamilies returns the name families a table refuses, sorted by
+// prefix, in the form the task catalog publishes. Exported so a consumer
+// validating a recipe offline can answer a rejected name the way docket does -
+// with the task that manages it - instead of reporting it as unknown.
+func RejectedPropertyFamilies(table PropertyTable) []RejectedPropertySchema {
+	if len(table.Rejected) == 0 {
+		return nil
+	}
+	out := make([]RejectedPropertySchema, 0, len(table.Rejected))
+	for _, family := range table.Rejected {
+		out = append(out, RejectedPropertySchema{
+			Prefix:      family.Prefix,
+			Replacement: family.Replacement,
+			Reason:      family.Reason,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Prefix < out[j].Prefix })
@@ -537,12 +609,19 @@ func dynamicPropertiesFromReport(plugin string, payload map[string]string, globa
 // other probe failures are recorded in PlanResult.Reason and the apply still
 // runs, matching pre-probe behavior.
 // validatePropertyInput checks a property task's inputs without probing the
-// server: app/global scoping, that the property is supported for the target
-// scope, and that a value is supplied only in the state that allows it. Both
-// planProperty and each property task's Validate() call it so plan and
-// validate report the same errors.
+// server: that the property is not from a family the table rejects, app/global
+// scoping, that the property is supported for the target scope, and that a
+// value is supplied only in the state that allows it. Both planProperty and
+// each property task's Validate() call it so plan and validate report the same
+// errors.
 func validatePropertyInput(task PropertyTableDocer, state State, app string, global bool, property, value string) error {
 	table := task.PropertyTable()
+	// A rejected family is checked before anything else, including scoping:
+	// the user wrote a name this task will never manage, so naming the task
+	// that does is more use than telling them the app field is missing too.
+	if family, ok := table.rejectedFamilyFor(property); ok {
+		return family.err()
+	}
 	if !global && app == "" {
 		return errors.New("app is required when global is false")
 	}

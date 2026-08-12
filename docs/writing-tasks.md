@@ -293,6 +293,36 @@ answering the first by asking the second is how traefik's `dns-provider-*` crede
 in cleartext (#457). `Sensitive` registers the desired value with the masker before it is echoed;
 on a `Probeable` family it also masks the value read back, so it never reaches a drift reason.
 
+The mirror image is a family the task refuses because another task owns it. Declare it under
+`Rejected` rather than guarding inside `Plan()`:
+
+```go
+var schedulerK3sPropertyTable = PropertyTable{
+  Subcommand: "scheduler-k3s:set",
+  Rejected: []RejectedPropertyFamily{
+    {
+      Prefix:      "chart.",
+      Replacement: "dokku_scheduler_k3s_chart",
+      Reason:      "the scheduler-k3s:set path for chart values is deprecated in dokku",
+    },
+  },
+  Keys: map[string]PropertyKeys{ /* ... */ },
+}
+```
+
+A member is rejected with `<prefix>* properties are managed by <replacement>; <reason>`, checked
+before scoping and before the key map. Leaving it out of `Keys` is not enough on its own: the user
+who wrote `chart.traefik.replicas` meant it, and answering with the list of names that *are*
+supported sends them looking for something that will never be on it. All three fields are required,
+and `Replacement` has to name a registered task.
+
+Declaring it on the table rather than in `Plan()` is what keeps the message honest.
+`validatePropertyInput` is the one function `planProperty` and every property task's `Validate()`
+both call, so `plan`, `apply` and `validate` cannot drift apart - which is exactly what happened
+while the `chart.*` guard lived in `Plan()` alone and `docket validate` reported the generic
+unsupported-name error instead (#458). The family is published as `property_schema.rejected` too, so
+a consumer validating a recipe offline can give the same answer.
+
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,

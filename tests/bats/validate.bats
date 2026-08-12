@@ -231,6 +231,24 @@ EOF
   assert_output --partial "label values must not be empty for state 'present'"
 }
 
+@test "docket validate names the replacement task for a rejected property family (#458)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_property:
+        global: true
+        property: chart.traefik.replicas
+        value: "3"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "chart.* properties are managed by dokku_scheduler_k3s_chart"
+  assert_output --partial "deprecated in dokku"
+  # The whole point is that the generic list never appears here: it cannot
+  # contain the name the user wrote.
+  refute_output --partial "unsupported property"
+}
+
 @test "docket validate --json emits invalid_task_input" {
   write_tasks_file <<EOF
 ---

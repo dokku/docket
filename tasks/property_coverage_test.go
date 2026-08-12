@@ -231,6 +231,97 @@ func TestPropertyTaskValidatesAgainstItsPublishedTable(t *testing.T) {
 	}
 }
 
+// TestRejectedPropertyFamiliesAreWellFormed checks the declarations themselves.
+// RejectedPropertyFamily.err() formats all three fields unconditionally, so an
+// empty one would ship a sentence with a hole in it; and a prefix that shadows
+// a name the table publishes, or a dynamic family the plugin accepts, would
+// make a legal recipe unwritable.
+func TestRejectedPropertyFamiliesAreWellFormed(t *testing.T) {
+	for name, task := range RegisteredTasks {
+		table, declared := TaskPropertyTable(task)
+		if !declared {
+			continue
+		}
+		for _, family := range table.Rejected {
+			if family.Prefix == "" || family.Replacement == "" || family.Reason == "" {
+				t.Errorf("task %q declares an incomplete rejected family %+v", name, family)
+				continue
+			}
+			if _, ok := RegisteredTasks[family.Replacement]; !ok {
+				t.Errorf("task %q points %q at %q, which is not a registered task", name, family.Prefix, family.Replacement)
+			}
+			for property := range table.Keys {
+				if strings.HasPrefix(property, family.Prefix) {
+					t.Errorf("task %q rejects prefix %q, which shadows its own property %q", name, family.Prefix, property)
+				}
+			}
+			for _, dynamic := range DynamicPropertyFamilies(table.Plugin()) {
+				if strings.HasPrefix(family.Prefix, dynamic.Prefix) || strings.HasPrefix(dynamic.Prefix, family.Prefix) {
+					t.Errorf("task %q rejects prefix %q, which overlaps the dynamic family %q on plugin %q",
+						name, family.Prefix, dynamic.Prefix, table.Plugin())
+				}
+			}
+		}
+	}
+}
+
+// TestRejectedPropertyFamiliesReportIdenticallyFromPlanAndValidate is the
+// invariant behind #458: a refusal declared on the table is reached through
+// validatePropertyInput, which planProperty and every task's Validate() both
+// call, so the two cannot report a member of the family differently. Driving it
+// generically means the next task to declare a family gets the guarantee
+// without writing its own test.
+//
+// No server is contacted: validatePropertyInput returns before planProperty
+// probes anything.
+func TestRejectedPropertyFamiliesReportIdenticallyFromPlanAndValidate(t *testing.T) {
+	checked := 0
+	for name, task := range RegisteredTasks {
+		table, declared := TaskPropertyTable(task)
+		if !declared {
+			continue
+		}
+		for _, family := range table.Rejected {
+			checked++
+			property := family.Prefix + "example"
+			instance := newPropertyTaskInstance(t, task, property, false)
+			if instance == nil {
+				continue
+			}
+
+			validateErr := instance.Validate()
+			if validateErr == nil {
+				t.Errorf("task %q accepts %q from its own rejected family", name, property)
+				continue
+			}
+
+			planner, ok := instance.(interface{ Plan() PlanResult })
+			if !ok {
+				t.Errorf("task %q has no Plan() to compare against", name)
+				continue
+			}
+			plan := planner.Plan()
+			if plan.Status != PlanStatusError || plan.Error == nil {
+				t.Errorf("task %q plans %q instead of rejecting it: status %q", name, property, plan.Status)
+				continue
+			}
+
+			if validateErr.Error() != plan.Error.Error() {
+				t.Errorf("task %q reports %q differently:\n  validate: %v\n  plan:     %v", name, property, validateErr, plan.Error)
+			}
+			if !strings.Contains(validateErr.Error(), family.Replacement) {
+				t.Errorf("task %q rejects %q without naming %q: %v", name, property, family.Replacement, validateErr)
+			}
+		}
+	}
+
+	// A registry-wide loop that iterates nothing passes silently, and this one
+	// is the whole guarantee behind #458.
+	if checked == 0 {
+		t.Error("no task declares a rejected property family; the parity invariant went untested")
+	}
+}
+
 // newPropertyTaskInstance builds a runnable copy of a property task addressing
 // one property, so its Validate() can be driven against its own table. Returns
 // nil for a task whose fields do not fit the shape (none today).

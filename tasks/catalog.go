@@ -276,6 +276,13 @@ type PropertySchema struct {
 	// schema. A name matching one of these prefixes is legal even though it is
 	// absent from Properties.
 	Dynamic []DynamicPropertySchema `json:"dynamic,omitempty"`
+
+	// Rejected are the name families this task refuses because another task
+	// manages them. A name matching one of these prefixes is absent from
+	// Properties for a different reason than a typo is, and a consumer that
+	// reports it as an unknown name sends the user looking through a list it
+	// will never be in.
+	Rejected []RejectedPropertySchema `json:"rejected,omitempty"`
 }
 
 // PropertyEntrySchema is one property name and where it may be used.
@@ -310,6 +317,19 @@ type DynamicPropertySchema struct {
 
 	// Sensitive is true when docket treats members as secrets.
 	Sensitive bool `json:"sensitive,omitempty"`
+}
+
+// RejectedPropertySchema is a family of property names the task refuses,
+// matched by prefix, and the task that manages them instead.
+type RejectedPropertySchema struct {
+	// Prefix is what a member's name starts with.
+	Prefix string `json:"prefix"`
+
+	// Replacement is the task type to write the property against instead.
+	Replacement string `json:"replacement"`
+
+	// Reason says why this task does not manage the family.
+	Reason string `json:"reason"`
 }
 
 // PropertyFieldName is the recipe key every property table constrains.
@@ -351,6 +371,9 @@ func buildPropertySchema(table PropertyTable) PropertySchema {
 
 	for _, family := range DynamicPropertyFamilies(table.Plugin()) {
 		schema.Dynamic = append(schema.Dynamic, family)
+	}
+	for _, family := range RejectedPropertyFamilies(table) {
+		schema.Rejected = append(schema.Rejected, family)
 	}
 	return schema
 }
