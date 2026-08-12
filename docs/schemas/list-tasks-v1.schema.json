@@ -86,12 +86,12 @@
         "unknown": {
           "type": "boolean",
           "const": true,
-          "description": "The task's when: references a registered value, so it cannot be resolved without running."
+          "description": "The task's when: references a value only a run can supply - a registered value, or `failed_task` on a rescue child - so it cannot be resolved without running."
         },
         "when_error": {
           "type": "boolean",
           "const": true,
-          "description": "The task's when: failed to evaluate."
+          "description": "The task's when: failed to evaluate. The predicate errors at run time too, so the command exits 1 unless an ancestor group was itself skipped, unknown, or erroring."
         },
         "when": {
           "type": "string",

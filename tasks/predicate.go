@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
+	"github.com/expr-lang/expr/parser"
 	"github.com/expr-lang/expr/vm"
 )
 
@@ -39,6 +41,44 @@ func CompilePredicate(src string) (*vm.Program, error) {
 	}
 	actual, _ := programCache.LoadOrStore(src, prog)
 	return actual.(*vm.Program), nil
+}
+
+// PredicateIdentifiers returns the set of root identifiers src
+// references. Only the root of a lookup chain counts: `registered.first`
+// yields `registered`, because expr parses the `.first` half as a string
+// property rather than an identifier. A quoted "registered" is a string
+// literal and is likewise absent.
+//
+// Callers use this to tell whether a predicate depends on a value that
+// only exists while a recipe runs, which a substring match over the raw
+// source cannot do without also matching an input named `registered_at`
+// or a field access `x.failed_task`.
+//
+// Returns an error when src does not parse. A predicate reaching a
+// caller has already been through CompilePredicate, so in practice this
+// only fires for sources that never came from a loaded recipe.
+func PredicateIdentifiers(src string) (map[string]bool, error) {
+	tree, err := parser.Parse(src)
+	if err != nil {
+		return nil, err
+	}
+	v := &identifierCollector{names: map[string]bool{}}
+	ast.Walk(&tree.Node, v)
+	return v.names, nil
+}
+
+// identifierCollector is the ast.Visitor PredicateIdentifiers walks the
+// parse tree with, recording every identifier node it passes.
+type identifierCollector struct {
+	names map[string]bool
+}
+
+// Visit records node's value when it is an identifier and ignores every
+// other node type.
+func (c *identifierCollector) Visit(node *ast.Node) {
+	if ident, ok := (*node).(*ast.IdentifierNode); ok {
+		c.names[ident.Value] = true
+	}
 }
 
 // EvalBool runs prog against env and reports the truthiness of the

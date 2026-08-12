@@ -221,6 +221,60 @@ func TestApplyListTasksWhenRegisteredShowsUnknown(t *testing.T) {
 	}
 }
 
+// TestApplyListTasksRescueWhenFailedTaskShowsUnknown is #462: a rescue
+// child branching on the failing block child, the form
+// docs/task-envelope.md documents, is undecidable offline for the same
+// reason a `.registered.<name>` reference is - the executor binds
+// `failed_task` only once a block child has failed. It renders
+// [unknown], not the [when?] that reports a valid recipe as broken.
+func TestApplyListTasksRescueWhenFailedTaskShowsUnknown(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: deploy
+      block:
+        - name: create
+          dokku_stub: { key: a }
+      rescue:
+        - name: report
+          when: 'failed_task.Stderr contains "already exists"'
+          dokku_stub: { key: b }
+`)
+	stdout, stderr, exit := runApply(t, path, "--list-tasks")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "[unknown] [rescue] report") {
+		t.Errorf("expected '[unknown] [rescue] report' line; got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "[when?]") {
+		t.Errorf("a rescue predicate on failed_task must not render [when?]; got:\n%s", stdout)
+	}
+}
+
+// TestApplyListTasksFailedTaskOutsideRescueShowsWhenError is the other
+// half of #462. `failed_task` is bound for a rescue child and nowhere
+// else - not for a top-level task, and not for a block child of a group
+// that is itself a rescue child - so dereferencing it there errors at
+// run time exactly as it does here. That is a broken predicate, so it
+// renders [when?] and fails the listing.
+func TestApplyListTasksFailedTaskOutsideRescueShowsWhenError(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: misplaced
+      when: 'failed_task.Stderr contains "already exists"'
+      dokku_stub: { key: a }
+`)
+	stdout, stderr, exit := runApply(t, path, "--list-tasks")
+	if exit != 1 {
+		t.Fatalf("exit = %d, want 1; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "[when?]   misplaced") {
+		t.Errorf("expected the [when?] marker outside rescue scope; got:\n%s", stdout)
+	}
+}
+
 // TestApplyListTasksGroupRendersChildren pins the block / rescue /
 // always rendering: the group's own name appears once, followed by
 // each child indented with the [block] / [rescue] / [always] phase
@@ -319,9 +373,16 @@ func TestListTasksJSONMatchesSchema(t *testing.T) {
           dokku_stub: { key: a }
       rescue:
         - name: in rescue
+          when: 'failed_task.Stderr contains "already exists"'
           dokku_stub: { key: a }
       always:
         - name: in always
+          dokku_stub: { key: a }
+    - name: unreachable gate
+      when: 'false'
+      block:
+        - name: broken child
+          when: '[][0] == 1'
           dokku_stub: { key: a }
 `)
 
@@ -339,6 +400,7 @@ func TestListTasksJSONMatchesSchema(t *testing.T) {
 		`"loop_index":`,
 		`"skipped":true`,
 		`"unknown":true`,
+		`"when_error":true`,
 		`"deprecated":true`,
 		`"probe":"unsupported"`,
 		`"probe":"partial"`,
@@ -456,18 +518,16 @@ func TestListTasksPlayWhenErrorJSONExitsOne(t *testing.T) {
 	}
 }
 
-// TestListTasksTaskWhenErrorDoesNotAffectExit pins the deliberate
-// asymmetry with the two tests above: a *task*-level when: that errors
-// renders [when?] and leaves the exit code at 0.
+// TestListTasksTaskWhenErrorExitsOne pins that a *task*-level when: that
+// errors fails the listing the same way a play-level one does. #429 left
+// this at 0 because a rescue child branching on `failed_task` errored
+// here while being valid at run time; #462 sorted that case into
+// [unknown], so what reaches evaluation now is a predicate that errors
+// whenever it is reached.
 //
-// The task context here is missing `result` and `failed_task`, so an
-// error can be an artifact of listing offline rather than a broken
-// predicate - a rescue child written the way docs/task-envelope.md
-// documents, `when: 'failed_task.Stderr contains "..."'`, evaluates
-// nil.Stderr and errors here while being valid at run time. #462 tracks
-// rendering that case as [unknown] instead; either way it must not fail
-// the listing.
-func TestListTasksTaskWhenErrorDoesNotAffectExit(t *testing.T) {
+// As with a play, the walk is not short-circuited: the rest of the play
+// still lists and only the exit code carries the failure.
+func TestListTasksTaskWhenErrorExitsOne(t *testing.T) {
 	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
@@ -479,14 +539,87 @@ func TestListTasksTaskWhenErrorDoesNotAffectExit(t *testing.T) {
 `)
 
 	stdout, stderr, exit := runApply(t, path, "--list-tasks")
-	if exit != 0 {
-		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	if exit != 1 {
+		t.Fatalf("exit = %d, want 1; stdout=%s stderr=%s", exit, stdout, stderr)
 	}
 	if !strings.Contains(stdout, "[when?]   broken predicate") {
 		t.Errorf("expected the [when?] marker on the erroring task; got:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "plain") {
 		t.Errorf("the rest of the play should still be listed; got:\n%s", stdout)
+	}
+}
+
+// TestListTasksTaskWhenErrorUnderUnreachableGroupDoesNotAffectExit is the
+// reachability caveat on the test above. A run never evaluates the
+// children of a group whose own predicate resolved false or could not be
+// resolved, so a broken child predicate there still renders [when?] but
+// leaves the exit code alone - the same reason a skipped play's tasks are
+// not walked at all.
+func TestListTasksTaskWhenErrorUnderUnreachableGroupDoesNotAffectExit(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		groupWhen string
+		marker    string
+	}{
+		{"skipped group", `'false'`, "[skipped] gate"},
+		{"unknown group", `'registered.earlier.Changed'`, "[unknown] gate"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer stubReset()
+			path := writeTasksFile(t, `---
+- tasks:
+    - name: gate
+      when: `+tc.groupWhen+`
+      block:
+        - name: broken child
+          when: '[][0] == 1'
+          dokku_stub: { key: a }
+`)
+
+			stdout, stderr, exit := runApply(t, path, "--list-tasks")
+			if exit != 0 {
+				t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+			}
+			if !strings.Contains(stdout, tc.marker) {
+				t.Errorf("expected %q on the group line; got:\n%s", tc.marker, stdout)
+			}
+			if !strings.Contains(stdout, "[when?]   [block] broken child") {
+				t.Errorf("the unreachable child should still render [when?]; got:\n%s", stdout)
+			}
+		})
+	}
+}
+
+// TestWhenReferencesRuntimeValue drives the reference check directly.
+// The identifier walk is what keeps an input named `registered_at`, a
+// quoted "registered", or a field access `x.failed_task` from being
+// mistaken for the run-time values, and `failed_task` counts only in
+// rescue scope. The last case is the substring fallback, which the CLI
+// cannot reach because every recipe predicate has already compiled.
+func TestWhenReferencesRuntimeValue(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		src   string
+		phase string
+		want  bool
+	}{
+		{"registered lookup", `registered.first.Changed`, "", true},
+		{"registered lookup in rescue", `registered.first.Changed`, "rescue", true},
+		{"failed_task in rescue", `failed_task.Stderr contains "x"`, "rescue", true},
+		{"failed_task outside rescue", `failed_task.Stderr contains "x"`, "", false},
+		{"failed_task in block", `failed_task.Stderr contains "x"`, "block", false},
+		{"input named registered_at", `registered_at != ""`, "rescue", false},
+		{"registered as a string literal", `env == "registered"`, "rescue", false},
+		{"failed_task as a field name", `payload.failed_task != nil`, "rescue", false},
+		{"unparseable falls back to substring", `registered ==`, "", true},
+		{"unparseable substring misses", `env ==`, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := whenReferencesRuntimeValue(tc.src, runtimeWhenVars(tc.phase)); got != tc.want {
+				t.Errorf("whenReferencesRuntimeValue(%q, phase %q) = %v, want %v", tc.src, tc.phase, got, tc.want)
+			}
+		})
 	}
 }
 

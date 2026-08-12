@@ -330,3 +330,51 @@ func TestAggregateRegisteredEmptyAndSingle(t *testing.T) {
 		t.Errorf("Results[0] should mirror the single iteration; got %+v", got.Results[0])
 	}
 }
+
+// TestPredicateIdentifiers pins that only the root of a lookup chain is
+// reported. The callers that ask which run-time values a predicate
+// depends on rely on that distinction: an input named `registered_at`, a
+// quoted "registered", and a field access `x.failed_task` must not read
+// as references to `registered` / `failed_task`.
+func TestPredicateIdentifiers(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		src     string
+		want    []string
+		notWant []string
+	}{
+		{name: "registered lookup", src: `registered.first.Changed`, want: []string{"registered"}, notWant: []string{"first", "Changed"}},
+		{name: "failed_task lookup", src: `failed_task.Stderr contains "x"`, want: []string{"failed_task"}, notWant: []string{"Stderr", "x"}},
+		{name: "string literal", src: `env == "registered"`, want: []string{"env"}, notWant: []string{"registered"}},
+		{name: "distinct identifier", src: `registered_at != ""`, want: []string{"registered_at"}, notWant: []string{"registered"}},
+		{name: "field access", src: `payload.failed_task != nil`, want: []string{"payload"}, notWant: []string{"failed_task"}},
+		{name: "nested in a call", src: `len(registered) > 0`, want: []string{"registered"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := PredicateIdentifiers(tc.src)
+			if err != nil {
+				t.Fatalf("PredicateIdentifiers(%q) err = %v", tc.src, err)
+			}
+			for _, name := range tc.want {
+				if !got[name] {
+					t.Errorf("PredicateIdentifiers(%q) should report %q; got %v", tc.src, name, got)
+				}
+			}
+			for _, name := range tc.notWant {
+				if got[name] {
+					t.Errorf("PredicateIdentifiers(%q) should not report %q; got %v", tc.src, name, got)
+				}
+			}
+		})
+	}
+}
+
+// TestPredicateIdentifiersSyntaxErrorReports covers the branch callers
+// fall back on. A predicate that reached the listing has already been
+// through CompilePredicate, so this is only reachable for sources that
+// never came from a loaded recipe.
+func TestPredicateIdentifiersSyntaxErrorReports(t *testing.T) {
+	if _, err := PredicateIdentifiers("registered =="); err == nil {
+		t.Fatal("expected a parse error, got nil")
+	}
+}
