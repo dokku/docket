@@ -635,11 +635,11 @@ func userSetKeys(flags *flag.FlagSet, varsFileKeys map[string]bool, arguments ma
 	return out
 }
 
-// nearestInputName returns the registered input name with the lowest
-// Levenshtein distance to candidate, but only if that distance is at most
-// 2. Empty string means "no useful suggestion". Mirrors the behaviour of
-// tasks.nearestTaskName so unknown-input messages stay consistent across
-// the validator and the input loader.
+// nearestInputName returns the name from names with the lowest Levenshtein
+// distance to candidate, but only if that distance is at most 2. Empty string
+// means "no useful suggestion". Mirrors the behaviour of
+// tasks.nearestEnvelopeOrTaskKey so did-you-mean messages stay consistent
+// across the validator, the input loader, and `schema --task`.
 func nearestInputName(candidate string, names []string) string {
 	best := ""
 	bestDist := 3

@@ -72,3 +72,12 @@ setup() {
   assert_output --partial 'tasks.yml'
   refute_output --partial 'notes.txt'
 }
+
+@test "docket schema --task completes registered task types (#459)" {
+  cd "$BATS_TEST_TMPDIR"
+  export COMP_LINE='docket schema --task '
+  run "$(docket_bin)" schema --task
+  assert_success
+  assert_output --partial 'dokku_config'
+  assert_output --partial 'dokku_domains'
+}

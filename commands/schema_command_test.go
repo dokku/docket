@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/mitchellh/cli"
+	"github.com/posener/complete"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -303,5 +305,207 @@ func TestSchemaCommandReportsAnUnwritableOutput(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "write error") {
 		t.Errorf("stderr = %q; want a write error", stderr)
+	}
+}
+
+// catalogTypeList returns the emitted type keys in document order, so a test
+// can assert both membership and ordering.
+func catalogTypeList(t *testing.T, doc map[string]interface{}) []string {
+	t.Helper()
+	list, ok := doc["tasks"].([]interface{})
+	if !ok {
+		t.Fatalf("catalog has no tasks array: %v", doc["tasks"])
+	}
+	out := make([]string, 0, len(list))
+	for _, entry := range list {
+		task, ok := entry.(map[string]interface{})
+		if !ok {
+			t.Fatalf("task entry is not an object: %v", entry)
+		}
+		name, _ := task["type"].(string)
+		out = append(out, name)
+	}
+	return out
+}
+
+// TestSchemaCommandFiltersToRequestedTaskTypes is the headline of #459: --task
+// narrows the catalog to the named types and nothing else.
+func TestSchemaCommandFiltersToRequestedTaskTypes(t *testing.T) {
+	out, stderr, exit := runSchema(t, "--task", "dokku_config", "--task", "dokku_domains")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
+	}
+
+	doc := decodeCatalog(t, out)
+	if version, _ := doc["version"].(float64); int(version) != tasks.CatalogVersion {
+		t.Errorf("version = %v; want %d", doc["version"], tasks.CatalogVersion)
+	}
+	want := []string{"dokku_config", "dokku_domains"}
+	if got := catalogTypeList(t, doc); !reflect.DeepEqual(got, want) {
+		t.Errorf("types = %v; want %v", got, want)
+	}
+}
+
+// TestSchemaCommandFilteredOutputMatchesSchema is the other half of the issue's
+// contract: a narrowed catalog is the same document shape, so the published
+// JSON Schema still covers it and a consumer parses one format either way.
+func TestSchemaCommandFilteredOutputMatchesSchema(t *testing.T) {
+	out, stderr, exit := runSchema(t, "--task", "dokku_config")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
+	}
+	assertMatchesSchema(t, taskCatalogSchemaPath, out)
+}
+
+// TestSchemaCommandFilterIgnoresFlagOrder keeps the documented stability
+// contract true for a narrowed run: tasks are sorted by type, so the bytes do
+// not depend on the order the flags were typed.
+func TestSchemaCommandFilterIgnoresFlagOrder(t *testing.T) {
+	forward, _, _ := runSchema(t, "--task", "dokku_config", "--task", "dokku_domains")
+	reverse, _, _ := runSchema(t, "--task", "dokku_domains", "--task", "dokku_config")
+	if forward != reverse {
+		t.Error("reversing the --task flags changed the output")
+	}
+}
+
+// TestSchemaCommandFilterDedupesRepeatedTypes: the document is a set keyed by
+// type, so naming one twice emits it once rather than failing.
+func TestSchemaCommandFilterDedupesRepeatedTypes(t *testing.T) {
+	out, _, exit := runSchema(t, "--task", "dokku_config", "--task", "dokku_config")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if got := catalogTypeList(t, decodeCatalog(t, out)); !reflect.DeepEqual(got, []string{"dokku_config"}) {
+		t.Errorf("types = %v; want [dokku_config]", got)
+	}
+}
+
+// TestSchemaCommandFilteredEntryMatchesFullCatalog pins that --task changes
+// which entries are emitted and nothing about any entry, so it is purely
+// additive for a consumer that already reads the whole catalog.
+func TestSchemaCommandFilteredEntryMatchesFullCatalog(t *testing.T) {
+	narrowed, _, exit := runSchema(t, "--task", "dokku_config")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	full, _, _ := runSchema(t)
+
+	got := catalogTasks(t, decodeCatalog(t, narrowed))["dokku_config"]
+	want := catalogTasks(t, decodeCatalog(t, full))["dokku_config"]
+	if !reflect.DeepEqual(got, want) {
+		t.Error("the narrowed dokku_config entry differs from the full catalog's")
+	}
+}
+
+// TestSchemaCommandRejectsUnknownTaskType: an unknown type exits non-zero and
+// names the closest match, the way an unknown task type in a recipe address
+// already does. Emitting an empty tasks array would read as "docket has no
+// such task", which is exactly the wrong answer for a typo.
+func TestSchemaCommandRejectsUnknownTaskType(t *testing.T) {
+	out, stderr, exit := runSchema(t, "--task", "dokku_confg")
+	if exit != 1 {
+		t.Errorf("exit = %d, want 1", exit)
+	}
+	if !strings.Contains(stderr, `unknown task type "dokku_confg"`) {
+		t.Errorf("stderr = %q; want it to name the unknown type", stderr)
+	}
+	if !strings.Contains(stderr, `did you mean "dokku_config"`) {
+		t.Errorf("stderr = %q; want a did-you-mean hint", stderr)
+	}
+	if out != "" {
+		t.Errorf("wrote %d bytes to stdout; want none", len(out))
+	}
+}
+
+func TestSchemaCommandUnknownTaskTypeWithoutNearMatch(t *testing.T) {
+	_, stderr, exit := runSchema(t, "--task", "nonsense")
+	if exit != 1 {
+		t.Errorf("exit = %d, want 1", exit)
+	}
+	if !strings.Contains(stderr, `unknown task type "nonsense"`) {
+		t.Errorf("stderr = %q; want it to name the unknown type", stderr)
+	}
+	if strings.Contains(stderr, "did you mean") {
+		t.Errorf("stderr = %q; want no hint when nothing is close", stderr)
+	}
+}
+
+func TestSchemaCommandRejectsEmptyTaskType(t *testing.T) {
+	_, stderr, exit := runSchema(t, "--task=")
+	if exit != 1 {
+		t.Errorf("exit = %d, want 1", exit)
+	}
+	if !strings.Contains(stderr, "a task type is required") {
+		t.Errorf("stderr = %q; want the empty-value message", stderr)
+	}
+}
+
+// TestSchemaCommandTaskTypeFilterIsCaseSensitive pins the decision: type keys
+// are case-sensitive at every other lookup, so --task does not case-fold.
+func TestSchemaCommandTaskTypeFilterIsCaseSensitive(t *testing.T) {
+	_, stderr, exit := runSchema(t, "--task", "DOKKU_CONFIG")
+	if exit != 1 {
+		t.Errorf("exit = %d, want 1", exit)
+	}
+	if !strings.Contains(stderr, `unknown task type "DOKKU_CONFIG"`) {
+		t.Errorf("stderr = %q; want the unknown-type message", stderr)
+	}
+}
+
+func TestSchemaCommandFilterWritesToFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog.json")
+
+	out, stderr, exit := runSchema(t, "--task", "dokku_config", "--output", path)
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
+	}
+	if out != "" {
+		t.Errorf("--output wrote %d bytes to stdout; want none", len(out))
+	}
+
+	written, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	stdout, _, _ := runSchema(t, "--task", "dokku_config")
+	if string(written) != stdout {
+		t.Error("the file and the stream disagree")
+	}
+}
+
+// TestSchemaCommandUnknownTaskTypeWritesNoFile is why the filter is validated
+// before anything is built: a typo must not leave a file behind.
+func TestSchemaCommandUnknownTaskTypeWritesNoFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog.json")
+
+	_, _, exit := runSchema(t, "--task", "nonsense", "--output", path)
+	if exit != 1 {
+		t.Errorf("exit = %d, want 1", exit)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("os.Stat(%s) = %v; want the file not to exist", path, err)
+	}
+}
+
+func TestSchemaCommandAutocompletesTaskTypes(t *testing.T) {
+	c := &SchemaCommand{}
+	predictor, ok := c.AutocompleteFlags()["--task"]
+	if !ok || predictor == nil {
+		t.Fatal("--task has no completion predictor")
+	}
+	if got := predictor.Predict(complete.Args{}); !reflect.DeepEqual(got, tasks.RegisteredTaskNames()) {
+		t.Errorf("--task predicts %v; want every registered task type", got)
+	}
+}
+
+// TestSchemaCommandPositionalTaskTypeSuggestsTheFlag: a bare task type is the
+// mistake --task invites, so the rejection points at the flag.
+func TestSchemaCommandPositionalTaskTypeSuggestsTheFlag(t *testing.T) {
+	_, stderr, exit := runSchema(t, "dokku_app")
+	if exit != 1 {
+		t.Errorf("exit = %d, want 1", exit)
+	}
+	if !strings.Contains(stderr, "did you mean --task dokku_app?") {
+		t.Errorf("stderr = %q; want it to point at --task", stderr)
 	}
 }

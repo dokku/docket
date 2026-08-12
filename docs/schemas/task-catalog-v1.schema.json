@@ -14,7 +14,7 @@
     "tasks": {
       "type": "array",
       "items": { "$ref": "#/$defs/task" },
-      "description": "Every registered task type, sorted by `type`."
+      "description": "The task types the document describes, sorted by `type`. Every registered task type unless `docket schema --task` narrowed it."
     }
   },
   "$defs": {

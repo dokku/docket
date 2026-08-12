@@ -506,6 +506,9 @@ docket schema
 # List every task type.
 docket schema | jq -r '.tasks[].type'
 
+# Only the task types you name.
+docket schema --task dokku_config --task dokku_domains | jq -r '.tasks[].type'
+
 # What fields does dokku_config take?
 docket schema | jq '.tasks[] | select(.type=="dokku_config") | .fields'
 
@@ -514,14 +517,15 @@ docket schema | jq -r '.tasks[] | select(.type=="dokku_nginx_property") | .prope
 ```
 
 Like `init` and `validate`, `schema` is offline: it opens no subprocess and contacts no server. It
-also reads no recipe, so it takes no `--tasks` and no positional argument. Two runs of the same
-binary emit byte-identical output, which is what makes diffing catalogs across docket versions
-useful.
+also reads no recipe, so it takes no `--tasks` and no positional argument - the `--task` below
+names a task type, not a recipe file. Two runs of the same binary emit byte-identical output,
+which is what makes diffing catalogs across docket versions useful.
 
 | Flag | Effect |
 |------|--------|
-| (default) | Write the catalog to stdout. |
+| (default) | Write the whole catalog to stdout. |
 | `--output <path>` | Write to a path instead; `-` writes to stdout. An existing file is overwritten, since the catalog is wholly derived and holds nothing of yours. |
+| `--task <type>` | Restrict the catalog to the named task type, such as `dokku_config`. Repeatable. The document keeps its shape, a `version` and a `tasks` array, so anything that reads the whole catalog reads a narrowed one unchanged. Tasks stay sorted by `type` whatever order the flags came in, and naming one twice emits it once. An unknown type is an error naming the closest match, not an empty array. |
 
 ## docket version
 

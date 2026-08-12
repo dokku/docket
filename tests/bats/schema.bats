@@ -137,3 +137,46 @@ setup() {
   assert_failure
   assert_output --partial "takes no arguments"
 }
+
+@test "docket schema --task narrows the catalog to the named types" {
+  run "$(docket_bin)" schema --task dokku_config --task dokku_domains
+  assert_success
+  echo "$output" | jq -e '.version == 1' >/dev/null || fail "expected version 1"
+  echo "$output" | jq -e '[.tasks[].type] == ["dokku_config", "dokku_domains"]' >/dev/null ||
+    fail "expected only the two named task types"
+}
+
+@test "docket schema --task keeps the document shape" {
+  run "$(docket_bin)" schema --task dokku_config
+  assert_success
+
+  # The narrowed document is the same shape as the whole catalog, so a
+  # consumer parses one format either way and the published JSON Schema
+  # keeps covering it.
+  echo "$output" | jq -e 'has("version") and has("tasks")' >/dev/null ||
+    fail "narrowed output is missing version or tasks"
+  echo "$output" |
+    jq -e 'all(.tasks[]; (.type | length > 0) and (.synopsis | length > 0) and (.fields | length > 0))' >/dev/null ||
+    fail "the narrowed entry is missing its type, synopsis, or fields"
+}
+
+@test "docket schema --task ignores the order the flags are given" {
+  "$(docket_bin)" schema --task dokku_config --task dokku_domains >"$BATS_TEST_TMPDIR/forward.json"
+  "$(docket_bin)" schema --task dokku_domains --task dokku_config >"$BATS_TEST_TMPDIR/reverse.json"
+  run diff "$BATS_TEST_TMPDIR/forward.json" "$BATS_TEST_TMPDIR/reverse.json"
+  assert_success
+}
+
+@test "docket schema --task rejects an unknown task type" {
+  run "$(docket_bin)" schema --task dokku_confg
+  assert_failure
+  assert_output --partial 'did you mean "dokku_config"'
+}
+
+@test "docket schema --task writes a narrowed catalog to a file" {
+  run "$(docket_bin)" schema --task dokku_config --output "$BATS_TEST_TMPDIR/catalog.json"
+  assert_success
+  assert_output ""
+  jq -e '(.tasks | length) == 1' "$BATS_TEST_TMPDIR/catalog.json" >/dev/null ||
+    fail "the written file is not narrowed to one task"
+}
