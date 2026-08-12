@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// catalogFor builds the catalog once for a test, failing fast if it cannot.
-func catalogFor(t *testing.T) TaskCatalog {
+// wholeCatalog builds the unnarrowed catalog once for a test, failing fast if
+// it cannot. Named to keep it clear of CatalogFor, which selects task types.
+func wholeCatalog(t *testing.T) TaskCatalog {
 	t.Helper()
 	catalog, err := Catalog()
 	if err != nil {
@@ -51,7 +52,7 @@ func fieldNames(fields []FieldSchema) []string {
 }
 
 func TestCatalogCoversEveryRegisteredTask(t *testing.T) {
-	catalog := catalogFor(t)
+	catalog := wholeCatalog(t)
 
 	if catalog.Version != CatalogVersion {
 		t.Errorf("Version = %d; want %d", catalog.Version, CatalogVersion)
@@ -76,7 +77,7 @@ func TestCatalogCoversEveryRegisteredTask(t *testing.T) {
 }
 
 func TestCatalogEveryTaskHasSynopsisAndFields(t *testing.T) {
-	for _, schema := range catalogFor(t).Tasks {
+	for _, schema := range wholeCatalog(t).Tasks {
 		if schema.Synopsis == "" {
 			t.Errorf("task %q has an empty synopsis", schema.Type)
 		}
@@ -128,7 +129,7 @@ func TestCatalogFieldTypesAreKnown(t *testing.T) {
 		}
 	}
 
-	for _, schema := range catalogFor(t).Tasks {
+	for _, schema := range wholeCatalog(t).Tasks {
 		check(t, schema.Type, schema.Fields)
 	}
 }
@@ -138,7 +139,7 @@ func TestCatalogFieldTypesAreKnown(t *testing.T) {
 // carrying a default is filled in before the zero-check runs, and so is never
 // really required no matter what its required tag says.
 func TestCatalogRequiredMatchesTags(t *testing.T) {
-	catalog := catalogFor(t)
+	catalog := wholeCatalog(t)
 	for _, schema := range catalog.Tasks {
 		rt := taskStructType(RegisteredTasks[schema.Type])
 		for _, field := range schema.Fields {
@@ -166,7 +167,7 @@ func TestCatalogRequiredMatchesTags(t *testing.T) {
 // echoes a recipe has to know that a HttpAuthUser's password is a secret, and
 // that fact lives on the element struct rather than on the task.
 func TestCatalogSensitiveMatchesTags(t *testing.T) {
-	catalog := catalogFor(t)
+	catalog := wholeCatalog(t)
 
 	var check func(t *testing.T, where string, rt reflect.Type, fields []FieldSchema)
 	check = func(t *testing.T, where string, rt reflect.Type, fields []FieldSchema) {
@@ -206,7 +207,7 @@ func TestCatalogSensitiveMatchesTags(t *testing.T) {
 // half also guards the two yaml-name helpers staying in agreement: a key hidden
 // behind `yaml:"-"` would be in Identity.Keys but absent from Fields.
 func TestCatalogIdentityMatchesTaskIdentity(t *testing.T) {
-	for _, schema := range catalogFor(t).Tasks {
+	for _, schema := range wholeCatalog(t).Tasks {
 		task := RegisteredTasks[schema.Type]
 
 		if want := IdentityKeyNames(task); !reflect.DeepEqual(schema.Identity.Keys, want) {
@@ -238,7 +239,7 @@ func TestCatalogIdentityMatchesTaskIdentity(t *testing.T) {
 }
 
 func TestCatalogSupportMatchesDeclarations(t *testing.T) {
-	for _, schema := range catalogFor(t).Tasks {
+	for _, schema := range wholeCatalog(t).Tasks {
 		task := RegisteredTasks[schema.Type]
 		if want, _ := TaskExportSupport(task); schema.Export != want {
 			t.Errorf("%s Export = %+v; want %+v", schema.Type, schema.Export, want)
@@ -256,7 +257,7 @@ func TestCatalogSupportMatchesDeclarations(t *testing.T) {
 // list of structs, a dict of scalars, a dict of anything, and a *bool whose
 // default documents a runtime coercion rather than a value the loader writes.
 func TestCatalogFieldShapes(t *testing.T) {
-	catalog := catalogFor(t)
+	catalog := wholeCatalog(t)
 
 	ports := fieldFor(t, schemaFor(t, catalog, "dokku_ports").Fields, "port_mappings")
 	if ports.Type != TypeList || ports.Identity != IdentityRoleCollection {
@@ -322,7 +323,7 @@ func TestCatalogFieldShapes(t *testing.T) {
 // TestCatalogPropertySchemaMatchesTable checks the published property list
 // against the runtime table each task actually validates and probes with.
 func TestCatalogPropertySchemaMatchesTable(t *testing.T) {
-	for _, schema := range catalogFor(t).Tasks {
+	for _, schema := range wholeCatalog(t).Tasks {
 		table, declared := TaskPropertyTable(RegisteredTasks[schema.Type])
 		if !declared {
 			if schema.PropertySchema != nil {
@@ -393,7 +394,7 @@ func TestCatalogPropertySchemaMatchesTable(t *testing.T) {
 // TestCatalogPropertySchemaSpotChecks pins the two ends of the range: a table
 // whose properties are split across scopes, and one with a dynamic family.
 func TestCatalogPropertySchemaSpotChecks(t *testing.T) {
-	catalog := catalogFor(t)
+	catalog := wholeCatalog(t)
 
 	apps := schemaFor(t, catalog, "dokku_apps_property").PropertySchema
 	if apps == nil {
@@ -543,4 +544,114 @@ func sliceOrMapElem(t reflect.Type) reflect.Type {
 		return t.Elem()
 	}
 	return t
+}
+
+// catalogTypes returns the type keys a catalog carries, in document order.
+func catalogTypes(catalog TaskCatalog) []string {
+	out := make([]string, 0, len(catalog.Tasks))
+	for _, schema := range catalog.Tasks {
+		out = append(out, schema.Type)
+	}
+	return out
+}
+
+// TestCatalogForSelectsNamedTasks covers the narrowing #459 added: only the
+// named types come back, and they come back sorted whatever order they were
+// asked for, so a selection is byte-stable and diffs against the full catalog.
+func TestCatalogForSelectsNamedTasks(t *testing.T) {
+	catalog, err := CatalogFor([]string{"dokku_domains", "dokku_config"})
+	if err != nil {
+		t.Fatalf("CatalogFor: %v", err)
+	}
+	if catalog.Version != CatalogVersion {
+		t.Errorf("Version = %d; want %d", catalog.Version, CatalogVersion)
+	}
+	want := []string{"dokku_config", "dokku_domains"}
+	if got := catalogTypes(catalog); !reflect.DeepEqual(got, want) {
+		t.Errorf("types = %v; want %v", got, want)
+	}
+}
+
+// TestCatalogForWithNoSelectionMatchesCatalog pins that Catalog() is the same
+// code path, so the whole catalog cannot drift from a narrowed one.
+func TestCatalogForWithNoSelectionMatchesCatalog(t *testing.T) {
+	full := wholeCatalog(t)
+	for _, selection := range [][]string{nil, {}} {
+		catalog, err := CatalogFor(selection)
+		if err != nil {
+			t.Fatalf("CatalogFor(%v): %v", selection, err)
+		}
+		if !reflect.DeepEqual(catalog, full) {
+			t.Errorf("CatalogFor(%v) does not match Catalog()", selection)
+		}
+	}
+}
+
+// TestCatalogForDedupesRepeatedTypes: the document is a set keyed by type, so
+// naming one twice - a shell loop, say - emits it once rather than failing.
+func TestCatalogForDedupesRepeatedTypes(t *testing.T) {
+	catalog, err := CatalogFor([]string{"dokku_config", "dokku_config", "dokku_config"})
+	if err != nil {
+		t.Fatalf("CatalogFor: %v", err)
+	}
+	if got := catalogTypes(catalog); !reflect.DeepEqual(got, []string{"dokku_config"}) {
+		t.Errorf("types = %v; want [dokku_config]", got)
+	}
+}
+
+// TestCatalogForRejectsUnknownType: an unregistered key is an error rather
+// than a silently smaller document, which would look like a complete answer.
+func TestCatalogForRejectsUnknownType(t *testing.T) {
+	catalog, err := CatalogFor([]string{"dokku_config", "dokku_confg"})
+	if err == nil {
+		t.Fatal("expected an error for an unregistered task type")
+	}
+	if !strings.Contains(err.Error(), `unknown task type "dokku_confg"`) {
+		t.Errorf("err = %q; want it to name the unknown type", err)
+	}
+	if !reflect.DeepEqual(catalog, TaskCatalog{}) {
+		t.Errorf("catalog = %+v; want the zero value on error", catalog)
+	}
+}
+
+// TestCatalogForEntriesMatchTheFullCatalog proves narrowing is a projection,
+// not a re-derivation: a consumer reading one task out of a narrowed catalog
+// sees exactly what it would have seen in the whole one.
+func TestCatalogForEntriesMatchTheFullCatalog(t *testing.T) {
+	full := wholeCatalog(t)
+	selection := []string{"dokku_config", "dokku_domains", "dokku_apps_property"}
+	catalog, err := CatalogFor(selection)
+	if err != nil {
+		t.Fatalf("CatalogFor: %v", err)
+	}
+	for _, schema := range catalog.Tasks {
+		if want := schemaFor(t, full, schema.Type); !reflect.DeepEqual(schema, want) {
+			t.Errorf("narrowed entry for %q differs from the full catalog's", schema.Type)
+		}
+	}
+}
+
+// TestRegisteredTaskNamesIsSortedAndComplete guards the helper the catalog,
+// the --task validator and the shell completion all read from.
+func TestRegisteredTaskNamesIsSortedAndComplete(t *testing.T) {
+	names := RegisteredTaskNames()
+	if len(names) != len(RegisteredTasks) {
+		t.Errorf("got %d names; registry has %d", len(names), len(RegisteredTasks))
+	}
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("names are not sorted: %v", names)
+	}
+	for _, name := range names {
+		if _, ok := RegisteredTasks[name]; !ok {
+			t.Errorf("name %q is not in the registry", name)
+		}
+	}
+
+	// The result is a copy, so a caller may sort or truncate it in place.
+	if len(names) > 0 {
+		names[0] = "mutated"
+		if again := RegisteredTaskNames(); again[0] == "mutated" {
+			t.Error("RegisteredTaskNames returned a slice aliasing shared state")
+		}
+	}
 }

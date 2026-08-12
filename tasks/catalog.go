@@ -91,14 +91,15 @@ const (
 	PropertyScopeGlobal = "global"
 )
 
-// TaskCatalog is the machine-readable description of every registered task
-// type. It is what `docket schema` emits.
+// TaskCatalog is the machine-readable description of a set of registered task
+// types. It is what `docket schema` emits.
 type TaskCatalog struct {
 	// Version is CatalogVersion. Consumers should branch on it so a future
 	// schema change does not silently break them.
 	Version int `json:"version"`
 
-	// Tasks are every registered task type, sorted by Type.
+	// Tasks are the requested task types - every registered one unless the
+	// caller narrowed the selection - sorted by Type.
 	Tasks []TaskSchema `json:"tasks"`
 }
 
@@ -355,15 +356,43 @@ func buildPropertySchema(table PropertyTable) PropertySchema {
 }
 
 // Catalog returns the catalog for every registered task, sorted by type key.
-//
-// The error comes from Examples(), which yaml-marshals each example struct.
-// Nothing else here can fail.
 func Catalog() (TaskCatalog, error) {
-	names := make([]string, 0, len(RegisteredTasks))
-	for name := range RegisteredTasks {
-		names = append(names, name)
+	return CatalogFor(nil)
+}
+
+// CatalogFor returns the catalog narrowed to typeKeys, sorted by type key. A
+// nil or empty selection means every registered task, so the whole catalog and
+// a narrowed one are the same code path rather than two that can drift.
+//
+// Sorting is by type key whatever order the keys arrived in, which is what lets
+// a narrowed catalog be diffed against a full one and makes two runs of the
+// same selection byte-identical. Duplicates collapse: the document is a set
+// keyed by type, so naming a type twice is not an error.
+//
+// An unregistered key is an error rather than a silently smaller document - a
+// caller asking for a type that does not exist wants to know. Keys are checked
+// in the order given, so the message names the first one the caller wrote, and
+// all of them are checked before any schema is built.
+//
+// The other error comes from Examples(), which yaml-marshals each example
+// struct. Nothing else here can fail.
+func CatalogFor(typeKeys []string) (TaskCatalog, error) {
+	names := RegisteredTaskNames()
+	if len(typeKeys) > 0 {
+		seen := make(map[string]bool, len(typeKeys))
+		names = make([]string, 0, len(typeKeys))
+		for _, key := range typeKeys {
+			if _, ok := RegisteredTasks[key]; !ok {
+				return TaskCatalog{}, fmt.Errorf("unknown task type %q", key)
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			names = append(names, key)
+		}
+		sort.Strings(names)
 	}
-	sort.Strings(names)
 
 	catalog := TaskCatalog{Version: CatalogVersion, Tasks: make([]TaskSchema, 0, len(names))}
 	for _, name := range names {
@@ -374,6 +403,18 @@ func Catalog() (TaskCatalog, error) {
 		catalog.Tasks = append(catalog.Tasks, schema)
 	}
 	return catalog, nil
+}
+
+// RegisteredTaskNames returns every registered task type, sorted. The result is
+// a fresh slice, so a caller may sort, filter or truncate it without disturbing
+// the registry.
+func RegisteredTaskNames() []string {
+	names := make([]string, 0, len(RegisteredTasks))
+	for name := range RegisteredTasks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // TaskSchemaOf describes one task. Exported so a caller holding a single

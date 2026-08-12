@@ -13,6 +13,7 @@ recipe before it reaches a server.
 ```bash
 docket schema
 docket schema --output catalog.json
+docket schema --task dokku_config --task dokku_domains
 ```
 
 The command is offline: it opens no subprocess and contacts no server. The answer depends only on
@@ -62,6 +63,25 @@ deliberately absent - the catalog describes the recipe surface, not docket's imp
 There is a [JSON Schema](schemas/task-catalog-v1.schema.json) for the whole thing. Unlike the
 [JSON-lines streams](json-output.md), which validate one line at a time, this one validates the
 document as a unit.
+
+### Narrowing the catalog
+
+`--task <type>` restricts the `tasks` array to the types you name, and is repeatable:
+
+```bash
+docket schema --task dokku_config --task dokku_domains | jq -r '.tasks[].type'
+```
+
+The document is unchanged in every other respect: the same `version`, the same `tasks` array, and
+each entry byte-identical to its form in the whole catalog. The published JSON Schema validates a
+narrowed document as it validates a full one, so a consumer parses one format either way and
+nothing has to change for a consumer that never passes the flag.
+
+Types are selected by registry key, matched exactly and case-sensitively, in any order - the array
+still comes back sorted by `type`. Naming one type twice emits it once, since the document is a
+set keyed by type. An unknown type exits non-zero and names the closest registered one, the
+way an unknown task type in a recipe does; it is not an empty `tasks` array, which would read as
+"docket has no such task" rather than "you typed it wrong".
 
 ## Versioning
 
@@ -190,10 +210,12 @@ them.
 
 ## Stability
 
-- Tasks are sorted by `type`; properties by `name`; dynamic families by `prefix`.
+- Tasks are sorted by `type`, including when `--task` narrows the catalog, so the output never
+  depends on the order the flags were given; properties by `name`; dynamic families by `prefix`.
 - Fields, identity keys, requirements and choices keep declaration order, because that order is
   meaningful.
-- Two runs of the same binary produce byte-identical output.
+- Two runs of the same binary produce byte-identical output, for the whole catalog and for any
+  `--task` selection.
 
 ## See also
 
