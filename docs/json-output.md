@@ -197,6 +197,11 @@ emitter starts, so it produces **no JSON on stdout** and a human-readable messag
 non-zero exit with empty stdout as a failure whose detail is on stderr, or run
 `docket validate --json` first to get the same problems as structured events.
 
+Do not read that the other way round: a non-zero exit does not imply empty stdout.
+`--list-tasks --json` exits `1` when a play `when:` fails to evaluate, and the stream is complete -
+the failure is a `play_skipped` event whose `reason` carries the `when error: <err>` form, followed
+by every remaining play's tasks.
+
 ## See also
 
 - [Command reference](command-reference.md) - the `--json` and `--detailed-exitcode` flags

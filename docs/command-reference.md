@@ -277,7 +277,8 @@ recipe" is the same outcome either way. Pass `--detailed-exitcode` when the call
 `0` means nothing changed, `2` means at least one task changed, and `1` still means an error. Errors
 win over changes, matching `plan`. An error swallowed by
 [`ignore_errors`](task-envelope.md#ignore_errors-continue-past-a-failure) is not an error for this
-purpose. `--list-tasks` returns before any task runs, so it is unaffected.
+purpose. `--list-tasks` returns before any task runs, so it never exits `2`; it exits `1` when the
+recipe cannot be loaded or a play `when:` fails to evaluate, and `0` otherwise.
 
 | Flag | Effect |
 |------|--------|
@@ -340,7 +341,27 @@ $ docket apply --list-tasks
 
 A `when:` that is false against the inputs renders as `[skipped]`. A `when:` that references
 `.registered.<name>` cannot be decided without running earlier tasks, so it renders as `[unknown]`
-rather than guessing.
+rather than guessing. A task `when:` that fails to evaluate renders as `[when?]` and does not change
+the exit code: the listing evaluates it without the `result` and `failed_task` values a real run
+would supply, so an error there can be an artifact of listing offline rather than a broken
+predicate.
+
+A play-level `when:` is different, because it is resolved against exactly the context `apply` and
+`plan` build for it. One that fails to evaluate is the same failure a run would hit, so the play's
+header carries the error, its tasks are left unlisted, and the command exits `1`:
+
+```text
+$ docket plan --list-tasks
+==> Play: broken  (when error: cannot fetch tag from <nil> (1:9)
+ | release.tag == "v1"
+ | ........^)
+==> Play: api
+[0] dokku apps:create api
+$ echo $?
+1
+```
+
+Every other play still lists - the failure is carried by the exit code, not by stopping the walk.
 
 A task whose type is deprecated is marked `(deprecated)`. A task whose type cannot read its own
 state is marked `(never converges)`, and one that can read only part of it is marked
