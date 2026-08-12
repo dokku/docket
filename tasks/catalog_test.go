@@ -436,14 +436,16 @@ func TestCatalogPropertySchemaSpotChecks(t *testing.T) {
 		t.Errorf("letsencrypt dynamic = %+v; want %+v", letsencrypt.Dynamic, want)
 	}
 
-	// traefik has the same family, but the plugin does not report it, so a
-	// recipe using it never converges - and the catalog has to say so.
+	// traefik holds the same credentials, but the plugin does not report them,
+	// so a recipe using the family never converges - and the catalog has to say
+	// so without implying the values are any less secret (#457).
 	traefik := schemaFor(t, catalog, "dokku_traefik_property").PropertySchema
 	if traefik == nil {
 		t.Fatal("dokku_traefik_property has no property schema")
 	}
-	if len(traefik.Dynamic) != 1 || traefik.Dynamic[0].Probeable {
-		t.Errorf("traefik dynamic = %+v; want one unprobeable family", traefik.Dynamic)
+	want = []DynamicPropertySchema{{Prefix: "dns-provider-", Probeable: false, Sensitive: true}}
+	if !reflect.DeepEqual(traefik.Dynamic, want) {
+		t.Errorf("traefik dynamic = %+v; want %+v", traefik.Dynamic, want)
 	}
 
 	// A free-form property field is not a property table, and must not be

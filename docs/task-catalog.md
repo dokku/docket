@@ -179,6 +179,10 @@ consumer does not reject a legal recipe:
 `probeable: false` means docket cannot read those values back, so a recipe using that family
 reports drift on every run and never converges.
 
+`sensitive: true` means the members hold secrets: docket masks them in the command echo and lifts
+them into an input on export. It is independent of `probeable` - a credential docket cannot read
+back is still masked on the way out.
+
 **An absent `property_schema` on a task that has a `property` field means the legal names are not
 enumerable from docket, not that there are none.** `dokku_service_property` is the case: its names
 come from whichever datastore plugin backs the service, and no plugin exposes a report that lists

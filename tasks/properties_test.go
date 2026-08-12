@@ -573,6 +573,93 @@ func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
 	}
 }
 
+// TestPlanPropertyDynamicTraefikMasksCredential is the core of #457: the
+// traefik family cannot be probed, but its values are DNS provider credentials
+// all the same, so the desired value must reach the masker before it lands in
+// the command echo or the plan mutation line.
+func TestPlanPropertyDynamicTraefikMasksCredential(t *testing.T) {
+	subprocess.SetGlobalSensitive(nil)
+	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+
+	defer subprocess.SetExecRunner(func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		return subprocess.ExecCommandResponse{}, nil
+	})()
+
+	res := planProperty(TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "traefiktoken")
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if !strings.Contains(res.Reason, "(no probe key)") {
+		t.Errorf("reason = %q; want the unprobed reason", res.Reason)
+	}
+	// Commands are masked as they are resolved, so a leak here means the value
+	// was never registered; mutations are masked by the emitter instead.
+	for _, cmd := range res.Commands {
+		if masked := subprocess.MaskString(cmd); strings.Contains(masked, "traefiktoken") {
+			t.Errorf("command leaked the credential: %q -> %q", cmd, masked)
+		}
+	}
+	for _, mutation := range res.Mutations {
+		if masked := subprocess.MaskString(mutation); strings.Contains(masked, "traefiktoken") {
+			t.Errorf("mutation leaked the credential: %q -> %q", mutation, masked)
+		}
+	}
+}
+
+// TestPropertyEntry pins the three arms the export path and planProperty read
+// sensitivity through: a mapped property answers for itself, a probeable
+// dynamic member is synthesized whole, and an unprobeable one carries the
+// family's Sensitive mark with no lookup keys (#457).
+func TestPropertyEntry(t *testing.T) {
+	cases := []struct {
+		name     string
+		plugin   string
+		property string
+		keys     map[string]PropertyKeys
+		want     PropertyKeys
+	}{
+		{
+			name:     "mapped entry wins",
+			plugin:   "traefik",
+			property: "basic-auth-password",
+			keys:     traefikPropertyTable.Keys,
+			want:     PropertyKeys{Global: "global-basic-auth-password", Sensitive: true},
+		},
+		{
+			name:     "probeable dynamic member is synthesized",
+			plugin:   "letsencrypt",
+			property: "dns-provider-NAMECHEAP_API_USER",
+			keys:     letsencryptPropertyTable.Keys,
+			want: PropertyKeys{
+				PerApp:    "dns-provider-NAMECHEAP_API_USER",
+				Global:    "global-dns-provider-NAMECHEAP_API_USER",
+				Sensitive: true,
+			},
+		},
+		{
+			name:     "unprobeable dynamic member is still sensitive",
+			plugin:   "traefik",
+			property: "dns-provider-CLOUDFLARE_API_TOKEN",
+			keys:     traefikPropertyTable.Keys,
+			want:     PropertyKeys{Sensitive: true},
+		},
+		{
+			name:     "unknown property has no entry",
+			plugin:   "traefik",
+			property: "wat",
+			keys:     traefikPropertyTable.Keys,
+			want:     PropertyKeys{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := propertyEntry(tc.plugin, tc.property, tc.keys); got != tc.want {
+				t.Errorf("propertyEntry(%q, %q) = %+v; want %+v", tc.plugin, tc.property, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidateProperty(t *testing.T) {
 	keys := map[string]PropertyKeys{
 		"both":       {PerApp: "both", Global: "global-both"},

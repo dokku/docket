@@ -343,8 +343,23 @@ type dynamicPropertyFamily struct {
 	// unconditionally and the task never converges for it.
 	Probeable bool
 
-	// Sensitive is true when docket treats members as secrets.
+	// Sensitive is true when docket treats members as secrets. It is
+	// independent of Probeable: whether a value is a credential and whether
+	// docket can read it back are separate questions (#457).
 	Sensitive bool
+}
+
+// keysFor returns the PropertyKeys one member of the family gets. The report
+// keys exist only when the plugin reports the family, so an unprobeable member
+// carries no lookup keys - but it still carries the family's Sensitive mark, so
+// its value is masked on the way out even though it can never be read back.
+func (f dynamicPropertyFamily) keysFor(property string) PropertyKeys {
+	entry := PropertyKeys{Sensitive: f.Sensitive}
+	if f.Probeable {
+		entry.PerApp = property
+		entry.Global = "global-" + property
+	}
+	return entry
 }
 
 // dynamicPropertyFamilies is the whole set of dynamic families docket knows
@@ -360,18 +375,17 @@ var dynamicPropertyFamilies = map[string][]dynamicPropertyFamily{
 	// dokku-letsencrypt 0.25.0+ emits a `dns-provider-<KEY>` row for the app
 	// scope and a `global-dns-provider-<KEY>` row for the global one per
 	// property that is set (#449). The values are DNS provider API
-	// credentials, hence Sensitive: planProperty registers the probed value
-	// with the masker before it can reach a `(was %q)` drift reason.
+	// credentials, hence Sensitive: planProperty registers both the desired
+	// value and, because this family is probed, the value read back before it
+	// can reach a `(was %q)` drift reason.
 	"letsencrypt": {{Prefix: "dns-provider-", Probeable: true, Sensitive: true}},
 
-	// traefik's family has the same shape but is still absent from
+	// traefik's family holds the same credentials but is still absent from
 	// `traefik:report` (dokku/dokku#8928, tracked for docket in #450), so it
-	// stays on the unprobed path. Its values are credentials too, but
-	// planProperty reads Sensitive off the synthesized key entry, which an
-	// unprobeable family never gets - so they are not masked today (#457).
-	// Left as-is here so this change is a pure refactor; the catalog reports
-	// the flag it actually has rather than the one it should.
-	"traefik": {{Prefix: "dns-provider-"}},
+	// stays on the unprobed path. Sensitive is set anyway: there is no probed
+	// value to mask, but the desired one still reaches argv and the plan
+	// mutation line (#457).
+	"traefik": {{Prefix: "dns-provider-", Sensitive: true}},
 }
 
 // isDynamicProperty reports whether a (plugin, property) pair belongs to a
@@ -424,20 +438,25 @@ func dynamicPropertyKeys(plugin, property string) (PropertyKeys, bool) {
 	if !ok || !family.Probeable {
 		return PropertyKeys{}, false
 	}
-	return PropertyKeys{PerApp: property, Global: "global-" + property, Sensitive: family.Sensitive}, true
+	return family.keysFor(property), true
 }
 
 // propertyEntry returns the PropertyKeys a plugin uses for one property,
-// falling back to the synthesized entry when the property belongs to a
-// probeable dynamic family the map cannot enumerate. Reading the map directly
-// instead would report a `dns-provider-<KEY>` credential as non-Sensitive and
-// export it in cleartext (#451).
+// falling back to the family's entry when the property belongs to a dynamic
+// family the map cannot enumerate. Reading the map directly instead would
+// report a `dns-provider-<KEY>` credential as non-Sensitive and export it in
+// cleartext (#451). The fallback goes through the family rather than through
+// dynamicPropertyKeys so a family docket cannot probe still answers the
+// sensitivity question (#457).
 func propertyEntry(plugin, property string, keys map[string]PropertyKeys) PropertyKeys {
 	if entry, ok := keys[property]; ok {
 		return entry
 	}
-	entry, _ := dynamicPropertyKeys(plugin, property)
-	return entry
+	family, ok := dynamicPropertyFamilyFor(plugin, property)
+	if !ok {
+		return PropertyKeys{}
+	}
+	return family.keysFor(property)
 }
 
 // taskPropertyEntry is propertyEntry for a task that carries its own table, so
@@ -559,8 +578,6 @@ func planProperty(task PropertyTableDocer, state State, app string, global bool,
 	// A dynamic property has no static map entry. When its plugin reports the
 	// family, synthesize the entry so the probe path below runs against it; the
 	// families that stay unreported keep falling through to the unprobed path.
-	// This has to happen before the Sensitive read below, which is what
-	// registers a synthesized credential with the masker.
 	keys = withDynamicProperties(plugin, keys, []string{property})
 
 	// A property flagged Sensitive carries a secret value. Register the desired
@@ -568,7 +585,11 @@ func planProperty(task PropertyTableDocer, state State, app string, global bool,
 	// server-probed current value is registered after each probe below, since
 	// it is not known from the recipe (a hand-written recipe never tags it, and
 	// the `(was %q)` drift reason would otherwise leak the live server secret).
-	sensitive := keys[property].Sensitive
+	//
+	// propertyEntry answers this rather than the merged map, because the map
+	// only ever gains an entry for a family docket can probe - reading it
+	// directly would leave an unprobeable credential unmasked (#457).
+	sensitive := propertyEntry(plugin, property, keys).Sensitive
 	if sensitive {
 		subprocess.AddGlobalSensitive(value)
 	}

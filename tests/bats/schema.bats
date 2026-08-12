@@ -86,6 +86,13 @@ setup() {
     jq -e '.tasks[] | select(.type == "dokku_letsencrypt_property") | .property_schema.dynamic[]
            | select(.prefix == "dns-provider-") | .probeable == true and .sensitive == true' >/dev/null ||
     fail "letsencrypt does not publish its dns-provider- family"
+
+  # traefik holds the same credentials but does not report them, so the family
+  # is sensitive without being probeable (#457).
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_traefik_property") | .property_schema.dynamic[]
+           | select(.prefix == "dns-provider-") | .probeable == false and .sensitive == true' >/dev/null ||
+    fail "traefik does not publish its dns-provider- family as sensitive"
 }
 
 @test "docket schema omits a property schema when the names are not enumerable" {

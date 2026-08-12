@@ -283,10 +283,15 @@ does not reject a legal recipe. How they plan depends on the plugin:
 - The plugin reports the family (letsencrypt on 0.25.0+ emits a row per set property): declare it
   `Probeable`, and the scope keys are synthesized so the property probes like any mapped one.
   Because the row only exists once the property has a value, an absent row reads as unset. Note the
-  minimum plugin version in `Requirements()`, and mark the family `Sensitive` when the value is a
-  credential so the probed value never reaches a drift reason unmasked.
+  minimum plugin version in `Requirements()`.
 - The plugin does not report it: leave `Probeable` false. The property skips probing and is applied
   unconditionally, and the task is `ProbePartial` with a caveat naming the family.
+
+Mark the family `Sensitive` whenever its values are credentials, whichever of those two it is.
+Whether a value is a secret and whether docket can read it back are separate questions, and
+answering the first by asking the second is how traefik's `dns-provider-*` credentials reached argv
+in cleartext (#457). `Sensitive` registers the desired value with the masker before it is echoed;
+on a `Probeable` family it also masks the value read back, so it never reaches a drift reason.
 
 ## Regenerating the task docs
 
