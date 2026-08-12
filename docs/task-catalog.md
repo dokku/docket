@@ -203,6 +203,19 @@ reports drift on every run and never converges.
 them into an input on export. It is independent of `probeable` - a credential docket cannot read
 back is still masked on the way out.
 
+A name can also be absent from `properties` because another task manages it. That is a different
+answer from "no such property", and the catalog says so rather than leaving a consumer to report an
+unknown name and offer a list it will never be in:
+
+```json
+"rejected": [ { "prefix": "chart.", "replacement": "dokku_scheduler_k3s_chart",
+                "reason": "the scheduler-k3s:set path for chart values is deprecated in dokku" } ]
+```
+
+`replacement` is always a `type` present elsewhere in the same catalog, so a consumer can point the
+user at it directly. `docket validate` rejects a matching name with the same sentence `plan` and
+`apply` do - `<prefix>* properties are managed by <replacement>; <reason>`.
+
 **An absent `property_schema` on a task that has a `property` field means the legal names are not
 enumerable from docket, not that there are none.** `dokku_service_property` is the case: its names
 come from whichever datastore plugin backs the service, and no plugin exposes a report that lists
@@ -211,7 +224,8 @@ them.
 ## Stability
 
 - Tasks are sorted by `type`, including when `--task` narrows the catalog, so the output never
-  depends on the order the flags were given; properties by `name`; dynamic families by `prefix`.
+  depends on the order the flags were given; properties by `name`; dynamic and rejected families by
+  `prefix`.
 - Fields, identity keys, requirements and choices keep declaration order, because that order is
   meaningful.
 - Two runs of the same binary produce byte-identical output, for the whole catalog and for any

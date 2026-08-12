@@ -393,9 +393,10 @@ func TestSchedulerK3sPropertyKeys(t *testing.T) {
 	})
 	checkUnsupportedProperty(t, schedulerK3sPropertyTable)
 	checkScopeMismatch(t, schedulerK3sPropertyTable, "", "token")
-	// chart.* properties used to be dynamic; they are now rejected by
-	// SchedulerK3sPropertyTask.Plan and routed to dokku_scheduler_k3s_chart,
-	// so validateProperty against the property-keys map should fail.
+	// chart.* properties used to be dynamic, so the key map must no longer let
+	// them through. This is the backstop, not the guard a user meets: the
+	// table's Rejected family answers them first, with dokku_scheduler_k3s_chart
+	// by name - see TestSchedulerK3sPropertyTaskChartRejectionIsIdenticalOffline.
 	if err := validateProperty("scheduler-k3s", "chart.traefik.replicas", false, schedulerK3sPropertyTable.Keys); err == nil {
 		t.Error("expected chart.* to be rejected by the property map (no longer dynamic)")
 	}

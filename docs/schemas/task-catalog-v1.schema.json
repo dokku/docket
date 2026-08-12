@@ -208,6 +208,11 @@
           "type": "array",
           "items": { "$ref": "#/$defs/dynamic_property" },
           "description": "Name families the table cannot enumerate, because dokku validates them through the set subcommand rather than through its report schema. A name matching one of these prefixes is legal even though it is absent from `properties`."
+        },
+        "rejected": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rejected_property" },
+          "description": "Name families this task refuses because another task manages them. A name matching one of these prefixes is absent from `properties` for a different reason than a typo is, and reporting it as an unknown name sends the user looking through a list it will never be in."
         }
       }
     },
@@ -253,6 +258,23 @@
         "sensitive": {
           "const": true,
           "description": "Members' values are treated as secrets."
+        }
+      }
+    },
+
+    "rejected_property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefix", "replacement", "reason"],
+      "properties": {
+        "prefix": { "type": "string", "description": "What a member's name starts with." },
+        "replacement": {
+          "type": "string",
+          "description": "The task type to write the property against instead. Always a `type` present elsewhere in this catalog."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why this task does not manage the family, phrased as a clause that reads after a semicolon."
         }
       }
     },

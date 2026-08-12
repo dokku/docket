@@ -385,6 +385,10 @@ func TestCatalogPropertySchemaMatchesTable(t *testing.T) {
 			t.Errorf("%s dynamic = %+v; want %+v", schema.Type, published.Dynamic, DynamicPropertyFamilies(table.Plugin()))
 		}
 
+		if !reflect.DeepEqual(published.Rejected, RejectedPropertyFamilies(table)) {
+			t.Errorf("%s rejected = %+v; want %+v", schema.Type, published.Rejected, RejectedPropertyFamilies(table))
+		}
+
 		// The table constrains a field that has to exist for the constraint
 		// to mean anything.
 		fieldFor(t, schema.Fields, published.Field)
@@ -447,6 +451,37 @@ func TestCatalogPropertySchemaSpotChecks(t *testing.T) {
 	want = []DynamicPropertySchema{{Prefix: "dns-provider-", Probeable: false, Sensitive: true}}
 	if !reflect.DeepEqual(traefik.Dynamic, want) {
 		t.Errorf("traefik dynamic = %+v; want %+v", traefik.Dynamic, want)
+	}
+
+	// scheduler-k3s refuses the chart.* family outright. Publishing it is what
+	// lets a consumer validating a recipe offline answer the way docket does -
+	// with the task that owns the name - instead of reporting it as unknown and
+	// offering a list it will never be in (#458).
+	k3s := schemaFor(t, catalog, "dokku_scheduler_k3s_property").PropertySchema
+	if k3s == nil {
+		t.Fatal("dokku_scheduler_k3s_property has no property schema")
+	}
+	wantRejected := []RejectedPropertySchema{{
+		Prefix:      "chart.",
+		Replacement: "dokku_scheduler_k3s_chart",
+		Reason:      "the scheduler-k3s:set path for chart values is deprecated in dokku",
+	}}
+	if !reflect.DeepEqual(k3s.Rejected, wantRejected) {
+		t.Errorf("scheduler-k3s rejected = %+v; want %+v", k3s.Rejected, wantRejected)
+	}
+	for _, property := range k3s.Properties {
+		if strings.HasPrefix(property.Name, "chart.") {
+			t.Errorf("scheduler-k3s publishes %q as supported and rejected at once", property.Name)
+		}
+	}
+	if _, ok := RegisteredTasks[wantRejected[0].Replacement]; !ok {
+		t.Errorf("scheduler-k3s points at %q, which is not a registered task", wantRejected[0].Replacement)
+	}
+
+	// A table with nothing to refuse omits the key rather than publishing an
+	// empty list, the same way Dynamic does.
+	if len(apps.Rejected) != 0 {
+		t.Errorf("apps has rejected families %+v; want none", apps.Rejected)
 	}
 
 	// A free-form property field is not a property table, and must not be

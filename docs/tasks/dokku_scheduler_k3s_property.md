@@ -47,6 +47,8 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `shm-size` | app, global | `shm-size` | `global-shm-size` |
 | `token` (sensitive) | global |  | `global-token` |
 
+Names starting with `chart.` are rejected here - they are managed by `dokku_scheduler_k3s_chart`, since the scheduler-k3s:set path for chart values is deprecated in dokku.
+
 ## Examples
 
 ### Setting the deploy timeout for an app

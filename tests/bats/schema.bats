@@ -95,6 +95,36 @@ setup() {
     fail "traefik does not publish its dns-provider- family as sensitive"
 }
 
+@test "docket schema publishes property name families a task refuses (#458)" {
+  run "$(docket_bin)" schema
+  assert_success
+
+  # chart.* is absent from scheduler-k3s's properties for a different reason
+  # than a typo is. Publishing the replacement lets a consumer validating
+  # offline answer the way docket does, instead of reporting an unknown name.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_scheduler_k3s_property") | .property_schema.rejected[]
+           | select(.prefix == "chart.")
+           | .replacement == "dokku_scheduler_k3s_chart" and (.reason | length) > 0' >/dev/null ||
+    fail "scheduler-k3s does not publish its rejected chart. family"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_scheduler_k3s_property") | .property_schema.properties
+           | map(select(.name | startswith("chart."))) | length == 0' >/dev/null ||
+    fail "scheduler-k3s publishes a chart. property as supported and rejected at once"
+
+  # The replacement always names a task the same catalog describes.
+  echo "$output" |
+    jq -e '[.tasks[].type] as $types
+           | [.tasks[] | select(has("property_schema")) | .property_schema.rejected // []
+              | .[].replacement] | all(. as $r | $types | index($r) != null)' >/dev/null ||
+    fail "a rejected family points at a task the catalog does not describe"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_apps_property") | .property_schema | has("rejected") | not' >/dev/null ||
+    fail "a table with nothing to refuse should omit the rejected key"
+}
+
 @test "docket schema omits a property schema when the names are not enumerable" {
   run "$(docket_bin)" schema
   assert_success

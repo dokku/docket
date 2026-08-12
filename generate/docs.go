@@ -149,6 +149,11 @@ func propertiesSection(schema *tasks.PropertySchema) string {
 		}
 		b.WriteString("\n")
 	}
+
+	for _, family := range schema.Rejected {
+		b.WriteString(fmt.Sprintf("\nNames starting with `%s` are rejected here - they are managed by `%s`, since %s.\n",
+			family.Prefix, family.Replacement, family.Reason))
+	}
 	return b.String()
 }
 

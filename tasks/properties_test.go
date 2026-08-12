@@ -700,6 +700,111 @@ func TestValidateProperty(t *testing.T) {
 	}
 }
 
+// rejectedFamilyTable is a synthetic table that refuses one family, so the
+// shared behaviour can be driven without leaning on scheduler-k3s's real one.
+func rejectedFamilyTable() propertyTableTask {
+	return propertyTableTask{table: PropertyTable{
+		Subcommand: "test:set",
+		Rejected: []RejectedPropertyFamily{
+			{Prefix: "chart.", Replacement: "dokku_other_task", Reason: "another task owns it"},
+		},
+		Keys: map[string]PropertyKeys{
+			"supported": {PerApp: "supported", Global: "global-supported"},
+		},
+	}}
+}
+
+func TestRejectedFamilyFor(t *testing.T) {
+	table := rejectedFamilyTable().table
+	cases := []struct {
+		property string
+		want     bool
+	}{
+		{"chart.traefik.replicas", true},
+		{"chart.", true},
+		{"chartreuse", false},
+		{"supported", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.property, func(t *testing.T) {
+			family, ok := table.rejectedFamilyFor(tc.property)
+			if ok != tc.want {
+				t.Fatalf("rejectedFamilyFor(%q) = %v; want %v", tc.property, ok, tc.want)
+			}
+			if ok && family.Replacement != "dokku_other_task" {
+				t.Errorf("rejectedFamilyFor(%q) replacement = %q; want dokku_other_task", tc.property, family.Replacement)
+			}
+		})
+	}
+}
+
+// TestValidatePropertyInputRejectedFamily pins the ordering inside
+// validatePropertyInput. The rejected family is checked before scoping and
+// before the key map, so a member is always answered with the task that owns
+// it - never with the supported-name list, and never with a scoping error the
+// user would fix only to hit the refusal anyway (#458).
+func TestValidatePropertyInputRejectedFamily(t *testing.T) {
+	task := rejectedFamilyTable()
+	cases := []struct {
+		name     string
+		app      string
+		global   bool
+		property string
+		value    string
+		state    State
+		wantErr  string
+	}{
+		{"member rejected", "some-app", false, "chart.traefik.replicas", "3", StatePresent, "chart.* properties are managed by dokku_other_task; another task owns it"},
+		{"outranks missing app", "", false, "chart.traefik.replicas", "3", StatePresent, "managed by dokku_other_task"},
+		{"outranks app with global", "some-app", true, "chart.traefik.replicas", "3", StatePresent, "managed by dokku_other_task"},
+		{"outranks missing value", "some-app", false, "chart.traefik.replicas", "", StatePresent, "managed by dokku_other_task"},
+		{"near miss falls through", "some-app", false, "chartreuse", "3", StatePresent, "unsupported property"},
+		{"supported name unaffected", "some-app", false, "supported", "3", StatePresent, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validatePropertyInput(task, tc.state, tc.app, tc.global, tc.property, tc.value)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("got error %v; want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("got nil error; want substring %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("got error %q; want substring %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestRejectedPropertyFamiliesSorted checks the catalog projection: the
+// published order is by prefix regardless of declaration order, so two runs of
+// the same binary agree and a reordered declaration is not a wire change.
+func TestRejectedPropertyFamiliesSorted(t *testing.T) {
+	table := PropertyTable{
+		Subcommand: "test:set",
+		Rejected: []RejectedPropertyFamily{
+			{Prefix: "zeta.", Replacement: "dokku_zeta", Reason: "z"},
+			{Prefix: "alpha.", Replacement: "dokku_alpha", Reason: "a"},
+		},
+	}
+	got := RejectedPropertyFamilies(table)
+	want := []RejectedPropertySchema{
+		{Prefix: "alpha.", Replacement: "dokku_alpha", Reason: "a"},
+		{Prefix: "zeta.", Replacement: "dokku_zeta", Reason: "z"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("RejectedPropertyFamilies = %+v; want %+v", got, want)
+	}
+	if families := RejectedPropertyFamilies(PropertyTable{Subcommand: "test:set"}); families != nil {
+		t.Errorf("a table with no rejected families = %+v; want nil", families)
+	}
+}
+
 func TestValidatePropertyDynamic(t *testing.T) {
 	keys := map[string]PropertyKeys{
 		"email": {PerApp: "email", Global: "global-email"},
