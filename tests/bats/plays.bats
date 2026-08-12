@@ -242,6 +242,33 @@ EOF
   assert_output --partial "play when expression compile error"
 }
 
+@test "plays: play-level when: that errors fails --list-tasks" {
+  # The compile-error case above is caught by validate. This is the other
+  # half: a predicate that compiles and then errors at evaluation. A play
+  # when: is resolved against the same context plan uses, so --list-tasks
+  # reaches the same verdict plan does and exits non-zero rather than
+  # reporting a listing a run could never produce. The second play still
+  # lists - the failure is carried by the exit code, not by stopping the
+  # walk. Offline: --list-tasks never contacts a server.
+  write_tasks_file <<EOF
+---
+- name: broken
+  when: '[][0] == 1'
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+- name: fine
+  tasks:
+    - name: listed
+      dokku_app:
+        app: docket-test-noop-2
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "==> Play: broken  (when error:"
+  assert_output --partial "[0] listed"
+}
+
 @test "plays: unknown play-level key reported by validate" {
   write_tasks_file <<EOF
 ---

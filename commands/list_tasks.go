@@ -33,22 +33,37 @@ type listTasksOptions struct {
 // Predicates that reference `.registered.<name>` produce an [unknown]
 // marker since their truth value cannot be determined statically. All
 // other false predicates produce a [skipped] marker.
+//
+// A predicate that *errors* is treated differently depending on where it
+// sits. A play-level when: is evaluated against exactly the context the
+// apply / plan loops build for it, so an error here is the same error
+// they would hit: the listing still renders in full, and the exit code
+// is 1. A task-level when: sees a reduced context (no result, no
+// registered, no failed_task), so an error there may be an artifact of
+// listing offline rather than a broken predicate - it renders [when?]
+// and leaves the exit code alone. See evaluateListWhen.
 func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
+	// playWhenError records that at least one play predicate failed to
+	// evaluate. The walk is not short-circuited - every remaining play is
+	// still listed, and the failure is carried by the exit code once the
+	// listing is complete, matching the way the plan loop finishes before
+	// returning 1.
+	playWhenError := false
 	for _, play := range opts.plays {
 		if play.IsFileLevel() {
 			continue
 		}
-		playWhenSkipped := false
 		if play.HasWhen() {
 			playCtx := buildEnvelopeExprContext(buildPlayWhenContext(opts.context, opts.fileLevelKeys, opts.userSet))
 			ok, err := tasks.EvalBool(play.WhenProgram(), playCtx)
 			if err != nil {
+				playWhenError = true
 				if opts.jsonOut {
 					emitListJSON(ui, map[string]interface{}{
-						"type":      "play_skipped",
-						"play":      play.Name,
-						"when":      play.When,
-						"reason":    fmt.Sprintf("when error: %v", err),
+						"type":   "play_skipped",
+						"play":   play.Name,
+						"when":   play.When,
+						"reason": fmt.Sprintf("when error: %v", err),
 					})
 				} else {
 					ui.Output(fmt.Sprintf("==> Play: %s  (when error: %v)", play.Name, err))
@@ -56,7 +71,6 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 				continue
 			}
 			if !ok {
-				playWhenSkipped = true
 				if opts.jsonOut {
 					emitListJSON(ui, map[string]interface{}{
 						"type":   "play_skipped",
@@ -70,7 +84,6 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 				continue
 			}
 		}
-		_ = playWhenSkipped
 
 		if !opts.jsonOut {
 			ui.Output(fmt.Sprintf("==> Play: %s", play.Name))
@@ -83,6 +96,9 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 			renderListEnvelope(ui, play.Name, play.Tasks.GetEnvelope(name), idx, "", 0, playExprCtx, opts.jsonOut)
 			idx++
 		}
+	}
+	if playWhenError {
+		return 1
 	}
 	return 0
 }
@@ -217,6 +233,12 @@ func renderListEnvelope(
 // predicate references `.registered.<name>` (we can't decide without
 // running prior tasks); "when_error" when the predicate compiles but
 // errors at evaluation time against the inputs context.
+//
+// "when_error" is a marker only - it does not fail the listing the way a
+// play-level when: error does. The context here is missing `result` and
+// `failed_task`, so a predicate that is valid at run time can error when
+// evaluated offline: a rescue child written the documented way,
+// `when: 'failed_task.Stderr contains "..."'`, is `nil.Stderr` here.
 func evaluateListWhen(env *tasks.TaskEnvelope, playExprCtx map[string]interface{}) string {
 	if !env.HasWhen() {
 		return ""

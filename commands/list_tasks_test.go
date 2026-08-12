@@ -377,6 +377,119 @@ func TestApplyStartAtTaskUnknownErrors(t *testing.T) {
 	}
 }
 
+// playWhenErrorTasks is the recipe the play-level when:-error tests
+// share: one play whose predicate errors, followed by one that lists
+// normally.
+//
+// `[][0] == 1` compiles and then errors at evaluation (index out of
+// range). That distinction is the whole point - a predicate that fails
+// to *compile* is rejected at load, long before renderListTasks runs,
+// and tests/bats/plays.bats already covers that through validate.
+const playWhenErrorTasks = `---
+- name: broken
+  when: '[][0] == 1'
+  tasks:
+    - name: never listed
+      dokku_stub: { key: a }
+
+- name: fine
+  tasks:
+    - name: listed
+      dokku_stub: { key: a }
+`
+
+// TestListTasksPlayWhenErrorExitsOne pins that a play whose when:
+// predicate errors fails the listing. A play-level when: is evaluated
+// against exactly the context the apply / plan loops build for it
+// (buildPlayWhenContext, called identically at commands/plan.go), so an
+// error here is the same error plan reports as fatal - reporting success
+// would let a --list-tasks CI gate pass a recipe that cannot run.
+//
+// The rest of the listing still renders: the walk is not short-circuited,
+// only the exit code carries the failure.
+func TestListTasksPlayWhenErrorExitsOne(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, playWhenErrorTasks)
+
+	stdout, stderr, exit := runApply(t, path, "--list-tasks")
+	if exit != 1 {
+		t.Fatalf("exit = %d, want 1; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "==> Play: broken  (when error:") {
+		t.Errorf("expected the broken play's header to name the evaluation error; got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "never listed") {
+		t.Errorf("the erroring play's tasks must not be listed; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "==> Play: fine") || !strings.Contains(stdout, "[0] listed") {
+		t.Errorf("a later play should still be listed after the error; got:\n%s", stdout)
+	}
+}
+
+// TestListTasksPlayWhenErrorJSONExitsOne is the same case under --json,
+// and pins the half that a wrapper sees: the exit code is 1 but stdout
+// still carries the complete stream. That is the exception to the
+// "non-zero exit means the failure detail is on stderr" rule in
+// docs/json-output.md, which holds only for load-time failures.
+//
+// It also exercises the `when error: <err>` form of play_skipped.reason.
+// The schema has always documented both forms; only `when: <src>` was
+// reachable from a test before this.
+func TestListTasksPlayWhenErrorJSONExitsOne(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, playWhenErrorTasks)
+
+	stdout, stderr, exit := runApply(t, path, "--list-tasks", "--json")
+	if exit != 1 {
+		t.Fatalf("exit = %d, want 1; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	assertLinesMatchSchema(t, listTasksSchemaPath, stdout)
+
+	if !strings.Contains(stdout, `"type":"play_skipped"`) {
+		t.Errorf("expected a play_skipped event; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, `"reason":"when error:`) {
+		t.Errorf("expected the play_skipped reason to carry the when error: form; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, `"name":"listed"`) {
+		t.Errorf("a non-zero exit must still emit the rest of the stream; got:\n%s", stdout)
+	}
+}
+
+// TestListTasksTaskWhenErrorDoesNotAffectExit pins the deliberate
+// asymmetry with the two tests above: a *task*-level when: that errors
+// renders [when?] and leaves the exit code at 0.
+//
+// The task context here is missing `result` and `failed_task`, so an
+// error can be an artifact of listing offline rather than a broken
+// predicate - a rescue child written the way docs/task-envelope.md
+// documents, `when: 'failed_task.Stderr contains "..."'`, evaluates
+// nil.Stderr and errors here while being valid at run time. #462 tracks
+// rendering that case as [unknown] instead; either way it must not fail
+// the listing.
+func TestListTasksTaskWhenErrorDoesNotAffectExit(t *testing.T) {
+	defer stubReset()
+	path := writeTasksFile(t, `---
+- tasks:
+    - name: broken predicate
+      when: '[][0] == 1'
+      dokku_stub: { key: a }
+    - name: plain
+      dokku_stub: { key: b }
+`)
+
+	stdout, stderr, exit := runApply(t, path, "--list-tasks")
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "[when?]   broken predicate") {
+		t.Errorf("expected the [when?] marker on the erroring task; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "plain") {
+		t.Errorf("the rest of the play should still be listed; got:\n%s", stdout)
+	}
+}
+
 // TestApplyStartAtTaskSkipsEarlier confirms the executor renders
 // [skipped] for tasks before the target and runs the matched task plus
 // successors. The stub fixtures track which tasks actually execute.

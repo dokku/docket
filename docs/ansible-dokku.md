@@ -152,7 +152,9 @@ docket's view of the result to evaluate.
 | `validate` | No problems | At least one problem, or the recipe could not be read | - |
 
 `--list-tasks` returns before any task runs, so it is unaffected by `--detailed-exitcode` and exits
-`0` or `1`.
+`0` or `1`. It exits `1` for a recipe it could not load, and for a play `when:` that fails to
+evaluate - that predicate is resolved against the same context a run uses, so the failure is one the
+run would hit too.
 
 ### Correlating tasks across runs
 
