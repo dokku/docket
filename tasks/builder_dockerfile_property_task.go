@@ -1,22 +1,7 @@
 package tasks
 
 // BuilderDockerfilePropertyTask manages the builder-dockerfile configuration for a given dokku application
-type BuilderDockerfilePropertyTask struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
-
-	// Global is a flag indicating if the builder-dockerfile configuration should be applied globally
-	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the builder-dockerfile configuration should be applied globally"`
-
-	// Property is the name of the builder-dockerfile property to set
-	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the builder-dockerfile property to set"`
-
-	// Value is the value to set for the builder-dockerfile property
-	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the builder-dockerfile property"`
-
-	// State is the desired state of the builder-dockerfile configuration
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the builder-dockerfile configuration"`
-}
+type BuilderDockerfilePropertyTask PropertyFields
 
 // BuilderDockerfilePropertyTaskExample contains an example of a BuilderDockerfilePropertyTask
 type BuilderDockerfilePropertyTaskExample struct {

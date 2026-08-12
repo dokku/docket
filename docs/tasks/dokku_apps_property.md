@@ -21,10 +21,10 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | no |  |  | Name of the app. Required if Global is false. |
-| `global` | bool | no |  |  | Flag indicating if the apps property should be applied globally |
-| `property` | string | yes |  |  | Name of the apps property to set |
-| `value` | string | no |  |  | Value to set for the apps property |
-| `state` | string | no | present | present, absent | Desired state of the apps configuration |
+| `global` | bool | no |  |  | Flag indicating if the property should be applied globally |
+| `property` | string | yes |  |  | Name of the property to set |
+| `value` | string | no |  |  | Value to set for the property |
+| `state` | string | no | present | present, absent | Desired state of the property |
 
 ## Properties
 

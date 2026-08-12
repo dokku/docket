@@ -108,6 +108,120 @@ func TestPropertyTableGlobalKeysRequireAGlobalField(t *testing.T) {
 	}
 }
 
+// propertyTasksWithOwnFields names the property tasks that declare their own
+// field set instead of PropertyFields, with the reason. Being on this list is a
+// statement that the task addresses its resource differently, not that it was
+// missed when the shared type was extracted (#454).
+var propertyTasksWithOwnFields = map[string]string{
+	"dokku_scheduler_docker_local_property": "the scheduler-docker-local properties are per-app only, so `app` is required and there is no `global` field",
+	"dokku_service_property":                "a service property is keyed by `service` plus `name` rather than by an app-or-global scope",
+}
+
+// TestPropertyTasksDeclareTheSharedFields asserts that every property task
+// whose recipe shape is the app-or-global one declares it by reusing
+// PropertyFields (or SensitivePropertyFields) rather than restating the five
+// fields.
+//
+// This is the invariant #454 is about. Twenty-seven tasks carried a
+// byte-identical field set with nothing binding the copies together, so a
+// cross-cutting change - #427's identity tags - had to be applied twenty-seven
+// times by hand, and a copy that was missed would have failed nothing. The
+// comparison is field-by-field including the full struct tag: reflect's
+// ConvertibleTo is no use here because Go conversion between struct types
+// ignores tag differences, which is exactly the difference that matters.
+func TestPropertyTasksDeclareTheSharedFields(t *testing.T) {
+	shared := map[string]reflect.Type{
+		"PropertyFields":          reflect.TypeOf(PropertyFields{}),
+		"SensitivePropertyFields": reflect.TypeOf(SensitivePropertyFields{}),
+	}
+
+	for name, task := range RegisteredTasks {
+		if !strings.HasSuffix(name, "_property") {
+			continue
+		}
+		rt := taskStructType(task)
+		reason, exempt := propertyTasksWithOwnFields[name]
+
+		var matched string
+		for base, bt := range shared {
+			if sameStructShape(rt, bt) {
+				matched = base
+				break
+			}
+		}
+
+		switch {
+		case matched != "" && exempt:
+			t.Errorf("task %q has the %s shape but is listed as exempt (%q); drop it from propertyTasksWithOwnFields", name, matched, reason)
+		case matched == "" && !exempt:
+			t.Errorf("task %q restates the property field set; declare it as `type %s PropertyFields` (or SensitivePropertyFields), or explain the difference in propertyTasksWithOwnFields", name, rt.Name())
+		}
+	}
+
+	for name := range propertyTasksWithOwnFields {
+		if _, ok := RegisteredTasks[name]; !ok {
+			t.Errorf("propertyTasksWithOwnFields names %q, which is not a registered task", name)
+		}
+	}
+}
+
+// TestSensitivePropertyFieldsMatchesPropertyFields asserts the two shared field
+// sets differ only in that SensitivePropertyFields masks its value. They cannot
+// be one type - a defined type carries the tags of exactly one struct - so this
+// is what keeps the duplicate honest: a field added to one has to be added to
+// the other, which is the twenty-seven-copies problem in miniature.
+func TestSensitivePropertyFieldsMatchesPropertyFields(t *testing.T) {
+	plain := reflect.TypeOf(PropertyFields{})
+	sensitive := reflect.TypeOf(SensitivePropertyFields{})
+
+	if plain.NumField() != sensitive.NumField() {
+		t.Fatalf("PropertyFields has %d fields; SensitivePropertyFields has %d", plain.NumField(), sensitive.NumField())
+	}
+
+	const sensitiveTag = `sensitive:"true"`
+	for i := 0; i < plain.NumField(); i++ {
+		want, got := plain.Field(i), sensitive.Field(i)
+		if want.Name != got.Name || want.Type != got.Type {
+			t.Errorf("field %d: PropertyFields has %s %s; SensitivePropertyFields has %s %s", i, want.Name, want.Type, got.Name, got.Type)
+			continue
+		}
+
+		wantTag, gotTag := string(want.Tag), string(got.Tag)
+		if want.Name == "Value" {
+			if !strings.Contains(gotTag, sensitiveTag) {
+				t.Errorf("SensitivePropertyFields.Value is not tagged %s, so it masks nothing", sensitiveTag)
+			}
+			if strings.Contains(wantTag, sensitiveTag) {
+				t.Errorf("PropertyFields.Value is tagged %s, so the two types no longer differ", sensitiveTag)
+			}
+			gotTag = strings.Replace(gotTag, sensitiveTag+" ", "", 1)
+		}
+		if gotTag != wantTag {
+			t.Errorf("SensitivePropertyFields.%s is tagged %q; want %q once %s is removed", got.Name, got.Tag, wantTag, sensitiveTag)
+		}
+	}
+}
+
+// sameStructShape reports whether two struct types declare the same fields in
+// the same order with the same tags. Tags are compared because they are the
+// whole contract here: `required`, `identity`, `yaml`, `default` and
+// `description` are what the catalog, the validator and the identity walk read.
+func sameStructShape(a, b reflect.Type) bool {
+	if a == nil || b == nil || a.Kind() != reflect.Struct || b.Kind() != reflect.Struct {
+		return false
+	}
+	if a.NumField() != b.NumField() {
+		return false
+	}
+	for i := 0; i < a.NumField(); i++ {
+		x, y := a.Field(i), b.Field(i)
+		if x.Name != y.Name || x.Type != y.Type || x.Tag != y.Tag {
+			return false
+		}
+	}
+	return true
+}
+
 // hasGlobalField reports whether a task accepts `global:` in a recipe.
 func hasGlobalField(task Task) bool {
 	rt := taskStructType(task)

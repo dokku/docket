@@ -139,6 +139,69 @@ func pluginFromSubcommand(subcommand string) string {
 	return strings.SplitN(subcommand, ":", 2)[0]
 }
 
+// PropertyFields is the recipe shape every app-or-global property task shares:
+// the scope (`app` or `global`), the property being managed, its value, and
+// whether it should be present or absent. A property task declares
+// `type XPropertyTask PropertyFields` rather than restating the five fields, so
+// a cross-cutting field change - the identity tags of #427, say - lands in one
+// place instead of twenty-seven.
+//
+// A defined type rather than an embedded struct because the field set stays
+// flat to reflection: the catalog, the required-field walk behind
+// missing_required_field, the identity walk that names an unnamed task, and the
+// sensitive-value walks all read a task's fields at the top level, and an
+// embedded field set would empty every one of them out.
+//
+// The descriptions are deliberately plugin-agnostic. A task's page already
+// names its plugin in the title, the synopsis and the Properties table, so
+// repeating it in every parameter row bought nothing and cost twenty-seven
+// copies of the field set. See TestPropertyTasksDeclareTheSharedFields for the
+// tasks whose shape genuinely differs.
+type PropertyFields struct {
+	// App is the name of the app. Required if Global is false.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+
+	// Global is a flag indicating if the property should be applied globally
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the property should be applied globally"`
+
+	// Property is the name of the property to set
+	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the property to set"`
+
+	// Value is the value to set for the property
+	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the property"`
+
+	// State is the desired state of the property
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the property"`
+}
+
+// SensitivePropertyFields is PropertyFields with a masked Value, for a plugin
+// whose property values can carry credentials. Every value is masked, benign
+// ones included, which is preferable to leaking a secret because the per-property
+// judgement was wrong.
+//
+// The tag drives output masking only - export decides what to lift into a vars
+// file from the property's PropertyKeys entry, so a benign value stays readable
+// in the exported recipe (#451). It is a separate type rather than a tag
+// override because a defined type carries the tags of exactly one struct;
+// TestSensitivePropertyFieldsMatchesPropertyFields fails if the two drift apart
+// in anything but that one tag.
+type SensitivePropertyFields struct {
+	// App is the name of the app. Required if Global is false.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+
+	// Global is a flag indicating if the property should be applied globally
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the property should be applied globally"`
+
+	// Property is the name of the property to set
+	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the property to set"`
+
+	// Value is the value to set for the property
+	Value string `required:"false" sensitive:"true" yaml:"value,omitempty" description:"Value to set for the property"`
+
+	// State is the desired state of the property
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the property"`
+}
+
 // errUnknownProperty is returned by getProperty when the JSON :report payload
 // has no entry for the key the task asked us to look up.
 type errUnknownProperty struct {

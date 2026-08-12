@@ -62,6 +62,38 @@ setup() {
   echo "$output" |
     jq -e '.tasks[] | select(.type == "dokku_git_from_image") | .fields[] | select(.name == "image") | .sensitive == true' >/dev/null ||
     fail "dokku_git_from_image image is not marked sensitive"
+
+  # letsencrypt is the one property task declared over SensitivePropertyFields
+  # rather than PropertyFields, and the whole difference between the two types
+  # is this flag.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_letsencrypt_property") | .fields[] | select(.name == "value") | .sensitive == true' >/dev/null ||
+    fail "dokku_letsencrypt_property value is not marked sensitive"
+}
+
+@test "docket schema publishes the whole shape of a property task (#454)" {
+  run "$(docket_bin)" schema
+  assert_success
+
+  # The property tasks declare their fields once, as `type XPropertyTask
+  # PropertyFields`. A recipe key that went missing from the published contract
+  # would be invisible in the Go tests that read the same struct, so assert the
+  # five keys and their tags from the outside.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_builds_property")
+           | [.fields[].name] == ["app", "global", "property", "value", "state"]' >/dev/null ||
+    fail "dokku_builds_property does not publish all five recipe keys in order"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_builds_property")
+           | ([.fields[] | select(.identity == "key") | .name] == ["app", "global", "property"])
+             and ([.fields[] | select(.required) | .name] == ["property"])' >/dev/null ||
+    fail "dokku_builds_property does not key on app, global and property"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_builds_property") | .fields[] | select(.name == "state")
+           | .default == "present" and .choices == ["present", "absent"]' >/dev/null ||
+    fail "dokku_builds_property state lost its default or its choices"
 }
 
 @test "docket schema publishes a property task's supported property names" {
