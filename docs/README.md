@@ -22,3 +22,7 @@ Complete documentation for docket, a declarative way to pre-package and ship app
 - [Wrapping docket from ansible-dokku](ansible-dokku.md) -- the contract for driving docket from another tool
 - [Writing tasks](writing-tasks.md) -- contribute a new task type
 - [Roadmap](roadmap.md) -- ideas for where docket could go next
+
+## Comparisons
+
+- [Comparisons](comparisons/README.md) -- how docket's plan/apply and idempotency compare to Terraform/OpenTofu, Ansible, Kubernetes, and other tools
