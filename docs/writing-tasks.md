@@ -231,14 +231,12 @@ global scope. An empty string for a scope means the property is not supported th
 `planProperty` rejects that scope at plan time. `present` sets the property and requires a `value`;
 `absent` clears it and must not have one - the helper enforces both.
 
+The five recipe keys a property task accepts - `app`, `global`, `property`, `value`, `state` - are
+declared once, in `PropertyFields`. Do not restate them: name your task as a defined type over it,
+so a cross-cutting field change lands in one place rather than in every property task.
+
 ```go
-type NginxPropertyTask struct {
-  App      string `required:"false" identity:"key" yaml:"app"`
-  Global   bool   `required:"false" identity:"key" yaml:"global,omitempty"`
-  Property string `required:"true" identity:"key" yaml:"property"`
-  Value    string `required:"false" yaml:"value,omitempty"`
-  State    State  `required:"true" yaml:"state,omitempty" default:"present" options:"present,absent"`
-}
+type NginxPropertyTask PropertyFields
 
 // Maps each property to the report JSON keys per scope. "" means unsupported.
 var nginxPropertyTable = PropertyTable{
@@ -272,6 +270,19 @@ the task's reference page and the `property_schema` key in
 [`docket schema`](task-catalog.md#property-tasks). The property exporters take the task the same
 way, and `TestEveryPropertyTaskDeclaresPropertyTable` fails the build for a `*_property` task that
 declares no table and is not explicitly exempt.
+
+Use `SensitivePropertyFields` instead when the plugin's property values can be credentials, as
+letsencrypt's `dns-provider-*` ones are. It is `PropertyFields` with `value` tagged
+`sensitive:"true"`, which masks every value the task echoes, benign ones included - preferable to
+leaking a secret because the per-property judgement was wrong. Masking and export are separate
+questions: export decides what to lift into a vars file from the property's `PropertyKeys` entry, so
+a benign value stays readable in an exported recipe.
+
+A property task addressed differently declares its own fields and goes on the
+`propertyTasksWithOwnFields` allowlist with the reason, the way `dokku_scheduler_docker_local_property`
+(per-app only, so `app` is required and there is no `global`) and `dokku_service_property` (keyed by
+`service` plus `name`) do. `TestPropertyTasksDeclareTheSharedFields` fails the build for a
+`*_property` task that restates the shared field set without being on it.
 
 Keep the table in sync with the plugin's `:report` output - that mapping is how `plan` and `apply`
 detect drift without mutating. Some plugins take a dynamic family of properties whose names cannot

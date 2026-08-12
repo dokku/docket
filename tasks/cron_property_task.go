@@ -1,22 +1,7 @@
 package tasks
 
 // CronPropertyTask manages the cron configuration for a given dokku application
-type CronPropertyTask struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
-
-	// Global is a flag indicating if the cron configuration should be applied globally
-	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the cron configuration should be applied globally"`
-
-	// Property is the name of the cron property to set
-	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the cron property to set"`
-
-	// Value is the value to set for the cron property
-	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the cron property"`
-
-	// State is the desired state of the cron configuration
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the cron configuration"`
-}
+type CronPropertyTask PropertyFields
 
 // CronPropertyTaskExample contains an example of a CronPropertyTask
 type CronPropertyTaskExample struct {

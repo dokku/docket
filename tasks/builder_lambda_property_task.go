@@ -1,22 +1,7 @@
 package tasks
 
 // BuilderLambdaPropertyTask manages the builder-lambda configuration for a given dokku application
-type BuilderLambdaPropertyTask struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
-
-	// Global is a flag indicating if the builder-lambda configuration should be applied globally
-	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the builder-lambda configuration should be applied globally"`
-
-	// Property is the name of the builder-lambda property to set
-	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the builder-lambda property to set"`
-
-	// Value is the value to set for the builder-lambda property
-	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the builder-lambda property"`
-
-	// State is the desired state of the builder-lambda configuration
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the builder-lambda configuration"`
-}
+type BuilderLambdaPropertyTask PropertyFields
 
 // BuilderLambdaPropertyTaskExample contains an example of a BuilderLambdaPropertyTask
 type BuilderLambdaPropertyTaskExample struct {
