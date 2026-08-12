@@ -82,38 +82,46 @@ func (t CaddyPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// caddyPropertyKeys maps caddy property names to the JSON keys emitted by
+// caddyPropertyTable maps caddy property names to the JSON keys emitted by
 // `dokku caddy:report --format json` on dokku 0.38.8+. All except
 // tls-internal are global-only.
-var caddyPropertyKeys = map[string]PropertyKeys{
-	"image":              {PerApp: "", Global: "global-image"},
-	"letsencrypt-email":  {PerApp: "", Global: "global-letsencrypt-email"},
-	"letsencrypt-server": {PerApp: "", Global: "global-letsencrypt-server"},
-	"log-level":          {PerApp: "", Global: "global-log-level"},
-	"polling-interval":   {PerApp: "", Global: "global-polling-interval"},
-	"tls-internal":       {PerApp: "tls-internal", Global: "global-tls-internal"},
+var caddyPropertyTable = PropertyTable{
+	Subcommand: "caddy:set",
+	Keys: map[string]PropertyKeys{
+		"image":              {PerApp: "", Global: "global-image"},
+		"letsencrypt-email":  {PerApp: "", Global: "global-letsencrypt-email"},
+		"letsencrypt-server": {PerApp: "", Global: "global-letsencrypt-server"},
+		"log-level":          {PerApp: "", Global: "global-log-level"},
+		"polling-interval":   {PerApp: "", Global: "global-polling-interval"},
+		"tls-internal":       {PerApp: "tls-internal", Global: "global-tls-internal"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t CaddyPropertyTask) PropertyTable() PropertyTable {
+	return caddyPropertyTable
 }
 
 // Validate checks the CaddyPropertyTask's inputs without contacting the server.
 func (t CaddyPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set", caddyPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the CaddyPropertyTask would produce.
 func (t CaddyPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "caddy:set", caddyPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t CaddyPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "caddy:set", caddyPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return CaddyPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t CaddyPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("caddy:set", caddyPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return CaddyPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

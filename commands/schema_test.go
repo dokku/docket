@@ -27,6 +27,10 @@ const (
 	eventsSchemaPath    = "../docs/schemas/events-v1.schema.json"
 	listTasksSchemaPath = "../docs/schemas/list-tasks-v1.schema.json"
 	validateSchemaPath  = "../docs/schemas/validate-v1.schema.json"
+
+	// taskCatalogSchemaPath describes one whole document rather than one
+	// line, since `docket schema` emits a single JSON object.
+	taskCatalogSchemaPath = "../docs/schemas/task-catalog-v1.schema.json"
 )
 
 var (

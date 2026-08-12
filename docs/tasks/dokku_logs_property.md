@@ -26,6 +26,18 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the logs property |
 | `state` | string | no | present | present, absent | Desired state of the logs configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku logs:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `app-label-alias` | app, global | `app-label-alias` | `global-app-label-alias` |
+| `max-size` | app, global | `max-size` | `global-max-size` |
+| `vector-image` | global |  | `global-vector-image` |
+| `vector-networks` | global |  | `global-vector-networks` |
+| `vector-sink` | app, global | `vector-sink` | `global-vector-sink` |
+
 ## Examples
 
 ### Setting the max-size value for an app

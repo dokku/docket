@@ -26,6 +26,14 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the builder-pack property |
 | `state` | string | no | present | present, absent | Desired state of the builder-pack configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku builder-pack:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `projecttoml-path` | app, global | `projecttoml-path` | `global-projecttoml-path` |
+
 ## Examples
 
 ### Setting the project.toml path for an app

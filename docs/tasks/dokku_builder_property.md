@@ -26,6 +26,16 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the builder property |
 | `state` | string | no | present | present, absent | Desired state of the builder configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku builder:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `build-dir` | app, global | `build-dir` | `global-build-dir` |
+| `selected` | app, global | `selected` | `global-selected` |
+| `skip-cleanup` | app, global | `skip-cleanup` | `global-skip-cleanup` |
+
 ## Examples
 
 ### Overriding the auto-selected builder

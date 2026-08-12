@@ -26,6 +26,14 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the checks property |
 | `state` | string | no | present | present, absent | Desired state of the checks configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku checks:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `wait-to-retire` | app, global | `wait-to-retire` | `global-wait-to-retire` |
+
 ## Examples
 
 ### Setting the wait-to-retire value for an app

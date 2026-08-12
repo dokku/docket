@@ -95,35 +95,47 @@ func (t SchedulerK3sPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// schedulerK3sPropertyKeys maps scheduler-k3s property names to the JSON
+// schedulerK3sPropertyTable maps scheduler-k3s property names to the JSON
 // keys emitted by `dokku scheduler-k3s:report --format json` on dokku
 // 0.38.8+. The `chart.*.*` family is intentionally absent: chart value
 // overrides are managed by dokku_scheduler_k3s_chart through dokku's
 // dedicated scheduler-k3s:charts:set surface, and Plan() rejects any
 // chart.* property before reaching this map.
-var schedulerK3sPropertyKeys = map[string]PropertyKeys{
-	"deploy-timeout":         {PerApp: "deploy-timeout", Global: "global-deploy-timeout"},
-	"image-pull-secrets":     {PerApp: "image-pull-secrets", Global: "global-image-pull-secrets"},
-	"ingress-class":          {PerApp: "", Global: "global-ingress-class"},
-	"kube-context":           {PerApp: "", Global: "global-kube-context"},
-	"kubeconfig-path":        {PerApp: "", Global: "global-kubeconfig-path"},
-	"kustomize-root-path":    {PerApp: "kustomize-root-path", Global: "global-kustomize-root-path"},
-	"letsencrypt-email-prod": {PerApp: "", Global: "global-letsencrypt-email-prod"},
-	"letsencrypt-email-stag": {PerApp: "", Global: "global-letsencrypt-email-stag"},
-	"letsencrypt-server":     {PerApp: "letsencrypt-server", Global: "global-letsencrypt-server"},
-	"namespace":              {PerApp: "namespace", Global: "global-namespace"},
-	"network-interface":      {PerApp: "", Global: "global-network-interface"},
-	"rollback-on-failure":    {PerApp: "rollback-on-failure", Global: "global-rollback-on-failure"},
-	"shm-size":               {PerApp: "shm-size", Global: "global-shm-size"},
-	"token":                  {PerApp: "", Global: "global-token", Sensitive: true},
+var schedulerK3sPropertyTable = PropertyTable{
+	Subcommand: "scheduler-k3s:set",
+	Keys: map[string]PropertyKeys{
+		"deploy-timeout":         {PerApp: "deploy-timeout", Global: "global-deploy-timeout"},
+		"image-pull-secrets":     {PerApp: "image-pull-secrets", Global: "global-image-pull-secrets"},
+		"ingress-class":          {PerApp: "", Global: "global-ingress-class"},
+		"kube-context":           {PerApp: "", Global: "global-kube-context"},
+		"kubeconfig-path":        {PerApp: "", Global: "global-kubeconfig-path"},
+		"kustomize-root-path":    {PerApp: "kustomize-root-path", Global: "global-kustomize-root-path"},
+		"letsencrypt-email-prod": {PerApp: "", Global: "global-letsencrypt-email-prod"},
+		"letsencrypt-email-stag": {PerApp: "", Global: "global-letsencrypt-email-stag"},
+		"letsencrypt-server":     {PerApp: "letsencrypt-server", Global: "global-letsencrypt-server"},
+		"namespace":              {PerApp: "namespace", Global: "global-namespace"},
+		"network-interface":      {PerApp: "", Global: "global-network-interface"},
+		"rollback-on-failure":    {PerApp: "rollback-on-failure", Global: "global-rollback-on-failure"},
+		"shm-size":               {PerApp: "shm-size", Global: "global-shm-size"},
+		"token":                  {PerApp: "", Global: "global-token", Sensitive: true},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t SchedulerK3sPropertyTask) PropertyTable() PropertyTable {
+	return schedulerK3sPropertyTable
 }
 
 // Validate checks the SchedulerK3sPropertyTask's inputs without contacting the server.
 func (t SchedulerK3sPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "scheduler-k3s:set", schedulerK3sPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the SchedulerK3sPropertyTask would produce.
+//
+// The chart.* guard lives here rather than in Validate(), so `docket validate`
+// rejects the same recipe for the generic "unsupported property" reason
+// instead of naming the replacement task (#458).
 func (t SchedulerK3sPropertyTask) Plan() PlanResult {
 	if strings.HasPrefix(t.Property, "chart.") {
 		return PlanResult{
@@ -131,19 +143,19 @@ func (t SchedulerK3sPropertyTask) Plan() PlanResult {
 			Error:  fmt.Errorf("chart.* properties are managed by dokku_scheduler_k3s_chart; the scheduler-k3s:set path for chart values is deprecated in dokku"),
 		}
 	}
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "scheduler-k3s:set", schedulerK3sPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t SchedulerK3sPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "scheduler-k3s:set", schedulerK3sPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return SchedulerK3sPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t SchedulerK3sPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("scheduler-k3s:set", schedulerK3sPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return SchedulerK3sPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

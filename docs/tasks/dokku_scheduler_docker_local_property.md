@@ -25,6 +25,15 @@ Keyed by `app` and `property`. Fields left empty are omitted from the address.
 | `value` | string | no |  |  | Value to set for the scheduler-docker-local property |
 | `state` | string | no | present | present, absent | Desired state of the scheduler-docker-local configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku scheduler-docker-local:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `init-process` | app | `init-process` |  |
+| `parallel-schedule-count` | app | `parallel-schedule-count` |  |
+
 ## Examples
 
 ### Enabling the init process for an app

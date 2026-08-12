@@ -26,6 +26,14 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the builder-railpack property |
 | `state` | string | no | present | present, absent | Desired state of the builder-railpack configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku builder-railpack:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `railpackjson-path` | app, global | `railpackjson-path` | `global-railpackjson-path` |
+
 ## Examples
 
 ### Setting the railpack.json path for an app

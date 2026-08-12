@@ -82,32 +82,40 @@ func (t ChecksPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// checksPropertyKeys maps checks property names to the JSON keys emitted by
+// checksPropertyTable maps checks property names to the JSON keys emitted by
 // `dokku checks:report --format json` on dokku 0.38.8+.
-var checksPropertyKeys = map[string]PropertyKeys{
-	"wait-to-retire": {PerApp: "wait-to-retire", Global: "global-wait-to-retire"},
+var checksPropertyTable = PropertyTable{
+	Subcommand: "checks:set",
+	Keys: map[string]PropertyKeys{
+		"wait-to-retire": {PerApp: "wait-to-retire", Global: "global-wait-to-retire"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t ChecksPropertyTask) PropertyTable() PropertyTable {
+	return checksPropertyTable
 }
 
 // Validate checks the ChecksPropertyTask's inputs without contacting the server.
 func (t ChecksPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "checks:set", checksPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the ChecksPropertyTask would produce.
 func (t ChecksPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "checks:set", checksPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t ChecksPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "checks:set", checksPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return ChecksPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t ChecksPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("checks:set", checksPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return ChecksPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

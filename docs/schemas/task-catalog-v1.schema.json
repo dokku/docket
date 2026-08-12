@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/dokku/docket/main/docs/schemas/task-catalog-v1.schema.json",
+  "title": "docket task catalog",
+  "description": "The document `docket schema` emits: a machine-readable description of every task type docket registers. Unlike the other schemas in this directory, which each describe one line of a JSON-lines stream, this describes one whole document - validate it as a unit. See docs/task-catalog.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "tasks"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "The catalog wire format. Independent of the --json event stream's version; branch on it so a future schema change does not silently break a consumer."
+    },
+    "tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/task" },
+      "description": "Every registered task type, sorted by `type`."
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "synopsis", "export", "probe", "identity", "fields"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "The registry key - the name a recipe uses to invoke the task, such as `dokku_apps_property`."
+        },
+        "synopsis": {
+          "type": "string",
+          "description": "One-line description of what the task manages."
+        },
+        "deprecation": {
+          "type": "string",
+          "description": "The deprecation notice. Present only on a deprecated task; it names the replacement."
+        },
+        "requirements": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-core dokku plugins the task needs. Absent when it needs nothing beyond dokku core."
+        },
+        "export": {
+          "$ref": "#/$defs/support",
+          "description": "Whether `docket export` can reconstruct the task from a live server."
+        },
+        "probe": {
+          "$ref": "#/$defs/support",
+          "description": "How much of its own state the task can read back. `unsupported` means it reports drift on every run and never converges."
+        },
+        "identity": { "$ref": "#/$defs/identity" },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/field" },
+          "description": "The recipe keys the task accepts, in declaration order."
+        },
+        "property_schema": {
+          "$ref": "#/$defs/property_schema",
+          "description": "Present only for a task that manages an enumerable dokku property table. Its absence on a task that has a `property` field means the legal names are not enumerable from docket, not that there are none."
+        },
+        "examples": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/example" },
+          "description": "The task's documented examples, the same ones its reference page publishes."
+        }
+      }
+    },
+
+    "support": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["supported", "partial", "unsupported"] },
+        "caveat": {
+          "type": "string",
+          "description": "Human-readable note explaining anything short of supported."
+        }
+      }
+    },
+
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keys"],
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The recipe keys that decide which resource the task manages, in the order a resource address renders them. A key holding its zero value is omitted from the address. Equal to the fields carrying `\"identity\": \"key\"`, in declaration order."
+        },
+        "collections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/identity_collection" },
+          "description": "The collection fields the task manages wholesale."
+        }
+      }
+    },
+
+    "identity_collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "item"],
+      "properties": {
+        "name": { "type": "string", "description": "The collection's recipe key." },
+        "item": {
+          "enum": ["value", "map_key", "fields"],
+          "description": "What identifies one entry: the element value, the map key, or the element struct's own identity keys."
+        },
+        "item_keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The element's own identity key names. Present only when `item` is `fields`."
+        }
+      }
+    },
+
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "required"],
+      "properties": {
+        "name": { "type": "string", "description": "The recipe key." },
+        "type": {
+          "enum": ["string", "bool", "int", "float", "list", "dict", "any"],
+          "description": "The doc-facing type. A named string type such as a state enum is `string`; an optional pointer field is its element type."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether a recipe must supply the field. A field carrying a `default` is never required, because the default is filled in before the missing-field check runs."
+        },
+        "default": {
+          "type": "string",
+          "description": "The literal default, to be read according to `type`. On a pointer field it documents what the task coerces an omitted key to, not a value written into the recipe."
+        },
+        "choices": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "The permitted values. Absent when the field is not an enum."
+        },
+        "description": { "type": "string" },
+        "sensitive": {
+          "const": true,
+          "description": "The value is a secret. A consumer that echoes a recipe must mask it."
+        },
+        "identity": {
+          "enum": ["key", "collection"],
+          "description": "`key` selects which resource the task manages; `collection` is a set of items the task manages wholesale. Absent on a field that is neither."
+        },
+        "item": {
+          "$ref": "#/$defs/item",
+          "description": "The element shape of a list or dict. Absent on a scalar."
+        }
+      }
+    },
+
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "key_type": {
+          "enum": ["string"],
+          "description": "The map key's type. Present only on a dict."
+        },
+        "type": {
+          "enum": ["string", "bool", "int", "float", "list", "dict", "any", "object"],
+          "description": "The element's type. `object` means the element is a structured entry whose shape is spelled out in `fields`; `any` means the element is untyped."
+        },
+        "identity": {
+          "enum": ["value", "map_key", "fields"],
+          "description": "What identifies one entry. Present only on a field tagged as a collection - an untagged list is an attribute of the resource rather than the set of items the task manages."
+        },
+        "keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The element's own identity key names. Present only when `identity` is `fields`."
+        },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/field" },
+          "description": "The element's own fields, in declaration order. Present only when `type` is `object`. An element declares the same tags a task does, which is where a consumer learns that a nested value is a secret."
+        }
+      }
+    },
+
+    "property_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugin", "subcommand", "field", "properties"],
+      "properties": {
+        "plugin": { "type": "string", "description": "The dokku plugin, e.g. `apps`." },
+        "subcommand": {
+          "type": "string",
+          "description": "The dokku subcommand a set or unset runs, e.g. `apps:set`."
+        },
+        "field": {
+          "const": "property",
+          "description": "The recipe key this table constrains."
+        },
+        "properties": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/property_entry" },
+          "description": "The enumerable property names, sorted."
+        },
+        "dynamic": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dynamic_property" },
+          "description": "Name families the table cannot enumerate, because dokku validates them through the set subcommand rather than through its report schema. A name matching one of these prefixes is legal even though it is absent from `properties`."
+        }
+      }
+    },
+
+    "property_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "scopes"],
+      "properties": {
+        "name": { "type": "string", "description": "The value a recipe puts in `property:`." },
+        "scopes": {
+          "type": "array",
+          "items": { "enum": ["app", "global"] },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Where the property may be used. Using it in a scope it does not list is rejected at validate time, matching dokku's own rejection."
+        },
+        "app_report_key": {
+          "type": "string",
+          "description": "The key `dokku <plugin>:report --format json` emits for the property per app. Absent when the property has no per-app form."
+        },
+        "global_report_key": {
+          "type": "string",
+          "description": "The key `dokku <plugin>:report --global --format json` emits for the property. Absent when the property has no global form."
+        },
+        "sensitive": {
+          "const": true,
+          "description": "The value is a secret."
+        }
+      }
+    },
+
+    "dynamic_property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefix", "probeable"],
+      "properties": {
+        "prefix": { "type": "string", "description": "What a member's name starts with." },
+        "probeable": {
+          "type": "boolean",
+          "description": "Whether the plugin's report surfaces a row per set member, so docket can read the value back. `false` means a recipe using the family reports drift on every run and never converges."
+        },
+        "sensitive": {
+          "const": true,
+          "description": "Members' values are treated as secrets."
+        }
+      }
+    },
+
+    "example": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "yaml"],
+      "properties": {
+        "name": { "type": "string", "description": "The heading the reference page gives the example." },
+        "yaml": { "type": "string", "description": "The YAML snippet, ready to paste into a recipe's task list." }
+      }
+    }
+  }
+}

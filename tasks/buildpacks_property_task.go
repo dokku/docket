@@ -82,34 +82,42 @@ func (t BuildpacksPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// buildpacksPropertyKeys maps buildpacks property names to the JSON keys
+// buildpacksPropertyTable maps buildpacks property names to the JSON keys
 // emitted by `dokku buildpacks:report --format json` on dokku 0.38.8+.
 // The buildpacks list (set via `buildpacks:set <app> <buildpack>`) is not a
 // property in the typed-task sense and is not modeled here.
-var buildpacksPropertyKeys = map[string]PropertyKeys{
-	"stack": {PerApp: "stack", Global: "global-stack"},
+var buildpacksPropertyTable = PropertyTable{
+	Subcommand: "buildpacks:set-property",
+	Keys: map[string]PropertyKeys{
+		"stack": {PerApp: "stack", Global: "global-stack"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuildpacksPropertyTask) PropertyTable() PropertyTable {
+	return buildpacksPropertyTable
 }
 
 // Validate checks the BuildpacksPropertyTask's inputs without contacting the server.
 func (t BuildpacksPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "buildpacks:set-property", buildpacksPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuildpacksPropertyTask would produce.
 func (t BuildpacksPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "buildpacks:set-property", buildpacksPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuildpacksPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "buildpacks:set-property", buildpacksPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuildpacksPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuildpacksPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("buildpacks:set-property", buildpacksPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuildpacksPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

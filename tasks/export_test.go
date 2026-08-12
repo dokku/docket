@@ -840,7 +840,7 @@ func TestExportGlobalPropertiesReadsGlobalScope(t *testing.T) {
 		"--quiet git:report --global --format json": `{"global-deploy-branch":"main","global-archive-max-files":"100","global-keep-git-dir":""}`,
 	}))()
 
-	bodies, err := exportGlobalProperties("git:set", gitPropertyKeys, func(property, value string) interface{} {
+	bodies, err := exportGlobalProperties(GitPropertyTask{}, func(property, value string) interface{} {
 		return GitPropertyTask{Global: true, Property: property, Value: value}
 	})
 	if err != nil {
@@ -874,7 +874,7 @@ func TestExportLetsencryptDynamicPropertiesFromAppReport(t *testing.T) {
 		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider":"namecheap","dns-provider-NAMECHEAP_API_USER":"deploy-bot","global-dns-provider-NAMECHEAP_API_KEY":"globalkey","computed-dns-provider-NAMECHEAP_API_USER":"deploy-bot"}`,
 	}))()
 
-	bodies, err := exportProperties("web", "letsencrypt:set", letsencryptPropertyKeys, func(app, property, value string) interface{} {
+	bodies, err := exportProperties(LetsencryptPropertyTask{}, "web", func(app, property, value string) interface{} {
 		return LetsencryptPropertyTask{App: app, Property: property, Value: value}
 	})
 	if err != nil {
@@ -903,7 +903,7 @@ func TestExportGlobalLetsencryptDynamicProperties(t *testing.T) {
 		"--quiet letsencrypt:report --global --format json": `{"global-email":"","global-dns-provider":"namecheap","global-dns-provider-NAMECHEAP_API_KEY":"globalkey"}`,
 	}))()
 
-	bodies, err := exportGlobalProperties("letsencrypt:set", letsencryptPropertyKeys, func(property, value string) interface{} {
+	bodies, err := exportGlobalProperties(LetsencryptPropertyTask{}, func(property, value string) interface{} {
 		return LetsencryptPropertyTask{Global: true, Property: property, Value: value}
 	})
 	if err != nil {

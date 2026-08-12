@@ -26,6 +26,27 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the scheduler-k3s property |
 | `state` | string | no | present | present, absent | Desired state of the scheduler-k3s configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku scheduler-k3s:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `deploy-timeout` | app, global | `deploy-timeout` | `global-deploy-timeout` |
+| `image-pull-secrets` | app, global | `image-pull-secrets` | `global-image-pull-secrets` |
+| `ingress-class` | global |  | `global-ingress-class` |
+| `kube-context` | global |  | `global-kube-context` |
+| `kubeconfig-path` | global |  | `global-kubeconfig-path` |
+| `kustomize-root-path` | app, global | `kustomize-root-path` | `global-kustomize-root-path` |
+| `letsencrypt-email-prod` | global |  | `global-letsencrypt-email-prod` |
+| `letsencrypt-email-stag` | global |  | `global-letsencrypt-email-stag` |
+| `letsencrypt-server` | app, global | `letsencrypt-server` | `global-letsencrypt-server` |
+| `namespace` | app, global | `namespace` | `global-namespace` |
+| `network-interface` | global |  | `global-network-interface` |
+| `rollback-on-failure` | app, global | `rollback-on-failure` | `global-rollback-on-failure` |
+| `shm-size` | app, global | `shm-size` | `global-shm-size` |
+| `token` (sensitive) | global |  | `global-token` |
+
 ## Examples
 
 ### Setting the deploy timeout for an app

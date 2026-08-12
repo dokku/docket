@@ -90,7 +90,7 @@ func (t AppsPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// appsPropertyKeys maps apps property names to the JSON keys emitted by
+// appsPropertyTable maps apps property names to the JSON keys emitted by
 // `dokku apps:report [<app>|--global] --format json` on dokku 0.38.12+.
 // deploy-source and deploy-source-metadata are per-app only; disable-autocreation
 // is global only - dokku 0.38.12 narrowed apps.GlobalProperties to drop the
@@ -98,32 +98,40 @@ func (t AppsPropertyTask) Execute() TaskOutputState {
 // global value of disable-autocreation. The bare key `global-disable-autocreation`
 // falls out of stripping the `--app-` prefix from dokku's
 // `--app-global-disable-autocreation` report flag.
-var appsPropertyKeys = map[string]PropertyKeys{
-	"deploy-source":          {PerApp: "deploy-source", Global: ""},
-	"deploy-source-metadata": {PerApp: "deploy-source-metadata", Global: ""},
-	"disable-autocreation":   {PerApp: "", Global: "global-disable-autocreation"},
+var appsPropertyTable = PropertyTable{
+	Subcommand: "apps:set",
+	Keys: map[string]PropertyKeys{
+		"deploy-source":          {PerApp: "deploy-source", Global: ""},
+		"deploy-source-metadata": {PerApp: "deploy-source-metadata", Global: ""},
+		"disable-autocreation":   {PerApp: "", Global: "global-disable-autocreation"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t AppsPropertyTask) PropertyTable() PropertyTable {
+	return appsPropertyTable
 }
 
 // Validate checks the AppsPropertyTask's inputs without contacting the server.
 func (t AppsPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "apps:set", appsPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the AppsPropertyTask would produce.
 func (t AppsPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "apps:set", appsPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t AppsPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "apps:set", appsPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return AppsPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t AppsPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("apps:set", appsPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return AppsPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

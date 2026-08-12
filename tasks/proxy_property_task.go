@@ -90,35 +90,43 @@ func (t ProxyPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// proxyPropertyKeys maps proxy property names to the JSON keys emitted by
+// proxyPropertyTable maps proxy property names to the JSON keys emitted by
 // `dokku proxy:report --format json` on dokku 0.38.8+. `disabled`/`enabled`
 // are managed via proxy:enable/proxy:disable through ProxyTogglePropertyTask.
-var proxyPropertyKeys = map[string]PropertyKeys{
-	"type":           {PerApp: "type", Global: "global-type"},
-	"proxy-port":     {PerApp: "proxy-port", Global: "global-proxy-port"},
-	"proxy-ssl-port": {PerApp: "proxy-ssl-port", Global: "global-proxy-ssl-port"},
+var proxyPropertyTable = PropertyTable{
+	Subcommand: "proxy:set",
+	Keys: map[string]PropertyKeys{
+		"type":           {PerApp: "type", Global: "global-type"},
+		"proxy-port":     {PerApp: "proxy-port", Global: "global-proxy-port"},
+		"proxy-ssl-port": {PerApp: "proxy-ssl-port", Global: "global-proxy-ssl-port"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t ProxyPropertyTask) PropertyTable() PropertyTable {
+	return proxyPropertyTable
 }
 
 // Validate checks the ProxyPropertyTask's inputs without contacting the server.
 func (t ProxyPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "proxy:set", proxyPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the ProxyPropertyTask would produce.
 func (t ProxyPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "proxy:set", proxyPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t ProxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "proxy:set", proxyPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return ProxyPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t ProxyPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("proxy:set", proxyPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return ProxyPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

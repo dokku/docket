@@ -26,6 +26,45 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the openresty property |
 | `state` | string | no | present | present, absent | Desired state of the openresty configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku openresty:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `access-log-format` | app, global | `access-log-format` | `global-access-log-format` |
+| `access-log-path` | app, global | `access-log-path` | `global-access-log-path` |
+| `allowed-letsencrypt-domains-func-base64` | global |  | `global-allowed-letsencrypt-domains-func-base64` |
+| `bind-address-ipv4` | app, global | `bind-address-ipv4` | `global-bind-address-ipv4` |
+| `bind-address-ipv6` | app, global | `bind-address-ipv6` | `global-bind-address-ipv6` |
+| `client-body-timeout` | app, global | `client-body-timeout` | `global-client-body-timeout` |
+| `client-header-timeout` | app, global | `client-header-timeout` | `global-client-header-timeout` |
+| `client-max-body-size` | app, global | `client-max-body-size` | `global-client-max-body-size` |
+| `error-log-path` | app, global | `error-log-path` | `global-error-log-path` |
+| `hsts` | app, global | `hsts` | `global-hsts` |
+| `hsts-include-subdomains` | app, global | `hsts-include-subdomains` | `global-hsts-include-subdomains` |
+| `hsts-max-age` | app, global | `hsts-max-age` | `global-hsts-max-age` |
+| `hsts-preload` | app, global | `hsts-preload` | `global-hsts-preload` |
+| `image` | global |  | `global-image` |
+| `keepalive-timeout` | app, global | `keepalive-timeout` | `global-keepalive-timeout` |
+| `letsencrypt-email` | global |  | `global-letsencrypt-email` |
+| `letsencrypt-server` | global |  | `global-letsencrypt-server` |
+| `lingering-timeout` | app, global | `lingering-timeout` | `global-lingering-timeout` |
+| `log-level` | global |  | `global-log-level` |
+| `proxy-buffer-size` | app, global | `proxy-buffer-size` | `global-proxy-buffer-size` |
+| `proxy-buffering` | app, global | `proxy-buffering` | `global-proxy-buffering` |
+| `proxy-buffers` | app, global | `proxy-buffers` | `global-proxy-buffers` |
+| `proxy-busy-buffers-size` | app, global | `proxy-busy-buffers-size` | `global-proxy-busy-buffers-size` |
+| `proxy-connect-timeout` | app, global | `proxy-connect-timeout` | `global-proxy-connect-timeout` |
+| `proxy-read-timeout` | app, global | `proxy-read-timeout` | `global-proxy-read-timeout` |
+| `proxy-send-timeout` | app, global | `proxy-send-timeout` | `global-proxy-send-timeout` |
+| `send-timeout` | app, global | `send-timeout` | `global-send-timeout` |
+| `underscore-in-headers` | app, global | `underscore-in-headers` | `global-underscore-in-headers` |
+| `x-forwarded-for-value` | app, global | `x-forwarded-for-value` | `global-x-forwarded-for-value` |
+| `x-forwarded-port-value` | app, global | `x-forwarded-port-value` | `global-x-forwarded-port-value` |
+| `x-forwarded-proto-value` | app, global | `x-forwarded-proto-value` | `global-x-forwarded-proto-value` |
+| `x-forwarded-ssl` | app, global | `x-forwarded-ssl` | `global-x-forwarded-ssl` |
+
 ## Examples
 
 ### Setting the proxy read timeout for an app

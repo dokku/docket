@@ -26,6 +26,16 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the proxy property |
 | `state` | string | no | present | present, absent | Desired state of the proxy configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku proxy:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `proxy-port` | app, global | `proxy-port` | `global-proxy-port` |
+| `proxy-ssl-port` | app, global | `proxy-ssl-port` | `global-proxy-ssl-port` |
+| `type` | app, global | `type` | `global-type` |
+
 ## Examples
 
 ### Setting the proxy type for an app

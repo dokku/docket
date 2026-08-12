@@ -25,9 +25,11 @@ const (
 // ProbeSupport describes a task's read-state behaviour. Status is required;
 // Caveat is a human-readable note naming what cannot be read (and may be empty
 // for a task that probes everything it manages).
+//
+// The json tags are for the task catalog, which publishes this verbatim.
 type ProbeSupport struct {
-	Status ProbeStatus
-	Caveat string
+	Status ProbeStatus `json:"status"`
+	Caveat string      `json:"caveat,omitempty"`
 }
 
 // ProbeDocer is the interface a task implements to declare whether Plan() can

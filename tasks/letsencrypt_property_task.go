@@ -107,40 +107,48 @@ func (t LetsencryptPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// letsencryptPropertyKeys maps letsencrypt property names to the JSON keys
+// letsencryptPropertyTable maps letsencrypt property names to the JSON keys
 // emitted by `dokku letsencrypt:report --format json` on
 // dokku-letsencrypt v0.20.4+. The `dns-provider-*` family takes an arbitrary
 // provider env var name, so it cannot be enumerated here; its keys are
 // synthesized per property by dynamicPropertyKeys, which v0.25.0+ reports.
-var letsencryptPropertyKeys = map[string]PropertyKeys{
-	"dns-provider":        {PerApp: "dns-provider", Global: "global-dns-provider"},
-	"email":               {PerApp: "email", Global: "global-email"},
-	"graceperiod":         {PerApp: "graceperiod", Global: "global-graceperiod"},
-	"lego-args":           {PerApp: "lego-args", Global: "global-lego-args"},
-	"lego-docker-options": {PerApp: "lego-docker-options", Global: "global-lego-docker-options"},
-	"server":              {PerApp: "server", Global: "global-server"},
+var letsencryptPropertyTable = PropertyTable{
+	Subcommand: "letsencrypt:set",
+	Keys: map[string]PropertyKeys{
+		"dns-provider":        {PerApp: "dns-provider", Global: "global-dns-provider"},
+		"email":               {PerApp: "email", Global: "global-email"},
+		"graceperiod":         {PerApp: "graceperiod", Global: "global-graceperiod"},
+		"lego-args":           {PerApp: "lego-args", Global: "global-lego-args"},
+		"lego-docker-options": {PerApp: "lego-docker-options", Global: "global-lego-docker-options"},
+		"server":              {PerApp: "server", Global: "global-server"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t LetsencryptPropertyTask) PropertyTable() PropertyTable {
+	return letsencryptPropertyTable
 }
 
 // Validate checks the LetsencryptPropertyTask's inputs without contacting the server.
 func (t LetsencryptPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set", letsencryptPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the LetsencryptPropertyTask would produce.
 func (t LetsencryptPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "letsencrypt:set", letsencryptPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t LetsencryptPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "letsencrypt:set", letsencryptPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return LetsencryptPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t LetsencryptPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("letsencrypt:set", letsencryptPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return LetsencryptPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

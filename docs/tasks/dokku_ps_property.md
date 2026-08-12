@@ -26,6 +26,19 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value to set for the ps property |
 | `state` | string | no | present | present, absent | Desired state of the ps configuration |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku ps:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `dockerfile-start-cmd` | app | `dockerfile-start-cmd` |  |
+| `procfile-path` | app, global | `procfile-path` | `global-procfile-path` |
+| `restart-policy` | app, global | `restart-policy` | `global-restart-policy` |
+| `skip-deploy` | app, global | `skip-deploy` | `global-skip-deploy` |
+| `start-cmd` | app | `start-cmd` |  |
+| `stop-timeout-seconds` | app, global | `stop-timeout-seconds` | `global-stop-timeout-seconds` |
+
 ## Examples
 
 ### Setting the restart-policy value for an app

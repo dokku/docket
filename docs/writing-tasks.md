@@ -71,10 +71,12 @@ A few conventions to follow:
 - The struct holds the fields the task needs. The only required field is `State`, the desired state;
   everything else is specific to the task.
 - Give every field a `description:"..."` tag. The docs generator reads it (along with `required`,
-  `default`, and `options`) to build the task's Parameters table, so a field without one renders an
-  empty description cell. Add `,omitempty` to the `yaml` tag of optional fields so example YAML stays
-  clean, and use `required:"false"` whenever a field has a `default` (a defaulted field is never
-  actually required).
+  `default`, `options`, and `sensitive`) to build the task's Parameters table, so a field without one
+  renders an empty description cell. Those same tags are what
+  [`docket schema`](task-catalog.md) publishes, so a missing description is a hole in the
+  machine-readable catalog as well as in the docs. Add `,omitempty` to the `yaml` tag of optional
+  fields so example YAML stays clean, and use `required:"false"` whenever a field has a `default`
+  (a defaulted field is never actually required).
 - For a task that performs several atomic changes in one call (such as setting multiple config
   keys), populate `PlanResult.Mutations` with one entry per change, so `plan` can itemize the diff.
 - `DispatchPlan` and `DispatchState` set `DesiredState` on the result automatically.
@@ -222,63 +224,90 @@ func (t ChecksToggleTask) Plan() PlanResult {
 
 ### Property tasks
 
-A property task delegates `Plan()` to `planProperty`, passing the plugin's `:set` subcommand and a
-`PropertyKeys` map. That map is the task's source of truth: it lists every property the task manages
-and, for each, the JSON keys that `dokku <plugin>:report --format json` emits in per-app and global
-scope. An empty string for a scope means the property is not supported there, and `planProperty`
-rejects that scope at plan time. `present` sets the property and requires a `value`; `absent` clears
-it and must not have one - the helper enforces both.
+A property task declares a `PropertyTable` and delegates `Plan()` to `planProperty`. The table is
+the task's single source of truth: the plugin's `:set` subcommand, plus every property the task
+manages and, for each, the JSON keys that `dokku <plugin>:report --format json` emits in per-app and
+global scope. An empty string for a scope means the property is not supported there, and
+`planProperty` rejects that scope at plan time. `present` sets the property and requires a `value`;
+`absent` clears it and must not have one - the helper enforces both.
 
 ```go
 type NginxPropertyTask struct {
-  App      string `required:"false" yaml:"app"`
-  Global   bool   `required:"false" yaml:"global,omitempty"`
-  Property string `required:"true" yaml:"property"`
+  App      string `required:"false" identity:"key" yaml:"app"`
+  Global   bool   `required:"false" identity:"key" yaml:"global,omitempty"`
+  Property string `required:"true" identity:"key" yaml:"property"`
   Value    string `required:"false" yaml:"value,omitempty"`
   State    State  `required:"true" yaml:"state,omitempty" default:"present" options:"present,absent"`
 }
 
 // Maps each property to the report JSON keys per scope. "" means unsupported.
-var nginxPropertyKeys = map[string]PropertyKeys{
-  "client-max-body-size": {PerApp: "client-max-body-size", Global: "global-client-max-body-size"},
-  "proxy-read-timeout":   {PerApp: "proxy-read-timeout", Global: "global-proxy-read-timeout"},
-  // ...
+var nginxPropertyTable = PropertyTable{
+  Subcommand: "nginx:set",
+  Keys: map[string]PropertyKeys{
+    "client-max-body-size": {PerApp: "client-max-body-size", Global: "global-client-max-body-size"},
+    "proxy-read-timeout":   {PerApp: "proxy-read-timeout", Global: "global-proxy-read-timeout"},
+    // ...
+  },
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t NginxPropertyTask) PropertyTable() PropertyTable {
+  return nginxPropertyTable
+}
+
+func (t NginxPropertyTask) Validate() error {
+  return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 func (t NginxPropertyTask) Plan() PlanResult {
-  return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "nginx:set", nginxPropertyKeys)
+  return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 ```
 
-Keep the `PropertyKeys` map in sync with the plugin's `:report` output - that mapping is how `plan`
-and `apply` detect drift without mutating. Some plugins take a dynamic family of properties whose
-names cannot be enumerated in the map, such as the `dns-provider-<ENV_VAR>` credentials letsencrypt
-and traefik accept. `isDynamicProperty` in `tasks/properties.go` recognizes those so validation
-accepts a name the map has never heard of, and how they plan depends on the plugin:
+The shared helpers take the task rather than a subcommand and a map, so there is no way to reach
+them without declaring the table, and no way to validate against one table while publishing
+another. That matters because the table is not only an implementation detail: it is the real schema
+of the task's otherwise free-form `property` field, and it is what fills the Properties section on
+the task's reference page and the `property_schema` key in
+[`docket schema`](task-catalog.md#property-tasks). The property exporters take the task the same
+way, and `TestEveryPropertyTaskDeclaresPropertyTable` fails the build for a `*_property` task that
+declares no table and is not explicitly exempt.
 
-- The plugin reports the family (letsencrypt on 0.25.0+ emits a row per set property): synthesize
-  the scope keys in `dynamicPropertyKeys` and the property probes like any mapped one. Because the
-  row only exists once the property has a value, an absent row reads as unset. Note the minimum
-  plugin version in `Requirements()`, and mark the synthesized entry `Sensitive` when the value is a
+Keep the table in sync with the plugin's `:report` output - that mapping is how `plan` and `apply`
+detect drift without mutating. Some plugins take a dynamic family of properties whose names cannot
+be enumerated, such as the `dns-provider-<ENV_VAR>` credentials letsencrypt and traefik accept.
+Those are declared in `dynamicPropertyFamilies` in `tasks/properties.go`, which is what lets
+validation accept a name the table has never heard of, and is published to consumers so a linter
+does not reject a legal recipe. How they plan depends on the plugin:
+
+- The plugin reports the family (letsencrypt on 0.25.0+ emits a row per set property): declare it
+  `Probeable`, and the scope keys are synthesized so the property probes like any mapped one.
+  Because the row only exists once the property has a value, an absent row reads as unset. Note the
+  minimum plugin version in `Requirements()`, and mark the family `Sensitive` when the value is a
   credential so the probed value never reaches a drift reason unmasked.
-- The plugin does not report it: the property skips probing and is applied unconditionally, and the
-  task is `ProbePartial` with a caveat naming the family.
+- The plugin does not report it: leave `Probeable` false. The property skips probing and is applied
+  unconditionally, and the task is `ProbePartial` with a caveat naming the family.
 
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
-`Examples()`, `ExportSupport()`, `ProbeSupport()`, and optional `Requirements()` methods plus its
-struct field tags - they are not hand-edited. Each page carries a Synopsis (from `Doc()`), a
-Requirements section (when the task implements `Requirements()`), Export support and Probe support
-sections, a Parameters table (reflected from the field tags), the examples, and a shared Return
-Values table. After adding or changing a task, regenerate them:
+`Examples()`, `ExportSupport()`, `ProbeSupport()`, optional `Requirements()` and `PropertyTable()`
+methods plus its struct field tags - they are not hand-edited. Each page carries a Synopsis (from
+`Doc()`), a Requirements section (when the task implements `Requirements()`), Export support and
+Probe support sections, an Identity section, a Parameters table (reflected from the field tags), a
+Properties table (for a task with a `PropertyTable()`), the examples, and a shared Return Values
+table. After adding or changing a task, regenerate them:
 
 ```bash
 make docs
 ```
 
 This runs `go generate generate/docs.go`, which writes one `docs/tasks/<task>.md` per registered
-task plus the `docs/tasks/README.md` index. Commit the regenerated files alongside your code.
+task plus the `docs/tasks/README.md` index. Commit the regenerated files alongside your code -
+`TestGeneratedDocsAreCurrent` fails the build if you forget, and prints the diff.
+
+The generator renders those pages from `tasks.Catalog()`, the same description
+[`docket schema`](task-catalog.md) emits, so a declaration you add shows up in both or in neither.
 
 Because the examples are published as-is, they are also tested. `TestAllTaskExamplesValidate`
 (`tasks/main_test.go`) decodes every example offline, applies the field defaults, and runs the
@@ -293,5 +322,6 @@ declare it in the driver's `exampleIntegrationPolicy` rather than leaving the ex
 ## See also
 
 - [Tasks](tasks/README.md) - the generated reference for every task
+- [Task catalog](task-catalog.md) - the same declarations, published for tooling
 - [Task envelope](task-envelope.md) - the cross-cutting keys every task supports
 - [Command reference](command-reference.md) - how `plan` and `apply` consume `Plan()`

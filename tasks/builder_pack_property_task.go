@@ -82,32 +82,40 @@ func (t BuilderPackPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// builderPackPropertyKeys maps builder-pack property names to the JSON keys
+// builderPackPropertyTable maps builder-pack property names to the JSON keys
 // emitted by `dokku builder-pack:report --format json` on dokku 0.38.8+.
-var builderPackPropertyKeys = map[string]PropertyKeys{
-	"projecttoml-path": {PerApp: "projecttoml-path", Global: "global-projecttoml-path"},
+var builderPackPropertyTable = PropertyTable{
+	Subcommand: "builder-pack:set",
+	Keys: map[string]PropertyKeys{
+		"projecttoml-path": {PerApp: "projecttoml-path", Global: "global-projecttoml-path"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuilderPackPropertyTask) PropertyTable() PropertyTable {
+	return builderPackPropertyTable
 }
 
 // Validate checks the BuilderPackPropertyTask's inputs without contacting the server.
 func (t BuilderPackPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-pack:set", builderPackPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuilderPackPropertyTask would produce.
 func (t BuilderPackPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-pack:set", builderPackPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuilderPackPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "builder-pack:set", builderPackPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuilderPackPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuilderPackPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("builder-pack:set", builderPackPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuilderPackPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

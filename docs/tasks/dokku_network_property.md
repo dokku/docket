@@ -26,6 +26,19 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `value` | string | no |  |  | Value of the network property to set |
 | `state` | string | no | present | present, absent | Desired state of the network property |
 
+## Properties
+
+`property` accepts one of the following, applied with `dokku network:set`. A property with no form in a scope is rejected there, matching dokku's own rejection.
+
+| Property | Scopes | Report key (app) | Report key (global) |
+| --- | --- | --- | --- |
+| `attach-post-create` | app, global | `attach-post-create` | `global-attach-post-create` |
+| `attach-post-deploy` | app, global | `attach-post-deploy` | `global-attach-post-deploy` |
+| `bind-all-interfaces` | app, global | `bind-all-interfaces` | `global-bind-all-interfaces` |
+| `initial-network` | app, global | `initial-network` | `global-initial-network` |
+| `static-web-listener` | app | `static-web-listener` |  |
+| `tld` | app, global | `tld` | `global-tld` |
+
 ## Examples
 
 ### Associates a network after a container is created but before it is started

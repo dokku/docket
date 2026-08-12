@@ -7,6 +7,7 @@ docs:
   - task-envelope.md
   - remote-execution.md
   - json-output.md
+  - task-catalog.md
   - ansible-dokku.md
   - writing-tasks.md
   - roadmap.md

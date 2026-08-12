@@ -82,33 +82,41 @@ func (t BuilderHerokuishPropertyTask) Execute() TaskOutputState {
 	return ExecutePlan(t.Plan())
 }
 
-// builderHerokuishPropertyKeys maps builder-herokuish property names to the
+// builderHerokuishPropertyTable maps builder-herokuish property names to the
 // JSON keys emitted by `dokku builder-herokuish:report --format json` on
 // dokku 0.38.8+.
-var builderHerokuishPropertyKeys = map[string]PropertyKeys{
-	"allowed": {PerApp: "allowed", Global: "global-allowed"},
+var builderHerokuishPropertyTable = PropertyTable{
+	Subcommand: "builder-herokuish:set",
+	Keys: map[string]PropertyKeys{
+		"allowed": {PerApp: "allowed", Global: "global-allowed"},
+	},
+}
+
+// PropertyTable returns the property schema this task manages.
+func (t BuilderHerokuishPropertyTask) PropertyTable() PropertyTable {
+	return builderHerokuishPropertyTable
 }
 
 // Validate checks the BuilderHerokuishPropertyTask's inputs without contacting the server.
 func (t BuilderHerokuishPropertyTask) Validate() error {
-	return validatePropertyInput(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set", builderHerokuishPropertyKeys)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the BuilderHerokuishPropertyTask would produce.
 func (t BuilderHerokuishPropertyTask) Plan() PlanResult {
-	return planProperty(t.State, t.App, t.Global, t.Property, t.Value, "builder-herokuish:set", builderHerokuishPropertyKeys)
+	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t BuilderHerokuishPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(app, "builder-herokuish:set", builderHerokuishPropertyKeys, func(app, property, value string) interface{} {
+	return exportProperties(t, app, func(app, property, value string) interface{} {
 		return BuilderHerokuishPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
 func (t BuilderHerokuishPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties("builder-herokuish:set", builderHerokuishPropertyKeys, func(property, value string) interface{} {
+	return exportGlobalProperties(t, func(property, value string) interface{} {
 		return BuilderHerokuishPropertyTask{Global: true, Property: property, Value: value}
 	})
 }
