@@ -257,6 +257,40 @@ EOF
   assert_output --partial "[skipped] gated"
 }
 
+@test "--list-tasks shows [unknown] for a rescue when: on failed_task" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: deploy
+      block:
+        - dokku_app: { app: docket-test-list-1 }
+      rescue:
+        - name: report
+          when: 'failed_task.Stderr contains "already exists"'
+          dokku_app: { app: docket-test-list-1, state: absent }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "[unknown] [rescue] report"
+  refute_output --partial "[when?]"
+}
+
+@test "--list-tasks exits 1 on a task when: that cannot evaluate" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: broken predicate
+      when: '[][0] == 1'
+      dokku_app: { app: docket-test-list-1 }
+    - name: plain
+      dokku_app: { app: docket-test-list-2 }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_failure
+  assert_output --partial "[when?]   broken predicate"
+  assert_output --partial "plain"
+}
+
 @test "--list-tasks marks deprecated task types" {
   write_tasks_file <<EOF
 ---

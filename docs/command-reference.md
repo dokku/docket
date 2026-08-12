@@ -278,7 +278,7 @@ recipe" is the same outcome either way. Pass `--detailed-exitcode` when the call
 win over changes, matching `plan`. An error swallowed by
 [`ignore_errors`](task-envelope.md#ignore_errors-continue-past-a-failure) is not an error for this
 purpose. `--list-tasks` returns before any task runs, so it never exits `2`; it exits `1` when the
-recipe cannot be loaded or a play `when:` fails to evaluate, and `0` otherwise.
+recipe cannot be loaded or a `when:` fails to evaluate, and `0` otherwise.
 
 | Flag | Effect |
 |------|--------|
@@ -339,16 +339,29 @@ $ docket apply --list-tasks
 [2] dokku_docker_options[app=api,phase=deploy,option=--memory=512m]
 ```
 
-A `when:` that is false against the inputs renders as `[skipped]`. A `when:` that references
-`.registered.<name>` cannot be decided without running earlier tasks, so it renders as `[unknown]`
-rather than guessing. A task `when:` that fails to evaluate renders as `[when?]` and does not change
-the exit code: the listing evaluates it without the `result` and `failed_task` values a real run
-would supply, so an error there can be an artifact of listing offline rather than a broken
-predicate.
+A `when:` that is false against the inputs renders as `[skipped]`. A `when:` whose truth value
+depends on a value only a run can supply renders as `[unknown]` rather than guessing: one that
+references `.registered.<name>` cannot be decided without running earlier tasks, and a
+[`rescue:`](task-envelope.md#block--rescue--always-structured-error-handling) child that branches on
+`failed_task` cannot be decided without a block child having failed.
 
-A play-level `when:` is different, because it is resolved against exactly the context `apply` and
-`plan` build for it. One that fails to evaluate is the same failure a run would hit, so the play's
-header carries the error, its tasks are left unlisted, and the command exits `1`:
+Everything else is evaluated, and a `when:` that fails to evaluate renders as `[when?]` and exits
+`1`. Once the undecidable references are set aside, a predicate that errors here errors the same way
+at run time - `failed_task` outside a `rescue:` child is `nil` during a real run too, so
+dereferencing it there is a broken predicate, not an artifact of listing offline.
+
+```text
+$ docket apply --list-tasks
+==> Play: api
+[when?]   gated
+[1] dokku apps:create api
+$ echo $?
+1
+```
+
+The walk is never short-circuited - every remaining task and play still lists, and the failure is
+carried by the exit code alone. A play-level `when:` that fails to evaluate is the same, except that
+the play's header carries the error and its tasks are left unlisted:
 
 ```text
 $ docket plan --list-tasks
@@ -361,7 +374,10 @@ $ echo $?
 1
 ```
 
-Every other play still lists - the failure is carried by the exit code, not by stopping the walk.
+The one exception is reachability. A run never evaluates the children of a group whose own `when:`
+rendered `[skipped]`, `[unknown]`, or `[when?]`, so a broken predicate underneath one still prints
+its `[when?]` marker but leaves the exit code alone - the same reason a skipped play's tasks are not
+listed at all.
 
 A task whose type is deprecated is marked `(deprecated)`. A task whose type cannot read its own
 state is marked `(never converges)`, and one that can read only part of it is marked

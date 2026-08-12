@@ -198,9 +198,10 @@ non-zero exit with empty stdout as a failure whose detail is on stderr, or run
 `docket validate --json` first to get the same problems as structured events.
 
 Do not read that the other way round: a non-zero exit does not imply empty stdout.
-`--list-tasks --json` exits `1` when a play `when:` fails to evaluate, and the stream is complete -
-the failure is a `play_skipped` event whose `reason` carries the `when error: <err>` form, followed
-by every remaining play's tasks.
+`--list-tasks --json` exits `1` when a `when:` fails to evaluate, and the stream is complete. For a
+play `when:`, the failure is a `play_skipped` event whose `reason` carries the `when error: <err>`
+form, followed by every remaining play's tasks. For a task `when:`, it is a `list_task` event
+carrying `"when_error": true`, followed by every remaining task.
 
 ## See also
 

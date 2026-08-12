@@ -296,7 +296,10 @@ The rules:
   (`State != DesiredState`), or a `when:` / `failed_when:` predicate that errors at runtime.
 - `rescue:` children run, in order, only when a block child failed. They run with the failing
   child's result bound to `.failed_task`, so a rescue can branch on the cause:
-  `when: 'failed_task.Stderr contains "..."'`.
+  `when: 'failed_task.Stderr contains "..."'`. The binding reaches a rescue child and nothing else -
+  not a block child of a group that is itself a rescue child - so such a predicate belongs directly
+  under `rescue:`. [`--list-tasks`](command-reference.md#inspecting-and-resuming) renders it as
+  `[unknown]`, since offline there is no failing child to inspect.
 - `always:` children run unconditionally after `block:` / `rescue:`, even if a rescue itself errored.
 - The group's own envelope applies to the combined outcome: `register:` saves the post-rescue,
   post-always result, and `ignore_errors: true` on the group swallows any error that remains after

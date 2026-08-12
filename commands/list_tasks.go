@@ -28,27 +28,30 @@ type listTasksOptions struct {
 // FilterByTags and renders block / rescue / always children indented
 // under their group's line.
 //
-// when: predicates are evaluated against the inputs only - registered
-// values from prior tasks are not available because no task has run.
-// Predicates that reference `.registered.<name>` produce an [unknown]
-// marker since their truth value cannot be determined statically. All
-// other false predicates produce a [skipped] marker.
+// when: predicates are evaluated against the inputs only - values a
+// prior task registers, and the failing block child a rescue branches
+// on, are not available because no task has run. Predicates that
+// reference those produce an [unknown] marker since their truth value
+// cannot be determined statically. All other false predicates produce a
+// [skipped] marker.
 //
-// A predicate that *errors* is treated differently depending on where it
-// sits. A play-level when: is evaluated against exactly the context the
-// apply / plan loops build for it, so an error here is the same error
-// they would hit: the listing still renders in full, and the exit code
-// is 1. A task-level when: sees a reduced context (no result, no
-// registered, no failed_task), so an error there may be an artifact of
-// listing offline rather than a broken predicate - it renders [when?]
-// and leaves the exit code alone. See evaluateListWhen.
+// A predicate that *errors* fails the listing with exit code 1, whether
+// it sits on a play or on a task: with the undecidable references sorted
+// into [unknown] first, what is left is a predicate that errors the same
+// way at run time. A task carries the failure as its [when?] marker; a
+// play carries it in its header, and its tasks are left unlisted.
+//
+// The one exception is reachability. A task under a group that itself
+// rendered [skipped], [unknown] or [when?] is never evaluated by a run,
+// so its own [when?] prints but leaves the exit code alone - the same
+// reason a skipped play's tasks are not walked at all.
 func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
-	// playWhenError records that at least one play predicate failed to
-	// evaluate. The walk is not short-circuited - every remaining play is
+	// whenError records that at least one predicate failed to evaluate.
+	// The walk is not short-circuited - every remaining play and task is
 	// still listed, and the failure is carried by the exit code once the
 	// listing is complete, matching the way the plan loop finishes before
 	// returning 1.
-	playWhenError := false
+	whenError := false
 	for _, play := range opts.plays {
 		if play.IsFileLevel() {
 			continue
@@ -57,7 +60,7 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 			playCtx := buildEnvelopeExprContext(buildPlayWhenContext(opts.context, opts.fileLevelKeys, opts.userSet))
 			ok, err := tasks.EvalBool(play.WhenProgram(), playCtx)
 			if err != nil {
-				playWhenError = true
+				whenError = true
 				if opts.jsonOut {
 					emitListJSON(ui, map[string]interface{}{
 						"type":   "play_skipped",
@@ -89,24 +92,48 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 			ui.Output(fmt.Sprintf("==> Play: %s", play.Name))
 		}
 
-		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(opts.context, play.Inputs, opts.userSet))
+		rc := listRenderContext{
+			ui:          ui,
+			playName:    play.Name,
+			playExprCtx: buildEnvelopeExprContext(tasks.BuildPerPlayContext(opts.context, play.Inputs, opts.userSet)),
+			jsonOut:     opts.jsonOut,
+		}
 
 		idx := 0
 		for _, name := range tasks.FilterByTags(play.Tasks, opts.includes, opts.skips) {
-			renderListEnvelope(ui, play.Name, play.Tasks.GetEnvelope(name), idx, "", 0, playExprCtx, opts.jsonOut)
+			if renderListEnvelope(rc, play.Tasks.GetEnvelope(name), idx, "", 0, true) {
+				whenError = true
+			}
 			idx++
 		}
 	}
-	if playWhenError {
+	if whenError {
 		return 1
 	}
 	return 0
+}
+
+// listRenderContext carries the values renderListEnvelope needs that do
+// not change as it recurses into a group's children: the output sink,
+// the play the walk is inside, the expr context every predicate in that
+// play evaluates against, and the output mode.
+type listRenderContext struct {
+	ui          cli.Ui
+	playName    string
+	playExprCtx map[string]interface{}
+	jsonOut     bool
 }
 
 // renderListEnvelope renders one envelope's line and, for a group,
 // recursively renders its block / rescue / always children indented one
 // level. indent is the leading-space count; phase labels group children
 // (matching the executor's phase decoration).
+//
+// reachable reports whether a run would evaluate this envelope's when:
+// at all - false once an ancestor group's own predicate was skipped or
+// could not be resolved. Returns whether a [when?] was rendered at a
+// reachable position anywhere in this subtree, which is what fails the
+// listing.
 //
 // The displayed label is the envelope name as-is. Before #427 an unnamed task
 // carried a random `task #N <hex>` name, and this function substituted the
@@ -116,16 +143,14 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 // unnamed task after the resource it addresses, so there is nothing to
 // substitute.
 func renderListEnvelope(
-	ui cli.Ui,
-	playName string,
+	rc listRenderContext,
 	env *tasks.TaskEnvelope,
 	index int,
 	phase string,
 	indent int,
-	playExprCtx map[string]interface{},
-	jsonOut bool,
-) {
-	skipMarker := evaluateListWhen(env, playExprCtx)
+	reachable bool,
+) bool {
+	skipMarker := evaluateListWhen(env, rc.playExprCtx, phase)
 	display := env.Name
 	deprecation := ""
 	var probe tasks.ProbeSupport
@@ -134,10 +159,10 @@ func renderListEnvelope(
 		probe, _ = tasks.TaskProbeSupport(env.Task)
 	}
 
-	if jsonOut {
+	if rc.jsonOut {
 		ev := map[string]interface{}{
 			"type":  "list_task",
-			"play":  playName,
+			"play":  rc.playName,
 			"name":  display,
 			"index": index,
 		}
@@ -175,7 +200,7 @@ func renderListEnvelope(
 				ev["loop_item"] = env.LoopItem
 			}
 		}
-		emitListJSON(ui, ev)
+		emitListJSON(rc.ui, ev)
 	} else {
 		var b strings.Builder
 		if indent > 0 {
@@ -211,39 +236,51 @@ func renderListEnvelope(
 		if len(env.Tags) > 0 {
 			b.WriteString(fmt.Sprintf("  [tags=%s]", strings.Join(env.Tags, ",")))
 		}
-		ui.Output(b.String())
+		rc.ui.Output(b.String())
 	}
 
+	whenError := reachable && skipMarker == "when_error"
+
 	if env.IsGroup() {
-		for i, child := range env.Block {
-			renderListEnvelope(ui, playName, child, i, "block", indent+1, playExprCtx, jsonOut)
-		}
-		for i, child := range env.Rescue {
-			renderListEnvelope(ui, playName, child, i, "rescue", indent+1, playExprCtx, jsonOut)
-		}
-		for i, child := range env.Always {
-			renderListEnvelope(ui, playName, child, i, "always", indent+1, playExprCtx, jsonOut)
+		// A group whose own predicate did not resolve true stands between
+		// its children and any run, so their predicates are listed but no
+		// longer count toward the exit code.
+		childReachable := reachable && skipMarker == ""
+		for _, phased := range []struct {
+			name     string
+			children []*tasks.TaskEnvelope
+		}{
+			{"block", env.Block},
+			{"rescue", env.Rescue},
+			{"always", env.Always},
+		} {
+			for i, child := range phased.children {
+				if renderListEnvelope(rc, child, i, phased.name, indent+1, childReachable) {
+					whenError = true
+				}
+			}
 		}
 	}
+	return whenError
 }
 
 // evaluateListWhen returns the marker --list-tasks should print for
-// env's when: predicate. Returns "" when no predicate is present or it
-// evaluates true; "skipped" when it evaluates false; "unknown" when the
-// predicate references `.registered.<name>` (we can't decide without
-// running prior tasks); "when_error" when the predicate compiles but
-// errors at evaluation time against the inputs context.
+// env's when: predicate, where phase is the envelope's position in its
+// parent group ("block", "rescue", "always", or "" at the top level).
+// Returns "" when no predicate is present or it evaluates true;
+// "skipped" when it evaluates false; "unknown" when the predicate
+// references a value only a run can supply; "when_error" when the
+// predicate compiles but errors at evaluation time against the inputs
+// context.
 //
-// "when_error" is a marker only - it does not fail the listing the way a
-// play-level when: error does. The context here is missing `result` and
-// `failed_task`, so a predicate that is valid at run time can error when
-// evaluated offline: a rescue child written the documented way,
-// `when: 'failed_task.Stderr contains "..."'`, is `nil.Stderr` here.
-func evaluateListWhen(env *tasks.TaskEnvelope, playExprCtx map[string]interface{}) string {
+// Once the undecidable references are sorted into "unknown", a
+// "when_error" is a predicate that errors at run time too, so it fails
+// the listing - see renderListTasks for the reachability caveat.
+func evaluateListWhen(env *tasks.TaskEnvelope, playExprCtx map[string]interface{}, phase string) string {
 	if !env.HasWhen() {
 		return ""
 	}
-	if whenReferencesRegistered(env.When) {
+	if whenReferencesRuntimeValue(env.When, runtimeWhenVars(phase)) {
 		return "unknown"
 	}
 	ok, err := tasks.EvalBool(env.WhenProgram(), envelopeExprContext(playExprCtx, env, nil, nil, nil))
@@ -256,13 +293,56 @@ func evaluateListWhen(env *tasks.TaskEnvelope, playExprCtx map[string]interface{
 	return ""
 }
 
-// whenReferencesRegistered does a substring check against the raw expr
-// source for `registered.` references. The check is intentionally
-// conservative: any predicate that mentions `registered` is reported as
-// [unknown] in --list-tasks rather than evaluated against an empty map
-// (which would yield a misleading skip).
-func whenReferencesRegistered(src string) bool {
-	return strings.Contains(src, "registered")
+// registeredOnlyWhenVars and rescueRuntimeWhenVars are the expr
+// identifiers --list-tasks cannot supply but a run can. `registered` is
+// bound wherever a prior task has registered a value. `failed_task` is
+// bound only for a rescue child (commands/apply.go, commands/plan.go):
+// a group nested under rescue: does not pass it down to its own block:
+// children, so anywhere else it is nil at run time too and a predicate
+// that dereferences it is genuinely broken.
+var (
+	registeredOnlyWhenVars = map[string]bool{"registered": true}
+	rescueRuntimeWhenVars  = map[string]bool{"registered": true, "failed_task": true}
+)
+
+// runtimeWhenVars returns the run-time-only identifiers in scope for an
+// envelope sitting in the given group phase.
+func runtimeWhenVars(phase string) map[string]bool {
+	if phase == "rescue" {
+		return rescueRuntimeWhenVars
+	}
+	return registeredOnlyWhenVars
+}
+
+// whenReferencesRuntimeValue reports whether src references any of the
+// named run-time-only values, which makes its truth value undecidable
+// offline. Such a predicate is reported as [unknown] rather than
+// evaluated against a context that does not bind it - evaluating would
+// yield either a misleading skip (`len(registered) > 0`) or a
+// misleading error (`failed_task.Stderr contains "..."`).
+//
+// The check runs against the parsed identifiers so an input named
+// `registered_at`, a string literal "registered", or a field access
+// `x.failed_task` is not mistaken for a reference. A predicate that
+// reaches here has already compiled at load, so the parse failure branch
+// is not reachable through the CLI; it falls back to a substring match,
+// which is never less conservative than matching identifiers.
+func whenReferencesRuntimeValue(src string, runtime map[string]bool) bool {
+	idents, err := tasks.PredicateIdentifiers(src)
+	if err != nil {
+		for name := range runtime {
+			if strings.Contains(src, name) {
+				return true
+			}
+		}
+		return false
+	}
+	for name := range runtime {
+		if idents[name] {
+			return true
+		}
+	}
+	return false
 }
 
 // emitListJSON serialises ev as a single JSON-lines event on the Ui's
