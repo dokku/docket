@@ -25,7 +25,7 @@ Keyed by `app`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `state` | string | no | present | present, absent | Desired state of maintenance mode |
+| `state` | string | no | present | present, absent | Desired state of the plugin for the app |
 
 ## Examples
 

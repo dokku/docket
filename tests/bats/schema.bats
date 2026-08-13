@@ -96,6 +96,38 @@ setup() {
     fail "dokku_builds_property state lost its default or its choices"
 }
 
+@test "docket schema publishes the whole shape of a toggle task (#467)" {
+  run "$(docket_bin)" schema
+  assert_success
+
+  # The toggle tasks declare their fields once, as `type XToggleTask
+  # ToggleFields`. A recipe key that went missing from the published contract
+  # would be invisible in the Go tests that read the same struct, so assert the
+  # two keys and their tags from the outside.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_checks_toggle")
+           | [.fields[].name] == ["app", "state"]' >/dev/null ||
+    fail "dokku_checks_toggle does not publish both recipe keys in order"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_checks_toggle")
+           | ([.fields[] | select(.identity == "key") | .name] == ["app"])
+             and ([.fields[] | select(.required) | .name] == ["app"])' >/dev/null ||
+    fail "dokku_checks_toggle does not key on app alone"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_checks_toggle") | .fields[] | select(.name == "state")
+           | .default == "present" and .choices == ["present", "absent"]' >/dev/null ||
+    fail "dokku_checks_toggle state lost its default or its choices"
+
+  # dokku_maintenance is a toggle that is not named like one, so nothing but an
+  # assertion keeps it on the shared field set.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_maintenance")
+           | [.fields[].name] == ["app", "state"]' >/dev/null ||
+    fail "dokku_maintenance does not publish the toggle recipe keys"
+}
+
 @test "docket schema publishes a property task's supported property names" {
   run "$(docket_bin)" schema
   assert_success

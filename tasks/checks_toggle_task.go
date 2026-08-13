@@ -44,13 +44,7 @@ func (t ChecksToggleTask) ExportApp(app string) ([]interface{}, error) {
 }
 
 // ChecksToggleTask enables or disables the checks plugin for a given dokku application
-type ChecksToggleTask struct {
-	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
-
-	// State is the desired state of the checks plugin
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the checks plugin"`
-}
+type ChecksToggleTask ToggleFields
 
 // ChecksToggleTaskExample contains an example of a ChecksToggleTask
 type ChecksToggleTaskExample struct {

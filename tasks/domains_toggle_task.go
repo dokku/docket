@@ -33,13 +33,7 @@ func (t DomainsToggleTask) ExportApp(app string) ([]interface{}, error) {
 }
 
 // DomainsToggleTask enables or disables the domains plugin for a given dokku application
-type DomainsToggleTask struct {
-	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
-
-	// State is the desired state of the domains plugin
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the domains plugin"`
-}
+type DomainsToggleTask ToggleFields
 
 // DomainsToggleTaskExample contains an example of a DomainsToggleTask
 type DomainsToggleTaskExample struct {

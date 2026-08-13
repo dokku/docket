@@ -297,6 +297,32 @@ func (g *planGraph) inSyncCapable(k planFuncKey) bool {
 	return g.memo[k]
 }
 
+// reaches reports whether target is reachable from k across call edges, which
+// is how TestToggleTasksDeclareTheSharedFields asks whether a task's Plan()
+// delegates to planToggle. Delegation is the only honest way to ask what shape a
+// task is: keying on the `_toggle` name suffix instead would miss
+// dokku_maintenance, a toggle that is not spelled like one.
+func (g *planGraph) reaches(k, target planFuncKey) bool {
+	seen := map[planFuncKey]bool{}
+	var walk func(planFuncKey) bool
+	walk = func(node planFuncKey) bool {
+		if node == target {
+			return true
+		}
+		if seen[node] {
+			return false
+		}
+		seen[node] = true
+		for _, callee := range g.calls[node] {
+			if walk(callee) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(k)
+}
+
 // packageSourceFiles returns every non-test .go file in the tasks package
 // directory. Deliberately unfiltered: the in-sync results live in
 // properties.go, toggle.go, pairs.go, resources.go, scheduler_k3s_scoped_pairs.go
@@ -909,6 +935,78 @@ func (t FooTask) Plan() PlanResult {
 			}
 			if !reflect.DeepEqual(nonConverging, tc.nonConverging) {
 				t.Errorf("non-converging branches: got %v, want %v", nonConverging, tc.nonConverging)
+			}
+		})
+	}
+}
+
+// TestPlanGraphReachesFunc exercises the delegation lookup that
+// TestToggleTasksDeclareTheSharedFields uses to decide which tasks are toggles.
+// Every planToggle caller in the real package is one, so running against the
+// package proves only that the lookup does not over-report - these fixtures are
+// what prove it finds a helper a hop away and, more importantly, that it says no.
+func TestPlanGraphReachesFunc(t *testing.T) {
+	const drift = "PlanResult{InSync: false, Status: PlanStatusModify}"
+
+	tests := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{
+			name: "calls the helper directly",
+			src: `
+func (t FooTask) Plan() PlanResult {
+	return planToggle(t.State, t.App)
+}
+
+func planToggle(state State, app string) PlanResult {
+	return ` + drift + `
+}`,
+			want: true,
+		},
+		{
+			name: "reaches the helper one hop away",
+			src: `
+func (t FooTask) Plan() PlanResult {
+	return planFooToggle(t)
+}
+
+func planFooToggle(t FooTask) PlanResult {
+	return planToggle(t.State, t.App)
+}
+
+func planToggle(state State, app string) PlanResult {
+	return ` + drift + `
+}`,
+			want: true,
+		},
+		{
+			name: "delegates elsewhere",
+			src: `
+func (t FooTask) Plan() PlanResult {
+	return planProperty(t.State)
+}
+
+func planProperty(state State) PlanResult {
+	return ` + drift + `
+}
+
+func planToggle(state State, app string) PlanResult {
+	return ` + drift + `
+}`,
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g, problems := planGraphFixture(t, tc.src)
+			if len(problems) > 0 {
+				t.Fatalf("unexpected structural problems: %v", problems)
+			}
+			if got := g.reaches("FooTask.Plan", "planToggle"); got != tc.want {
+				t.Errorf("reaches(FooTask.Plan, planToggle) = %v, want %v", got, tc.want)
 			}
 		})
 	}

@@ -39,3 +39,39 @@ func TestChecksToggleTaskPlanSurfacesSSHError(t *testing.T) {
 		t.Errorf("Error = %v, want *subprocess.SSHError", plan.Error)
 	}
 }
+
+// TestGetTasksChecksToggleTaskParsedCorrectly decodes a toggle task from a
+// recipe rather than building it in Go, which is the one thing the sibling
+// tests here do not do. ChecksToggleTask is declared as `type ChecksToggleTask
+// ToggleFields` (#467), so this is what proves the shared field set still yields
+// the flat `app` / `state` recipe keys and that SetDefaults still fills `state`.
+func TestGetTasksChecksToggleTaskParsedCorrectly(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - name: enable checks
+      dokku_checks_toggle:
+        app: node-js-app
+`)
+
+	tasks, err := GetTasks(data, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("GetTasks failed: %v", err)
+	}
+
+	task := tasks.Get("enable checks")
+	if task == nil {
+		t.Fatal("task 'enable checks' not found")
+	}
+
+	ctTask, ok := task.(*ChecksToggleTask)
+	if !ok {
+		t.Fatalf("task is not a ChecksToggleTask (type is %T)", task)
+	}
+
+	if ctTask.App != "node-js-app" {
+		t.Errorf("App = %q, want %q", ctTask.App, "node-js-app")
+	}
+	if ctTask.State != StatePresent {
+		t.Errorf("expected default state 'present', got %q", ctTask.State)
+	}
+}

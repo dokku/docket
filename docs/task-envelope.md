@@ -124,7 +124,7 @@ specific step, for example enabling Let's Encrypt only in production:
       when: 'env == "prod"'
       dokku_letsencrypt:
         app: api
-        state: enabled
+        state: present
 ```
 
 The expression sees the file-level inputs. Inside a `loop:` it also sees `.item` and `.index`.
@@ -279,7 +279,7 @@ tasks. Use it when a sequence of steps needs a cleanup or rollback path. The out
       block:
         - dokku_app_clone:     { source_app: api, app: api-candidate }
         - dokku_git_sync:      { app: api-candidate, remote: "{{ .repo }}" }
-        - dokku_checks_toggle: { app: api-candidate, state: enabled }
+        - dokku_checks_toggle: { app: api-candidate, state: present }
       rescue:
         - dokku_app: { app: api-candidate, state: absent }
       always:
