@@ -7,6 +7,34 @@ import (
 	"github.com/dokku/docket/subprocess"
 )
 
+// ToggleFields is the recipe shape every toggle task shares: the app whose
+// plugin is being turned on or off, and whether it should be enabled (present)
+// or disabled (absent). A toggle task declares `type XToggleTask ToggleFields`
+// rather than restating the two fields, so a cross-cutting field change - the
+// identity tags of #427, say - lands in one place instead of in every copy.
+//
+// A defined type rather than an embedded struct because the field set stays
+// flat to reflection: the catalog, the required-field walk behind
+// missing_required_field, the identity walk that names an unnamed task, and the
+// sensitive-value walks all read a task's fields at the top level, and an
+// embedded field set would empty every one of them out.
+//
+// The descriptions are deliberately plugin-agnostic. A task's page already
+// names its plugin in the title and the synopsis, so repeating it in every
+// parameter row bought nothing and cost a copy of the field set per plugin.
+//
+// There is no `global` field: planToggle always targets an app, the global
+// machinery having been removed in #322. A toggle that later needs one declares
+// its own fields and goes on the toggleTasksWithOwnFields allowlist with the
+// reason. See TestToggleTasksDeclareTheSharedFields.
+type ToggleFields struct {
+	// App is the name of the app
+	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+
+	// State is the desired state of the plugin for the app
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the plugin for the app"`
+}
+
 // ToggleContext represents the context for a toggle operation
 type ToggleContext struct {
 	// App is the name of the app

@@ -186,8 +186,8 @@ Most dokku plugins expose one of two shapes, and docket has a shared `Plan()` he
 your task fits one, reach for the helper instead of hand-writing `DispatchPlan` - the task becomes
 mostly declaration, and the idempotency probing is handled for you.
 
-- A **toggle** turns a plugin on or off for an app or globally - for example `checks`, `proxy`, and
-  `domains`.
+- A **toggle** turns a plugin on or off for an app - for example `checks`, `proxy`, `domains`, and
+  `maintenance`.
 - A **property** stores named key/value settings you set or clear - for example `nginx`, `builder`,
   and `git`.
 
@@ -199,28 +199,34 @@ For both shapes the `State` field accepts only `present` and `absent`, declared 
 A toggle task delegates `Plan()` to `planToggle`, passing the plugin's enable and disable
 subcommands and a *probe* - a function that reports whether the plugin is currently enabled. The
 probe is what keeps the task idempotent: when it reports the plugin is already in the desired
-position, the task is in sync and nothing runs. `present` means enabled, `absent` means disabled.
-The `allowGlobal` argument controls whether `global: true` is accepted; pass `false` for plugins
-that are app-only.
+position, the task is in sync and nothing runs. `present` means enabled, `absent` means disabled. A
+toggle always targets an app; there is no global scope.
+
+The two recipe keys a toggle task accepts - `app` and `state` - are declared once, in `ToggleFields`.
+Do not restate them: name your task as a defined type over it, so a cross-cutting field change lands
+in one place rather than in every toggle task.
 
 ```go
-type ChecksToggleTask struct {
-  App    string `required:"true" yaml:"app"`
-  Global bool   `required:"false" yaml:"global,omitempty"`
-  State  State  `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent"`
-}
+type ChecksToggleTask ToggleFields
 
 // The probe reports the current position. A non-nil error (or a nil probe) is
 // treated as drift, so the enable/disable command runs anyway.
 func checksEnabled(ctx ToggleContext) (bool, error) {
-  // dokku --quiet checks:report <app> --checks-disabled
+  // dokku checks:report <app> --format json
   // ... return true when nothing is disabled
 }
 
 func (t ChecksToggleTask) Plan() PlanResult {
-  return planToggle(t.State, t.App, t.Global, false, "checks:enable", "checks:disable", checksEnabled)
+  return planToggle(t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 ```
+
+A toggle task addressed differently - one that needs a `global` scope, say - declares its own fields
+and goes on the `toggleTasksWithOwnFields` allowlist with the reason, the way property tasks use
+`propertyTasksWithOwnFields`. Nothing is on it today.
+`TestToggleTasksDeclareTheSharedFields` fails the build for a task that restates the shared field set
+without being on it, and it decides which tasks are toggles by whether their `Plan()` reaches
+`planToggle` rather than by their name - `dokku_maintenance` is a toggle that is not spelled like one.
 
 ### Property tasks
 
