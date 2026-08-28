@@ -27,13 +27,14 @@ func TestEveryTaskDeclaresIdentity(t *testing.T) {
 	}
 }
 
-// TestIdentityKeysAreNeverSensitive is the guard on the one stream that is
-// deliberately unmasked. `--list-tasks --json` prints resolved values by
-// design (docs/json-output.md), and since #427 a task's name embeds its
-// identity fields - so a field that is both an identity key and a declared
-// secret would put that secret into the listing. Every task satisfies this
-// today: the payload fields that are sensitive (an image reference, an
-// archive URL, a password, a certificate) are never the address.
+// TestIdentityKeysAreNeverSensitive keeps a task's address readable. Since
+// #427 a task's name embeds its identity fields, and every stream that prints
+// a name masks it (#455) - so a field that is both an identity key and a
+// declared secret would render the whole address as `***`, and an address is
+// not just a label: it is what `--start-at-task` and `export --resource`
+// parse back. Every task satisfies this today: the payload fields that are
+// sensitive (an image reference, an archive URL, a password, a certificate)
+// are never the address.
 func TestIdentityKeysAreNeverSensitive(t *testing.T) {
 	for name, task := range RegisteredTasks {
 		rt := taskStructType(task)
@@ -43,7 +44,7 @@ func TestIdentityKeysAreNeverSensitive(t *testing.T) {
 				continue
 			}
 			if field.Tag.Get("sensitive") == "true" {
-				t.Errorf("task %q field %s is both identity:%q and sensitive:\"true\"; an identity key is rendered into the task name, which --list-tasks does not mask",
+				t.Errorf("task %q field %s is both identity:%q and sensitive:\"true\"; an identity key is rendered into the task name, which every stream masks, so the address would render as ***",
 					name, field.Name, identityTagKey)
 			}
 		}

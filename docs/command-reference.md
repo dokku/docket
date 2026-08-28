@@ -396,6 +396,13 @@ $ docket apply --list-tasks
 With `--json`, the same information is a `probe` field (`unsupported` or `partial`) plus a
 `probe_caveat` naming what cannot be read; a task that probes everything it manages carries neither.
 
+Sensitive values are masked in the listing exactly as they are in a run. A task name, play name,
+tag, `when:` predicate, or loop item that interpolated a `sensitive: true` input or a task field
+tagged `sensitive:"true"` renders as `***` on both the human and the `--json` path, so the listing
+is safe to paste into a ticket or a CI log. `--start-at-task` still matches on the real name, which
+means a name masked down to `***` cannot be copied out of the listing and used verbatim - write an
+explicit `name:` on any task you need to resume at.
+
 `--start-at-task <name>` takes an exact task `name:`. Earlier tasks render as `[skipped]` with a
 `(before --start-at-task)` reason and do not run; the matched task and everything after it run:
 

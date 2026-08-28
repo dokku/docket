@@ -230,6 +230,14 @@ func (c *PlanCommand) Run(args []string) int {
 		return 1
 	}
 
+	// Task-declared sensitive values join the input-level ones registered
+	// above, ahead of the --list-tasks branch below: it renders the whole
+	// resolved plan and returns without reaching the run loop. Collecting
+	// from the filtered play list rather than the whole file keeps a value
+	// that is only secret in a play --play excluded from masking output it
+	// never appears in.
+	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
+
 	if c.listTasks {
 		return renderListTasks(c.Ui, listTasksOptions{
 			plays:         plays,
@@ -241,8 +249,6 @@ func (c *PlanCommand) Run(args []string) int {
 			jsonOut:       c.json,
 		})
 	}
-
-	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
 
 	if resolvedHost != "" {
 		defer subprocess.CloseSshControlMaster(resolvedHost)

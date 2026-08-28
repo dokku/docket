@@ -110,7 +110,7 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	default:
 		out["status"] = "ok"
 	}
-	if cmds := maskedCommands(ev.State.Commands); len(cmds) > 0 {
+	if cmds := maskedStrings(ev.State.Commands); len(cmds) > 0 {
 		out["commands"] = cmds
 	}
 	if ev.Phase != "" {
@@ -159,9 +159,9 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 			out["reason"] = subprocess.MaskString(ev.Result.Reason)
 		}
 		if len(ev.Result.Mutations) > 0 {
-			out["mutations"] = maskedCommands(ev.Result.Mutations)
+			out["mutations"] = maskedStrings(ev.Result.Mutations)
 		}
-		if cmds := maskedCommands(ev.Result.Commands); len(cmds) > 0 {
+		if cmds := maskedStrings(ev.Result.Commands); len(cmds) > 0 {
 			out["commands"] = cmds
 		}
 	}
@@ -236,16 +236,18 @@ func (e *JSONEmitter) write(ev map[string]interface{}) {
 	e.ui.Output(string(b))
 }
 
-// maskedCommands returns a copy of cmds with each entry passed through
+// maskedStrings returns a copy of in with each entry passed through
 // subprocess.MaskString. Returns nil for an empty slice so the caller can
-// detect "no commands" and omit the JSON field.
-func maskedCommands(cmds []string) []string {
-	if len(cmds) == 0 {
+// detect "nothing here" and omit the JSON field. Serves the run stream's
+// `commands` and `mutations` arrays and the --list-tasks `tags` array, all of
+// which are rendered from the recipe and can carry an interpolated secret.
+func maskedStrings(in []string) []string {
+	if len(in) == 0 {
 		return nil
 	}
-	out := make([]string, len(cmds))
-	for i, c := range cmds {
-		out[i] = subprocess.MaskString(c)
+	out := make([]string, len(in))
+	for i, v := range in {
+		out[i] = subprocess.MaskString(v)
 	}
 	return out
 }

@@ -1,6 +1,8 @@
 package subprocess
 
 import (
+	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -111,4 +113,91 @@ func MaskString(s string) string {
 		s = strings.ReplaceAll(s, v, maskPlaceholder)
 	}
 	return s
+}
+
+// MaskValue returns v with every registered sensitive value replaced by `***`
+// in every string it contains, walking slices and maps recursively. Non-string
+// scalars - numbers, booleans, nil - are returned unchanged: masking is
+// substring replacement over text, and a value that carried a secret would
+// have been rendered as a string before it got here.
+//
+// Map keys are masked as well as map values. A recipe is rendered as one
+// template before it is parsed, so a key is interpolated user data exactly as
+// a value is. Two keys that differ only inside a secret therefore collapse
+// into a single `***` entry - the same "two distinct values become
+// indistinguishable" trade-off masking already makes for task names.
+//
+// It exists for the values that reach a stream as interface{} - today the
+// `loop_item` field of `--list-tasks --json`, which carries whatever the
+// recipe's `loop:` resolved to: a scalar, a list, or a mapping. Masking the
+// value rather than the marshalled line is deliberate: a secret containing a
+// quote or a backslash is escaped in the serialised form, so MaskString would
+// no longer match it there.
+func MaskValue(v interface{}) interface{} {
+	switch t := v.(type) {
+	case nil:
+		return nil
+	case string:
+		return MaskString(t)
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i, item := range t {
+			out[i] = MaskValue(item)
+		}
+		return out
+	case []string:
+		out := make([]string, len(t))
+		for i, item := range t {
+			out[i] = MaskString(item)
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(t))
+		for k, item := range t {
+			out[MaskString(k)] = MaskValue(item)
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]string, len(t))
+		for k, item := range t {
+			out[MaskString(k)] = MaskString(item)
+		}
+		return out
+	}
+	return maskReflectValue(v)
+}
+
+// maskReflectValue is the fallback for the container types the switch in
+// MaskValue does not name - the typed slices and maps an expr-evaluated
+// `loop:` can produce, and the map[interface{}]interface{} shape a
+// hand-built value can carry. It mirrors the reflect normalisation
+// tasks.resolveLoopList already applies on the way in. The copy is
+// interface{}-shaped because the only consumer serialises it to JSON, where
+// an object key is a string regardless. Anything that is not a slice, array,
+// or map is returned unchanged: a non-string scalar cannot carry a secret.
+func maskReflectValue(v interface{}) interface{} {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.String:
+		return MaskString(rv.String())
+	case reflect.Slice, reflect.Array:
+		out := make([]interface{}, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			out[i] = MaskValue(rv.Index(i).Interface())
+		}
+		return out
+	case reflect.Map:
+		out := make(map[string]interface{}, rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			out[MaskString(fmt.Sprint(iter.Key().Interface()))] = MaskValue(iter.Value().Interface())
+		}
+		return out
+	case reflect.Ptr, reflect.Interface:
+		if rv.IsNil() {
+			return nil
+		}
+		return MaskValue(rv.Elem().Interface())
+	}
+	return v
 }

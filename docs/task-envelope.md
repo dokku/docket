@@ -59,6 +59,10 @@ Two properties follow, and both are the point:
   docket apply --start-at-task 'dokku_config[app=api]'
   ```
 
+  An address built from a `sensitive: true` input is masked wherever it is printed, so it comes back
+  as `dokku_config[app=***]` and cannot be copied out and used here. Write an explicit `name:` on
+  such a task.
+
 The desired state is deliberately *not* part of the address. `state: absent` on an app's config
 addresses the same resource as `state: present`, so changing a task's state does not rename it.
 

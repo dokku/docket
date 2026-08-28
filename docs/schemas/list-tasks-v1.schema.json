@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/dokku/docket/main/docs/schemas/list-tasks-v1.schema.json",
   "title": "docket --list-tasks JSON-lines event",
-  "description": "One event emitted by `docket apply --list-tasks --json` or `docket plan --list-tasks --json`. This is a separate stream from the apply/plan run stream: no task runs, no server is contacted, and there is no summary event. Its `play_skipped` carries `play` where the run stream's carries `name`, and no `ts`. See docs/json-output.md.",
+  "description": "One event emitted by `docket apply --list-tasks --json` or `docket plan --list-tasks --json`. This is a separate stream from the apply/plan run stream: no task runs, no server is contacted, and there is no summary event. Its `play_skipped` carries `play` where the run stream's carries `name`, and no `ts`. Sensitive values - inputs declared `sensitive: true` and task fields tagged `sensitive:\"true\"` - are masked as `***`, the same as in the run stream. See docs/json-output.md.",
   "type": "object",
   "required": ["version", "type"],
   "properties": {
@@ -23,11 +23,11 @@
       "properties": {
         "version": { "$ref": "#/$defs/version" },
         "type": { "const": "play_skipped" },
-        "play": { "type": "string" },
-        "when": { "type": "string", "description": "The play predicate source." },
+        "play": { "type": "string", "description": "The play name, masked." },
+        "when": { "type": "string", "description": "The play predicate source, masked." },
         "reason": {
           "type": "string",
-          "description": "Either `when: <src>` for a false predicate or `when error: <err>` for one that failed to evaluate."
+          "description": "Either `when: <src>` for a false predicate or `when error: <err>` for one that failed to evaluate. Masked - an expr runtime error quotes the predicate source back."
         }
       }
     },
@@ -42,7 +42,7 @@
         "play": { "type": "string" },
         "name": {
           "type": "string",
-          "description": "The task's `name:`, or - when the recipe omits one - the address of the resource it manages (`dokku_config[app=api]`). Stable across runs of the same recipe."
+          "description": "The task's `name:`, or - when the recipe omits one - the address of the resource it manages (`dokku_config[app=api]`). Stable across runs of the same recipe. Masked, so a name that interpolated a secret renders as `***` and cannot be pasted back into `--start-at-task`."
         },
         "index": {
           "type": "integer",
@@ -52,7 +52,7 @@
         "tags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Present only when the task carries tags."
+          "description": "Present only when the task carries tags. Masked."
         },
         "group": {
           "type": "boolean",
@@ -62,21 +62,21 @@
         "phase": {
           "type": "string",
           "enum": ["block", "rescue", "always"],
-          "description": "Set on a child of a group, naming the clause it belongs to."
+          "description": "Set on a child of a group, naming the clause it belongs to. Never masked - it is a fixed enum, not recipe content."
         },
         "deprecated": { "type": "boolean", "const": true },
         "deprecation": {
           "type": "string",
-          "description": "The deprecation notice. --list-tasks --json carries it here instead of emitting a separate warning event."
+          "description": "The deprecation notice. --list-tasks --json carries it here instead of emitting a separate warning event. Masked, matching the run stream's `warning.message`."
         },
         "probe": {
           "type": "string",
           "enum": ["partial", "unsupported"],
-          "description": "How much of its own state the task type can read. `unsupported` means it plans as drift on every run and never converges; `partial` means some of its fields do. Absent when the task probes everything it manages."
+          "description": "How much of its own state the task type can read. `unsupported` means it plans as drift on every run and never converges; `partial` means some of its fields do. Absent when the task probes everything it manages. Never masked - it is a fixed enum, not recipe content."
         },
         "probe_caveat": {
           "type": "string",
-          "description": "Human-readable note naming what cannot be read. Present whenever `probe` is."
+          "description": "Human-readable note naming what cannot be read. Present whenever `probe` is. Masked."
         },
         "skipped": {
           "type": "boolean",
@@ -95,7 +95,7 @@
         },
         "when": {
           "type": "string",
-          "description": "The predicate source. Present with skipped, unknown, or when_error."
+          "description": "The predicate source, masked. Present with skipped, unknown, or when_error."
         },
         "loop_index": {
           "type": "integer",
@@ -103,7 +103,7 @@
           "description": "Present on an expanded loop iteration."
         },
         "loop_item": {
-          "description": "The loop item for this iteration. Any JSON value."
+          "description": "The loop item for this iteration. Any JSON value. Every string inside it is masked at any depth, object keys included."
         }
       }
     }

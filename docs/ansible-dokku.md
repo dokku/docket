@@ -227,11 +227,12 @@ masked as `***` everywhere in the `apply` / `plan` / `validate` output, includin
 `name`. A wrapper cannot read a secret back out of those streams, which is the point - but it also
 means a wrapper must not diff a returned value against the one it sent.
 
-The one exception is `--list-tasks`, which renders the resolved plan before any sensitive value is
-registered and does no masking at all: an interpolated secret comes back verbatim in `name`,
-`when`, and `loop_item`. Never surface that stream to an Ansible caller. No task field is ever both
-an identity key and `sensitive:"true"`, so a generated `name` never embeds a task-declared secret -
-but a `sensitive: true` input interpolated into an identity field still reaches it.
+`--list-tasks` masks on the same terms, on both the human and the `--json` path: an interpolated
+secret comes back as `***` in `name`, `when`, `tags`, and `loop_item`. No task field is ever both an
+identity key and `sensitive:"true"`, so a generated `name` never embeds a task-declared secret - but
+a `sensitive: true` input interpolated into an identity field still reaches it, and is masked there
+too. A wrapper that resumes a run cannot feed such a name back to `--start-at-task`, which matches
+on the real value; emit an explicit `name:` on any task it needs to address.
 
 ## Module mapping
 

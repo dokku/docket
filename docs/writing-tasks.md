@@ -145,7 +145,9 @@ Three rules decide what is a key, and none of them is "the required fields":
   the address, which is what makes the two scopes render differently.
 
 A field must never be both `identity:"key"` and `sensitive:"true"`. An identity key is rendered into
-the task name, and `--list-tasks` does not mask - `TestIdentityKeysAreNeverSensitive` enforces this.
+the task name, and every stream masks the name - so a sensitive key would render the whole address
+as `dokku_config[app=***]`, which the reader can see but cannot type back into `--start-at-task` or
+`docket export --resource`. `TestIdentityKeysAreNeverSensitive` enforces this.
 
 Leave a collection untagged when it is an *attribute* of the resource rather than the set of items
 the task manages: `dokku_storage_mount`'s `phases` narrows one mount, it is not a set of mounts.
