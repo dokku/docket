@@ -49,6 +49,13 @@ type ProbeSupport struct {
 // raised per-run by the probe call site, and they never change a task's
 // declared status.
 //
+// Nor is it the same thing as a difference a task reads successfully and
+// declines to act on, which is also a PlanWarning (see
+// WarnReasonServiceImageDrift). A task can probe a field perfectly well and
+// still refuse to converge it because the only available remedy is worse than
+// the drift; that is a property of the remedy, not of the probe, and it does
+// not make the task partial for that field either.
+//
 // Nothing in the plan or apply path reads this: drift is decided entirely by
 // each Plan() implementation. What keeps the declaration honest is
 // TestProbeSupportMatchesPlanWiring, which fails when a task claims it can

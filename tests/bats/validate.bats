@@ -186,6 +186,96 @@ EOF
   assert_output --partial "'image' must not be set for state 'absent'"
 }
 
+@test "docket validate exits 1 on an unknown service_create image_drift" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: redis
+        name: cache
+        image_version: "7.2.5"
+        image_drift: sometimes
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'image_drift' must be one of ignore, warn, error, upgrade"
+}
+
+@test "docket validate exits 1 on service_create image_drift without an image pin" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: redis
+        name: cache
+        image_drift: upgrade
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'image_drift' requires 'image' or 'image_version'"
+}
+
+@test "docket validate exits 1 on service_create image_drift upgrade without an image_version" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: redis
+        name: cache
+        image: redis
+        image_drift: upgrade
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'image_drift: upgrade' requires 'image_version' when 'image' is set"
+}
+
+@test "docket validate exits 1 on service_create restart_apps without an upgrade" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: redis
+        name: cache
+        image: redis
+        image_version: "7.2.5"
+        restart_apps: true
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'restart_apps' requires 'image_drift: upgrade'"
+}
+
+@test "docket validate exits 1 on service_create image_drift under state absent" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: redis
+        name: cache
+        image_drift: upgrade
+        state: absent
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'image_drift' must not be set for state 'absent'"
+}
+
+@test "docket validate exits 1 on service_create restart_apps under state absent" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: redis
+        name: cache
+        restart_apps: true
+        state: absent
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'restart_apps' must not be set for state 'absent'"
+}
+
 @test "docket validate exits 1 on a service_create custom_env delimiter" {
   write_tasks_file <<EOF
 ---

@@ -219,3 +219,92 @@ func TestValidateSchemaCodeEnumCoversEmittedCodes(t *testing.T) {
 			validateSchemaPath, len(stale), strings.Join(stale, ", "))
 	}
 }
+
+// warnReasonConst matches the `WarnReasonX = "..."` constants in the tasks
+// package, which is where every reason with a name behind it is declared.
+var warnReasonConst = regexp.MustCompile(`\bWarnReason[A-Za-z0-9]*\s*=\s*"([a-z0-9_]+)"`)
+
+// taskWarningLiteral matches a reason passed to EventEmitter.TaskWarning as a
+// bare string. Only "deprecated" is emitted that way today - the run loops
+// raise it from the task type rather than from a Plan(), so it has no
+// WarnReason constant to be found under.
+var taskWarningLiteral = regexp.MustCompile(`TaskWarning\([^,]+,\s*[^,]+,\s*"([a-z0-9_]+)"`)
+
+// TestEventsSchemaWarningReasonEnumCoversEmittedReasons is the
+// TestValidateSchemaCodeEnumCoversEmittedCodes of the events stream. The
+// `warning.reason` enum is closed, so a new reason that never reaches the
+// published schema fails validation in any consumer that trusts it - and
+// additionalProperties: false does not catch it, because `reason` is a value
+// rather than a field name. Same caveat as its sibling: the scan reads string
+// literals, so a reason routed through a variable would be missed.
+func TestEventsSchemaWarningReasonEnumCoversEmittedReasons(t *testing.T) {
+	emitted := map[string]bool{}
+	for dir, re := range map[string]*regexp.Regexp{"../tasks": warnReasonConst, ".": taskWarningLiteral} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read %s: %v", dir, err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatalf("read %s/%s: %v", dir, name, err)
+			}
+			for _, m := range re.FindAllStringSubmatch(string(raw), -1) {
+				emitted[m[1]] = true
+			}
+		}
+	}
+	if len(emitted) == 0 {
+		t.Fatal("found no warning reasons in the source; the scan patterns have drifted")
+	}
+
+	raw, err := os.ReadFile(eventsSchemaPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", eventsSchemaPath, err)
+	}
+	var schema struct {
+		Defs struct {
+			Warning struct {
+				Properties struct {
+					Reason struct {
+						Enum []string `json:"enum"`
+					} `json:"reason"`
+				} `json:"properties"`
+			} `json:"warning"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("parse %s: %v", eventsSchemaPath, err)
+	}
+	listed := map[string]bool{}
+	for _, reason := range schema.Defs.Warning.Properties.Reason.Enum {
+		listed[reason] = true
+	}
+
+	var missing, stale []string
+	for reason := range emitted {
+		if !listed[reason] {
+			missing = append(missing, reason)
+		}
+	}
+	for reason := range listed {
+		if !emitted[reason] {
+			stale = append(stale, reason)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(stale)
+
+	if len(missing) > 0 {
+		t.Errorf("%s omits %d emitted warning reason(s): %s\nAdd each to the warning.reason enum and to the table in docs/json-output.md.",
+			eventsSchemaPath, len(missing), strings.Join(missing, ", "))
+	}
+	if len(stale) > 0 {
+		t.Errorf("%s lists %d warning reason(s) nothing emits: %s\nDrop them, or fix the typo.",
+			eventsSchemaPath, len(stale), strings.Join(stale, ", "))
+	}
+}

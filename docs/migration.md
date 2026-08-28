@@ -99,6 +99,9 @@ code onto the new server with whichever deploy source your recipe uses:
 the old one was running, which export reads off the container so the new server does not silently
 pick up a different major version its plugin happens to default to. The other create-time options
 (`custom_env`, `memory`, the networks, and the passwords) cannot be read back and must be re-supplied.
+Re-supplying them matters beyond the first apply: `image_drift: upgrade` reconciles a later change to
+the image pin by recreating the container, and the plugin rebuilds `config_options` and `custom_env`
+from the recipe when it does, clearing whatever the recipe did not carry.
 [`dokku_service_backup`](tasks/dokku_service_backup.md) only configures the S3 backup schedule and
 auth - there is no restore task. Export carries the schedule, bucket, and `use_iam` flag but not the
 AWS credentials or encryption passphrase (they cannot be read back), so re-add those before the
