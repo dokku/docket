@@ -63,18 +63,32 @@ func AddGlobalSensitive(values ...string) {
 // cleanSensitive drops empty and duplicate entries and returns the values
 // sorted by length descending so a longer secret is masked before any shorter
 // secret that is a substring of it would be.
+//
+// A value carrying leading or trailing whitespace registers its trimmed
+// spelling alongside the literal. Masking is literal substring replacement,
+// but docket renders some user-facing text through strings.TrimSpace - a loop
+// item in the `(item=<value>)` task-name suffix, most visibly - so without the
+// trimmed spelling a padded secret prints in the clear wherever it was
+// trimmed (#473). Registering both here rather than at each collection site
+// keeps the two spellings in step no matter when a value joins the registry:
+// a task-declared secret is added after the recipe has already parsed and
+// named its loop expansions.
 func cleanSensitive(values []string) []string {
 	cleaned := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
-	for _, v := range values {
+	add := func(v string) {
 		if v == "" {
-			continue
+			return
 		}
 		if _, ok := seen[v]; ok {
-			continue
+			return
 		}
 		seen[v] = struct{}{}
 		cleaned = append(cleaned, v)
+	}
+	for _, v := range values {
+		add(v)
+		add(strings.TrimSpace(v))
 	}
 	sort.SliceStable(cleaned, func(i, j int) bool {
 		return len(cleaned[i]) > len(cleaned[j])

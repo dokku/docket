@@ -299,6 +299,11 @@ func loopExpansionNames(base string, items []interface{}) []string {
 // renderItemForName returns a stringified item value safe for use in a
 // task-name suffix. Returns "" for non-scalar values so the caller can
 // fall back to an index-based suffix.
+//
+// A string item is trimmed so `(item= api )` reads as `(item=api)`. That
+// trimming is why subprocess.cleanSensitive registers a padded secret's
+// trimmed spelling as well as its literal one: masking matches literals, and
+// the name is masked after this rendering, not before (#473).
 func renderItemForName(item interface{}) string {
 	switch v := item.(type) {
 	case nil:

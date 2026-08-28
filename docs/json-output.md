@@ -25,7 +25,7 @@ so a dashboard or a CI job comparing `plan` to `apply` can line them up. A task 
 the recipe is named after the [resource it manages](task-envelope.md#names-and-resource-addresses) -
 `dokku_config[app=api]` - which is stable for the same reason.
 
-Two caveats on masking, both of which can make two distinct tasks indistinguishable in the stream:
+Three caveats on masking, each of which can make two distinct tasks indistinguishable in the stream:
 
 - A generated name embeds the task's identity field values. No field is ever both an identity key
   and declared sensitive, but a `sensitive: true` input interpolated into one still reaches the
@@ -33,6 +33,10 @@ Two caveats on masking, both of which can make two distinct tasks indistinguisha
   into `--start-at-task`, which matches on the real name.
 - Masking is substring replacement. A short sensitive value can mask a large part of two different
   names into the same `***`-bearing string. Pin a `name:` on the tasks a consumer must tell apart.
+- A sensitive value carrying leading or trailing whitespace masks its trimmed spelling as well as
+  its literal one. Docket trims some of the text it builds - a loop item in a task name, for one -
+  and substring replacement would otherwise miss the trimmed form, so both are masked everywhere
+  they appear. Padding a secret therefore widens what masks rather than narrowing it.
 
 ## Events
 
