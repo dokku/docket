@@ -70,10 +70,15 @@ func (t StubTask) Plan() tasks.PlanResult {
 		}
 	}
 	if !fixture.Changed && fixture.ExecuteError == nil {
+		// Warnings ride out on the in-sync result too. A task can read its
+		// state perfectly well, find a difference, and decline to reconcile
+		// it - dokku_service_create's image_drift does exactly that - so the
+		// stub has to be able to produce an in-sync-with-warning plan.
 		return tasks.PlanResult{
 			InSync:       true,
 			Status:       tasks.PlanStatusOK,
 			DesiredState: tasks.StatePresent,
+			Warnings:     fixture.Warnings,
 		}
 	}
 	return tasks.PlanResult{

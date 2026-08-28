@@ -112,6 +112,23 @@ func serviceDSN(service, name string) (string, error) {
 // (`*subprocess.SSHError`) is propagated; any other failure yields no image, as
 // does a service whose container is gone - dokku prints nothing in that case.
 func serviceImage(service, name string) (string, string, error) {
+	ref, err := serviceImageRef(service, name)
+	if err != nil {
+		return "", "", err
+	}
+	image, version := splitImageRef(ref)
+	return image, version, nil
+}
+
+// serviceImageRef returns the image reference verbatim, before splitImageRef
+// has had a chance to lose anything in it. The drift probe in
+// dokku_service_create needs the raw form: splitImageRef cannot represent a
+// digest reference (`redis@sha256:...` splits on the digest's colon), and a
+// half of that split is not something the task may hand back to
+// `<service>:upgrade`. Error handling is serviceImage's: a transport-level
+// failure propagates, anything else - including a service whose container is
+// gone, where dokku prints nothing - yields the empty ref.
+func serviceImageRef(service, name string) (string, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", fmt.Sprintf("%s:info", service), name, "--version"},
@@ -119,12 +136,11 @@ func serviceImage(service, name string) (string, string, error) {
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
-			return "", "", err
+			return "", err
 		}
-		return "", "", nil
+		return "", nil
 	}
-	image, version := splitImageRef(result.StdoutContents())
-	return image, version, nil
+	return result.StdoutContents(), nil
 }
 
 // splitImageRef splits a docker image reference into its name and tag. The

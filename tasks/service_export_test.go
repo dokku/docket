@@ -99,6 +99,12 @@ func TestSplitImageRef(t *testing.T) {
 		{"registry.example.com:5000/postgres:17.2", "registry.example.com:5000/postgres", "17.2"},
 		{"postgres", "postgres", ""},
 		{"", "", ""},
+		// A digest reference has no tag to find, and the colon the splitter
+		// lands on belongs to the digest. Neither half is usable, which is why
+		// the image-drift upgrade path refuses to build a reference out of one
+		// (see TestServiceCreateTaskImageDriftUpgradeRefusesADigestRef) rather
+		// than trusting this result.
+		{"postgres@sha256:abc123", "postgres@sha256", "abc123"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.ref, func(t *testing.T) {
@@ -334,6 +340,14 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+	// Drift policy is a recipe-authoring choice, not something a server has,
+	// so export must not put words in the operator's mouth about it. Both
+	// fields rely on `omitempty` and their zero values to stay out.
+	for _, unwanted := range []string{"image_drift", "restart_apps"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("recipe should not export %q:\n%s", unwanted, out)
 		}
 	}
 }

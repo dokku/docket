@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -107,5 +108,143 @@ func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
 
 	if plan := task.Plan(); !plan.InSync {
 		t.Errorf("expected the pinned service to be in sync on re-plan, got %+v", plan)
+	}
+}
+
+// The image pair the drift tests move a service between. 7.2.5 is the tag
+// TestIntegrationServiceCreatePinnedImage and the documented examples already
+// pull, so the suite adds at most one image to what CI fetches anyway.
+const (
+	driftImage   = "redis"
+	driftOldTag  = "7.2.4"
+	driftNewTag  = "7.2.5"
+	driftService = "redis"
+)
+
+// createDriftService stands up a redis service on the given tag and registers
+// its teardown. Each test uses its own name so a sharded CI run cannot have two
+// of them fighting over one service.
+func createDriftService(t *testing.T, name, tag string) {
+	t.Helper()
+	destroyService(driftService, name)
+	t.Cleanup(func() { destroyService(driftService, name) })
+
+	task := ServiceCreateTask{
+		Service:      driftService,
+		Name:         name,
+		Image:        driftImage,
+		ImageVersion: tag,
+		State:        StatePresent,
+	}
+	if result := task.Execute(); result.Error != nil {
+		t.Fatalf("failed to create %s:%s: %v\n  commands: %v\n  stderr: %s", driftImage, tag, result.Error, result.Commands, result.Stderr)
+	}
+}
+
+// TestIntegrationServiceCreateImageDriftWarns pins the default: a service on
+// the wrong image is reported and left alone, so apply stays idempotent.
+func TestIntegrationServiceCreateImageDriftWarns(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+
+	serviceName := "docket-test-drift-warn"
+	createDriftService(t, serviceName, driftNewTag)
+
+	task := ServiceCreateTask{
+		Service:      driftService,
+		Name:         serviceName,
+		Image:        driftImage,
+		ImageVersion: driftOldTag,
+		State:        StatePresent,
+	}
+	plan := task.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if !plan.InSync || plan.Status != PlanStatusOK {
+		t.Errorf("warn mode must stay in sync, got InSync=%v status=%q", plan.InSync, plan.Status)
+	}
+	if len(plan.Warnings) != 1 || plan.Warnings[0].Reason != WarnReasonServiceImageDrift {
+		t.Fatalf("expected one %s warning, got %v", WarnReasonServiceImageDrift, plan.Warnings)
+	}
+	if result := task.Execute(); result.Error != nil || result.Changed {
+		t.Errorf("warn mode must not change the server, got changed=%v err=%v", result.Changed, result.Error)
+	}
+}
+
+// TestIntegrationServiceCreateImageDriftErrors covers the CI-gate mode.
+func TestIntegrationServiceCreateImageDriftErrors(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+
+	serviceName := "docket-test-drift-error"
+	createDriftService(t, serviceName, driftNewTag)
+
+	task := ServiceCreateTask{
+		Service:      driftService,
+		Name:         serviceName,
+		Image:        driftImage,
+		ImageVersion: driftOldTag,
+		ImageDrift:   imageDriftError,
+		State:        StatePresent,
+	}
+	plan := task.Plan()
+	if plan.Error == nil || plan.Status != PlanStatusError {
+		t.Fatalf("expected a plan error, got status=%q err=%v", plan.Status, plan.Error)
+	}
+	if !strings.Contains(plan.Error.Error(), driftNewTag) || !strings.Contains(plan.Error.Error(), driftOldTag) {
+		t.Errorf("error %q should name both the running and the pinned reference", plan.Error.Error())
+	}
+}
+
+// TestIntegrationServiceCreateImageDriftUpgrades is the convergence test. An
+// upgrade that leaves the task reporting drift on the next run would recreate
+// the container on every apply, so asserting the re-plan is in sync and a
+// second apply changes nothing is the part that matters most here.
+func TestIntegrationServiceCreateImageDriftUpgrades(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+
+	serviceName := "docket-test-drift-upgrade"
+	createDriftService(t, serviceName, driftOldTag)
+
+	task := ServiceCreateTask{
+		Service:      driftService,
+		Name:         serviceName,
+		Image:        driftImage,
+		ImageVersion: driftNewTag,
+		ImageDrift:   imageDriftUpgrade,
+		State:        StatePresent,
+	}
+
+	plan := task.Plan()
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("expected drift, got InSync=%v status=%q", plan.InSync, plan.Status)
+	}
+
+	result := task.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to upgrade: %v\n  commands: %v\n  stderr: %s", result.Error, result.Commands, result.Stderr)
+	}
+	if !result.Changed || result.State != StatePresent {
+		t.Fatalf("expected a changed, present service, got changed=%v state=%q", result.Changed, result.State)
+	}
+
+	image, version, err := serviceImage(driftService, serviceName)
+	if err != nil {
+		t.Fatalf("serviceImage: %v", err)
+	}
+	if image != driftImage || version != driftNewTag {
+		t.Errorf("service is running %q:%q, want %q:%q", image, version, driftImage, driftNewTag)
+	}
+
+	if plan := task.Plan(); !plan.InSync || len(plan.Warnings) != 0 {
+		t.Errorf("the upgraded service must re-plan in sync and silent, got %+v", plan)
+	}
+	if second := task.Execute(); second.Error != nil || second.Changed {
+		t.Errorf("a second apply must be a no-op, got changed=%v err=%v", second.Changed, second.Error)
 	}
 }

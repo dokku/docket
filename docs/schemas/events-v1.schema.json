@@ -92,7 +92,7 @@
         "name": { "type": "string" },
         "reason": {
           "type": "string",
-          "enum": ["deprecated", "unknown_property", "probe_rejected"],
+          "enum": ["deprecated", "unknown_property", "probe_rejected", "service_image_drift"],
           "description": "Stable machine key for the warning category."
         },
         "message": { "type": "string" },

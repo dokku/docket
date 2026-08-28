@@ -275,6 +275,10 @@ func TestBuildSshArgvQuotesInjection(t *testing.T) {
 // the argv assembled here crosses to the remote shell. The semicolon
 // delimiters inside a --custom-env token are the sharp edge - unquoted they
 // would be command separators on the remote login shell.
+//
+// The same flags are re-rendered onto `<service>:upgrade` when the task
+// reconciles an image pin, so this covers both call sites: the quoting is a
+// property of the argv, not of the subcommand carrying it.
 func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
 	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
 	t.Setenv("DOKKU_SUDO", "")

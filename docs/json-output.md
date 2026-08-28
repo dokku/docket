@@ -77,6 +77,7 @@ ordering. The `reason` is a stable machine key so consumers can branch on the ca
 | `deprecated` | A task whose type implements `Deprecation()` is about to run; `message` carries the deprecation notice. |
 | `unknown_property` | A property task's probe found no matching key in the plugin's `:report --format json` payload (a stale key map or a dokku version that does not emit it). |
 | `probe_rejected` | An older plugin rejected `:report --format json` outright, so the property task could not probe current state. |
+| `service_image_drift` | A `dokku_service_create` task found the service running an image other than the one the recipe pins and left it alone, or could not read the running image to compare at all. See [dokku_service_create](tasks/dokku_service_create.md). |
 
 In every case `message` is masked, so a registered sensitive value that reaches the warning (for
 example server stderr echoed by a rejected probe) renders as `***`. `--list-tasks --json` does not
@@ -84,8 +85,12 @@ emit a separate `warning` event; instead, the `list_task` event for a deprecated
 `"deprecated": true` and a `deprecation` field with the message, masked the same way.
 
 `unknown_property` and `probe_rejected` are probe failures: this run could not read the state, and
-another run against a different server or a newer plugin might. A task type that can *never* read
-its state is a different thing, declared rather than discovered, and it is not a warning at all. The
+another run against a different server or a newer plugin might. `service_image_drift` is the other
+kind - the state was read, and the task is reporting a difference it is deliberately not
+reconciling, because dokku's only remedy recreates the service container. It rides on an `ok` task,
+not a `~` one, so a recipe carrying that mismatch still exits `0` under `--detailed-exitcode`; set
+`image_drift: error` on the task when a run should fail on it instead. A task type that can *never*
+read its state is a third thing, declared rather than discovered, and it is not a warning at all. The
 `list_task` event carries it as `"probe": "unsupported"` (the task reports drift on every run) or
 `"probe": "partial"` (only some of its fields are read), each with a `probe_caveat` naming what
 cannot be read. Both keys are absent for a task that probes everything it manages. `probe_caveat` is

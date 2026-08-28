@@ -285,6 +285,13 @@ over SSH, where variables put in front of the local process never reach the remo
 remaining create-time options (`memory`, `shm_size`, the three network fields, `password`, and
 `root_password`) have no module counterpart.
 
+`image_drift` and `restart_apps` have no counterpart either, and are not create-time options at all:
+they say what docket should do when the service already exists on some other image, which is a
+question the module never asks because it stops at `<service>:exists`. A wrapper that translates
+`POSTGRES_IMAGE` into `image` is reproducing the module's behaviour exactly by leaving `image_drift`
+alone - the default reports the mismatch and changes nothing. Set it to `upgrade` only where the
+wrapper's own contract says a pin change should recreate the container.
+
 ### Host directories
 
 `dokku_storage` does raw filesystem work alongside its `storage:mount` calls, which it gets

@@ -195,6 +195,15 @@ const (
 	// WarnReasonProbeRejected marks a probe warning raised when an older plugin
 	// rejects `:report --format json` outright.
 	WarnReasonProbeRejected = "probe_rejected"
+	// WarnReasonServiceImageDrift marks a warning raised when a datastore
+	// service is running an image other than the one the recipe pins, and the
+	// task is leaving it alone. Unlike the two above it is not a probe failure:
+	// the state was read successfully and the task is declining to reconcile
+	// it, because dokku's only remedy recreates the container. It also covers
+	// the case where the running image could not be read at all, so a recipe
+	// that asked for drift to be caught is never silently told everything is
+	// fine.
+	WarnReasonServiceImageDrift = "service_image_drift"
 )
 
 // WithExecResult returns a copy of s with Stdout/Stderr/ExitCode populated
