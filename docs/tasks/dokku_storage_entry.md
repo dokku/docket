@@ -35,7 +35,7 @@ Keyed by `name`.
 
 ## Examples
 
-### Create a docker-local storage entry owned by the herokuish user, and keep it owned by that user
+### Create a docker-local storage entry owned by the herokuish user
 
 ```yaml
 dokku_storage_entry:
@@ -43,15 +43,12 @@ dokku_storage_entry:
     chown: herokuish
 ```
 
-### Resize a k3s entry and add a label, leaving the attributes the recipe does not name alone
+### Change an entry's ownership, leaving the attributes the recipe does not name alone
 
 ```yaml
 dokku_storage_entry:
     name: node-js-app-data
-    scheduler: k3s
-    size: 8Gi
-    labels:
-        tier: data
+    chown: root
 ```
 
 ### Create a storage entry at an explicit host path

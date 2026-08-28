@@ -103,19 +103,17 @@ func (t StorageEntryTask) ProbeSupport() ProbeSupport {
 func (t StorageEntryTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEntryTaskExample{
 		{
-			Name: "Create a docker-local storage entry owned by the herokuish user, and keep it owned by that user",
+			Name: "Create a docker-local storage entry owned by the herokuish user",
 			StorageEntryTask: StorageEntryTask{
 				Name:  "node-js-app-data",
 				Chown: "herokuish",
 			},
 		},
 		{
-			Name: "Resize a k3s entry and add a label, leaving the attributes the recipe does not name alone",
+			Name: "Change an entry's ownership, leaving the attributes the recipe does not name alone",
 			StorageEntryTask: StorageEntryTask{
-				Name:      "node-js-app-data",
-				Scheduler: "k3s",
-				Size:      "8Gi",
-				Labels:    map[string]string{"tier": "data"},
+				Name:  "node-js-app-data",
+				Chown: "root",
 			},
 		},
 		{
