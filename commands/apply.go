@@ -858,6 +858,13 @@ func startAtTaskMatches(plays []*tasks.Play, target string) bool {
 // unmatched --start-at-task error. Names are deduplicated and rendered
 // in source order, quoted so the user can copy a name verbatim back
 // onto the CLI.
+//
+// Each name is masked before it is quoted, not after. `%q` escapes what it
+// wraps, and a generated address is already escaped where it quotes a key
+// value, so masking the finished message would be matching a literal against
+// text that carries the secret escaped twice over - and would miss it (#475).
+// Deduplication still keys on the real name: two tasks that mask alike are two
+// tasks.
 func formatStartAtTaskNames(plays []*tasks.Play) string {
 	seen := map[string]bool{}
 	var quoted []string
@@ -868,7 +875,7 @@ func formatStartAtTaskNames(plays []*tasks.Play) string {
 		for _, name := range play.Tasks.Keys() {
 			if !seen[name] {
 				seen[name] = true
-				quoted = append(quoted, fmt.Sprintf("%q", name))
+				quoted = append(quoted, fmt.Sprintf("%q", subprocess.MaskString(name)))
 			}
 			env := play.Tasks.GetEnvelope(name)
 			for _, descendant := range tasks.CollectEnvelopeNames([]*tasks.TaskEnvelope{env}) {
@@ -877,7 +884,7 @@ func formatStartAtTaskNames(plays []*tasks.Play) string {
 				}
 				if !seen[descendant] {
 					seen[descendant] = true
-					quoted = append(quoted, fmt.Sprintf("%q", descendant))
+					quoted = append(quoted, fmt.Sprintf("%q", subprocess.MaskString(descendant)))
 				}
 			}
 		}

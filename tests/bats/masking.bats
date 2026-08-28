@@ -151,6 +151,33 @@ EOF
   assert_output --partial "set padded secret config (item=***)"
 }
 
+@test "docket apply masks a quote-bearing sensitive identity value in the task name" {
+  # #475: an unnamed task is named after the resource it addresses, and the
+  # address wraps a key value in Go quoting when a bare form would not parse
+  # back. That escapes the quote the secret carries, so it stopped matching the
+  # registered literal and reached the run stream unmasked. The option is
+  # removed rather than added so the task is a no-op against the server while
+  # still rendering its address.
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - name: ensure docket-test-mask
+      dokku_app:
+        app: docket-test-mask
+    - dokku_docker_options:
+        app: docket-test-mask
+        phase: deploy
+        option: "--label docket-test={{ .secret_value | dq }}"
+        state: absent
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value='quotedaddresszzz"x'
+  assert_success
+  refute_output --partial "quotedaddresszzz"
+  assert_output --partial 'option="--label docket-test=***"'
+}
+
 @test "docket apply masks a sensitive value interpolated into a play when:" {
   # A play predicate sigil-interpolates a sensitive input, so the recipe text
   # (and the skip line echoing it) contains the literal secret (#335).

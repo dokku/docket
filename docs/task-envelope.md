@@ -46,6 +46,11 @@ section of every [task reference page](tasks/README.md). A key you left empty is
 what distinguishes an app-scoped task from its global counterpart. A task with no key value at all
 is just its type: `dokku_domains`.
 
+A key value is quoted in the address only when a bare form would not parse back out of one - when
+it holds a comma, a `]`, or a `"`. Quoting escapes what it wraps, so an option carrying a quote
+reads `dokku_docker_options[app=api,phase=deploy,option="--label a\"b"]`. Everything else stays
+bare, which is what keeps an address full of `=`, spaces, and colons readable.
+
 Two properties follow, and both are the point:
 
 - **The same recipe produces the same names on every run.** A tool diffing one run against another -
