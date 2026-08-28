@@ -16,49 +16,55 @@ import (
 // exist independently of any single app, and an attachment created via
 // dokku_storage_mount references them by name.
 //
-// Idempotency is keyed on the entry name: when an entry with the given
-// name exists, the task is in sync regardless of the other field
-// values. Attribute changes are therefore not drift-detected; to change
-// scheduler, size, or any other attribute, the recipe must destroy and
-// re-create the entry. Converging them in place is tracked in
-// https://github.com/dokku/docket/issues/439 - it needs a different
-// command per scheduler, since `storage:set --chown` records a new
-// ownership value without re-running the chown on a docker-local
-// directory.
+// The entry name selects the entry; every other field is compared against
+// what `storage:list-entries` records for it, so a recipe that changes one
+// converges on the next apply rather than being applied once at create
+// time. A field the recipe omits is unmanaged: it is neither compared nor
+// cleared, which is what stops a recipe naming only `name` and `chown`
+// from dropping a `size` it never mentions. Clearing an attribute is a
+// manual `dokku storage:set <name> <property>` with no value.
+//
+// Four fields cannot be converged, because dokku cannot change them on an
+// entry that exists: `storage:set` refuses an access-mode or storage-class
+// swap outright, and there is no command at all for the scheduler or the
+// host path. A recipe that disagrees with the entry on one of them is
+// reported as a plan error naming both values, so it fails before an apply
+// starts rather than part way through one.
 type StorageEntryTask struct {
 	// Name is the name of the storage entry
 	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the storage entry"`
 
 	// Path is the host path for the entry. Optional; on docker-local it
 	// defaults to the dokku storage root + name.
-	Path string `required:"false" yaml:"path,omitempty" description:"Host path for the entry: an absolute path, or a docker named volume on docker-local. Defaults to the dokku storage root joined with the entry name"`
+	Path string `required:"false" yaml:"path,omitempty" description:"Host path for the entry: an absolute path, or a docker named volume on docker-local. Defaults to the dokku storage root joined with the entry name. Cannot be changed on an entry that exists; a recipe that disagrees with the recorded path is reported as an error"`
 
 	// Scheduler is the scheduler that backs the entry
-	Scheduler string `required:"false" yaml:"scheduler,omitempty" default:"docker-local" options:"docker-local,k3s" description:"Scheduler that backs the entry"`
+	Scheduler string `required:"false" yaml:"scheduler,omitempty" default:"docker-local" options:"docker-local,k3s" description:"Scheduler that backs the entry. Cannot be changed on an entry that exists; a recipe that disagrees with the recorded scheduler is reported as an error"`
 
 	// Size is the volume size (k3s scheduler; required there, rejected on docker-local)
-	Size string `required:"false" yaml:"size,omitempty" description:"Volume size (k3s scheduler; required there and rejected on docker-local)"`
+	Size string `required:"false" yaml:"size,omitempty" description:"Volume size (k3s scheduler; required there and rejected on docker-local). Converged on an entry that exists"`
 
 	// AccessMode is the volume access mode (k3s scheduler)
-	AccessMode string `required:"false" yaml:"access_mode,omitempty" options:"ReadWriteOnce,ReadOnlyMany,ReadWriteMany,ReadWriteOncePod" description:"Volume access mode (k3s scheduler; rejected on docker-local)"`
+	AccessMode string `required:"false" yaml:"access_mode,omitempty" options:"ReadWriteOnce,ReadOnlyMany,ReadWriteMany,ReadWriteOncePod" description:"Volume access mode (k3s scheduler; rejected on docker-local). Cannot be changed on an entry that exists, since kubernetes cannot rebind a bound claim; a recipe that disagrees with the recorded value is reported as an error"`
 
 	// StorageClass is the storage class name (k3s scheduler)
-	StorageClass string `required:"false" yaml:"storage_class,omitempty" description:"Storage class name (k3s scheduler; rejected on docker-local, and mutually exclusive with path)"`
+	StorageClass string `required:"false" yaml:"storage_class,omitempty" description:"Storage class name (k3s scheduler; rejected on docker-local, and mutually exclusive with path). Cannot be changed on an entry that exists; a recipe that disagrees with the recorded value is reported as an error"`
 
 	// Namespace is the namespace (scheduler-dependent)
-	Namespace string `required:"false" yaml:"namespace,omitempty" description:"Namespace (scheduler-dependent)"`
+	Namespace string `required:"false" yaml:"namespace,omitempty" description:"Namespace (scheduler-dependent). Converged on an entry that exists"`
 
-	// Chown is the chown value applied when the entry's host directory is created
-	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Ownership applied when the entry's host directory is created: an ownership preset or a numeric uid (0-65535). dokku sets the owner and the group to the same id, and refuses the value unless the entry sits at its default host path"`
+	// Chown is the ownership applied to the entry's host directory, on
+	// creation and again whenever the recipe changes it.
+	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Ownership applied to the entry's host directory: an ownership preset or a numeric uid (0-65535). dokku sets the owner and the group to the same id, and refuses the value unless the entry sits at its default host path. Converged on an entry that exists, which re-runs the chown on a docker-local directory"`
 
 	// ReclaimPolicy is the reclaim policy (k3s scheduler)
-	ReclaimPolicy string `required:"false" yaml:"reclaim_policy,omitempty" options:"Retain,Delete" description:"Reclaim policy applied to the underlying volume (k3s scheduler)"`
+	ReclaimPolicy string `required:"false" yaml:"reclaim_policy,omitempty" options:"Retain,Delete" description:"Reclaim policy applied to the underlying volume (k3s scheduler). Converged on an entry that exists"`
 
 	// Annotations are the volume annotations (k3s scheduler)
-	Annotations map[string]string `required:"false" yaml:"annotations,omitempty" description:"Map of annotations set on the underlying volume (k3s scheduler)"`
+	Annotations map[string]string `required:"false" yaml:"annotations,omitempty" description:"Map of annotations set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone"`
 
 	// Labels are the volume labels (k3s scheduler)
-	Labels map[string]string `required:"false" yaml:"labels,omitempty" description:"Map of labels set on the underlying volume (k3s scheduler)"`
+	Labels map[string]string `required:"false" yaml:"labels,omitempty" description:"Map of labels set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone"`
 
 	// State is the desired state of the storage entry
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage entry"`
@@ -85,22 +91,31 @@ func (t StorageEntryTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t StorageEntryTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportSupported}
+	return ExportSupport{Status: ExportPartial, Caveat: "every field the task accepts is exported; an entry's directory mode is not, since the task has no mode field yet (tracked in dokku/docket#480)"}
 }
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t StorageEntryTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "idempotency is keyed on the entry name; scheduler, size, and chown changes to an existing entry are not drift-detected (tracked in dokku/docket#439)"}
+	return ProbeSupport{Status: ProbeSupported, Caveat: "every field is compared against what storage:list-entries records for the entry, which is the recorded chown rather than the host directory's ownership on disk; a directory chowned out of band is not detected"}
 }
 
 // Examples returns the examples for the storage entry task
 func (t StorageEntryTask) Examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEntryTaskExample{
 		{
-			Name: "Create a docker-local storage entry owned by the herokuish user",
+			Name: "Create a docker-local storage entry owned by the herokuish user, and keep it owned by that user",
 			StorageEntryTask: StorageEntryTask{
 				Name:  "node-js-app-data",
 				Chown: "herokuish",
+			},
+		},
+		{
+			Name: "Resize a k3s entry and add a label, leaving the attributes the recipe does not name alone",
+			StorageEntryTask: StorageEntryTask{
+				Name:      "node-js-app-data",
+				Scheduler: "k3s",
+				Size:      "8Gi",
+				Labels:    map[string]string{"tier": "data"},
 			},
 		},
 		{
@@ -301,6 +316,14 @@ func (t StorageEntryTask) Validate() error {
 // a pflag string slice, which comma-splits its argument through a CSV
 // reader before dokku ever sees it, so a comma or a double quote on either
 // side of the pair breaks the parse rather than the value.
+//
+// An empty value is refused for a different reason: it is what
+// `storage:annotations:set` and `storage:labels:set` read as "delete this
+// key", so a pair the recipe declares empty is one the server can never
+// hold, and the convergence pass would clear it and find it missing again
+// on every run. Same rule the scheduler-k3s pair tasks carry (#358).
+// Callers reach this only under state 'present'; Validate returns before it
+// for state 'absent', where no pair is dispatched at all.
 func validateKVFlag(name string, values map[string]string) error {
 	keys := mapKeys(values)
 	sort.Strings(keys)
@@ -317,6 +340,9 @@ func validateKVFlag(name string, values map[string]string) error {
 		if strings.ContainsAny(values[k], `,"`) {
 			return fmt.Errorf("'%s' value for %q must not contain ',' or '\"'", name, k)
 		}
+		if values[k] == "" {
+			return fmt.Errorf("'%s' value for %q must not be empty; dokku reads an empty value as a delete", name, k)
+		}
 	}
 	return nil
 }
@@ -328,12 +354,12 @@ func (t StorageEntryTask) Plan() PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := storageEntryExists(t.Name)
+			entry, err := lookupStorageEntry(t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if exists {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+			if entry != nil {
+				return planStorageEntryAttributes(t, *entry)
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: t.createArgs()}}
 			return PlanResult{
@@ -348,11 +374,11 @@ func (t StorageEntryTask) Plan() PlanResult {
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := storageEntryExists(t.Name)
+			entry, err := lookupStorageEntry(t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if !exists {
+			if entry == nil {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
 			inputs := []subprocess.ExecCommandInput{{
@@ -371,6 +397,150 @@ func (t StorageEntryTask) Plan() PlanResult {
 			}
 		},
 	})
+}
+
+// storageEntryAttribute is one recipe field paired with what the registry
+// records for it. Property is the `storage:set` property that converges the
+// field, and is empty for a field dokku cannot change once the entry
+// exists.
+type storageEntryAttribute struct {
+	Field    string
+	Property string
+	Desired  string
+	Current  string
+}
+
+// drifted reports whether the recipe declared the field and the entry holds
+// something else. A field the recipe omits is unmanaged: docket neither
+// compares it nor clears it, so a recipe naming only `name` and `chown`
+// leaves a `size` it never mentions alone.
+func (a storageEntryAttribute) drifted() bool {
+	return a.Desired != "" && a.Desired != a.Current
+}
+
+// immutableStorageEntryAttributes are the fields no dokku command changes
+// once the entry exists. `storage:set` refuses an access-mode or a
+// storage-class swap outright, since Kubernetes cannot rebind a bound PVC,
+// and neither the scheduler nor the host path is a settable property at
+// all - `storage:create` on an existing entry refuses a scheduler
+// redefinition rather than honoring it.
+//
+// The scheduler is always compared. It carries a `default:` tag, so a
+// decoded recipe always names one, and an empty value on a task built in Go
+// means docker-local everywhere else: createArgs drops the flag so dokku
+// applies the same default, and Validate reads it the same way.
+func immutableStorageEntryAttributes(t StorageEntryTask, e storageEntry) []storageEntryAttribute {
+	scheduler := t.Scheduler
+	if scheduler == "" {
+		scheduler = "docker-local"
+	}
+	return []storageEntryAttribute{
+		{Field: "scheduler", Desired: scheduler, Current: e.Scheduler},
+		{Field: "path", Desired: t.Path, Current: e.HostPath},
+		{Field: "access_mode", Desired: t.AccessMode, Current: e.AccessMode},
+		{Field: "storage_class", Desired: t.StorageClass, Current: e.StorageClass},
+	}
+}
+
+// mutableStorageEntryAttributes are the scalar fields `storage:set`
+// converges, in struct field order so plan and apply build byte-identical
+// argv across runs. dokku re-applies the host directory's ownership
+// whenever a storage:set touches chown, so setting it here changes the
+// directory on a docker-local entry rather than only the recorded value -
+// which is the whole reason attribute convergence is worth doing.
+func mutableStorageEntryAttributes(t StorageEntryTask, e storageEntry) []storageEntryAttribute {
+	return []storageEntryAttribute{
+		{Field: "size", Property: "size", Desired: t.Size, Current: e.Size},
+		{Field: "namespace", Property: "namespace", Desired: t.Namespace, Current: e.Namespace},
+		{Field: "chown", Property: "chown", Desired: t.Chown, Current: e.Chown},
+		{Field: "reclaim_policy", Property: "reclaim-policy", Desired: t.ReclaimPolicy, Current: e.ReclaimPolicy},
+	}
+}
+
+// planStorageEntryAttributes reports the drift between the recipe and an
+// entry that already exists. An immutable mismatch short-circuits to an
+// error before any mutation is planned, so an apply never gets half way
+// through a set of changes it was always going to be refused for.
+//
+// It is a package-level func rather than a method because
+// TestProbeSupportMatchesPlanWiring walks the tasks package for
+// plan-returning methods and allows exactly one per task, Plan itself.
+func planStorageEntryAttributes(t StorageEntryTask, entry storageEntry) PlanResult {
+	for _, attr := range immutableStorageEntryAttributes(t, entry) {
+		if !attr.drifted() {
+			continue
+		}
+		return PlanResult{
+			Status: PlanStatusError,
+			Error: fmt.Errorf("storage entry %s records %s %q, recipe declares %q: dokku cannot change it on an entry that exists, so destroy and re-create the entry to apply it",
+				t.Name, attr.Field, attr.Current, attr.Desired),
+		}
+	}
+
+	var inputs []subprocess.ExecCommandInput
+	var mutations []string
+
+	for _, attr := range mutableStorageEntryAttributes(t, entry) {
+		if !attr.drifted() {
+			continue
+		}
+		inputs = append(inputs, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", "storage:set", t.Name, attr.Property, attr.Desired},
+		})
+		mutations = append(mutations, formatStorageEntrySet(attr.Field, attr.Desired, attr.Current))
+	}
+
+	// The map fields converge one key at a time. dokku's wholesale
+	// `storage:set --annotation` replaces the entire map, which would clear
+	// every key the recipe does not name; the per-key subcommands leave
+	// their siblings in place, which is what makes an omitted key unmanaged
+	// here the same way an omitted scalar is.
+	for _, m := range []struct {
+		noun    string
+		command string
+		desired map[string]string
+		current map[string]string
+	}{
+		{"annotation", "storage:annotations:set", t.Annotations, entry.Annotations},
+		{"label", "storage:labels:set", t.Labels, entry.Labels},
+	} {
+		drifted, _ := driftedKeys(m.desired, m.current)
+		for _, key := range drifted {
+			inputs = append(inputs, subprocess.ExecCommandInput{
+				Command: "dokku",
+				Args:    []string{"--quiet", m.command, t.Name, key, m.desired[key]},
+			})
+			mutations = append(mutations, formatStorageEntrySet(m.noun+" "+key, m.desired[key], m.current[key]))
+		}
+	}
+
+	if len(inputs) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusModify,
+		Reason:    fmt.Sprintf("%d attribute(s) to set", len(inputs)),
+		Mutations: mutations,
+		Commands:  resolveCommands(inputs),
+		apply: func() TaskOutputState {
+			return runExecInputs(TaskOutputState{State: StatePresent}, StatePresent, inputs)
+		},
+	}
+}
+
+// formatStorageEntrySet renders one mutation line in the shape
+// formatSetMutations produces for the map-pair tasks. An entry that records
+// nothing for the field reads as new: the registry marshals an unset
+// attribute and an empty one identically, so there is no third case to
+// distinguish.
+func formatStorageEntrySet(label, desired, current string) string {
+	if current == "" {
+		return fmt.Sprintf("set %s=%s (new)", label, desired)
+	}
+	return fmt.Sprintf("set %s=%s (was %q)", label, desired, current)
 }
 
 // ExportGlobal reads the named storage registry entries and returns a
@@ -451,20 +621,23 @@ func storageEntries() ([]storageEntry, error) {
 	return entries, nil
 }
 
-// storageEntryExists reports whether a named storage registry entry
-// exists. A transport-level failure (`*subprocess.SSHError`) is
-// propagated; a dokku-level non-zero exit is treated as "no entry."
-func storageEntryExists(name string) (bool, error) {
+// lookupStorageEntry returns the named storage registry entry, or nil when
+// the registry holds no entry by that name. Plan needs the whole entry
+// rather than a yes/no answer, since every field the recipe declares is
+// compared against what the registry records. A transport-level failure
+// (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit is
+// treated as "no entry."
+func lookupStorageEntry(name string) (*storageEntry, error) {
 	entries, err := storageEntries()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	for _, entry := range entries {
-		if entry.Name == name {
-			return true, nil
+	for i := range entries {
+		if entries[i].Name == name {
+			return &entries[i], nil
 		}
 	}
-	return false, nil
+	return nil, nil
 }
 
 // init registers the StorageEntryTask with the task registry

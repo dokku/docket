@@ -321,6 +321,22 @@ EOF
   assert_output --partial "label values must not be empty for state 'present'"
 }
 
+@test "docket validate exits 1 on an empty storage entry annotation value" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_entry:
+        name: docket-test-validate-data
+        annotations:
+          docket.io/team: ""
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'annotations' value for \"docket.io/team\" must not be empty"
+  assert_output --partial "dokku reads an empty value as a delete"
+}
+
 @test "docket validate names the replacement task for a rejected property family (#458)" {
   write_tasks_file <<EOF
 ---
