@@ -240,6 +240,15 @@ func (c *ApplyCommand) Run(args []string) int {
 		return 1
 	}
 
+	// Task-declared sensitive values join the input-level ones registered
+	// above, ahead of anything that renders a task name. Both branches below
+	// echo names and return without reaching the run loop: the
+	// --start-at-task hint lists every available name, and --list-tasks
+	// renders the whole resolved plan. Collecting from the filtered play
+	// list rather than the whole file keeps a value that is only secret in a
+	// play --play excluded from masking output it never appears in.
+	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
+
 	if c.startAtTask != "" {
 		if !startAtTaskMatches(plays, c.startAtTask) {
 			c.Ui.Error(subprocess.MaskString(fmt.Sprintf(
@@ -261,8 +270,6 @@ func (c *ApplyCommand) Run(args []string) int {
 			jsonOut:       c.json,
 		})
 	}
-
-	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
 
 	if resolvedHost != "" {
 		defer subprocess.CloseSshControlMaster(resolvedHost)

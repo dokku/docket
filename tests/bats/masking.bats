@@ -2,6 +2,11 @@
 
 load test_helper
 
+# Every test here drives a real apply/plan against a dokku server, so setup()
+# gates the whole file on require_dokku. The offline masking cases - the
+# --list-tasks listing, which contacts nothing - live in list_resume.bats so
+# they still run on a box without dokku.
+
 setup() {
   require_dokku
   docket_build

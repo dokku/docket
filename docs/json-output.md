@@ -10,9 +10,13 @@ future schema change does not silently break them. Values marked sensitive - inp
 `sensitive: true`, or task fields tagged `sensitive:"true"` - are masked as `***`. Masking covers
 every string field a secret can reach, including `name` and `play` (a loop over a sensitive value
 expands the task name) and the `when` / `reason` fields on `play_skipped` (a play predicate can
-interpolate a sensitive input). Masking applies to the `apply` / `plan` run stream and to
-`validate --json`; the `--list-tasks --json` stream is **not** masked, so do not route it anywhere a
-secret must not land.
+interpolate a sensitive input). It applies to every stream docket emits: the `apply` / `plan` run
+stream, `validate --json`, and `--list-tasks --json` - including that stream's `loop_item`, whose
+strings are masked at any depth, object keys included.
+
+What is never masked is docket's own vocabulary: the `type`, `phase`, `probe`, and `status` fields
+are fixed enums rather than recipe content, and masking one would emit a stream that fails the
+schemas below.
 
 ## Correlating runs
 
@@ -25,7 +29,8 @@ Two caveats on masking, both of which can make two distinct tasks indistinguisha
 
 - A generated name embeds the task's identity field values. No field is ever both an identity key
   and declared sensitive, but a `sensitive: true` input interpolated into one still reaches the
-  name - masked in this stream, in the clear in `--list-tasks --json`.
+  name, and it is masked there. A name that renders entirely as `***` also cannot be pasted back
+  into `--start-at-task`, which matches on the real name.
 - Masking is substring replacement. A short sensitive value can mask a large part of two different
   names into the same `***`-bearing string. Pin a `name:` on the tasks a consumer must tell apart.
 
@@ -68,15 +73,16 @@ ordering. The `reason` is a stable machine key so consumers can branch on the ca
 In every case `message` is masked, so a registered sensitive value that reaches the warning (for
 example server stderr echoed by a rejected probe) renders as `***`. `--list-tasks --json` does not
 emit a separate `warning` event; instead, the `list_task` event for a deprecated task carries
-`"deprecated": true` and a `deprecation` field with the message.
+`"deprecated": true` and a `deprecation` field with the message, masked the same way.
 
 `unknown_property` and `probe_rejected` are probe failures: this run could not read the state, and
 another run against a different server or a newer plugin might. A task type that can *never* read
 its state is a different thing, declared rather than discovered, and it is not a warning at all. The
 `list_task` event carries it as `"probe": "unsupported"` (the task reports drift on every run) or
 `"probe": "partial"` (only some of its fields are read), each with a `probe_caveat` naming what
-cannot be read. Both keys are absent for a task that probes everything it manages. A recipe
-containing an `unsupported` task never exits `0` under `--detailed-exitcode`.
+cannot be read. Both keys are absent for a task that probes everything it manages. `probe_caveat` is
+prose and is masked; `probe` is an enum and is not. A recipe containing an `unsupported` task never
+exits `0` under `--detailed-exitcode`.
 
 ## Commands
 

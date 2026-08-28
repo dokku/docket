@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
 	"github.com/mitchellh/cli"
 )
@@ -45,6 +46,14 @@ type listTasksOptions struct {
 // rendered [skipped], [unknown] or [when?] is never evaluated by a run,
 // so its own [when?] prints but leaves the exit code alone - the same
 // reason a skipped play's tasks are not walked at all.
+//
+// Every string this walk emits is masked against the global sensitive value
+// set (#455). The listing renders resolved values, so a `sensitive: true`
+// input interpolated into a play name, a task name, a `when:` predicate, a
+// tag, or a loop item would otherwise come back verbatim - and since #427 an
+// unnamed task's name embeds its identity field values, which widened what
+// can reach it. Callers register the task-declared values before this runs
+// (commands/apply.go, commands/plan.go).
 func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 	// whenError records that at least one predicate failed to evaluate.
 	// The walk is not short-circuited - every remaining play and task is
@@ -56,20 +65,31 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 		if play.IsFileLevel() {
 			continue
 		}
+		// Each recipe-derived value is masked exactly once, here, and both
+		// the human and the --json branch read only the masked form. Masking
+		// per value rather than per output site is what keeps the two paths
+		// from drifting apart, and it leaves docket's own decorations - the
+		// `==> Play: ` prefix, the markers, `(group)` - untouched.
+		playName := subprocess.MaskString(play.Name)
 		if play.HasWhen() {
+			whenSrc := subprocess.MaskString(play.When)
 			playCtx := buildEnvelopeExprContext(buildPlayWhenContext(opts.context, opts.fileLevelKeys, opts.userSet))
 			ok, err := tasks.EvalBool(play.WhenProgram(), playCtx)
 			if err != nil {
 				whenError = true
+				// An expr runtime error quotes the predicate's own source
+				// back in its snippet, so the formatted error - not just the
+				// play name - carries whatever the predicate interpolated.
+				reason := subprocess.MaskString(fmt.Sprintf("when error: %v", err))
 				if opts.jsonOut {
 					emitListJSON(ui, map[string]interface{}{
 						"type":   "play_skipped",
-						"play":   play.Name,
-						"when":   play.When,
-						"reason": fmt.Sprintf("when error: %v", err),
+						"play":   playName,
+						"when":   whenSrc,
+						"reason": reason,
 					})
 				} else {
-					ui.Output(fmt.Sprintf("==> Play: %s  (when error: %v)", play.Name, err))
+					ui.Output(fmt.Sprintf("==> Play: %s  (%s)", playName, reason))
 				}
 				continue
 			}
@@ -77,24 +97,24 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 				if opts.jsonOut {
 					emitListJSON(ui, map[string]interface{}{
 						"type":   "play_skipped",
-						"play":   play.Name,
-						"when":   play.When,
-						"reason": "when: " + play.When,
+						"play":   playName,
+						"when":   whenSrc,
+						"reason": "when: " + whenSrc,
 					})
 				} else {
-					ui.Output(fmt.Sprintf("==> Play: %s  (skipped: when %q)", play.Name, play.When))
+					ui.Output(fmt.Sprintf("==> Play: %s  (skipped: when %q)", playName, whenSrc))
 				}
 				continue
 			}
 		}
 
 		if !opts.jsonOut {
-			ui.Output(fmt.Sprintf("==> Play: %s", play.Name))
+			ui.Output(fmt.Sprintf("==> Play: %s", playName))
 		}
 
 		rc := listRenderContext{
 			ui:          ui,
-			playName:    play.Name,
+			playName:    playName,
 			playExprCtx: buildEnvelopeExprContext(tasks.BuildPerPlayContext(opts.context, play.Inputs, opts.userSet)),
 			jsonOut:     opts.jsonOut,
 		}
@@ -135,13 +155,17 @@ type listRenderContext struct {
 // reachable position anywhere in this subtree, which is what fails the
 // listing.
 //
-// The displayed label is the envelope name as-is. Before #427 an unnamed task
+// The displayed label is the envelope name, masked. Before #427 an unnamed task
 // carried a random `task #N <hex>` name, and this function substituted the
 // task type plus the first field named App / Name / Service / ... to keep the
 // listing readable - a heuristic that collapsed every phase and option of one
 // app's dokku_docker_options onto the same line. The loader now names an
 // unnamed task after the resource it addresses, so there is nothing to
 // substitute.
+//
+// Masking is display-only: env.Name keeps its real value, so --start-at-task
+// matching, the duplicate-name guard, and the loop collision suffix all still
+// work on the unmasked names even when two lines render identically.
 func renderListEnvelope(
 	rc listRenderContext,
 	env *tasks.TaskEnvelope,
@@ -151,12 +175,21 @@ func renderListEnvelope(
 	reachable bool,
 ) bool {
 	skipMarker := evaluateListWhen(env, rc.playExprCtx, phase)
-	display := env.Name
+	// Same rule as the play loop: every recipe-derived value is masked once
+	// here and both branches below read only the masked form. `probe` and
+	// `phase` are deliberately absent - they are docket's own vocabulary,
+	// pinned as enums in docs/schemas/list-tasks-v1.schema.json, and masking
+	// one would emit a stream that fails its own schema.
+	display := subprocess.MaskString(env.Name)
+	whenSrc := subprocess.MaskString(env.When)
+	tags := maskedStrings(env.Tags)
 	deprecation := ""
+	caveat := ""
 	var probe tasks.ProbeSupport
 	if env != nil && env.Task != nil {
-		deprecation = tasks.TaskDeprecation(env.Task)
+		deprecation = subprocess.MaskString(tasks.TaskDeprecation(env.Task))
 		probe, _ = tasks.TaskProbeSupport(env.Task)
+		caveat = subprocess.MaskString(probe.Caveat)
 	}
 
 	if rc.jsonOut {
@@ -166,8 +199,8 @@ func renderListEnvelope(
 			"name":  display,
 			"index": index,
 		}
-		if len(env.Tags) > 0 {
-			ev["tags"] = append([]string{}, env.Tags...)
+		if len(tags) > 0 {
+			ev["tags"] = tags
 		}
 		if env.IsGroup() {
 			ev["group"] = true
@@ -181,23 +214,23 @@ func renderListEnvelope(
 		}
 		if probe.Status == tasks.ProbeUnsupported || probe.Status == tasks.ProbePartial {
 			ev["probe"] = string(probe.Status)
-			ev["probe_caveat"] = probe.Caveat
+			ev["probe_caveat"] = caveat
 		}
 		switch skipMarker {
 		case "skipped":
 			ev["skipped"] = true
-			ev["when"] = env.When
+			ev["when"] = whenSrc
 		case "unknown":
 			ev["unknown"] = true
-			ev["when"] = env.When
+			ev["when"] = whenSrc
 		case "when_error":
 			ev["when_error"] = true
-			ev["when"] = env.When
+			ev["when"] = whenSrc
 		}
 		if env.IsLoopExpansion {
 			ev["loop_index"] = env.LoopIndex
 			if env.LoopItem != nil {
-				ev["loop_item"] = env.LoopItem
+				ev["loop_item"] = subprocess.MaskValue(env.LoopItem)
 			}
 		}
 		emitListJSON(rc.ui, ev)
@@ -233,8 +266,8 @@ func renderListEnvelope(
 		case tasks.ProbePartial:
 			b.WriteString("  (partial probe)")
 		}
-		if len(env.Tags) > 0 {
-			b.WriteString(fmt.Sprintf("  [tags=%s]", strings.Join(env.Tags, ",")))
+		if len(tags) > 0 {
+			b.WriteString(fmt.Sprintf("  [tags=%s]", strings.Join(tags, ",")))
 		}
 		rc.ui.Output(b.String())
 	}

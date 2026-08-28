@@ -381,6 +381,77 @@ EOF
   refute_output --partial '"probe"'
 }
 
+@test "--list-tasks masks a sensitive input in a generated task name" {
+  # #455: the listing renders resolved values, and since #427 an unnamed task
+  # is named after the resource it addresses - so a sensitive input
+  # interpolated into an identity field lands in the name.
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: app_name, required: true, sensitive: true }
+  tasks:
+    - dokku_app: { app: "{{ .app_name }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --app_name=listnamezzz --list-tasks
+  assert_success
+  refute_output --partial "listnamezzz"
+  assert_output --partial "dokku_app[app=***]"
+}
+
+@test "--list-tasks --json masks a sensitive input in name and loop_item" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - name: deploy
+      loop: 'split(secret_value, ",")'
+      dokku_app: { app: "{{ .item }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value=listloopzzz --list-tasks --json
+  assert_success
+  refute_output --partial "listloopzzz"
+  assert_output --partial '"loop_item":"***"'
+  assert_output --partial '"name":"deploy (item=***)"'
+}
+
+@test "--list-tasks masks a task-declared sensitive value" {
+  # Nothing here is a sensitive *input*: dokku_config declares its whole
+  # config: map sensitive, so the value reaches the mask registry only via
+  # CollectPlaySensitiveValues, which #455 moved above the listing branch.
+  write_tasks_file <<'EOF'
+---
+- tasks:
+    - name: configure
+      loop: [listconfigzzz]
+      dokku_config:
+        app: docket-test-list-1
+        config:
+          TOKEN: "{{ .item }}"
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --json
+  assert_success
+  refute_output --partial "listconfigzzz"
+  assert_output --partial '"loop_item":"***"'
+}
+
+@test "--list-tasks masks a sensitive input in a play name and when:" {
+  write_tasks_file <<'EOF'
+---
+- name: play {{ .secret_value }}
+  inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  when: '"{{ .secret_value }}" == "will-not-match"'
+  tasks:
+    - dokku_app: { app: docket-test-list-1 }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value=listplayzzz --list-tasks
+  assert_success
+  refute_output --partial "listplayzzz"
+  assert_output --partial "==> Play: play ***"
+  assert_output --partial "(skipped:"
+}
+
 @test "--list-tasks works on plan as well" {
   write_tasks_file <<EOF
 ---

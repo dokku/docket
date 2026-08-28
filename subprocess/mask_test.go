@@ -1,6 +1,7 @@
 package subprocess
 
 import (
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -168,5 +169,78 @@ func TestGlobalSensitiveReturnsCopy(t *testing.T) {
 	again := GlobalSensitive()
 	if again[0] != "a" {
 		t.Errorf("GlobalSensitive returned shared slice; mutation leaked: %v", again)
+	}
+}
+
+// TestMaskValue covers the walker that masks a value arriving as interface{}.
+// The `loop_item` field of `--list-tasks --json` is such a value: a recipe's
+// `loop:` can resolve to a scalar, a list, or a mapping, so a secret can sit
+// at any depth and on either side of a map entry.
+func TestMaskValue(t *testing.T) {
+	SetGlobalSensitive([]string{"sekret"})
+	defer SetGlobalSensitive(nil)
+
+	cases := []struct {
+		name string
+		in   interface{}
+		want interface{}
+	}{
+		{"nil", nil, nil},
+		{"string", "a-sekret-b", "a-***-b"},
+		{"int passes through", 42, 42},
+		{"float passes through", 1.5, 1.5},
+		{"bool passes through", true, true},
+		{"string slice", []string{"sekret", "plain"}, []string{"***", "plain"}},
+		{
+			"nested list",
+			[]interface{}{"sekret", []interface{}{"sekret", 1}},
+			[]interface{}{"***", []interface{}{"***", 1}},
+		},
+		{
+			"map masks keys and values",
+			map[string]interface{}{"sekret": "sekret", "k": 1},
+			map[string]interface{}{"***": "***", "k": 1},
+		},
+		{
+			"string map",
+			map[string]string{"sekret": "sekret"},
+			map[string]string{"***": "***"},
+		},
+		{
+			"map nested in a list",
+			[]interface{}{map[string]interface{}{"token": "sekret"}},
+			[]interface{}{map[string]interface{}{"token": "***"}},
+		},
+		{
+			"typed slice reaches the reflect fallback",
+			[]map[string]string{{"token": "sekret"}},
+			[]interface{}{map[string]string{"token": "***"}},
+		},
+		{
+			"non-string map key reaches the reflect fallback",
+			map[interface{}]interface{}{"sekret": "sekret"},
+			map[string]interface{}{"***": "***"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := MaskValue(tc.in); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("MaskValue(%#v) = %#v, want %#v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMaskValueEmptyRegistry pins that a value survives the walk unchanged
+// when nothing is registered, so the listing renders identically for a recipe
+// that declares no secrets.
+func TestMaskValueEmptyRegistry(t *testing.T) {
+	SetGlobalSensitive(nil)
+	defer SetGlobalSensitive(nil)
+
+	in := map[string]interface{}{"user": "alice", "ports": []interface{}{80, "443"}}
+	if got := MaskValue(in); !reflect.DeepEqual(got, in) {
+		t.Errorf("MaskValue with an empty registry = %#v, want input unchanged", got)
 	}
 }
