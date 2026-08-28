@@ -434,6 +434,24 @@ EOF
   assert_output --partial '"name":"deploy (item=***)"'
 }
 
+@test "--list-tasks masks a quote-bearing sensitive identity value in the name" {
+  # #475: a generated address wraps a key value in Go quoting when a bare form
+  # would not parse back, which escapes the quote the value carries, so the
+  # secret stopped matching the literal registered in the mask registry and
+  # printed in the clear inside its own address.
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - dokku_app: { app: "{{ .secret_value | dq }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value='listquotedzzz"x' --list-tasks --json
+  assert_success
+  refute_output --partial "listquotedzzz"
+  assert_output --partial '"name":"dokku_app[app=\"***\"]"'
+}
+
 @test "--list-tasks masks a task-declared sensitive value" {
   # Nothing here is a sensitive *input*: dokku_config declares its whole
   # config: map sensitive, so the value reaches the mask registry only via
@@ -518,6 +536,23 @@ EOF
   assert_failure
   assert_output --partial "no task matched name"
   assert_output --partial '"first"'
+}
+
+@test "--start-at-task hint masks a quote-bearing sensitive identity value" {
+  # #475: the hint renders every available name through Go quoting, a second
+  # escaping layer on top of the one a generated address already carries, so
+  # the name is masked before it is quoted rather than after.
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - dokku_app: { app: "{{ .secret_value | dq }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value='hintquotedzzz"x' --start-at-task no-such-task
+  assert_failure
+  refute_output --partial "hintquotedzzz"
+  assert_output --partial 'dokku_app[app=\"***\"]'
 }
 
 @test "--start-at-task matching a block child runs from that child" {

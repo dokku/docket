@@ -295,6 +295,15 @@ const identityQuoteChars = ",]\""
 // quoteIdentityValue renders one key value, quoting it only when a bare form
 // would not parse back. An empty value is quoted so it is distinguishable
 // from an omitted key.
+//
+// strconv.Quote also escapes what it wraps, so the value can reach the address
+// spelled differently from the literal it was rendered from. Masking is literal
+// substring replacement over the finished address, which is why
+// subprocess.cleanSensitive registers a secret's Go-escaped spelling alongside
+// its literal one; without that, a sensitive value carrying one of these
+// characters printed in the clear inside its own address (#475). The address
+// cannot be masked before it is quoted: it is generated while the recipe is
+// parsed, before the mask registry is populated.
 func quoteIdentityValue(value string) string {
 	if value == "" || strings.ContainsAny(value, identityQuoteChars) {
 		return strconv.Quote(value)

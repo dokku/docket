@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -64,15 +65,22 @@ func AddGlobalSensitive(values ...string) {
 // sorted by length descending so a longer secret is masked before any shorter
 // secret that is a substring of it would be.
 //
-// A value carrying leading or trailing whitespace registers its trimmed
-// spelling alongside the literal. Masking is literal substring replacement,
-// but docket renders some user-facing text through strings.TrimSpace - a loop
-// item in the `(item=<value>)` task-name suffix, most visibly - so without the
-// trimmed spelling a padded secret prints in the clear wherever it was
-// trimmed (#473). Registering both here rather than at each collection site
-// keeps the two spellings in step no matter when a value joins the registry:
-// a task-declared secret is added after the recipe has already parsed and
-// named its loop expansions.
+// Each value registers every spelling docket can print it in, not just the
+// literal it was given. Masking is literal substring replacement, and some of
+// the text docket builds transforms a value on the way in, so a transformed
+// value would otherwise reach the output in the clear. Two transforms apply:
+//
+//   - strings.TrimSpace, which renders a loop item in the `(item=<value>)`
+//     task-name suffix, so a value carrying leading or trailing whitespace
+//     registers its trimmed spelling as well (#473).
+//   - Go quoting, which tasks.quoteIdentityValue applies to an identity key
+//     value in a generated resource address - `dokku_stub[key="quo\"ted"]` -
+//     so a value whose escaped form differs from its literal registers that
+//     escaped form as well (#475).
+//
+// Deriving the spellings here rather than at each site that builds text keeps
+// them in step no matter when a value joins the registry: a task-declared
+// secret is added after the recipe has already parsed and named its tasks.
 func cleanSensitive(values []string) []string {
 	cleaned := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
@@ -86,14 +94,34 @@ func cleanSensitive(values []string) []string {
 		seen[v] = struct{}{}
 		cleaned = append(cleaned, v)
 	}
-	for _, v := range values {
+	addSpellings := func(v string) {
 		add(v)
-		add(strings.TrimSpace(v))
+		add(escapedSpelling(v))
+	}
+	for _, v := range values {
+		addSpellings(v)
+		addSpellings(strings.TrimSpace(v))
 	}
 	sort.SliceStable(cleaned, func(i, j int) bool {
 		return len(cleaned[i]) > len(cleaned[j])
 	})
 	return cleaned
+}
+
+// escapedSpelling returns v escaped the way Go quoting escapes it, without the
+// surrounding quotes. That escaped body is the spelling a resource address
+// carries for a key value holding a comma, a bracket, or a double quote, and
+// the spelling any `%q` rendering of the value carries. Returns v unchanged
+// when quoting escapes nothing, which is the common case; the caller
+// deduplicates the repeat.
+//
+// The escaping is reimplemented here rather than shared with
+// tasks.quoteIdentityValue because tasks imports subprocess, not the other way
+// round. TestIdentityAddressMasksQuotedSensitiveValue in package tasks - which
+// can see both - is what fails if the two ever drift apart.
+func escapedSpelling(v string) string {
+	quoted := strconv.Quote(v)
+	return quoted[1 : len(quoted)-1]
 }
 
 // GlobalSensitive returns a snapshot of the current sensitive value set.
@@ -145,8 +173,8 @@ func MaskString(s string) string {
 // `loop_item` field of `--list-tasks --json`, which carries whatever the
 // recipe's `loop:` resolved to: a scalar, a list, or a mapping. Masking the
 // value rather than the marshalled line is deliberate: a secret containing a
-// quote or a backslash is escaped in the serialised form, so MaskString would
-// no longer match it there.
+// quote or a backslash is escaped in the serialised form, and MaskString
+// cannot be relied on to match it there.
 func MaskValue(v interface{}) interface{} {
 	switch t := v.(type) {
 	case nil:

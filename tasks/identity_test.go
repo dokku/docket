@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 // TestIdentityAddressRendersDeclaredKeys covers the rendering rules the whole
@@ -112,6 +114,44 @@ func TestIdentityAddressQuotesOnlyWhatItMust(t *testing.T) {
 			}
 			if keys["option"] != tt.task.Option {
 				t.Errorf("option = %q, want %q", keys["option"], tt.task.Option)
+			}
+		})
+	}
+}
+
+// TestIdentityAddressMasksQuotedSensitiveValue is the guard that keeps
+// quoteIdentityValue and subprocess.cleanSensitive in step (#475). Masking is
+// literal substring replacement over the finished address, and the address is
+// generated while the recipe is parsed - before the mask registry exists - so
+// the escaping done here has to be one of the spellings the registry holds.
+// The two live in different packages because tasks imports subprocess and not
+// the reverse; this test is the only place that sees both.
+func TestIdentityAddressMasksQuotedSensitiveValue(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		option string
+	}{
+		{name: "a double quote is escaped inside the quotes", option: `--label quo"tedzzz`},
+		{name: "a comma is quoted but not escaped", option: "--label com,mazzz"},
+		{name: "a closing bracket is quoted but not escaped", option: "--label brack]etzzz"},
+		{name: "a backslash is escaped once the value is quoted", option: `--label back\,slashzzz`},
+		{name: "a tab is escaped once the value is quoted", option: "--label tab,\tzzz"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			subprocess.SetGlobalSensitive([]string{tt.option})
+			defer subprocess.SetGlobalSensitive(nil)
+
+			address := IdentityAddress("dokku_docker_options", DockerOptionsTask{
+				App:    "api",
+				Phase:  "deploy",
+				Option: tt.option,
+			})
+			if !strings.Contains(address, "zzz") {
+				t.Fatalf("address %q does not carry the value under test", address)
+			}
+			masked := subprocess.MaskString(address)
+			if strings.Contains(masked, "zzz") {
+				t.Fatalf("MaskString(%q) = %q, want the sensitive option masked", address, masked)
 			}
 		})
 	}
