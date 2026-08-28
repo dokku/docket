@@ -415,6 +415,25 @@ EOF
   assert_output --partial '"name":"deploy (item=***)"'
 }
 
+@test "--list-tasks masks a whitespace-padded sensitive loop item in the name" {
+  # #473: the `(item=<value>)` suffix renders the item through TrimSpace, so a
+  # secret carrying leading or trailing whitespace stopped matching the literal
+  # registered in the mask registry, and printed in the clear.
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - name: deploy
+      loop: 'split(secret_value, ",")'
+      dokku_app: { app: "{{ .item }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value=" listpaddedzzz " --list-tasks --json
+  assert_success
+  refute_output --partial "listpaddedzzz"
+  assert_output --partial '"name":"deploy (item=***)"'
+}
+
 @test "--list-tasks masks a task-declared sensitive value" {
   # Nothing here is a sensitive *input*: dokku_config declares its whole
   # config: map sensitive, so the value reaches the mask registry only via

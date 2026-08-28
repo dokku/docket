@@ -126,6 +126,31 @@ EOF
   assert_output --partial "***"
 }
 
+@test "docket apply masks a whitespace-padded sensitive loop item in the task name" {
+  # #473: the `(item=<value>)` suffix trims the item, so a secret padded with
+  # whitespace stopped matching the registered literal and reached the run
+  # stream unmasked.
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - name: ensure docket-test-mask
+      dokku_app:
+        app: docket-test-mask
+    - name: set padded secret config
+      loop: 'split(secret_value, ",")'
+      dokku_config:
+        app: docket-test-mask
+        config:
+          PADDED_LOOP_SECRET: "{{ .item }}"
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value=" paddedloopzzz "
+  assert_success
+  refute_output --partial "paddedloopzzz"
+  assert_output --partial "set padded secret config (item=***)"
+}
+
 @test "docket apply masks a sensitive value interpolated into a play when:" {
   # A play predicate sigil-interpolates a sensitive input, so the recipe text
   # (and the skip line echoing it) contains the literal secret (#335).

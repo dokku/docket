@@ -141,6 +141,82 @@ func TestAddGlobalSensitiveNoValuesIsNoop(t *testing.T) {
 	}
 }
 
+// TestSetGlobalSensitiveRegistersTrimmedSpelling covers #473: a secret whose
+// value carries leading or trailing whitespace is rendered trimmed in places
+// docket builds text - the `(item=<value>)` loop suffix on a task name - and
+// masking is literal substring replacement, so both spellings must register.
+func TestSetGlobalSensitiveRegistersTrimmedSpelling(t *testing.T) {
+	SetGlobalSensitive([]string{"  padded  "})
+	defer SetGlobalSensitive(nil)
+
+	if got := MaskString("deploy (item=padded)"); got != "deploy (item=***)" {
+		t.Errorf("MaskString = %q, want the trimmed spelling masked", got)
+	}
+	if got := MaskString("raw:  padded  ."); got != "raw:***." {
+		t.Errorf("MaskString = %q, want the literal spelling masked", got)
+	}
+}
+
+// TestAddGlobalSensitiveRegistersTrimmedSpelling pins the same rule on the
+// late-registration path, which is how a task-declared secret joins the
+// registry - after the recipe has parsed and already named its expansions.
+func TestAddGlobalSensitiveRegistersTrimmedSpelling(t *testing.T) {
+	SetGlobalSensitive(nil)
+	defer SetGlobalSensitive(nil)
+
+	AddGlobalSensitive("\tlate\n")
+
+	if got := MaskString("configure (item=late)"); got != "configure (item=***)" {
+		t.Errorf("MaskString = %q, want the trimmed spelling masked", got)
+	}
+}
+
+// TestSensitiveTrimmedSpellingSortsAfterLiteral pins the ordering the
+// length-descending sort gives the two spellings: the padded literal is
+// replaced first, so text holding the full value masks to a single `***`
+// rather than leaving the padding behind around an inner match.
+func TestSensitiveTrimmedSpellingSortsAfterLiteral(t *testing.T) {
+	SetGlobalSensitive([]string{" tok "})
+	defer SetGlobalSensitive(nil)
+
+	values := GlobalSensitive()
+	want := []string{" tok ", "tok"}
+	if len(values) != len(want) {
+		t.Fatalf("GlobalSensitive = %v, want %v", values, want)
+	}
+	for i := range want {
+		if values[i] != want[i] {
+			t.Fatalf("GlobalSensitive = %v, want %v", values, want)
+		}
+	}
+}
+
+// TestSensitiveWhitespaceOnlyValueIsDropped keeps the trimmed spelling from
+// reintroducing the empty entry SetGlobalSensitive drops: an all-whitespace
+// value trims to "", which would otherwise match every position in a string.
+func TestSensitiveWhitespaceOnlyValueIsDropped(t *testing.T) {
+	SetGlobalSensitive([]string{"   "})
+	defer SetGlobalSensitive(nil)
+
+	if got := GlobalSensitive(); len(got) != 1 || got[0] != "   " {
+		t.Fatalf("GlobalSensitive = %v, want only the literal whitespace value", got)
+	}
+	if got := MaskString("plain"); got != "plain" {
+		t.Errorf("MaskString = %q, want %q; an empty entry masked everything", got, "plain")
+	}
+}
+
+// TestSensitiveUnpaddedValueRegistersOnce keeps the common case free of a
+// duplicate entry: a value that is already trimmed contributes one spelling.
+func TestSensitiveUnpaddedValueRegistersOnce(t *testing.T) {
+	SetGlobalSensitive([]string{"plain"})
+	defer SetGlobalSensitive(nil)
+
+	if got := GlobalSensitive(); len(got) != 1 || got[0] != "plain" {
+		t.Errorf("GlobalSensitive = %v, want a single entry", got)
+	}
+}
+
 func TestMaskStringConcurrent(t *testing.T) {
 	SetGlobalSensitive([]string{"secret"})
 	defer SetGlobalSensitive(nil)
