@@ -20,7 +20,7 @@ Keyed by `name`.
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `name` | string | yes |  |  | Name of the node profile. |
+| `name` | string | yes |  |  | Name of the node profile. Creating one requires a lowercase name of at most 26 characters: dokku prepends dokku-node-sysctls-profile- to it to name the profile's node-sysctls helm release, and helm caps a release name at 53 characters. |
 | `role` | string | yes |  | server, worker | Role for nodes joined with this profile. |
 | `kubelet_args` | list | no |  |  | List of key=value kubelet arguments to forward to k3s. |
 | `taint_scheduling` | bool | no |  |  | Whether to taint the node so only workloads that tolerate the taint schedule on it. |

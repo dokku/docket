@@ -1,14 +1,23 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 )
 
-// Profile names here are kept short on purpose. dokku 0.38.26 gave each
-// profile a node-sysctls helm release named `dokku-node-sysctls-profile-<name>`,
-// and helm caps a release name at 53 characters, so a profile name longer than
-// 26 is refused by `scheduler-k3s:profile:set` and its unset counterpart. The
-// task itself does not check the length yet (dokku/docket#482).
+// schedulerK3sProfileBoundaryName is a profile name of exactly
+// schedulerK3sProfileNameHelmMaxLength characters, built from the constant so
+// the fixture tracks it rather than needing a hand recount. Its derived
+// node-sysctls release name fills helm's 53-character ceiling exactly.
+var schedulerK3sProfileBoundaryName = "docket-test-" +
+	strings.Repeat("x", schedulerK3sProfileNameHelmMaxLength-len("docket-test-"))
+
+// Profile names here are kept short on purpose. dokku gives each profile a
+// node-sysctls helm release named `dokku-node-sysctls-profile-<name>` and helm
+// caps a release name at 53 characters, so the task refuses a name longer than
+// 26 for state 'present' (dokku/docket#482). dokku's own `profiles:add` does
+// not - it accepts up to 32 - so the ceiling is only felt on the unset, which
+// resolves the release name through helm.
 func TestIntegrationSchedulerK3sProfileAll(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
@@ -39,6 +48,20 @@ func TestIntegrationSchedulerK3sProfileAll(t *testing.T) {
 				Name:        "docket-test-args",
 				Role:        "worker",
 				KubeletArgs: []string{"max-pods=100", "node-labels=tier=spot", "system-reserved=cpu=200m"},
+			},
+		},
+		{
+			// The only check of the derived cap against live helm rather
+			// than against docket's own arithmetic. This CI job runs
+			// `scheduler-k3s:initialize`, so isKubernetesAvailable() is
+			// true and the unset really does resolve
+			// dokku-node-sysctls-profile-<name>. If the cap were a
+			// character too generous, this unset would fail with
+			// "release name is invalid" instead of cleaning up.
+			name: "name-at-the-helm-cap",
+			task: SchedulerK3sProfileTask{
+				Name: schedulerK3sProfileBoundaryName,
+				Role: "worker",
 			},
 		},
 	}

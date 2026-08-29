@@ -337,6 +337,39 @@ EOF
   assert_output --partial "dokku reads an empty value as a delete"
 }
 
+@test "docket validate exits 1 on a scheduler-k3s profile name too long for its helm release (#482)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_profile:
+        name: docket-test-profile-name-27
+        role: worker
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "at most 26 characters for state 'present'"
+  assert_output --partial "dokku-node-sysctls-profile-docket-test-profile-name-27"
+  assert_output --partial "helm caps a release name at 53 characters"
+}
+
+# The derived limit is deliberately asymmetric: docket refuses to create a
+# profile whose node-sysctls release name helm would reject, but never refuses
+# to try removing one, so a profile created before the rule can still be
+# cleaned up. dokku's own 32-character cap still applies to both states.
+@test "docket validate accepts an over-long scheduler-k3s profile name for state absent (#482)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_profile:
+        name: docket-test-profile-name-27
+        role: worker
+        state: absent
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+}
+
 @test "docket validate names the replacement task for a rejected property family (#458)" {
   write_tasks_file <<EOF
 ---

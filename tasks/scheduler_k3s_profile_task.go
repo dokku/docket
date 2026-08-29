@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -18,7 +19,7 @@ import (
 type SchedulerK3sProfileTask struct {
 	// Name is the profile name. It is the lookup key both for the on-disk
 	// global property and for `scheduler-k3s:profiles:list --format json`.
-	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the node profile."`
+	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the node profile. Creating one requires a lowercase name of at most 26 characters: dokku prepends dokku-node-sysctls-profile- to it to name the profile's node-sysctls helm release, and helm caps a release name at 53 characters."`
 
 	// Role is the k3s role nodes joined with this profile take. Required and
 	// validated up front; dokku also rejects unknown values but failing in the
@@ -131,12 +132,95 @@ func (t SchedulerK3sProfileTask) Plan() PlanResult {
 	})
 }
 
+// nodeSysctlsReleasePrefix is what dokku prepends to a profile name to derive
+// the helm release backing that profile's node-sysctls DaemonSet. Mirrors
+// getNodeSysctlsReleaseName in dokku's plugins/scheduler-k3s/node_sysctls.go.
+const nodeSysctlsReleasePrefix = "dokku-node-sysctls-profile-"
+
+// helmReleaseNameMaxLength is helm's own ceiling on a release name
+// (maxReleaseNameLen in helm's pkg/chartutil/validate_name.go).
+const helmReleaseNameMaxLength = 53
+
+// schedulerK3sProfileNameMaxLength is dokku's own cap on a profile name, from
+// CommandProfilesAdd and CommandProfilesRemove. dokku's message reads "must be
+// less than 32 characters" but the check is `> 32`, so 32 itself is accepted;
+// mirror the behaviour rather than the message.
+const schedulerK3sProfileNameMaxLength = 32
+
+// schedulerK3sProfileNameHelmMaxLength is the longest profile name whose
+// derived node-sysctls release name still fits under helm's ceiling. Derived
+// rather than written as a literal so it stays correct if dokku renames the
+// prefix, and so the arithmetic is visible to the next reader.
+const schedulerK3sProfileNameHelmMaxLength = helmReleaseNameMaxLength - len(nodeSysctlsReleasePrefix)
+
+// schedulerK3sProfileName is the charset dokku accepts for a profile name, in
+// both CommandProfilesAdd and CommandProfilesRemove. Mirrors the regexp in
+// dokku's plugins/scheduler-k3s/subcommands.go.
+var schedulerK3sProfileName = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`)
+
+// helmReleaseName is helm's own release-name regexp (validName in helm's
+// pkg/chartutil/validate_name.go), which is lowercase-only. dokku's profile
+// regexp is not: it allows [a-zA-Z0-9], so a profile name dokku accepts can
+// still derive a release name helm refuses.
+var helmReleaseName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+
+// validateSchedulerK3sProfileName rejects a profile name the server would
+// refuse, or would accept and then choke on later.
+//
+// dokku's own rules - the charset and the 32-character cap - are enforced for
+// every state, because `profiles:remove` applies them just as `profiles:add`
+// does. The two derived rules are enforced only when creating: dokku builds a
+// node-sysctls helm release named `dokku-node-sysctls-profile-<name>`, and helm
+// caps a release name at 53 characters and requires it to be lowercase.
+// `profiles:add` checks neither, so a name of 27-32 characters, or any
+// uppercase name, is stored happily and only fails once something resolves the
+// release name: `profiles:remove`, `node-sysctls:set`, or a cluster bootstrap.
+// The last two reconcile every scope, so one bad name breaks node sysctls
+// server-wide.
+//
+// Holding the derived rules to state 'present' means docket refuses to create a
+// profile it could not later remove, but never refuses to try removing one. A
+// profile that predates the rule can still be cleaned up through docket, which
+// works on a server with no k3s cluster and fails with dokku's own error on one
+// where the removal genuinely cannot succeed. Upstream tracking for having
+// dokku reject these at `profiles:add`: dokku/dokku#8971.
+func validateSchedulerK3sProfileName(name string, state State) error {
+	if name == "" {
+		return errors.New("name is required")
+	}
+	if !schedulerK3sProfileName.MatchString(name) {
+		return fmt.Errorf("name must contain only alphanumeric characters and dashes and must not start or end with a dash, got %q", name)
+	}
+	if len(name) > schedulerK3sProfileNameMaxLength {
+		return fmt.Errorf("name must be at most %d characters, got %d", schedulerK3sProfileNameMaxLength, len(name))
+	}
+	if state == StateAbsent {
+		return nil
+	}
+
+	release := nodeSysctlsReleasePrefix + name
+	if len(name) > schedulerK3sProfileNameHelmMaxLength {
+		return fmt.Errorf("name must be at most %d characters for state 'present', got %d: dokku derives the node-sysctls helm release name %q from it, and helm caps a release name at %d characters",
+			schedulerK3sProfileNameHelmMaxLength, len(name), release, helmReleaseNameMaxLength)
+	}
+	// The charset check above has already ruled out everything helm's regexp
+	// rejects except case, so this can only fire on an uppercase name - which
+	// is why the message names that specifically. Running helm's real regexp
+	// rather than a case comparison keeps the check honest if dokku ever
+	// widens its own charset.
+	if !helmReleaseName.MatchString(release) {
+		return fmt.Errorf("name must be lowercase for state 'present', got %q: dokku derives the node-sysctls helm release name %q from it, and helm requires a lowercase release name",
+			name, release)
+	}
+	return nil
+}
+
 // validateSchedulerK3sProfile rejects malformed inputs before any subprocess
 // runs. Both states require name + role; absent state ignores the other
 // fields entirely but they are still rejected if obviously broken.
 func validateSchedulerK3sProfile(t SchedulerK3sProfileTask) error {
-	if t.Name == "" {
-		return errors.New("name is required")
+	if err := validateSchedulerK3sProfileName(t.Name, t.State); err != nil {
+		return err
 	}
 	if t.Role == "" {
 		return errors.New("role is required")
