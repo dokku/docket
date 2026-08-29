@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -334,6 +335,19 @@ func TestStorageEntryValidateMapKeysAndValues(t *testing.T) {
 			wantErr: `'labels' value for "tier" must not contain ',' or '"'`,
 		},
 		{
+			// storage:annotations:set reads an empty value as a delete, so a
+			// pair declared empty could never be stored and the convergence
+			// pass would clear it and miss it again on every run.
+			name:    "empty annotation value",
+			task:    StorageEntryTask{Annotations: map[string]string{"team": ""}},
+			wantErr: `'annotations' value for "team" must not be empty`,
+		},
+		{
+			name:    "empty label value",
+			task:    StorageEntryTask{Labels: map[string]string{"tier": ""}},
+			wantErr: `'labels' value for "tier" must not be empty`,
+		},
+		{
 			name: "an equals in a value is fine",
 			task: StorageEntryTask{Annotations: map[string]string{"team": "a=b"}},
 		},
@@ -477,5 +491,297 @@ func TestStorageEntryExportGlobal(t *testing.T) {
 	// recipe export writes would not apply.
 	if err := second.Validate(); err != nil {
 		t.Errorf("exported k3s entry does not validate: %v", err)
+	}
+}
+
+// singleStorageEntryFixture is a storage:list-entries payload holding one
+// entry, for the convergence tests that compare a recipe against what the
+// registry records.
+func singleStorageEntryFixture(entryJSON string) map[string]string {
+	return map[string]string{
+		"--quiet storage:list-entries --format json": "[" + entryJSON + "]",
+	}
+}
+
+const dockerLocalEntryJSON = `{
+	"name": "app-data",
+	"scheduler": "docker-local",
+	"host_path": "/var/lib/dokku/data/storage/app-data",
+	"chown": "herokuish",
+	"schema_version": 1
+}`
+
+func TestStorageEntryPlanInSyncWhenEveryDeclaredFieldMatches(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+
+	task := StorageEntryTask{
+		Name:      "app-data",
+		Scheduler: "docker-local",
+		Path:      "/var/lib/dokku/data/storage/app-data",
+		Chown:     "herokuish",
+		State:     StatePresent,
+	}
+	plan := task.Plan()
+	if !plan.InSync || plan.Status != PlanStatusOK {
+		t.Fatalf("expected an in-sync plan, got status %q reason %q", plan.Status, plan.Reason)
+	}
+	if len(plan.Commands) != 0 {
+		t.Errorf("an in-sync plan must issue no commands, got %v", plan.Commands)
+	}
+}
+
+func TestStorageEntryPlanLeavesUndeclaredAttributesAlone(t *testing.T) {
+	// The recipe names only the fields it manages. A size, namespace and
+	// annotation it never mentions are neither compared nor cleared, which
+	// is what stops a partially-declared recipe from destroying attributes
+	// set elsewhere.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+		"name": "app-data",
+		"scheduler": "k3s",
+		"size": "2Gi",
+		"namespace": "apps",
+		"chown": "herokuish",
+		"annotations": {"team": "platform"},
+		"labels": {"tier": "data"},
+		"schema_version": 1
+	}`)))()
+
+	task := StorageEntryTask{
+		Name:      "app-data",
+		Scheduler: "k3s",
+		Size:      "2Gi",
+		Chown:     "herokuish",
+		State:     StatePresent,
+	}
+	plan := task.Plan()
+	if !plan.InSync || plan.Status != PlanStatusOK {
+		t.Fatalf("expected an in-sync plan, got status %q reason %q mutations %v", plan.Status, plan.Reason, plan.Mutations)
+	}
+}
+
+func TestStorageEntryPlanConvergesChown(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", Chown: "root", State: StatePresent}
+	plan := task.Plan()
+	if plan.Status != PlanStatusModify {
+		t.Fatalf("expected plan status %q, got %q", PlanStatusModify, plan.Status)
+	}
+	if plan.InSync {
+		t.Error("a chown change must not report in sync")
+	}
+	want := []string{"dokku --quiet storage:set app-data chown root"}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+	wantMutations := []string{`set chown=root (was "herokuish")`}
+	if !equalStrings(plan.Mutations, wantMutations) {
+		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
+	}
+	if plan.Reason != "1 attribute(s) to set" {
+		t.Errorf("unexpected reason %q", plan.Reason)
+	}
+}
+
+func TestStorageEntryPlanConvergesEveryMutableAttributeInFieldOrder(t *testing.T) {
+	// One command per drifted field, in struct field order with sorted map
+	// keys, so plan and apply build byte-identical argv across runs.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+		"name": "app-data",
+		"scheduler": "k3s",
+		"size": "2Gi",
+		"namespace": "apps",
+		"chown": "herokuish",
+		"reclaim_policy": "Retain",
+		"annotations": {"team": "infra"},
+		"schema_version": 1
+	}`)))()
+
+	task := StorageEntryTask{
+		Name:          "app-data",
+		Scheduler:     "k3s",
+		Size:          "4Gi",
+		Namespace:     "data",
+		Chown:         "root",
+		ReclaimPolicy: "Delete",
+		Annotations:   map[string]string{"zeta": "1", "team": "platform"},
+		Labels:        map[string]string{"tier": "data"},
+		State:         StatePresent,
+	}
+	plan := task.Plan()
+	if plan.Status != PlanStatusModify {
+		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
+	}
+	want := []string{
+		"dokku --quiet storage:set app-data size 4Gi",
+		"dokku --quiet storage:set app-data namespace data",
+		"dokku --quiet storage:set app-data chown root",
+		"dokku --quiet storage:set app-data reclaim-policy Delete",
+		"dokku --quiet storage:annotations:set app-data team platform",
+		"dokku --quiet storage:annotations:set app-data zeta 1",
+		"dokku --quiet storage:labels:set app-data tier data",
+	}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands\n%v\ngot\n%v", want, plan.Commands)
+	}
+	if plan.Reason != "7 attribute(s) to set" {
+		t.Errorf("unexpected reason %q", plan.Reason)
+	}
+	wantMutations := []string{
+		`set size=4Gi (was "2Gi")`,
+		`set namespace=data (was "apps")`,
+		`set chown=root (was "herokuish")`,
+		`set reclaim_policy=Delete (was "Retain")`,
+		`set annotation team=platform (was "infra")`,
+		"set annotation zeta=1 (new)",
+		"set label tier=data (new)",
+	}
+	if !equalStrings(plan.Mutations, wantMutations) {
+		t.Errorf("expected mutations\n%v\ngot\n%v", wantMutations, plan.Mutations)
+	}
+}
+
+func TestStorageEntryPlanConvergesMapKeysWithoutDisturbingSiblings(t *testing.T) {
+	// The per-key subcommands are what make an omitted key unmanaged; the
+	// wholesale --annotation flag would replace the entire map and drop the
+	// key the recipe does not name.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+		"name": "app-data",
+		"scheduler": "docker-local",
+		"host_path": "/var/lib/dokku/data/storage/app-data",
+		"annotations": {"team": "platform", "owner": "sre"},
+		"schema_version": 1
+	}`)))()
+
+	task := StorageEntryTask{
+		Name:        "app-data",
+		Annotations: map[string]string{"team": "data"},
+		State:       StatePresent,
+	}
+	plan := task.Plan()
+	want := []string{"dokku --quiet storage:annotations:set app-data team data"}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+	for _, command := range plan.Commands {
+		if strings.Contains(command, "owner") {
+			t.Errorf("an undeclared annotation must be left alone, got %q", command)
+		}
+	}
+}
+
+func TestStorageEntryPlanRejectsImmutableDrift(t *testing.T) {
+	// dokku refuses an access-mode or storage-class swap in place, and has
+	// no command at all for the scheduler or the host path, so the plan
+	// errors rather than reporting a change it could never apply.
+	tests := []struct {
+		name    string
+		entry   string
+		task    StorageEntryTask
+		wantErr string
+	}{
+		{
+			name:    "scheduler",
+			entry:   dockerLocalEntryJSON,
+			task:    StorageEntryTask{Name: "app-data", Scheduler: "k3s", Size: "2Gi"},
+			wantErr: `records scheduler "docker-local", recipe declares "k3s"`,
+		},
+		{
+			name:    "path",
+			entry:   dockerLocalEntryJSON,
+			task:    StorageEntryTask{Name: "app-data", Path: "/mnt/app-data"},
+			wantErr: `records path "/var/lib/dokku/data/storage/app-data", recipe declares "/mnt/app-data"`,
+		},
+		{
+			name:    "access_mode",
+			entry:   `{"name": "app-data", "scheduler": "k3s", "size": "2Gi", "access_mode": "ReadWriteOnce", "schema_version": 1}`,
+			task:    StorageEntryTask{Name: "app-data", Scheduler: "k3s", Size: "2Gi", AccessMode: "ReadWriteMany"},
+			wantErr: `records access_mode "ReadWriteOnce", recipe declares "ReadWriteMany"`,
+		},
+		{
+			name:    "storage_class",
+			entry:   `{"name": "app-data", "scheduler": "k3s", "size": "2Gi", "schema_version": 1}`,
+			task:    StorageEntryTask{Name: "app-data", Scheduler: "k3s", Size: "2Gi", StorageClass: "longhorn"},
+			wantErr: `records storage_class "", recipe declares "longhorn"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(test.entry)))()
+
+			test.task.State = StatePresent
+			plan := test.task.Plan()
+			if plan.Status != PlanStatusError {
+				t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
+			}
+			if plan.Error == nil || !strings.Contains(plan.Error.Error(), test.wantErr) {
+				t.Errorf("expected an error containing %q, got: %v", test.wantErr, plan.Error)
+			}
+			if len(plan.Commands) != 0 {
+				t.Errorf("a refused plan must issue no commands, got %v", plan.Commands)
+			}
+		})
+	}
+}
+
+func TestStorageEntryPlanReadsAnOmittedSchedulerAsDockerLocal(t *testing.T) {
+	// createArgs drops the flag when the scheduler is empty and dokku
+	// applies docker-local, so the comparison has to read it the same way
+	// rather than treating an empty scheduler as unmanaged.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(
+		`{"name": "app-data", "scheduler": "k3s", "size": "2Gi", "schema_version": 1}`,
+	)))()
+
+	task := StorageEntryTask{Name: "app-data", State: StatePresent}
+	plan := task.Plan()
+	if plan.Status != PlanStatusError {
+		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
+	}
+	if plan.Error == nil || !strings.Contains(plan.Error.Error(), `recipe declares "docker-local"`) {
+		t.Errorf("expected the omitted scheduler to read as docker-local, got: %v", plan.Error)
+	}
+}
+
+func TestStorageEntryPlanAbsentIgnoresAttributes(t *testing.T) {
+	// Attributes are rejected by Validate under state 'absent', so the
+	// destroy branch never compares them - it plans on presence alone.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
+	plan := task.Plan()
+	if plan.Status != PlanStatusDestroy {
+		t.Fatalf("expected plan status %q, got %q", PlanStatusDestroy, plan.Status)
+	}
+	want := []string{"dokku --quiet storage:destroy --force app-data"}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+}
+
+func TestStorageEntryExecuteAppliesAttributeDrift(t *testing.T) {
+	// The apply path runs what the plan rendered, and reports the entry as
+	// still present afterwards rather than newly created.
+	responses := singleStorageEntryFixture(dockerLocalEntryJSON)
+	var dispatched [][]string
+	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		dispatched = append(dispatched, in.Args)
+		return subprocess.ExecCommandResponse{Stdout: responses[strings.Join(in.Args, " ")]}, nil
+	})()
+
+	task := StorageEntryTask{Name: "app-data", Chown: "root", State: StatePresent}
+	result := task.Execute()
+	if result.Error != nil {
+		t.Fatalf("expected the apply to succeed, got: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for an attribute change")
+	}
+	if result.State != StatePresent {
+		t.Errorf("expected state %q, got %q", StatePresent, result.State)
+	}
+	want := []string{"--quiet", "storage:set", "app-data", "chown", "root"}
+	if len(dispatched) != 2 || !equalStrings(dispatched[1], want) {
+		t.Errorf("expected the probe then %v, got %v", want, dispatched)
 	}
 }

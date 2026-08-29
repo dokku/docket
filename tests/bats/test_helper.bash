@@ -90,6 +90,18 @@ dokku_clean_app() {
   fi
 }
 
+# dokku_clean_storage_entry destroys a named storage registry entry if it
+# exists. Same setup/teardown role as dokku_clean_app; storage:destroy
+# refuses an entry any app still mounts, so unmount first if a test ever
+# attaches one.
+dokku_clean_storage_entry() {
+  local entry="$1"
+  if ! command -v dokku >/dev/null 2>&1; then
+    return 0
+  fi
+  dokku --quiet storage:destroy --force "$entry" >/dev/null 2>&1 || true
+}
+
 # require_dokku skips the current test when no dokku binary is installed.
 require_dokku() {
   if ! command -v dokku >/dev/null 2>&1; then

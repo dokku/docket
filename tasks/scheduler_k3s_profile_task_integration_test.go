@@ -4,6 +4,11 @@ import (
 	"testing"
 )
 
+// Profile names here are kept short on purpose. dokku 0.38.26 gave each
+// profile a node-sysctls helm release named `dokku-node-sysctls-profile-<name>`,
+// and helm caps a release name at 53 characters, so a profile name longer than
+// 26 is refused by `scheduler-k3s:profile:set` and its unset counterpart. The
+// task itself does not check the length yet (dokku/docket#482).
 func TestIntegrationSchedulerK3sProfileAll(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
@@ -14,14 +19,14 @@ func TestIntegrationSchedulerK3sProfileAll(t *testing.T) {
 		{
 			name: "minimal-worker",
 			task: SchedulerK3sProfileTask{
-				Name: "docket-test-profile-minimal",
+				Name: "docket-test-minimal",
 				Role: "worker",
 			},
 		},
 		{
 			name: "full-server",
 			task: SchedulerK3sProfileTask{
-				Name:              "docket-test-profile-full",
+				Name:              "docket-test-full",
 				Role:              "server",
 				KubeletArgs:       []string{"max-pods=64", "eviction-hard=memory.available<5%"},
 				TaintScheduling:   true,
@@ -31,7 +36,7 @@ func TestIntegrationSchedulerK3sProfileAll(t *testing.T) {
 		{
 			name: "multiple-kubelet-args",
 			task: SchedulerK3sProfileTask{
-				Name:        "docket-test-profile-args",
+				Name:        "docket-test-args",
 				Role:        "worker",
 				KubeletArgs: []string{"max-pods=100", "node-labels=tier=spot", "system-reserved=cpu=200m"},
 			},
@@ -61,7 +66,7 @@ func TestIntegrationSchedulerK3sProfileAll(t *testing.T) {
 func TestIntegrationSchedulerK3sProfileFieldDrift(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
-	profileName := "docket-test-profile-drift"
+	profileName := "docket-test-drift"
 
 	seed := SchedulerK3sProfileTask{
 		Name:              profileName,

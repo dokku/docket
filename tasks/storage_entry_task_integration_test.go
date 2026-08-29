@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -159,4 +160,141 @@ func TestIntegrationStorageEntryAnnotationsAndLabels(t *testing.T) {
 	if task.Labels["docket-managed"] != "true" {
 		t.Errorf("expected exported labels to carry docket-managed, got %v", task.Labels)
 	}
+}
+
+func TestIntegrationStorageEntryConvergesChown(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "docket-test-entry-converge-chown"
+
+	destroy := StorageEntryTask{Name: name, State: StateAbsent}
+	destroy.Execute()
+	defer destroy.Execute()
+
+	create := StorageEntryTask{Name: name, Chown: "herokuish", State: StatePresent}
+	if result := create.Execute(); result.Error != nil {
+		t.Fatalf("failed to create entry: %v", result.Error)
+	}
+
+	// The entry already exists, so the ownership change goes through
+	// storage:set rather than a second storage:create - which is what
+	// re-runs the chown on the host directory instead of only recording a
+	// new value.
+	converge := StorageEntryTask{Name: name, Chown: "root", State: StatePresent}
+	plan := converge.Plan()
+	if plan.Status != PlanStatusModify {
+		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
+	}
+
+	result := converge.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to converge chown: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for a chown change")
+	}
+	if result.State != StatePresent {
+		t.Errorf("expected state 'present', got '%s'", result.State)
+	}
+
+	entry := findStorageEntryT(t, name)
+	if entry.Chown != "root" {
+		t.Errorf("expected the registry to record chown 'root', got %q", entry.Chown)
+	}
+
+	// A third run settles: the recipe now matches what the registry holds.
+	result = converge.Execute()
+	if result.Error != nil {
+		t.Fatalf("re-applying the converged entry failed: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected changed=false once the chown matches")
+	}
+}
+
+func TestIntegrationStorageEntryConvergesOneAnnotationKey(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "docket-test-entry-converge-metadata"
+
+	destroy := StorageEntryTask{Name: name, State: StateAbsent}
+	destroy.Execute()
+	defer destroy.Execute()
+
+	create := StorageEntryTask{
+		Name:        name,
+		Annotations: map[string]string{"docket.io/team": "platform", "docket.io/tier": "data"},
+		State:       StatePresent,
+	}
+	if result := create.Execute(); result.Error != nil {
+		t.Fatalf("failed to create entry: %v", result.Error)
+	}
+
+	// Only the declared key moves. The sibling the recipe does not name
+	// survives, which is what the per-key subcommand buys over the
+	// wholesale --annotation flag.
+	converge := StorageEntryTask{
+		Name:        name,
+		Annotations: map[string]string{"docket.io/team": "sre"},
+		State:       StatePresent,
+	}
+	result := converge.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to converge the annotation: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for an annotation change")
+	}
+
+	entry := findStorageEntryT(t, name)
+	if entry.Annotations["docket.io/team"] != "sre" {
+		t.Errorf("expected the declared annotation to converge, got %v", entry.Annotations)
+	}
+	if entry.Annotations["docket.io/tier"] != "data" {
+		t.Errorf("expected the undeclared annotation to survive, got %v", entry.Annotations)
+	}
+
+	if result := converge.Execute(); result.Changed {
+		t.Error("expected changed=false once the annotation matches")
+	}
+}
+
+func TestIntegrationStorageEntryRefusesAPathChange(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "docket-test-entry-immutable-path"
+
+	destroy := StorageEntryTask{Name: name, State: StateAbsent}
+	destroy.Execute()
+	defer destroy.Execute()
+
+	create := StorageEntryTask{Name: name, State: StatePresent}
+	if result := create.Execute(); result.Error != nil {
+		t.Fatalf("failed to create entry: %v", result.Error)
+	}
+
+	// dokku has no command that moves an entry's host path, so the plan
+	// says so rather than reporting a change it could never apply.
+	move := StorageEntryTask{Name: name, Path: "/mnt/docket-test-entry-elsewhere", State: StatePresent}
+	plan := move.Plan()
+	if plan.Status != PlanStatusError {
+		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
+	}
+	if plan.Error == nil || !strings.Contains(plan.Error.Error(), "records path") {
+		t.Errorf("expected an immutable-path error, got: %v", plan.Error)
+	}
+}
+
+// findStorageEntryT reads one entry back out of the registry, failing the
+// test when the server does not report it.
+func findStorageEntryT(t *testing.T, name string) storageEntry {
+	t.Helper()
+	entry, err := lookupStorageEntry(name)
+	if err != nil {
+		t.Fatalf("failed to read storage entries: %v", err)
+	}
+	if entry == nil {
+		t.Fatalf("expected %s in storage:list-entries", name)
+	}
+	return *entry
 }
