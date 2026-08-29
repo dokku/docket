@@ -67,6 +67,117 @@ func TestSchedulerK3sProfileTaskInvalidKubeletArg(t *testing.T) {
 	}
 }
 
+// TestSchedulerK3sProfileTaskInvalidNameCharset covers the charset dokku
+// itself enforces in both profiles:add and profiles:remove, so it applies to
+// either state.
+func TestSchedulerK3sProfileTaskInvalidNameCharset(t *testing.T) {
+	names := []struct {
+		label string
+		name  string
+	}{
+		{label: "leading dash", name: "-edge-pool"},
+		{label: "trailing dash", name: "edge-pool-"},
+		{label: "underscore", name: "edge_pool"},
+		{label: "space", name: "edge pool"},
+		{label: "dot", name: "edge.pool"},
+	}
+	for _, tc := range names {
+		for _, state := range []State{StatePresent, StateAbsent} {
+			t.Run(tc.label+"/"+string(state), func(t *testing.T) {
+				err := SchedulerK3sProfileTask{Name: tc.name, Role: "worker", State: state}.Validate()
+				if err == nil {
+					t.Fatalf("expected error for name %q", tc.name)
+				}
+				if !strings.Contains(err.Error(), "only alphanumeric characters and dashes") {
+					t.Errorf("unexpected error: %v", err)
+				}
+			})
+		}
+	}
+}
+
+// TestSchedulerK3sProfileTaskNameLength walks the two caps that bind at
+// different points. dokku's own 32 applies to either state; the derived 26
+// applies only when creating, so a name between the two validates under
+// 'absent' and not under 'present'.
+func TestSchedulerK3sProfileTaskNameLength(t *testing.T) {
+	cases := []struct {
+		label   string
+		length  int
+		state   State
+		wantErr string
+	}{
+		{label: "over dokku cap, present", length: 33, state: StatePresent, wantErr: "at most 32 characters"},
+		{label: "over dokku cap, absent", length: 33, state: StateAbsent, wantErr: "at most 32 characters"},
+		{label: "at dokku cap, absent", length: 32, state: StateAbsent},
+		{label: "at dokku cap, present", length: 32, state: StatePresent, wantErr: "at most 26 characters for state 'present'"},
+		{label: "one over the derived cap, present", length: 27, state: StatePresent, wantErr: "at most 26 characters for state 'present'"},
+		{label: "one over the derived cap, absent", length: 27, state: StateAbsent},
+		{label: "at the derived cap, present", length: 26, state: StatePresent},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			name := strings.Repeat("a", tc.length)
+			err := SchedulerK3sProfileTask{Name: name, Role: "worker", State: tc.state}.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected a %d-character name to validate, got %v", tc.length, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected an error for a %d-character name", tc.length)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestSchedulerK3sProfileTaskUppercaseName locks in the other half of the
+// derived rule: dokku's charset allows uppercase, helm's release name does
+// not, so the name is refused when creating and left alone when removing.
+func TestSchedulerK3sProfileTaskUppercaseName(t *testing.T) {
+	err := SchedulerK3sProfileTask{Name: "EdgePool", Role: "worker", State: StatePresent}.Validate()
+	if err == nil {
+		t.Fatal("expected an error for an uppercase name under state 'present'")
+	}
+	if !strings.Contains(err.Error(), "must be lowercase for state 'present'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "dokku-node-sysctls-profile-EdgePool") {
+		t.Errorf("error should name the derived release name, got: %v", err)
+	}
+
+	if err := (SchedulerK3sProfileTask{Name: "EdgePool", Role: "worker", State: StateAbsent}).Validate(); err != nil {
+		t.Errorf("expected an uppercase name to validate under state 'absent', got %v", err)
+	}
+}
+
+// TestSchedulerK3sProfileNameHelmLimitDerivation pins the arithmetic itself, so
+// a change to the prefix or to helm's ceiling cannot silently leave the limit
+// wrong. A name at the derived cap must fill the release name exactly to helm's
+// ceiling and still satisfy helm's own regexp.
+func TestSchedulerK3sProfileNameHelmLimitDerivation(t *testing.T) {
+	if got := len(nodeSysctlsReleasePrefix) + schedulerK3sProfileNameHelmMaxLength; got != helmReleaseNameMaxLength {
+		t.Errorf("prefix plus a max-length name is %d characters, want helm's ceiling of %d", got, helmReleaseNameMaxLength)
+	}
+	release := nodeSysctlsReleasePrefix + strings.Repeat("a", schedulerK3sProfileNameHelmMaxLength)
+	if len(release) != helmReleaseNameMaxLength {
+		t.Errorf("derived release name is %d characters, want %d", len(release), helmReleaseNameMaxLength)
+	}
+	if !helmReleaseName.MatchString(release) {
+		t.Errorf("derived release name %q does not satisfy helm's release name regexp", release)
+	}
+	// The derived cap has to be the stricter of the two, or holding it to
+	// state 'present' would be pointless.
+	if schedulerK3sProfileNameHelmMaxLength >= schedulerK3sProfileNameMaxLength {
+		t.Errorf("derived cap %d should be stricter than dokku's own cap %d",
+			schedulerK3sProfileNameHelmMaxLength, schedulerK3sProfileNameMaxLength)
+	}
+}
+
 func TestSchedulerK3sProfileTaskInvalidState(t *testing.T) {
 	task := SchedulerK3sProfileTask{Name: "edge-pool", Role: "worker", State: "invalid"}
 	result := task.Execute()
