@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -276,5 +277,171 @@ func TestExportSchedulerK3sScopedAndAuthRecipe(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("recipe missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// globalExportReporter is satisfied by SchedulerK3sProfileTask so the export
+// engine prefers ExportGlobalReport and routes the left-out-profile diagnostic
+// into ExportReport.Warnings rather than dropping it silently. #483.
+var _ globalExportReporter = SchedulerK3sProfileTask{}
+
+// schedulerK3sProfileExportFixture is a profiles:list payload holding one
+// profile docket can express and three it cannot, one per rule the exported
+// body has to satisfy: a name helm could not turn into a release because of its
+// case, one it could not because of its length, and a profile dokku reports
+// with no role at all. All three would come back as a recipe `docket validate`
+// refuses, which fails the whole file rather than just the task.
+func schedulerK3sProfileExportFixture() map[string]string {
+	overLong := strings.Repeat("a", schedulerK3sProfileNameHelmMaxLength+1)
+	return map[string]string{
+		"--quiet apps:list": "",
+		"--quiet scheduler-k3s:profiles:list --format json": `[
+			{"name":"edge-pool","role":"worker","kubelet_args":["max-pods=64"],"taint_scheduling":true},
+			{"name":"EdgePool","role":"worker"},
+			{"name":"` + overLong + `","role":"worker"},
+			{"name":"no-role","role":""}
+		]`,
+	}
+}
+
+// TestSchedulerK3sProfileExportReportLeavesOutUnappliableProfiles pins #483: a
+// profile the server reports but the task would refuse is warned about and left
+// out, and the profiles that survive carry an explicit state so the body is
+// plannable straight out of the exporter.
+func TestSchedulerK3sProfileExportReportLeavesOutUnappliableProfiles(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+
+	var warnings []string
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(func(msg string) {
+		warnings = append(warnings, msg)
+	})
+	if err != nil {
+		t.Fatalf("ExportGlobalReport: %v", err)
+	}
+
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 body, got %d: %+v", len(bodies), bodies)
+	}
+	body, ok := bodies[0].(SchedulerK3sProfileTask)
+	if !ok {
+		t.Fatalf("body type = %T, want SchedulerK3sProfileTask", bodies[0])
+	}
+	if body.Name != "edge-pool" {
+		t.Errorf("exported profile = %q, want edge-pool", body.Name)
+	}
+	if body.State != StatePresent {
+		t.Errorf("exported state = %q, want %q", body.State, StatePresent)
+	}
+	// The emitted body is exactly what the loader would hand to plan, so it has
+	// to satisfy the same check `docket validate` runs.
+	if err := body.Validate(); err != nil {
+		t.Errorf("exported body does not validate: %v", err)
+	}
+
+	if len(warnings) != 3 {
+		t.Fatalf("expected 3 warnings, got %d (%v)", len(warnings), warnings)
+	}
+	// Every warning names its profile: the engine prefix says only which task
+	// type spoke, and Validate()'s role message never mentions the name.
+	for _, want := range []string{"EdgePool", "must be lowercase", "state 'absent'"} {
+		if !strings.Contains(warnings[0], want) {
+			t.Errorf("uppercase warning = %q, want it to mention %q", warnings[0], want)
+		}
+	}
+	if !strings.Contains(warnings[1], "at most 26 characters") {
+		t.Errorf("over-long warning = %q, want the length rule", warnings[1])
+	}
+	if !strings.Contains(warnings[2], "no-role") || !strings.Contains(warnings[2], "role is required") {
+		t.Errorf("missing-role warning = %q, want the profile name and the role rule", warnings[2])
+	}
+}
+
+// TestSchedulerK3sProfileExportGlobalDropsWithoutDiagnostics pins that the
+// plain GlobalExporter form leaves out the same profiles; it only discards the
+// explanation, which is why the engine prefers ExportGlobalReport.
+func TestSchedulerK3sProfileExportGlobalDropsWithoutDiagnostics(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobal()
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 body, got %d: %+v", len(bodies), bodies)
+	}
+	if got := bodies[0].(SchedulerK3sProfileTask).Name; got != "edge-pool" {
+		t.Errorf("exported profile = %q, want edge-pool", got)
+	}
+}
+
+// TestExportSchedulerK3sProfileRecipeOmitsUnappliableProfiles drives the full
+// engine: the warnings reach ExportReport.Warnings under the global prefix, and
+// the recipe that comes back carries only the profile that can be applied.
+func TestExportSchedulerK3sProfileRecipeOmitsUnappliableProfiles(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+
+	res, err := ExportRecipe(ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	// The other global exporters answer the empty fixture with their own
+	// unparseable-report warnings, so count only the ones this task produced -
+	// which is also what pins the engine prefix onto them.
+	var profileWarnings []string
+	for _, w := range res.Report.Warnings {
+		if strings.HasPrefix(w, "global: dokku_scheduler_k3s_profile: ") {
+			profileWarnings = append(profileWarnings, w)
+		}
+	}
+	if len(profileWarnings) != 3 {
+		t.Fatalf("expected 3 profile warnings, got %d (%v)", len(profileWarnings), profileWarnings)
+	}
+
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+	out := string(recipe)
+	for _, want := range []string{"dokku_scheduler_k3s_profile", "name: edge-pool", "state: present"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{"EdgePool", "no-role"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("recipe carries the unappliable profile %q:\n%s", unwanted, out)
+		}
+	}
+}
+
+// TestExportSchedulerK3sProfileResourceAddressReportsAMissingProfile pins the
+// consequence of leaving a profile out: an address pinning one matches nothing,
+// so export reports it as missing and the command exits non-zero. The warning
+// printed above it is what says the profile is on the server but unexportable.
+func TestExportSchedulerK3sProfileResourceAddressReportsAMissingProfile(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+
+	selectors, err := ParseResourceSelectors([]string{"dokku_scheduler_k3s_profile[name=EdgePool]"})
+	if err != nil {
+		t.Fatalf("ParseResourceSelectors: %v", err)
+	}
+	res, err := ExportRecipe(ExportOptions{Resources: selectors})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	if res.PlayCount() != 0 {
+		t.Errorf("expected no plays, got %d", res.PlayCount())
+	}
+	want := []string{"dokku_scheduler_k3s_profile[name=EdgePool]"}
+	if !reflect.DeepEqual(res.Report.MissingResources, want) {
+		t.Errorf("MissingResources = %v, want %v", res.Report.MissingResources, want)
+	}
+	if len(res.Report.Warnings) == 0 {
+		t.Fatal("expected the left-out warning to survive the empty play")
+	}
+	if !strings.Contains(res.Report.Warnings[0], "EdgePool") {
+		t.Errorf("warning = %q, want it to name EdgePool", res.Report.Warnings[0])
 	}
 }

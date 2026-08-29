@@ -6,7 +6,7 @@ Manages a global scheduler-k3s node profile used when joining nodes to a cluster
 
 ## Export support
 
-Supported.
+Partial - every profile dokku reports is exported; a profile whose name dokku accepted but the task refuses for state 'present' - longer than 26 characters, or carrying uppercase, so helm cannot release the derived `dokku-node-sysctls-profile-<name>` - is reported as a warning and left out, since emitting it would make the whole recipe fail docket validate. Remove such a profile with a hand-written task using state 'absent'.
 
 ## Probe support
 

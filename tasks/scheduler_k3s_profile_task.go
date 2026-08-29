@@ -65,7 +65,7 @@ func (t SchedulerK3sProfileTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t SchedulerK3sProfileTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportSupported}
+	return ExportSupport{Status: ExportPartial, Caveat: "every profile dokku reports is exported; a profile whose name dokku accepted but the task refuses for state 'present' - longer than 26 characters, or carrying uppercase, so helm cannot release the derived `dokku-node-sysctls-profile-<name>` - is reported as a warning and left out, since emitting it would make the whole recipe fail docket validate. Remove such a profile with a hand-written task using state 'absent'"}
 }
 
 // ProbeSupport reports whether Plan() can read this task's current state.
@@ -422,9 +422,38 @@ func formatProfileSetMutation(t SchedulerK3sProfileTask, current schedulerK3sPro
 	)
 }
 
-// ExportGlobal reconstructs every scheduler-k3s node profile from
-// profiles:list, which exposes the full profile definition.
+// ExportGlobal satisfies GlobalExporter by delegating to exportGlobal with a
+// no-op warn callback. The export engine prefers ExportGlobalReport when
+// present, so the left-out-profile diagnostic reaches ExportReport.Warnings
+// rather than being discarded here.
 func (t SchedulerK3sProfileTask) ExportGlobal() ([]interface{}, error) {
+	return t.exportGlobal(func(string) {})
+}
+
+// ExportGlobalReport is the diagnostics-aware form of ExportGlobal (the
+// globalExportReporter interface): it routes the "profile left out" warning
+// through the engine's warn callback (wired to ExportReport.Warnings) instead
+// of dropping the profile silently.
+func (t SchedulerK3sProfileTask) ExportGlobalReport(warn func(msg string)) ([]interface{}, error) {
+	return t.exportGlobal(warn)
+}
+
+// exportGlobal reconstructs every scheduler-k3s node profile from
+// profiles:list, which exposes the full profile definition.
+//
+// dokku accepts profiles docket cannot express as a valid task: `profiles:add`
+// caps a name at 32 characters and allows uppercase, while docket refuses, for
+// state 'present', anything helm could not turn into the derived
+// `dokku-node-sysctls-profile-<name>` release (#482). A server can therefore be
+// carrying a profile whose faithful export is a recipe `docket validate`
+// refuses - and it refuses the whole file, not just that task, so one such
+// profile would make the entire export unusable (#483). Each candidate body is
+// run through its own Validate() - the same method `docket validate` calls -
+// and one that would be refused is reported through warn and left out, so the
+// recipe that does come back applies. The warning names the profile and the
+// remedy, since a left-out profile is also one docket can no longer be asked to
+// remove.
+func (t SchedulerK3sProfileTask) exportGlobal(warn func(msg string)) ([]interface{}, error) {
 	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "scheduler-k3s:profiles:list", "--format", "json"},
@@ -445,13 +474,22 @@ func (t SchedulerK3sProfileTask) ExportGlobal() ([]interface{}, error) {
 
 	var out []interface{}
 	for _, e := range entries {
-		out = append(out, SchedulerK3sProfileTask{
+		body := SchedulerK3sProfileTask{
 			Name:              e.Name,
 			Role:              e.Role,
 			KubeletArgs:       e.KubeletArgs,
 			TaintScheduling:   e.TaintScheduling,
 			AllowUnknownHosts: e.AllowUnknownHosts,
-		})
+			// Explicit rather than left to the loader's default, so the body is
+			// plannable straight out of the exporter and Validate() below is
+			// asked the same question the loader will ask.
+			State: StatePresent,
+		}
+		if err := body.Validate(); err != nil {
+			warn(fmt.Sprintf("profile %q is left out of the recipe because the task would not validate: %v; remove it with a hand-written task using state 'absent'", e.Name, err))
+			continue
+		}
+		out = append(out, body)
 	}
 	return out, nil
 }

@@ -3,6 +3,8 @@ package tasks
 import (
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 // TestIntegrationExportConfigRoundTrip verifies the config exporter reconstructs
@@ -217,10 +219,15 @@ func TestIntegrationExportGitPropertyGlobal(t *testing.T) {
 // TestIntegrationExportSchedulerK3sProfile verifies the global profile exporter
 // against a real dokku. scheduler-k3s is a core plugin and profiles are stored
 // on disk (no cluster or deploy needed), so only dokku itself is required.
+//
+// The fixture name is kept well inside schedulerK3sProfileNameHelmMaxLength on
+// purpose: a name sitting on that boundary would, one character later, be
+// dropped by the exporter rather than fail loudly, and this test would report
+// only that the profile is missing (#483).
 func TestIntegrationExportSchedulerK3sProfile(t *testing.T) {
 	skipIfNoDokkuT(t)
 
-	name := "docket-test-export-profile"
+	name := "docket-test-export-prof"
 	cleanup := SchedulerK3sProfileTask{Name: name, Role: "worker", State: StateAbsent}
 	cleanup.Execute()
 	defer cleanup.Execute()
@@ -247,11 +254,67 @@ func TestIntegrationExportSchedulerK3sProfile(t *testing.T) {
 	if found.Role != "worker" || found.TaintScheduling != true {
 		t.Errorf("exported profile mismatch: %+v", *found)
 	}
-	// The exporter omits state; set it as the recipe loader would before
-	// planning the body directly.
-	found.State = StatePresent
+	// The exporter states the desired state rather than leaning on the loader's
+	// default, so the body is plannable exactly as it comes back.
+	if found.State != StatePresent {
+		t.Errorf("exported state = %q, want %q", found.State, StatePresent)
+	}
 	if plan := found.Plan(); !plan.InSync {
 		t.Errorf("exported profile should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+// TestIntegrationExportSchedulerK3sProfileLeavesOutUnappliableName pins #483
+// against a real dokku: `scheduler-k3s:profiles:add` accepts an uppercase name
+// that the task refuses for state 'present', because dokku could not turn the
+// derived dokku-node-sysctls-profile-<name> into a helm release. Exporting such
+// a profile faithfully would produce a recipe `docket validate` rejects whole,
+// so the exporter reports it and leaves it out.
+//
+// The profile is created through raw dokku on purpose: docket itself will not
+// create one, so this is the only way to reproduce a server that already
+// carries it.
+func TestIntegrationExportSchedulerK3sProfileLeavesOutUnappliableName(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "DocketTestExportBad"
+	removeProfile := func() {
+		subprocess.CallExecCommand(subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", "scheduler-k3s:profiles:remove", name},
+		})
+	}
+	removeProfile()
+	defer removeProfile()
+
+	if _, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "scheduler-k3s:profiles:add", name, "--role", "worker"},
+	}); err != nil {
+		t.Skipf("dokku refused the uppercase profile name, so the export gap cannot be reproduced: %v", err)
+	}
+
+	var warnings []string
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(func(msg string) {
+		warnings = append(warnings, msg)
+	})
+	if err != nil {
+		t.Fatalf("ExportGlobalReport: %v", err)
+	}
+
+	for i := range bodies {
+		if p, ok := bodies[i].(SchedulerK3sProfileTask); ok && p.Name == name {
+			t.Fatalf("exported an unappliable profile: %+v", p)
+		}
+	}
+	var warned bool
+	for _, w := range warnings {
+		if strings.Contains(w, name) {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("expected a warning naming %q, got %v", name, warnings)
 	}
 }
 

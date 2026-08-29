@@ -65,6 +65,13 @@ Some state cannot be read back and is left out with a warning - notably write-on
 and service properties (`dokku_service_property`), which you add by hand. Each task's
 [reference page](tasks/README.md) has an Export support section noting its limits.
 
+A scheduler-k3s node profile is left out for a different reason: dokku accepts a profile name that
+is too long or carries uppercase, but it cannot turn the derived node-sysctls helm release name into
+a legal one, so the profile is already broken on the old server. Carrying it into the recipe would
+make `docket validate` reject the whole file, so it is reported by name and omitted. Recreate it on
+the new server under a lowercase name of at most 26 characters, and remove the old one with a
+`dokku_scheduler_k3s_profile` task using `state: absent`.
+
 HTTP basic auth is reconstructed in full - whether it is serving, its users, allowed IPs and auth
 domains. The plugin never stores a password, only its htpasswd hash, and export carries those
 hashes across: each user is emitted as a `hash` referencing a value in `tasks.vars.yml`, so the new

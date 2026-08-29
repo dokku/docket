@@ -507,7 +507,11 @@ The output format follows `--format` when given, otherwise the `--output` extens
 reference page carries an **Export support** section stating whether it is supported, partial (for
 example a value that is lifted into the vars-file), or not exportable (write-only credentials such
 as `dokku_git_auth`, or `dokku_service_property`, which no datastore plugin can read back).
-Resources that cannot be read back are reported as warnings and left out of the recipe.
+Resources that cannot be read back are reported as warnings and left out of the recipe, as is a
+resource that reads back fine but could not be applied back - a `dokku_scheduler_k3s_profile`
+whose name dokku accepted but helm cannot turn into a release name, for example. Emitting one of
+those would fail `docket validate` for the whole recipe rather than for the single task, so the
+warning names the resource and what to do about it instead.
 
 ## docket schema
 

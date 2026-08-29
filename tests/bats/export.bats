@@ -8,10 +8,14 @@ load test_helper
 setup() {
   docket_build
   dokku_clean_app docket-test-export
+  dokku_clean_scheduler_k3s_profile docket-test-good
+  dokku_clean_scheduler_k3s_profile DocketTestBad
 }
 
 teardown() {
   dokku_clean_app docket-test-export
+  dokku_clean_scheduler_k3s_profile docket-test-good
+  dokku_clean_scheduler_k3s_profile DocketTestBad
 }
 
 @test "docket export fails on a nonexistent --app and writes nothing" {
@@ -247,4 +251,34 @@ teardown() {
   assert_output --partial "secrets.yml"
   assert [ -f tasks.yml ]
   assert [ ! -f secrets.yml ]
+}
+
+# dokku's scheduler-k3s:profiles:add accepts any alphanumeric name up to 32
+# characters, but it derives each profile's node-sysctls helm release name as
+# dokku-node-sysctls-profile-<name>, and helm requires that to be lowercase and
+# at most 53 characters. docket refuses such a name for state present (#482), so
+# exporting the profile faithfully would hand back a recipe docket validate
+# rejects - and it rejects the whole file, not just that task (#483).
+@test "docket export leaves out a scheduler-k3s profile helm cannot release (#483)" {
+  require_dokku
+  dokku --quiet scheduler-k3s:profiles:add docket-test-good --role worker
+  if ! dokku --quiet scheduler-k3s:profiles:add DocketTestBad --role worker; then
+    skip "dokku refused the uppercase profile name, so the export gap cannot be reproduced"
+  fi
+
+  run "$(docket_bin)" export --resource dokku_scheduler_k3s_profile --output "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
+  assert_output --partial "DocketTestBad"
+  assert_output --partial "state 'absent'"
+
+  run cat "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
+  assert_output --partial "docket-test-good"
+  assert_output --partial "state: present"
+  refute_output --partial "DocketTestBad"
+
+  # The whole point: the recipe that comes back is one the user can actually
+  # apply, rather than one validate refuses with no explanation.
+  run "$(docket_bin)" validate --tasks "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
 }

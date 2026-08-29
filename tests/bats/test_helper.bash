@@ -102,6 +102,18 @@ dokku_clean_storage_entry() {
   dokku --quiet storage:destroy --force "$entry" >/dev/null 2>&1 || true
 }
 
+# dokku_clean_scheduler_k3s_profile removes a named scheduler-k3s node profile
+# if it exists. Same setup/teardown role as dokku_clean_app. Profiles are stored
+# on disk, so this works without a k3s cluster; removal of a profile whose name
+# helm cannot release fails on a clustered host, hence the tolerated failure.
+dokku_clean_scheduler_k3s_profile() {
+  local profile="$1"
+  if ! command -v dokku >/dev/null 2>&1; then
+    return 0
+  fi
+  dokku --quiet scheduler-k3s:profiles:remove "$profile" >/dev/null 2>&1 || true
+}
+
 # require_dokku skips the current test when no dokku binary is installed.
 require_dokku() {
   if ! command -v dokku >/dev/null 2>&1; then

@@ -678,3 +678,60 @@ func TestExportCommandResourceUnmatchedExitsNonZero(t *testing.T) {
 		t.Errorf("expected the unmatched address to be named; got %q", ui.ErrorWriter.String())
 	}
 }
+
+// TestExportOutputValidatesWithUnappliableK3sProfile is #483 as a regression:
+// a server carrying a scheduler-k3s profile whose name dokku accepted but
+// docket refuses for state 'present' used to export into a recipe that
+// `docket validate` rejected outright - and it rejects the whole file, so the
+// one bad profile made the entire export unusable. The profile is now reported
+// and left out, the profile that can be applied still comes back, and the pair
+// validates.
+func TestExportOutputValidatesWithUnappliableK3sProfile(t *testing.T) {
+	fixture := exportCommandFixture()
+	fixture["--quiet scheduler-k3s:profiles:list --format json"] = `[
+		{"name":"edge-pool","role":"worker"},
+		{"name":"EdgePool","role":"worker"}
+	]`
+	defer subprocess.SetExecRunner(fakeExecRunner(fixture))()
+
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "tasks.yml")
+	vars := filepath.Join(dir, "tasks.vars.yml")
+
+	c, ui := newExportCommand()
+	if code := c.Run([]string{"--output", recipe}); code != 0 {
+		t.Fatalf("export exit = %d: %s", code, ui.ErrorWriter.String())
+	}
+
+	// The operator is told which profile is missing and why, rather than being
+	// handed a recipe that fails validation with no explanation.
+	out := ui.OutputWriter.String() + ui.ErrorWriter.String()
+	for _, want := range []string{"dokku_scheduler_k3s_profile", "EdgePool", "state 'absent'"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("export output missing %q:\n%s", want, out)
+		}
+	}
+
+	recipeBytes, err := os.ReadFile(recipe)
+	if err != nil {
+		t.Fatalf("recipe not written: %v", err)
+	}
+	if !strings.Contains(string(recipeBytes), "edge-pool") {
+		t.Errorf("recipe dropped the appliable profile:\n%s", recipeBytes)
+	}
+	if strings.Contains(string(recipeBytes), "EdgePool") {
+		t.Errorf("recipe carries the unappliable profile:\n%s", recipeBytes)
+	}
+
+	valArgs := []string{"--tasks", recipe, "--vars-file", vars, "--strict"}
+	oldArgs := os.Args
+	os.Args = append([]string{"docket", "validate"}, valArgs...)
+	defer func() { os.Args = oldArgs }()
+
+	vui := cli.NewMockUi()
+	v := &ValidateCommand{Meta: command.Meta{Ui: vui}}
+	if code := v.Run(valArgs); code != 0 {
+		t.Fatalf("docket validate --strict exit = %d, want 0\n--- validate stderr ---\n%s\n--- recipe ---\n%s",
+			code, vui.ErrorWriter.String(), recipeBytes)
+	}
+}
