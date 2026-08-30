@@ -108,6 +108,13 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	c.tasksData = data
 	c.tasksDataSource = source
 
+	// The only error registerInputFlags still returns is an unreadable or
+	// unparseable recipe, which leaves nothing to register. Run re-resolves the
+	// recipe through loadRecipe and reports that properly, with the diagnostics
+	// the raw bytes deserve, so swallowing it here costs nothing - the same
+	// contract preloadRecipeForFlags already relies on. A malformed *input* no
+	// longer reaches this line: it is registered anyway, and rejected by the
+	// loader with a positioned diagnostic (#493).
 	arguments, err := registerInputFlags(f, data, format)
 	if err != nil {
 		return f
@@ -204,19 +211,12 @@ func (c *ApplyCommand) Run(args []string) int {
 	c.tasksFormat = recipe.Format
 	data := recipe.Data
 
-	context := make(map[string]interface{})
-	var sensitiveValues []string
-	for name, argument := range c.arguments {
-		if argument.Required && !argument.HasValue() {
-			c.Ui.Error(fmt.Sprintf("Missing flag '--%s'", name))
-			return 1
-		}
-		context[name] = argument.GetValue()
-		if argument.Sensitive {
-			if v := argument.StringValue(); v != "" {
-				sensitiveValues = append(sensitiveValues, v)
-			}
-		}
+	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
+
+	context, sensitiveValues, err := buildInputContext(c.arguments, userSet)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
 	}
 
 	// Register the sensitive CLI/vars-file input values before the recipe is
@@ -225,8 +225,6 @@ func (c *ApplyCommand) Run(args []string) int {
 	// recipe parses (below).
 	subprocess.SetGlobalSensitive(sensitiveValues)
 	defer subprocess.SetGlobalSensitive(nil)
-
-	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
 
 	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, context, userSet)
 	if err != nil {

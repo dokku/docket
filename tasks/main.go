@@ -10,7 +10,6 @@ import (
 	"github.com/dokku/docket/subprocess"
 	sigil "github.com/gliderlabs/sigil"
 	"github.com/gobuffalo/flect"
-	json5 "github.com/titanous/json5"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -33,13 +32,23 @@ func IsJSON5Format(format string) bool {
 // format. Exposed because the commands package's input-extraction path
 // (parseInputDocument) needs the same dispatch and there is no benefit
 // to duplicating the switch.
+//
+// JSON5 is normalised to YAML bytes and decoded by yaml.v3 rather than fed to
+// json5.Unmarshal directly, which is what the loader and the validator already
+// do - so all three agree on how a scalar lands in a Go field. Decoding the
+// JSON5 straight would not: encoding/json refuses to put a number or a bare
+// boolean into a string field, so a JSON5 recipe writing the natural
+// `default: 8080` failed to decode at all, and since the only caller that
+// noticed was flag registration, the recipe silently lost every input flag it
+// declared - the #493 symptom reached through a second door.
 func UnmarshalRecipe(data []byte, format string) (Recipe, error) {
 	recipe := Recipe{}
 	if IsJSON5Format(format) {
-		if err := json5.Unmarshal(data, &recipe); err != nil {
+		converted, err := json5ToYAMLBytes(data)
+		if err != nil {
 			return nil, fmt.Errorf("json5 unmarshal error: %v", err.Error())
 		}
-		return recipe, nil
+		data = converted
 	}
 	if err := yaml.Unmarshal(data, &recipe); err != nil {
 		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
@@ -554,12 +563,23 @@ func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bo
 // structural validity by construction; the first structural problem is
 // converted into the loader's fail-fast error.
 func GetPlaysWithFormat(data []byte, format string, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
+	// Both input checks read the raw recipe, before the render below, so they
+	// share one tolerant pass over it.
+	rawInputs := declaredInputs(data, format)
+
 	// An input name that is not a valid template variable (e.g. a hyphen)
 	// makes the render below fail with a cryptic "bad character" error;
 	// reject it up front with the clearer invalid_input_name diagnostic so
 	// plan and apply fail offline with the same message validate reports.
-	if nameProblems := checkInputNames(data, format); len(nameProblems) > 0 {
+	if nameProblems := checkInputNames(rawInputs); len(nameProblems) > 0 {
 		return nil, problemToError(nameProblems[0])
+	}
+
+	// An input declaring a type docket does not implement, or a default that
+	// cannot be parsed as the type it declares, is rejected here rather than
+	// silently costing the run its whole input flag surface (#493).
+	if declProblems := checkInputDeclarations(rawInputs); len(declProblems) > 0 {
+		return nil, problemToError(declProblems[0])
 	}
 
 	baseRendered, err := renderRecipeBytes(data, context)

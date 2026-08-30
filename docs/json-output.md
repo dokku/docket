@@ -157,6 +157,8 @@ reworded:
 | `unsafe_input_value` | An input value would break the scalar it is substituted into. See [special characters in values](inputs.md#special-characters-in-values). |
 | `input_missing` | (`--strict`) A `required: true` input has no default and no supplied value. |
 | `invalid_input_name` | An input name is not a valid `{{ .name }}` variable - a hyphenated name, for example. |
+| `invalid_input_type` | An input declares a `type:` docket does not implement. `hint` carries a did-you-mean. |
+| `invalid_input_default` | An input's `default:` cannot be parsed as the `type:` it declares. An omitted default is the zero value and is never flagged. |
 | `reserved_input_name` | An input name collides with a built-in flag. |
 | `register_duplicate` | Two tasks `register:` the same name. |
 | `loop_var_outside_loop` | `.item` or `.index` is referenced outside a `loop:`. |

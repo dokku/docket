@@ -22,11 +22,20 @@ import (
 type Argument struct {
 	Required  bool
 	Sensitive bool
+	// HasDefault records whether the recipe declared a non-empty `default:`
+	// for this input. It is the half of "the value was actually supplied"
+	// that the flag pointer cannot answer: a bool / int / float pointer is
+	// never nil, so GetValue() cannot tell an implicit zero apart from a
+	// declared or user-typed one. Paired with userSetKeys it drives both the
+	// required-input check and the decision to register a sensitive value.
+	HasDefault bool
 	// Type is the declared input type ("string", "int", "float", "bool"). It
 	// is normalised to the canonical lowercase form; an empty `type:` field
-	// in the recipe stores as "string". Used by SetFromVarsFile to coerce
-	// loosely-typed map values from a --vars-file into the same Go type
-	// pflag would have produced from the equivalent CLI flag.
+	// in the recipe stores as "string", and so does a type docket does not
+	// implement, which the loader rejects as invalid_input_type before the
+	// value is ever read. Used by SetFromVarsFile to coerce loosely-typed map
+	// values from a --vars-file into the same Go type pflag would have
+	// produced from the equivalent CLI flag.
 	Type        string
 	boolValue   *bool
 	floatValue  *float64
@@ -49,6 +58,25 @@ func (c Argument) GetValue() interface{} {
 
 func (c Argument) HasValue() bool {
 	return c.GetValue() != nil
+}
+
+// IsSatisfied reports whether this input has a non-empty value that the recipe
+// or the operator actually wrote. It is the test behind `required: true`, and
+// it needs both halves:
+//
+// HasValue() alone cannot answer it, because pflag's pointer for a bool / int /
+// float is never nil - every non-string input looked satisfied, so `required:`
+// was enforced for strings only (#493). "The user typed the flag" alone cannot
+// answer it either, because `--app=` types the flag and supplies nothing; the
+// input would resolve to an empty string and render as `<no value>`.
+//
+// userSet is whether the operator supplied a value for this input, on the
+// command line or through a --vars-file; see userSetKeys.
+func (c Argument) IsSatisfied(userSet bool) bool {
+	if !c.HasDefault && !userSet {
+		return false
+	}
+	return c.StringValue() != ""
 }
 
 // StringValue returns the argument's value formatted as the same string sigil
@@ -96,26 +124,18 @@ func (c *Argument) SetStringValue(ptr *string) {
 	c.stringValue = ptr
 }
 
+// isTrueString and isFalseString delegate to tasks.ParseInputBool so the flag
+// path, the --vars-file coercion in coerceBool, and the invalid_input_default
+// diagnostic all agree on which spellings are a bool. Splitting them back apart
+// would let a `default:` the validator accepts fail to register, or the reverse.
 func isTrueString(s string) bool {
-	trueStrings := map[string]bool{
-		"true": true,
-		"yes":  true,
-		"on":   true,
-		"y":    true,
-		"Y":    true,
-	}
-	return trueStrings[s]
+	v, ok := tasks.ParseInputBool(s)
+	return ok && v
 }
 
 func isFalseString(s string) bool {
-	falseStrings := map[string]bool{
-		"false": true,
-		"no":    true,
-		"off":   true,
-		"n":     true,
-		"N":     true,
-	}
-	return falseStrings[s]
+	v, ok := tasks.ParseInputBool(s)
+	return ok && !v
 }
 
 func getTaskYamlFilename(s []string) string {
@@ -257,6 +277,16 @@ func getInputVariables(data []byte, format string) (map[string]*tasks.Input, err
 // dynamic input on the given FlagSet. It returns the Argument map keyed by
 // input name so the caller can collect values after flags.Parse. format is
 // "yaml" or "json5"; the empty string is treated as YAML.
+//
+// Every declared input gets a flag, whatever it declares. A malformed input is
+// never allowed to cost its neighbours their flags, because the caller cannot
+// report the failure - FlagSet() has no error return, and the whole input
+// surface silently vanishing is far worse than one input resolving to a zero
+// value it is about to be rejected for anyway (#493). The declaration itself is
+// judged by checkInputDeclarations, which runs in the loader and the validator.
+//
+// The one error still returned is a recipe that could not be rendered or
+// parsed at all, in which case there are no inputs to register.
 func registerInputFlags(f *flag.FlagSet, data []byte, format string) (map[string]*Argument, error) {
 	arguments := make(map[string]*Argument)
 	inputs, err := getInputVariables(data, format)
@@ -273,36 +303,32 @@ func registerInputFlags(f *flag.FlagSet, data []byte, format string) (map[string
 		if tasks.ReservedInputNames[input.Name] {
 			continue
 		}
-		arg := &Argument{Required: input.Required, Sensitive: input.Sensitive}
-		switch input.Type {
-		case "string", "":
-			arg.Type = "string"
-			arg.SetStringValue(f.String(input.Name, input.Default, input.Description))
+		arg := &Argument{Required: input.Required, Sensitive: input.Sensitive, HasDefault: input.Default != ""}
+		// An omitted `default:` is the zero value for the type, the way the
+		// inputs table has always documented it. A malformed one, or a type
+		// docket does not implement, still registers a flag - at the zero
+		// value, or as a string - because the recipe is rejected by the
+		// invalid_input_default / invalid_input_type diagnostic before any of
+		// it runs. Registering anyway is what keeps `--name=value` parseable,
+		// so the operator reads that diagnostic instead of "unknown flag" (and
+		// keeps one bad input from costing every other input its flag, #493).
+		typ, _ := tasks.CanonicalInputType(input.Type)
+		switch typ {
 		case "int":
 			arg.Type = "int"
-			i, err := strconv.Atoi(input.Default)
-			if err != nil {
-				return arguments, fmt.Errorf("Error parsing input '%s': %v", input.Name, err.Error())
-			}
+			i, _ := tasks.ParseInputInt(input.Default)
 			arg.SetIntValue(f.Int(input.Name, i, input.Description))
 		case "float":
 			arg.Type = "float"
-			ff, err := strconv.ParseFloat(input.Default, 64)
-			if err != nil {
-				return arguments, fmt.Errorf("Error parsing input '%s': %v", input.Name, err.Error())
-			}
+			ff, _ := tasks.ParseInputFloat(input.Default)
 			arg.SetFloatValue(f.Float64(input.Name, ff, input.Description))
 		case "bool":
 			arg.Type = "bool"
-			if isTrueString(input.Default) {
-				arg.SetBoolValue(f.Bool(input.Name, true, input.Description))
-			} else if isFalseString(input.Default) {
-				arg.SetBoolValue(f.Bool(input.Name, false, input.Description))
-			} else {
-				return arguments, fmt.Errorf("Error parsing input '%s': invalid default value", input.Name)
-			}
+			b, _ := tasks.ParseInputBool(input.Default)
+			arg.SetBoolValue(f.Bool(input.Name, b, input.Description))
 		default:
-			return arguments, fmt.Errorf("Error parsing input '%s': invalid type", input.Name)
+			arg.Type = "string"
+			arg.SetStringValue(f.String(input.Name, input.Default, input.Description))
 		}
 		if input.Sensitive {
 			maskFlagDefault(f, input.Name, input.Default)
@@ -709,6 +735,43 @@ func holdsSensitiveInput(keys []string, arguments map[string]*Argument) bool {
 		}
 	}
 	return false
+}
+
+// buildInputContext turns the registered arguments into the sigil render
+// context and collects the sensitive values worth handing to the masker.
+//
+// An input declared `required: true` has to be satisfied - see IsSatisfied for
+// what that means and why neither half of the test is sufficient alone.
+// validateStrictInputs applies the same rule offline for `validate --strict`.
+//
+// Names are walked in sorted order so a recipe missing more than one required
+// input names the same one on every run.
+//
+// A sensitive value is registered only when the recipe declared it or the user
+// supplied it. Registering an implicit zero would hand the masker "0" or
+// "false" and blank out every unrelated occurrence of that substring.
+func buildInputContext(arguments map[string]*Argument, userSet map[string]bool) (map[string]interface{}, []string, error) {
+	names := make([]string, 0, len(arguments))
+	for name := range arguments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	context := make(map[string]interface{}, len(arguments))
+	var sensitiveValues []string
+	for _, name := range names {
+		argument := arguments[name]
+		if argument.Required && !argument.IsSatisfied(userSet[name]) {
+			return nil, nil, fmt.Errorf("Missing flag '--%s'", name)
+		}
+		context[name] = argument.GetValue()
+		if argument.Sensitive && (argument.HasDefault || userSet[name]) {
+			if v := argument.StringValue(); v != "" {
+				sensitiveValues = append(sensitiveValues, v)
+			}
+		}
+	}
+	return context, sensitiveValues, nil
 }
 
 // userSetKeys merges the set of input names the user has overridden via

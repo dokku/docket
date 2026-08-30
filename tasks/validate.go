@@ -139,12 +139,23 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 	// re-diagnosed against the original recipe (see diagnoseUnsafeInputValue).
 	rawData := data
 
+	// Both input checks read the raw recipe, before the render below, so they
+	// share one tolerant pass over it.
+	rawInputs := declaredInputs(data, opts.Format)
+
 	// An input name that is not a valid template variable (e.g. a hyphen)
 	// would otherwise make the render below fail with a cryptic "bad
 	// character" error. Check names first so the clearer invalid_input_name
 	// diagnostic wins.
-	if nameProblems := checkInputNames(data, opts.Format); len(nameProblems) > 0 {
+	if nameProblems := checkInputNames(rawInputs); len(nameProblems) > 0 {
 		return nameProblems
+	}
+
+	// A malformed `type:` or `default:` does not break the render, but it does
+	// mean the input cannot be registered as the flag it claims to be, so the
+	// declaration is worth fixing before anything downstream of it is judged.
+	if declProblems := checkInputDeclarations(rawInputs); len(declProblems) > 0 {
+		return declProblems
 	}
 
 	// Sigil renders templates, so a malformed `{{ .x` is caught here even
@@ -1004,16 +1015,13 @@ func buildSigilContext(plays [][]inputWithNode) map[string]interface{} {
 // makes `{{ .name }}` fail at lex time with "bad character".
 var inputNameRe = regexp.MustCompile(`^[\p{L}_][\p{L}\p{N}_]*$`)
 
-// checkInputNames flags any declared input name that cannot be referenced with
-// the documented `{{ .name }}` syntax, so a hyphenated name surfaces as a clear
-// invalid_input_name diagnostic instead of a cryptic template render error. It
-// parses tolerantly: on any normalize/parse failure it returns nil so the
-// caller's existing parse-error path reports the underlying issue. Reserved
-// names are skipped here so they keep surfacing as the more specific
-// reserved_input_name diagnostic. Shared by Validate and the loader
-// (GetPlaysWithFormat), both of which render before any name check would
-// otherwise run.
-func checkInputNames(data []byte, format string) []Problem {
+// declaredInputs extracts every declared input, with its source position, from
+// the raw recipe bytes. It is the shared prelude of the pre-render input checks
+// (checkInputNames, checkInputDeclarations), which run before the recipe is
+// rendered and therefore cannot lean on the parsed AST. It parses tolerantly:
+// on any normalize/parse failure it returns nil so the caller returns no
+// problems and the caller's own parse-error path reports the underlying issue.
+func declaredInputs(data []byte, format string) [][]inputWithNode {
 	normalized, normProblems := normalizeRecipeBytes(data, format)
 	if len(normProblems) > 0 {
 		return nil
@@ -1026,8 +1034,19 @@ func checkInputNames(data []byte, format string) []Problem {
 	if doc == nil || doc.Kind != yaml.SequenceNode {
 		return nil
 	}
+	return extractPlayInputs(doc)
+}
+
+// checkInputNames flags any declared input name that cannot be referenced with
+// the documented `{{ .name }}` syntax, so a hyphenated name surfaces as a clear
+// invalid_input_name diagnostic instead of a cryptic template render error.
+// Reserved names are skipped here so they keep surfacing as the more specific
+// reserved_input_name diagnostic. Shared by Validate and the loader
+// (GetPlaysWithFormat), both of which render before any name check would
+// otherwise run.
+func checkInputNames(plays [][]inputWithNode) []Problem {
 	var problems []Problem
-	for _, inputs := range extractPlayInputs(doc) {
+	for _, inputs := range plays {
 		for _, in := range inputs {
 			if in.Name == "" || ReservedInputNames[in.Name] {
 				continue
@@ -1045,6 +1064,91 @@ func checkInputNames(data []byte, format string) []Problem {
 		}
 	}
 	return problems
+}
+
+// checkInputDeclarations flags an input whose `type:` is not one docket
+// implements, or whose `default:` is not a usable spelling for the type it
+// declares. Both mistakes used to be invisible: registerInputFlags is the only
+// code that reads an input's type, and every one of its callers discarded the
+// error it returned, which cost the recipe its entire input flag surface with
+// no message at all (#493).
+//
+// An omitted `default:` is never a problem - it is the zero value for the type,
+// which is what the inputs table has always documented. Shared by Validate and
+// the loader (GetPlaysWithFormat), so plan and apply reject a malformed
+// declaration offline with the same message validate prints. Reserved names are
+// skipped so they keep surfacing as the more specific reserved_input_name.
+func checkInputDeclarations(plays [][]inputWithNode) []Problem {
+	var problems []Problem
+	for _, inputs := range plays {
+		for _, in := range inputs {
+			if in.Name == "" || ReservedInputNames[in.Name] {
+				continue
+			}
+			typ, ok := CanonicalInputType(in.Type)
+			if !ok {
+				problems = append(problems, Problem{
+					Code:    "invalid_input_type",
+					Line:    in.Line,
+					Column:  in.Column,
+					Message: fmt.Sprintf("input %q declares unknown type %q", in.Name, in.Type),
+					Hint:    inputTypeHint(in.Type),
+				})
+				continue
+			}
+			if in.Default == "" {
+				continue
+			}
+			if hint := inputDefaultHint(typ, in.Default); hint != "" {
+				problems = append(problems, Problem{
+					Code:    "invalid_input_default",
+					Line:    in.Line,
+					Column:  in.Column,
+					Message: fmt.Sprintf("input %q declares type %s but its default %q is not a valid %s", in.Name, typ, in.Default, typ),
+					Hint:    hint,
+				})
+			}
+		}
+	}
+	return problems
+}
+
+// inputTypeHint suggests the closest real type name when the declared one is a
+// near miss (`intt`, `boolean`), and otherwise lists the four docket has.
+func inputTypeHint(declared string) string {
+	best := ""
+	bestDist := 3
+	for _, name := range InputTypeNames {
+		if d := levenshtein(declared, name); d < bestDist {
+			bestDist = d
+			best = name
+		}
+	}
+	if best != "" {
+		return fmt.Sprintf("did you mean %q?", best)
+	}
+	return "use one of " + strings.Join(InputTypeNames, ", ")
+}
+
+// inputDefaultHint returns the remediation hint for a `default:` that does not
+// parse as typ, or "" when it parses. typ must already be canonical, so a
+// string default - which is whatever text the recipe wrote - always parses.
+func inputDefaultHint(typ, def string) string {
+	switch typ {
+	case "bool":
+		if _, ok := ParseInputBool(def); !ok {
+			return `use one of true, yes, on, y (or false, no, off, n)`
+		}
+	case "int":
+		if _, ok := ParseInputInt(def); !ok {
+			return "use a whole number, for example 8080"
+		}
+	case "float":
+		if _, ok := ParseInputFloat(def); !ok {
+			return "use a number, for example 1.5"
+		}
+	}
+	return ""
 }
 
 // diagnoseUnsafeInputValue attributes a post-render YAML parse failure to an
