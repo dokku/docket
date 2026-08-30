@@ -248,3 +248,42 @@ EOF
   assert_success
   refute_output --partial "literal-value-zzz"
 }
+
+# docket export is the one server-reading command with no recipe to collect a
+# sensitive set from ahead of the run, so until #488 its mask registry was
+# empty for the whole run and the mask on its warnings could never fire. The
+# values it masks with are the ones its own exporters read back.
+@test "docket export masks a config value in an export warning (#488)" {
+  require_plugin http-auth
+  dokku apps:create docket-test-mask
+  # The app name doubles as a config value, because the one warning a real
+  # server reliably produces - the http-auth notice below - names the app and
+  # nothing else. Masking that name is masking a value read off the server.
+  dokku config:set --no-restart docket-test-mask APP_NAME=docket-test-mask
+  dokku http-auth:enable docket-test-mask maskuser maskpasszzz
+
+  # --output - has no vars-file to put the hashes in and --redact leaves
+  # nowhere to blank them to, so the export warns; --redact also means the
+  # config value is written nowhere at all, which is exactly the case that
+  # rules out reading the vars map for the values to mask with.
+  run "$(docket_bin)" export --app docket-test-mask --output - --redact
+  assert_success
+  assert_output --partial "warning: ***: http-auth hashes are redacted"
+  refute_output --partial "warning: docket-test-mask:"
+  # Masking is display-only: the streamed recipe still names the app.
+  assert_output --partial "name: docket-test-mask"
+}
+
+@test "docket export leaves a missing --app name readable (#488)" {
+  require_dokku
+  dokku apps:create docket-test-mask
+  dokku config:set --no-restart docket-test-mask MISSING=docket-missing-zzz
+  cd "$BATS_TEST_TMPDIR"
+
+  # The name is the user's own argument echoed back and the message exists to
+  # point at the typo, so it stays in the clear even though the export
+  # registered a config value spelled exactly the same way.
+  run "$(docket_bin)" export --app docket-test-mask --app docket-missing-zzz --output tasks.yml
+  assert_failure
+  assert_output --partial "docket-missing-zzz not found on server"
+}

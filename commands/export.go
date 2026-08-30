@@ -187,8 +187,24 @@ func (c *ExportCommand) Run(args []string) int {
 		Redact:    c.redact,
 		Inline:    toStdout,
 	})
+	// Export is the one server-reading command with no recipe to collect a
+	// sensitive set from before the run: the values it must mask are the ones
+	// its own exporters just read back. Registered here, ahead of the failure
+	// below as well as the warnings, because the global play is exported
+	// before the app list is read - so a run that dies on apps:list can
+	// already be holding a secret (#488).
+	//
+	// What masks from here on is every diagnostic built from what the server
+	// returned: the warnings, this failure, and the marshal errors further
+	// down. What deliberately does not is the text built from the user's own
+	// arguments - the --app names and --resource addresses reported missing,
+	// and the output paths - because a name masked down to *** would hide the
+	// typo the message exists to report.
+	subprocess.SetGlobalSensitive(res.SensitiveValues())
+	defer subprocess.SetGlobalSensitive(nil)
+
 	if err != nil {
-		c.Ui.Error(fmt.Sprintf("export failed: %v", err))
+		c.Ui.Error(fmt.Sprintf("export failed: %v", subprocess.MaskString(err.Error())))
 		return 1
 	}
 	for _, w := range res.Report.Warnings {
@@ -198,7 +214,8 @@ func (c *ExportCommand) Run(args []string) int {
 	// A nonexistent --app must not silently produce an empty recipe (which the
 	// loader then rejects). When nothing was collected, abort without writing;
 	// otherwise the existing apps are exported and the missing names are reported
-	// with a non-zero exit at the end (#346).
+	// with a non-zero exit at the end (#346). The names print unmasked here for
+	// the reason exitForMissingApps gives.
 	if res.PlayCount() == 0 {
 		switch {
 		case len(res.Report.MissingApps) > 0:
@@ -213,7 +230,7 @@ func (c *ExportCommand) Run(args []string) int {
 
 	recipeBytes, err := res.MarshalRecipe(recipeFormat)
 	if err != nil {
-		c.Ui.Error(fmt.Sprintf("marshal recipe: %v", err))
+		c.Ui.Error(fmt.Sprintf("marshal recipe: %v", subprocess.MaskString(err.Error())))
 		return 1
 	}
 
@@ -274,7 +291,7 @@ func (c *ExportCommand) Run(args []string) int {
 	if writeVars {
 		varsBytes, err := res.MarshalVars(varsFormat)
 		if err != nil {
-			c.Ui.Error(fmt.Sprintf("marshal vars: %v", err))
+			c.Ui.Error(fmt.Sprintf("marshal vars: %v", subprocess.MaskString(err.Error())))
 			return 1
 		}
 		if err := os.WriteFile(varsOutput, varsBytes, 0o644); err != nil {
@@ -312,6 +329,11 @@ func (c *ExportCommand) Run(args []string) int {
 // exitForMissingApps reports any --app names or --resource addresses that were
 // not found on the server and returns a non-zero exit code, so a typo is
 // surfaced even though what does exist was still exported (#346).
+//
+// The names print unmasked, unlike the warnings Run masks above. They are the
+// user's own arguments echoed back rather than anything the server returned,
+// and the whole message is "you asked for a name that is not there" - which a
+// name masked down to *** would not say (#488).
 func (c *ExportCommand) exitForMissingApps(res *tasks.ExportResult) int {
 	missing := append(append([]string(nil), res.Report.MissingApps...), res.Report.MissingResources...)
 	if len(missing) == 0 {

@@ -95,7 +95,14 @@ func registerSensitiveMapValues(m map[string]string) {
 }
 
 // sensitiveValuesFromTask returns the masked-value set for a single task.
-func sensitiveValuesFromTask(t Task) []string {
+//
+// It takes interface{} rather than Task because docket export walks task
+// bodies an exporter returns as values, while RegisteredTasks holds pointers
+// (RegisterTask(&ConfigTask{})). Requiring the interface would silently
+// contribute nothing for a task whose Task methods happen to have a pointer
+// receiver - the wrong failure mode for a masking collector. Both steps below
+// work on any value.
+func sensitiveValuesFromTask(t interface{}) []string {
 	var out []string
 	if override, ok := t.(SensitiveOverride); ok {
 		out = append(out, override.SensitiveValues()...)

@@ -237,15 +237,57 @@ type ExportResult struct {
 
 	usedVarNames map[string]bool
 
+	// sensitive collects the literal values this run read off the server that
+	// must be masked in user-facing output, in read order. See noteSensitive.
+	sensitive []string
+
 	// filter narrows emission to the --resource addresses. nil for an
 	// unrestricted export, where every check it performs answers "keep".
 	filter *resourceFilter
+}
+
+// noteSensitive records values this export has identified as credential
+// material, for the caller to hand to the mask registry before it prints
+// anything (commands/export.go does, right after ExportRecipe returns).
+//
+// Export is the one server-reading command with no recipe to collect a
+// sensitive set from ahead of the run: the values it must mask are the ones
+// its own exporters just read back. They are collected here, as each body is
+// processed, rather than read out of res.Vars once the export is over, because
+// res.Vars is not the same set (#488):
+//
+//   - Under --redact the vars map holds a placeholder, not the value. The real
+//     value was still read off the server and can still reach a warning.
+//   - In inline mode nothing is lifted into the vars map at all, yet the
+//     warnings still print to the same stream.
+//
+// Collection is unconditional across modes for that reason. It costs the
+// export nothing: the recipe and the vars-file are written straight to their
+// file or to stdout, never through the masked Ui, so registering a value here
+// masks the diagnostics beside the export and never the export itself.
+//
+// Empties, duplicates, and the trimmed/escaped spellings of each value are
+// subprocess.cleanSensitive's job at registration time, so this only appends.
+func (res *ExportResult) noteSensitive(values ...string) {
+	res.sensitive = append(res.sensitive, values...)
+}
+
+// SensitiveValues returns the literal values this export read off the server
+// that must be masked in user-facing output. The caller registers them; the
+// slice is the result's own and must not be modified.
+func (res *ExportResult) SensitiveValues() []string {
+	return res.sensitive
 }
 
 // ExportRecipe reads the live Dokku server (via the current subprocess host)
 // and assembles a recipe describing it. It enumerates apps, runs every
 // registered AppExporter for each, lifts sensitive values into a vars map
 // (unless opts.Inline), and returns the result for the caller to marshal.
+//
+// The result is never nil, including on error: the global play is exported
+// before the app list is read, so a failure there still hands back what was
+// already collected - and with it the sensitive values the caller has to
+// register before it prints the failure (#488).
 func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 	res := &ExportResult{
 		Vars:         map[string]string{},
@@ -279,7 +321,7 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 
 	apps, err := listApps()
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	// A resource-driven run derives its app list from the addresses, so an app
 	// that does not exist is reported as the address the user actually typed
@@ -425,7 +467,19 @@ func (res *ExportResult) exportAppPlay(app string, opts ExportOptions) map[strin
 // processBody applies vars-extraction (file mode) or redaction (inline mode) to
 // a single task body and returns the possibly-rewritten body plus any input
 // declarations the recipe should carry for lifted values.
+//
+// Whatever the body declares sensitive is noted first, before any of the
+// lifters below decide where the value goes: processSensitiveScalars blanks
+// its copy under inline + --redact, so the original body is the only place the
+// real value survives. sensitiveValuesFromTask is the same collector
+// commands/apply.go runs over a parsed recipe, so export masks the set apply
+// masks for the same content - the sensitive:"true" fields plus the
+// SensitiveValues() overrides that reach the secrets living in a map or a
+// slice of structs (dokku_config, dokku_http_auth_user,
+// dokku_scheduler_k3s_autoscaling_auth). A per-property secret is not
+// expressible as a struct tag, so processPropertyValue notes that one itself.
 func (res *ExportResult) processBody(app string, body interface{}, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	res.noteSensitive(sensitiveValuesFromTask(body)...)
 	switch b := body.(type) {
 	case ConfigTask:
 		return res.processConfig(app, b, opts)
@@ -466,6 +520,13 @@ func (res *ExportResult) processPropertyValue(app string, body interface{}, prop
 	if !sensitive || value == "" {
 		return body, nil
 	}
+	// Only the letsencrypt property task is built from SensitivePropertyFields,
+	// so for scheduler-k3s (the cluster token) and traefik (the dns-provider-*
+	// credentials) no struct tag says this value is a secret - the property
+	// family's PropertyKeys.Sensitive flag does, and processBody's tag walk
+	// cannot see it. Noted here for the same reason tasks/properties.go
+	// registers it at plan time (#488).
+	res.noteSensitive(value)
 	if opts.Inline {
 		if opts.Redact {
 			return rebuild(""), nil

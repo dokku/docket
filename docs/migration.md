@@ -63,7 +63,9 @@ server, skip this and use it directly.
 Some state cannot be read back and is left out with a warning - notably write-only credentials
 (`dokku_git_auth`, `dokku_registry_auth`, and datastore backup credentials), datastore service data,
 and service properties (`dokku_service_property`), which you add by hand. Each task's
-[reference page](tasks/README.md) has an Export support section noting its limits.
+[reference page](tasks/README.md) has an Export support section noting its limits. Those warnings
+mask the secrets the export read, so the log of a migration run is safe to paste into a ticket even
+though the pair of files it wrote is not.
 
 A scheduler-k3s node profile is left out for a different reason: dokku accepts a profile name that
 is too long or carries uppercase, but it cannot turn the derived node-sysctls helm release name into
