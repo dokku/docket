@@ -203,6 +203,13 @@ form instead of logging: `ExportAppReport(app string, warn func(msg string))` or
 `ExportReport.Warnings`, so the message is rendered and masked like every other export diagnostic
 and reaches the operator with the run it belongs to.
 
+The set those diagnostics mask against comes from the bodies the exporters return: as each one is
+processed, whatever it declares sensitive - a `sensitive:"true"` field, a `SensitiveValues()`
+override, or a property in a family marked `Sensitive` - is collected for masking, in every mode,
+including `--redact`, where the value is written nowhere but was still read off the server. A task
+that declares its secrets properly therefore needs nothing further to keep them out of its own
+export warnings.
+
 Implement the reporting form *alongside* the plain one, never instead of it. The engine asserts
 `AppExporter` / `GlobalExporter` before it looks for the reporter, so a task carrying only the
 reporting method exports nothing at all; `TestExportReportersAlsoImplementTheBaseExporter` catches

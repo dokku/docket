@@ -515,6 +515,17 @@ whose name dokku accepted but helm cannot turn into a release name, for example.
 those would fail `docket validate` for the whole recipe rather than for the single task, so the
 warning names the resource and what to do about it instead.
 
+Those warnings, and the failure messages beside them, mask the secrets the export read off the
+server - every `config` value, every field a task marks sensitive, and every property in a family
+declared sensitive - so an export log is safe to paste into a ticket even when an exporter's error
+quotes the value it choked on. The recipe and the vars-file are written straight to their file (or
+to stdout) rather than through that masking, which is the point: the pair has to carry the real
+values to be appliable. Two things are deliberately left readable: an `--app` name or `--resource`
+address reported as not found on the server, and the output paths, both of which are your own
+arguments echoed back at you - a name masked down to `***` would hide the typo the message exists
+to report. The one gap is a value export never managed to read: if an exporter fails while parsing
+it, nothing ever learned it was a secret, and the error text is the only place it appears.
+
 ## docket schema
 
 `docket schema` prints a machine-readable description of every task type docket registers - the
