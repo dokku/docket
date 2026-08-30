@@ -92,6 +92,91 @@ EOF
   assert_output --partial "mapping"
 }
 
+# offline: the permissions warning (#489) needs no server either. A vars-file
+# supplying a `sensitive: true` input is a secrets file; its mode is worth a
+# word, and a file of ordinary settings is not.
+@test "docket validate warns on a world-readable --vars-file holding a secret" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: api_key
+      sensitive: true
+      default: ""
+  tasks:
+    - dokku_app:
+        app: docket-test-vars
+EOF
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<EOF
+api_key: s3cret
+EOF
+  chmod 644 "$BATS_TEST_TMPDIR/vars.yml"
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_success
+  assert_output --partial "readable by other users"
+  assert_output --partial "chmod 600"
+}
+
+@test "docket validate stays quiet for a --vars-file at 0600" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: api_key
+      sensitive: true
+      default: ""
+  tasks:
+    - dokku_app:
+        app: docket-test-vars
+EOF
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<EOF
+api_key: s3cret
+EOF
+  chmod 600 "$BATS_TEST_TMPDIR/vars.yml"
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_success
+  refute_output --partial "readable by other users"
+}
+
+@test "docket validate stays quiet for a --vars-file of ordinary settings" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: app
+      default: default-app
+  tasks:
+    - dokku_app:
+        app: "{{ .app }}"
+EOF
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<EOF
+app: docket-test-vars
+EOF
+  chmod 644 "$BATS_TEST_TMPDIR/vars.yml"
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_success
+  refute_output --partial "readable by other users"
+}
+
+@test "docket validate --json keeps the vars-file warning off stdout" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - name: api_key
+      sensitive: true
+      default: ""
+  tasks:
+    - dokku_app:
+        app: docket-test-vars
+EOF
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<EOF
+api_key: s3cret
+EOF
+  chmod 644 "$BATS_TEST_TMPDIR/vars.yml"
+  # A clean --json run has to keep writing nothing to stdout, so a consumer
+  # can treat any output as failure without parsing it. bats merges stderr
+  # into $output, so redirect stdout to its own file instead.
+  "$(docket_bin)" validate --json --tasks "$TASKS_FILE" --vars-file "$BATS_TEST_TMPDIR/vars.yml" >"$BATS_TEST_TMPDIR/out.json"
+  assert [ ! -s "$BATS_TEST_TMPDIR/out.json" ]
+}
+
 # end-to-end: substitution verification through plan; needs dokku.
 @test "docket plan with --vars-file overrides file inputs" {
   require_dokku

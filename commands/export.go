@@ -16,6 +16,13 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+// varsFileMode is the mode the companion vars-file is written with. It holds
+// every config value, every field a task marks sensitive, and the credentials
+// behind them in the clear, and its only reader is the same user applying the
+// pair back through --vars-file (#489). The recipe beside it stays 0o644 like
+// every other file docket writes: it carries interpolations, not values.
+const varsFileMode = 0o600
+
 // ExportCommand reads a live Dokku server and writes a recipe describing it -
 // the inverse of apply. Sensitive values are lifted into a companion vars-file
 // that the emitted recipe references through inputs, so the pair applies with
@@ -294,7 +301,7 @@ func (c *ExportCommand) Run(args []string) int {
 			c.Ui.Error(fmt.Sprintf("marshal vars: %v", subprocess.MaskString(err.Error())))
 			return 1
 		}
-		if err := os.WriteFile(varsOutput, varsBytes, 0o644); err != nil {
+		if err := c.writeVarsFile(varsOutput, varsBytes); err != nil {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
 			return 1
 		}
@@ -353,6 +360,40 @@ func (c *ExportCommand) confirmOverwrite(path string) (bool, error) {
 	}
 	answer = strings.ToLower(strings.TrimSpace(answer))
 	return answer == "y" || answer == "yes", nil
+}
+
+// chmodVarsFile is os.File.Chmod, indirected so the warning below can be
+// tested: no filesystem a test can portably create rejects fchmod, and a
+// fallback that tells the operator their secrets are exposed is worth more
+// than an untested one.
+var chmodVarsFile = func(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }
+
+// writeVarsFile writes the companion vars-file at varsFileMode. os.WriteFile
+// is not enough on its own: O_CREATE's mode applies only to a file the call
+// creates, so a vars-file already on disk - one an older docket wrote at
+// 0o644, or one the operator made by hand - would keep whatever mode it had,
+// and the umask can only take bits off 0o600 rather than settle it. The chmod
+// lands on the fd before the first byte is written, so the values never sit in
+// a file anyone else can open; O_TRUNC emptying it first is harmless, since an
+// empty world-readable file leaks nothing.
+//
+// A filesystem that cannot hold the bits - vfat, some network mounts - warns
+// rather than failing the export: the pair is still what was asked for, the
+// operator just has to know this half is exposed. The message names the path
+// unmasked for the reason exitForMissingApps gives.
+func (c *ExportCommand) writeVarsFile(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, varsFileMode)
+	if err != nil {
+		return err
+	}
+	if err := chmodVarsFile(f, varsFileMode); err != nil {
+		c.Ui.Warn(fmt.Sprintf("warning: could not set mode %#o on %s: %v; it holds secrets in the clear", varsFileMode, path, err))
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // deriveVarsOutput returns the default companion vars-file path for a recipe

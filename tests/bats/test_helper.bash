@@ -114,6 +114,13 @@ dokku_clean_scheduler_k3s_profile() {
   dokku --quiet scheduler-k3s:profiles:remove "$profile" >/dev/null 2>&1 || true
 }
 
+# file_mode prints a file's permission bits as octal digits (e.g. 600).
+# GNU stat and BSD stat spell the same question differently, so try both the
+# way the mtime checks in fmt.bats do.
+file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
+}
+
 # require_dokku skips the current test when no dokku binary is installed.
 require_dokku() {
   if ! command -v dokku >/dev/null 2>&1; then

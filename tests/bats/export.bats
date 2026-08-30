@@ -121,6 +121,60 @@ teardown() {
   assert_output --partial "docket-test-export"
 }
 
+@test "docket export writes the vars-file readable only by its owner" {
+  require_dokku
+  dokku apps:create docket-test-export
+  # The config value is what gets lifted into the vars-file, and it is the
+  # reason the file's mode is not the recipe's (#489).
+  dokku config:set --no-restart docket-test-export API_KEY=abc123
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --app docket-test-export
+  assert_success
+  assert [ -f tasks.vars.yml ]
+
+  # The recipe keeps whatever the umask gives it, because it carries
+  # interpolations rather than values; the vars-file is the half whose mode
+  # docket picks.
+  run file_mode tasks.vars.yml
+  assert_output "600"
+}
+
+@test "docket export tightens the mode of an existing vars-file" {
+  require_dokku
+  dokku apps:create docket-test-export
+  dokku config:set --no-restart docket-test-export API_KEY=abc123
+  cd "$BATS_TEST_TMPDIR"
+  # A vars-file an older docket left world-readable: os.WriteFile would have
+  # kept that mode, so the secrets would stay exposed forever (#489).
+  echo "old: value" >tasks.vars.yml
+  chmod 644 tasks.vars.yml
+
+  run "$(docket_bin)" export --app docket-test-export --overwrite
+  assert_success
+
+  run file_mode tasks.vars.yml
+  assert_output "600"
+  run grep -c "abc123" tasks.vars.yml
+  assert_output "1"
+}
+
+@test "docket export --redact still writes the vars-file private" {
+  require_dokku
+  dokku apps:create docket-test-export
+  dokku config:set --no-restart docket-test-export API_KEY=abc123
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --app docket-test-export --redact
+  assert_success
+  assert [ -f tasks.vars.yml ]
+  run grep -q "abc123" tasks.vars.yml
+  assert_failure
+
+  # A redacted vars-file holds placeholders, but it is the file the operator
+  # then types the real secrets into.
+  run file_mode tasks.vars.yml
+  assert_output "600"
+}
+
 @test "docket export --output - rejects --vars-output" {
   # #419: a streamed recipe inlines its values, so the vars-file the flag
   # asks for can never be written. Rejected before the server is read,

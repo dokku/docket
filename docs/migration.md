@@ -67,6 +67,10 @@ and service properties (`dokku_service_property`), which you add by hand. Each t
 mask the secrets the export read, so the log of a migration run is safe to paste into a ticket even
 though the pair of files it wrote is not.
 
+`tasks.vars.yml` is written `0600` on the box that produced it, which says nothing about where you
+put it next: move it the way you would move a private key, and delete it once the migration is done.
+If it arrives on the new server readable by anyone else, `plan` and `apply` say so before they run.
+
 A scheduler-k3s node profile is left out for a different reason: dokku accepts a profile name that
 is too long or carries uppercase, but it cannot turn the derived node-sysctls helm release name into
 a legal one, so the profile is already broken on the old server. Carrying it into the recipe would

@@ -132,7 +132,7 @@ Exit code is `0` when no problems are found, `1` otherwise.
 | `--tasks-format <fmt>` | Parse the recipe as `yaml` or `json5` instead of detecting it. |
 | `--json` | Emit one JSON-lines problem per line with a stable schema, for a CI annotator. |
 | `--strict` | Also flag any `required: true` input with no default and no supplied value, and verify that `--play` / `--start-at-task` references resolve to real names. |
-| `--vars-file <path>` | Load input values from a YAML or JSON file (repeatable). Values here count as overrides for `--strict`. See [inputs](inputs.md#layered-values-with---vars-file). |
+| `--vars-file <path>` | Load input values from a YAML or JSON file (repeatable). Values here count as overrides for `--strict`. A file that supplies a `sensitive: true` input and is readable by other users is warned about on stderr. See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | (strict only) Verify the named play exists. |
 | `--start-at-task <name>` | (strict only) Verify a task with this name exists; narrowed by `--play`. |
 
@@ -229,7 +229,7 @@ optimistically predicting `[+] create` for state it never actually read.
 | `--tasks-format <fmt>` | Parse the recipe as `yaml` or `json5` instead of detecting it. |
 | `--json` | Emit JSON-lines events instead of the human formatter. See [JSON output](json-output.md). |
 | `--detailed-exitcode` | Exit `0` for no drift, `2` for drift, `1` on error. Errors win over drift. Mirrors `terraform plan -detailed-exitcode`. |
-| `--vars-file <path>` | Load input values from a file (repeatable). See [inputs](inputs.md#layered-values-with---vars-file). |
+| `--vars-file <path>` | Load input values from a file (repeatable). A file that supplies a `sensitive: true` input and is readable by other users is warned about on stderr. See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | Plan only the named play. Composes with `--tags`. |
 | `--tags <list>` | Plan only tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
 | `--skip-tags <list>` | Skip tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
@@ -288,7 +288,7 @@ recipe cannot be loaded or a `when:` fails to evaluate, and `0` otherwise.
 | `--verbose` | After each task, echo every resolved Dokku command it ran, one per `→` line. Masked against sensitive values. Ignored with `--json` (which already includes commands). |
 | `--json` | Emit JSON-lines events instead of the human formatter. See [JSON output](json-output.md). |
 | `--detailed-exitcode` | Exit `0` when nothing changed, `2` when something did, `1` on error. Errors win over changes. |
-| `--vars-file <path>` | Load input values from a file (repeatable). See [inputs](inputs.md#layered-values-with---vars-file). |
+| `--vars-file <path>` | Load input values from a file (repeatable). A file that supplies a `sensitive: true` input and is readable by other users is warned about on stderr. See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | Run only the named play. Composes with `--tags`. |
 | `--tags <list>` | Run only tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
 | `--skip-tags <list>` | Skip tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
@@ -468,6 +468,16 @@ docket export --resource 'dokku_config[app=api]' --output -
 The correctness contract is idempotency: applying an exported pair back to the same server reports
 no drift (`plan` shows every task `[ok]`).
 
+The two halves are written with different modes, because they hold different things. The recipe
+carries interpolations rather than values, so it lands at `0644` like every other file docket
+writes. The vars-file holds the values themselves in the clear - every `config` value, the
+scheduler-k3s cluster token, the `dns-provider-*` credentials, the http-auth password hashes - so it
+lands at `0600`, readable only by the user who ran the export, which is the same user who reads it
+back through `--vars-file`. That covers `--redact` too: a placeholder file is the one you then type
+the real secrets into, and it covers a vars-file already on disk, whose mode is reset on every
+write so a file an older docket left at `0644` is locked down the next time export writes it. On a
+filesystem that cannot hold the bits at all, export says so and finishes rather than failing.
+
 ### Exporting one resource
 
 `--resource` takes a [resource address](task-envelope.md#names-and-resource-addresses) - the same
@@ -494,9 +504,9 @@ matches nothing on the server is reported by name and exits non-zero, the same w
 |------|--------|
 | `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. Because a stream has no vars-file and touches no file on disk, combining `-` with `--vars-output` or `--overwrite` is an error rather than a silently ignored flag. |
 | `--format <fmt>` | Write `yaml` or `json5` regardless of the `--output` extension, for both the recipe and the vars-file. Without an explicit `--output`, `--format json5` writes `./tasks.json` and `./tasks.vars.json`. Required to stream JSON5 with `--output -`, which has no extension to read. |
-| `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). Not valid with `--output -`. When the server holds nothing sensitive there is no vars-file to write, and an explicit path is reported as unwritten rather than passed over. |
+| `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). Written `0600` wherever it lands. Not valid with `--output -`. When the server holds nothing sensitive there is no vars-file to write, and an explicit path is reported as unwritten rather than passed over. |
 | `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). Not valid with `--output -`. |
-| `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in. |
+| `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in, and the template is still written `0600` because filling it in is what puts the secrets there. |
 | `--app <name>` | Restrict the export to the named app. Repeatable. |
 | `--resource <address>` | Restrict the export to a [resource address](task-envelope.md#names-and-resource-addresses), e.g. `dokku_config[app=api]`. A bare task type takes every resource of that type. Repeatable; not valid with `--app`. See [exporting one resource](#exporting-one-resource). |
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |

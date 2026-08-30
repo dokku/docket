@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -476,31 +477,38 @@ func coerceBool(value interface{}) (bool, error) {
 	return false, fmt.Errorf("expected bool, got %T", value)
 }
 
-// loadVarsFiles parses each path left-to-right and returns the merged flat
-// map plus a `key -> source path` index so unknown-key errors can name the
-// offending file. Later files override earlier files for the same key.
+// loadVarsFiles parses each path left-to-right and returns three views of the
+// result: the merged flat map, a `key -> source path` index so unknown-key
+// errors can name the offending file, and a `path -> declared keys` index.
+// Later files override earlier files for the same key, so the source index is
+// last-writer-wins - right for naming one file in an error, wrong for asking
+// which files a key lives in. varsFileWarnings needs the latter: a base file
+// whose sensitive key a later file overrides still holds that secret on disk
+// (#489).
 //
 // File format is detected by extension: `.json` parses as JSON, anything
 // else parses as YAML. The top-level document must be a string-keyed
 // mapping; lists, scalars, and non-string keys are rejected.
-func loadVarsFiles(paths []string) (map[string]interface{}, map[string]string, error) {
+func loadVarsFiles(paths []string) (map[string]interface{}, map[string]string, map[string][]string, error) {
 	merged := map[string]interface{}{}
 	sources := map[string]string{}
+	perFile := map[string][]string{}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, nil, fmt.Errorf("--vars-file %s: %v", path, err)
+			return nil, nil, nil, fmt.Errorf("--vars-file %s: %v", path, err)
 		}
 		one, err := parseVarsFile(path, data)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for k, v := range one {
 			merged[k] = v
 			sources[k] = path
+			perFile[path] = append(perFile[path], k)
 		}
 	}
-	return merged, sources, nil
+	return merged, sources, perFile, nil
 }
 
 func parseVarsFile(path string, data []byte) (map[string]interface{}, error) {
@@ -563,18 +571,22 @@ func normaliseYAMLMap(in map[interface{}]interface{}) (map[string]interface{}, e
 // bit is set. Any unknown vars-file key is a hard error with a Levenshtein
 // suggestion against the registered input names.
 //
-// The returned map contains the input names this call wrote into the
+// The first returned map contains the input names this call wrote into the
 // argument set from a vars file. Callers union it with flags.Visit to
 // derive the full "user has overridden this key" set, which #208 needs so
-// per-play input defaults do not shadow user overrides.
-func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths []string) (map[string]bool, error) {
+// per-play input defaults do not shadow user overrides. The second return is
+// the warnings from varsFileWarnings, which the caller prints; they are
+// warnings rather than a second error because the run is fine, the file's
+// mode is not.
+func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths []string) (map[string]bool, []string, error) {
 	if len(paths) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-	merged, sources, err := loadVarsFiles(paths)
+	merged, sources, perFile, err := loadVarsFiles(paths)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	warnings := varsFileWarnings(paths, perFile, arguments)
 
 	cliSet := map[string]bool{}
 	if flags != nil {
@@ -603,17 +615,77 @@ func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths [
 			if suggestion != "" {
 				hint = fmt.Sprintf("; did you mean %q?", suggestion)
 			}
-			return nil, fmt.Errorf("unknown input %q in --vars-file %s%s", key, sources[key], hint)
+			return nil, nil, fmt.Errorf("unknown input %q in --vars-file %s%s", key, sources[key], hint)
 		}
 		if cliSet[key] {
 			continue
 		}
 		if err := arg.SetFromVarsFile(key, merged[key]); err != nil {
-			return nil, fmt.Errorf("--vars-file %s: %v", sources[key], err)
+			return nil, nil, fmt.Errorf("--vars-file %s: %v", sources[key], err)
 		}
 		applied[key] = true
 	}
-	return applied, nil
+	return applied, warnings, nil
+}
+
+// varsFileWarnings reports each --vars-file that carries a value for an input
+// the recipe declares sensitive and is readable by users other than its owner.
+//
+// The trigger is content, not mode alone. A vars file of ordinary settings -
+// an app name, a replica count - says nothing about secrets, and warning
+// about its mode would be noise on the ordinary per-environment file
+// docs/inputs.md recommends. A `sensitive: true` input is what makes a vars
+// file a secrets file, and an exported one is made of nothing else. This is
+// the reading end of #489: docket export writes its own half of the pair at
+// varsFileMode, but a file that arrived from somewhere docket did not control
+// can be anything.
+//
+// It stays a warning. The file is the user's, docket only reads it, and a
+// recipe that applies cleanly should not fail over the mode of an input file.
+func varsFileWarnings(paths []string, perFile map[string][]string, arguments map[string]*Argument) []string {
+	// Windows has no mode bits to read: os.FileMode.Perm synthesises 0666 or
+	// 0444 from the readonly attribute, so every file there would warn.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, path := range paths {
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		if !holdsSensitiveInput(perFile[path], arguments) {
+			continue
+		}
+		info, err := os.Stat(path)
+		// A read error is not this function's to report - loadVarsFiles has
+		// already read the file successfully - and a fifo, a device, or a
+		// process substitution has no mode worth complaining about.
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		perm := info.Mode().Perm()
+		if perm&0o077 == 0 {
+			continue
+		}
+		out = append(out, fmt.Sprintf(
+			"warning: --vars-file %s holds sensitive input values and is readable by other users (mode %04o); chmod 600 %s",
+			path, perm, shellQuotePath(path)))
+	}
+	return out
+}
+
+// holdsSensitiveInput reports whether any of keys names an input the recipe
+// declared sensitive. A key with no registered Argument is on its way to the
+// unknown-input error and is not this check's business.
+func holdsSensitiveInput(keys []string, arguments map[string]*Argument) bool {
+	for _, key := range keys {
+		if arg, ok := arguments[key]; ok && arg.Sensitive {
+			return true
+		}
+	}
+	return false
 }
 
 // userSetKeys merges the set of input names the user has overridden via

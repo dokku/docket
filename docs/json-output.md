@@ -97,6 +97,12 @@ cannot be read. Both keys are absent for a task that probes everything it manage
 prose and is masked; `probe` is an enum and is not. A recipe containing an `unsupported` task never
 exits `0` under `--detailed-exitcode`.
 
+One notice deliberately appears in no stream at all: the
+[`--vars-file` permissions warning](inputs.md#a-vars-file-that-holds-secrets) is about a file, not a
+task, so there is no play or name to correlate it against. It is written to stderr in every mode -
+`apply --json`, `plan --json`, and `validate --json` alike - which leaves stdout untouched, so a
+clean `validate --json` still writes nothing there.
+
 ## Commands
 
 Both `task` flavors include `commands` as an array of resolved, masked `dokku` command strings. It
