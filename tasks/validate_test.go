@@ -690,6 +690,93 @@ func TestValidateStorageEntryAbsentRejectsCreateOptions(t *testing.T) {
 	}
 }
 
+func TestValidateStorageEntryInvalidMode(t *testing.T) {
+	// A YAML scalar decodes into the string field verbatim, so an unquoted
+	// 0888 reaches Validate as the four characters the recipe wrote rather
+	// than as a number YAML has already reinterpreted.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        mode: 0888
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'mode' must be a 3 or 4 digit octal directory mode") {
+		t.Errorf("expected message to name the octal rule, got: %q", p.Message)
+	}
+}
+
+func TestValidateStorageEntryModeAcceptsUnquotedOctal(t *testing.T) {
+	// The counterpart: an unquoted 0755 is a valid mode, and must not be
+	// mangled into a decimal on the way through the decoder.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        mode: 0755
+`)
+	if problems := Validate(data, ValidateOptions{}); len(problems) != 0 {
+		t.Errorf("expected an unquoted octal mode to validate, got: %+v", problems)
+	}
+}
+
+func TestValidateStorageEntryK3sRejectsMode(t *testing.T) {
+	// dokku's --mode is implemented by a sudo helper against a host
+	// directory, which a cluster-provisioned volume does not have.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        scheduler: k3s
+        size: 2Gi
+        mode: "0777"
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'mode' must not be set for scheduler 'k3s'") {
+		t.Errorf("expected message to name the scheduler, got: %q", p.Message)
+	}
+}
+
+func TestValidateStorageEntryPresentRejectsDestroyHostDir(t *testing.T) {
+	// The flag rides on storage:destroy, so asking for it under the default
+	// state asks for a removal that will never happen.
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        destroy_host_dir: true
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'destroy_host_dir' must not be set for state 'present'") {
+		t.Errorf("expected message to name the state, got: %q", p.Message)
+	}
+}
+
+func TestValidateStorageEntryAbsentAcceptsDestroyHostDir(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - dokku_storage_entry:
+        name: node-js-app-data
+        destroy_host_dir: true
+        state: absent
+`)
+	if problems := Validate(data, ValidateOptions{}); len(problems) != 0 {
+		t.Errorf("expected destroy_host_dir under state 'absent' to validate, got: %+v", problems)
+	}
+}
+
 func TestValidateStorageEntryAnnotationsValid(t *testing.T) {
 	// The annotations and labels maps reach dokku as repeated
 	// `--annotation key=value` flags; a clean map validates.

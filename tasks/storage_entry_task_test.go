@@ -123,6 +123,67 @@ func TestStorageEntryCreateArgsRepeatsMapFlagsInSortedOrder(t *testing.T) {
 	}
 }
 
+func TestStorageEntryCreateArgsCarriesMode(t *testing.T) {
+	// --mode sits between --chown and --reclaim-policy, matching dokku's own
+	// flag order, and is rendered in the 4 digit form the registry records so
+	// the create command reads the same as the storage:set a later converge
+	// would issue.
+	task := StorageEntryTask{
+		Name:  "app-data",
+		Chown: "herokuish",
+		Mode:  "755",
+		State: StatePresent,
+	}
+	want := []string{
+		"--quiet", "storage:create",
+		"--chown", "herokuish",
+		"--mode", "0755",
+		"app-data",
+	}
+	if got := task.createArgs(); !equalStrings(got, want) {
+		t.Errorf("expected args %v, got %v", want, got)
+	}
+}
+
+func TestStorageEntryCreateArgsKeepsAFourDigitMode(t *testing.T) {
+	task := StorageEntryTask{Name: "app-data", Mode: "0777", State: StatePresent}
+	want := []string{"--quiet", "storage:create", "--mode", "0777", "app-data"}
+	if got := task.createArgs(); !equalStrings(got, want) {
+		t.Errorf("expected args %v, got %v", want, got)
+	}
+}
+
+func TestStorageEntryValidModeValues(t *testing.T) {
+	// The same shape dokku's directoryModeRegexp accepts: 3 or 4 octal digits.
+	for _, mode := range []string{"000", "755", "777", "0000", "0755", "0777", "2775", "7777"} {
+		task := StorageEntryTask{Name: "app-data", Mode: mode, State: StatePresent}
+		if err := task.Validate(); err != nil {
+			t.Errorf("mode %q should be valid, got: %v", mode, err)
+		}
+	}
+}
+
+func TestStorageEntryInvalidModeValue(t *testing.T) {
+	for _, mode := range []string{"8", "99", "12345", "0888", "0o755", "-755", "+755", "07 5", "abc", "0x1ff", "u+rwx"} {
+		task := StorageEntryTask{Name: "app-data", Mode: mode, State: StatePresent}
+		err := task.Validate()
+		if err == nil {
+			t.Errorf("mode %q should be rejected", mode)
+			continue
+		}
+		if !strings.Contains(err.Error(), "'mode' must be a 3 or 4 digit octal directory mode") {
+			t.Errorf("mode %q: unexpected error %v", mode, err)
+		}
+	}
+}
+
+func TestStorageEntryOmittedModeAllowed(t *testing.T) {
+	task := StorageEntryTask{Name: "app-data", State: StatePresent}
+	if err := task.Validate(); err != nil {
+		t.Errorf("an omitted mode should be valid, got: %v", err)
+	}
+}
+
 func TestStorageEntryValidChownValues(t *testing.T) {
 	// The same value set dokku_storage_ensure accepts: the entry task now
 	// shares validChown rather than forwarding anything at all.
@@ -216,6 +277,15 @@ func TestStorageEntryValidateSchedulerRules(t *testing.T) {
 			wantErr: "'reclaim_policy' must be one of Retain, Delete",
 		},
 		{
+			name:    "k3s rejects mode",
+			task:    StorageEntryTask{Name: "app-data", Scheduler: "k3s", Size: "2Gi", Mode: "0777"},
+			wantErr: "'mode' must not be set for scheduler 'k3s'",
+		},
+		{
+			name: "docker-local accepts mode",
+			task: StorageEntryTask{Name: "app-data", Scheduler: "docker-local", Mode: "0777"},
+		},
+		{
 			name: "k3s full surface",
 			task: StorageEntryTask{
 				Name:          "app-data",
@@ -258,12 +328,13 @@ func TestStorageEntryValidateRejectsCreateOptionsWhenAbsent(t *testing.T) {
 	}{
 		{"path", StorageEntryTask{Name: "app-data", Path: "/mnt/data"}, "'path' must not be set for state 'absent'"},
 		{"chown", StorageEntryTask{Name: "app-data", Chown: "herokuish"}, "'chown' must not be set for state 'absent'"},
+		{"mode", StorageEntryTask{Name: "app-data", Mode: "0777"}, "'mode' must not be set for state 'absent'"},
 		{"annotations", StorageEntryTask{Name: "app-data", Annotations: map[string]string{"a": "b"}}, "'annotations' must not be set for state 'absent'"},
 		{"labels", StorageEntryTask{Name: "app-data", Labels: map[string]string{"a": "b"}}, "'labels' must not be set for state 'absent'"},
 		{
 			"several at once",
-			StorageEntryTask{Name: "app-data", Size: "2Gi", Chown: "root"},
-			"'size', 'chown' must not be set for state 'absent'",
+			StorageEntryTask{Name: "app-data", Size: "2Gi", Chown: "root", Mode: "0777"},
+			"'size', 'chown', 'mode' must not be set for state 'absent'",
 		},
 	}
 
@@ -287,6 +358,28 @@ func TestStorageEntryValidateAbsentWithOnlyNameIsValid(t *testing.T) {
 	task := StorageEntryTask{Name: "app-data", Scheduler: "docker-local", State: StateAbsent}
 	if err := task.Validate(); err != nil {
 		t.Errorf("expected a bare destroy to validate, got: %v", err)
+	}
+}
+
+func TestStorageEntryValidateRejectsDestroyHostDirWhenPresent(t *testing.T) {
+	// storage:destroy is the only command that takes the flag, so asking for
+	// it under 'present' asks for a removal that will never happen.
+	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StatePresent}
+	err := task.Validate()
+	if err == nil {
+		t.Fatal("expected destroy_host_dir under state 'present' to be rejected")
+	}
+	if !strings.Contains(err.Error(), "'destroy_host_dir' must not be set for state 'present'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestStorageEntryValidateAcceptsDestroyHostDirWhenAbsent(t *testing.T) {
+	// It is the one field state 'absent' wants rather than refuses, so it must
+	// not be swept up by the create-time option guard.
+	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
+	if err := task.Validate(); err != nil {
+		t.Errorf("expected destroy_host_dir to validate under state 'absent', got: %v", err)
 	}
 }
 
@@ -441,6 +534,7 @@ func storageEntriesFixture() map[string]string {
 				"scheduler": "docker-local",
 				"host_path": "/var/lib/dokku/data/storage/app-data",
 				"chown": "herokuish",
+				"mode": "0777",
 				"schema_version": 1
 			}
 		]`,
@@ -462,14 +556,18 @@ func TestStorageEntryExportGlobal(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected a StorageEntryTask, got %T", exported[0])
 	}
-	// Ownership is what makes the host directory's export lossless.
+	// Ownership and permissions are what make the host directory's export
+	// lossless: an entry re-applied elsewhere without them lands at dokku's
+	// default 0755 herokuish directory rather than the one it was exported from.
 	want := StorageEntryTask{
 		Name:      "app-data",
 		Path:      "/var/lib/dokku/data/storage/app-data",
 		Scheduler: "docker-local",
 		Chown:     "herokuish",
+		Mode:      "0777",
 	}
-	if first.Name != want.Name || first.Path != want.Path || first.Scheduler != want.Scheduler || first.Chown != want.Chown {
+	if first.Name != want.Name || first.Path != want.Path || first.Scheduler != want.Scheduler ||
+		first.Chown != want.Chown || first.Mode != want.Mode {
 		t.Errorf("expected %+v, got %+v", want, first)
 	}
 
@@ -579,6 +677,81 @@ func TestStorageEntryPlanConvergesChown(t *testing.T) {
 		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
 	}
 	if plan.Reason != "1 attribute(s) to set" {
+		t.Errorf("unexpected reason %q", plan.Reason)
+	}
+}
+
+// dockerLocalEntryWithModeJSON records a mode, for the convergence and
+// normalization tests that compare a recipe against it.
+const dockerLocalEntryWithModeJSON = `{
+	"name": "app-data",
+	"scheduler": "docker-local",
+	"host_path": "/var/lib/dokku/data/storage/app-data",
+	"chown": "herokuish",
+	"mode": "0755",
+	"schema_version": 1
+}`
+
+func TestStorageEntryPlanConvergesMode(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", Mode: "0777", State: StatePresent}
+	plan := task.Plan()
+	if plan.Status != PlanStatusModify {
+		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
+	}
+	want := []string{"dokku --quiet storage:set app-data mode 0777"}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+	wantMutations := []string{`set mode=0777 (was "0755")`}
+	if !equalStrings(plan.Mutations, wantMutations) {
+		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
+	}
+}
+
+func TestStorageEntryPlanReadsAThreeDigitModeAsItsFourDigitForm(t *testing.T) {
+	// dokku records 0755 whether the caller wrote 755 or 0755. Comparing the
+	// raw recipe value against the recorded one would report drift on every
+	// run and re-apply a mode that was already correct.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", Mode: "755", State: StatePresent}
+	plan := task.Plan()
+	if !plan.InSync || plan.Status != PlanStatusOK {
+		t.Fatalf("expected an in-sync plan, got status %q mutations %v", plan.Status, plan.Mutations)
+	}
+}
+
+func TestStorageEntryPlanNormalizesAThreeDigitModeItSets(t *testing.T) {
+	// The other half of the same rule: a drifted three digit mode converges to
+	// the four digit form, so the next run settles rather than looping.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", Mode: "700", State: StatePresent}
+	plan := task.Plan()
+	want := []string{"dokku --quiet storage:set app-data mode 0700"}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+}
+
+func TestStorageEntryPlanConvergesChownBeforeMode(t *testing.T) {
+	// Struct field order, so plan and apply build byte-identical argv across
+	// runs. The k3s ordering test below cannot cover this pair: k3s rejects
+	// mode outright.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", Chown: "root", Mode: "0777", State: StatePresent}
+	plan := task.Plan()
+	want := []string{
+		"dokku --quiet storage:set app-data chown root",
+		"dokku --quiet storage:set app-data mode 0777",
+	}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands\n%v\ngot\n%v", want, plan.Commands)
+	}
+	if plan.Reason != "2 attribute(s) to set" {
 		t.Errorf("unexpected reason %q", plan.Reason)
 	}
 }
@@ -756,6 +929,92 @@ func TestStorageEntryPlanAbsentIgnoresAttributes(t *testing.T) {
 	want := []string{"dokku --quiet storage:destroy --force app-data"}
 	if !equalStrings(plan.Commands, want) {
 		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+}
+
+func TestStorageEntryPlanAbsentDestroysTheHostDirectoryOnRequest(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
+	plan := task.Plan()
+	if plan.Status != PlanStatusDestroy {
+		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusDestroy, plan.Status, plan.Error)
+	}
+	want := []string{"dokku --quiet storage:destroy --force --destroy-host-dir app-data"}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+	// The plan has to name the directory: it is the data the apply removes.
+	wantMutations := []string{"destroy storage entry app-data and its host directory /var/lib/dokku/data/storage/app-data"}
+	if !equalStrings(plan.Mutations, wantMutations) {
+		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
+	}
+}
+
+func TestStorageEntryPlanAbsentReportsAReclaimDeleteRemoval(t *testing.T) {
+	// dokku removes the host directory for a Delete entry with no flag at all,
+	// so a plan reporting only what the recipe asked for would stay silent
+	// about a directory that is about to go.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+		"name": "app-data",
+		"scheduler": "docker-local",
+		"host_path": "/var/lib/dokku/data/storage/app-data",
+		"reclaim_policy": "Delete",
+		"schema_version": 1
+	}`)))()
+
+	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
+	plan := task.Plan()
+	want := []string{"dokku --quiet storage:destroy --force app-data"}
+	if !equalStrings(plan.Commands, want) {
+		t.Errorf("expected commands %v, got %v", want, plan.Commands)
+	}
+	wantMutations := []string{"destroy storage entry app-data and its host directory /var/lib/dokku/data/storage/app-data"}
+	if !equalStrings(plan.Mutations, wantMutations) {
+		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
+	}
+}
+
+func TestStorageEntryPlanAbsentLeavesTheHostDirectoryAloneByDefault(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+
+	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
+	plan := task.Plan()
+	wantMutations := []string{"destroy storage entry app-data"}
+	if !equalStrings(plan.Mutations, wantMutations) {
+		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
+	}
+}
+
+func TestStorageEntryPlanAbsentRejectsDestroyHostDirOnANonDockerLocalEntry(t *testing.T) {
+	// dokku refuses the flag outright there, so the plan says so rather than
+	// letting the apply fail part way through.
+	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(
+		`{"name": "app-data", "scheduler": "k3s", "size": "2Gi", "reclaim_policy": "Delete", "schema_version": 1}`,
+	)))()
+
+	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
+	plan := task.Plan()
+	if plan.Status != PlanStatusError {
+		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
+	}
+	if plan.Error == nil || !strings.Contains(plan.Error.Error(), `records scheduler "k3s"`) {
+		t.Errorf("expected a scheduler error, got: %v", plan.Error)
+	}
+	if len(plan.Commands) != 0 {
+		t.Errorf("a refused plan must issue no commands, got %v", plan.Commands)
+	}
+}
+
+func TestStorageEntryPlanAbsentIgnoresDestroyHostDirWhenTheEntryIsGone(t *testing.T) {
+	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+		"--quiet storage:list-entries --format json": `[]`,
+	}))()
+
+	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
+	plan := task.Plan()
+	if !plan.InSync || plan.Status != PlanStatusOK {
+		t.Fatalf("expected an in-sync plan, got status %q (error %v)", plan.Status, plan.Error)
 	}
 }
 

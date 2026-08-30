@@ -154,6 +154,65 @@ EOF
   assert_output --partial "is valid"
 }
 
+# The other two pieces of a dokku_storage module call the wrapper used to do
+# with raw filesystem calls: the unconditional `os.chmod(host_dir, 0o777)`
+# becomes `mode`, and `destroy_host_dir: true` becomes the field of the same
+# name on the `state: absent` branch.
+@test "a storage host-directory mode and removal payload validates" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >storage.json <<'EOF'
+[
+  {
+    "name": "dokku_storage",
+    "tasks": [
+      {
+        "name": "create the host directory for hello-world",
+        "dokku_storage_entry": {
+          "name": "hello-world-data",
+          "chown": "herokuish",
+          "mode": "0777",
+          "state": "present"
+        }
+      },
+      {
+        "name": "remove the host directory for hello-world",
+        "dokku_storage_entry": {
+          "name": "hello-world-scratch",
+          "destroy_host_dir": true,
+          "state": "absent"
+        }
+      }
+    ]
+  }
+]
+EOF
+  run bash -c "\"$(docket_bin)\" validate --tasks-format json5 - <storage.json"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "a bad storage mode reports a validate_problem a wrapper can branch on" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >storage.json <<'EOF'
+[{"tasks": [{"name": "bad mode", "dokku_storage_entry": {"name": "hello-world-data", "mode": "0888"}}]}]
+EOF
+  run bash -c "\"$(docket_bin)\" validate --tasks-format json5 --json - <storage.json"
+  assert_failure
+  echo "$output" | jq -e '.code == "invalid_task_input"' >/dev/null || fail "expected invalid_task_input: $output"
+  echo "$output" | jq -e '.message | test("mode")' >/dev/null || fail "expected the message to name mode: $output"
+}
+
+@test "destroy_host_dir outside state absent reports a validate_problem" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >storage.json <<'EOF'
+[{"tasks": [{"name": "misplaced flag", "dokku_storage_entry": {"name": "hello-world-data", "destroy_host_dir": true}}]}]
+EOF
+  run bash -c "\"$(docket_bin)\" validate --tasks-format json5 --json - <storage.json"
+  assert_failure
+  echo "$output" | jq -e '.code == "invalid_task_input"' >/dev/null || fail "expected invalid_task_input: $output"
+  echo "$output" | jq -e '.message | test("destroy_host_dir")' >/dev/null || fail "expected the message to name destroy_host_dir: $output"
+}
+
 @test "a bad storage chown reports a validate_problem a wrapper can branch on" {
   cd "$BATS_TEST_TMPDIR"
   cat >storage.json <<'EOF'
