@@ -89,3 +89,25 @@ func TestEveryTaskDeclaresExportSupport(t *testing.T) {
 		}
 	}
 }
+
+// TestExportReportersAlsoImplementTheBaseExporter asserts that a task carrying
+// one of the diagnostics-aware export forms also carries the plain one.
+// exportAppPlay and exportGlobalPlay both assert AppExporter / GlobalExporter
+// before they look for the reporting variant, so a task that implements only
+// ExportAppReport or ExportGlobalReport is skipped outright - it would export
+// nothing at all, silently, which is the opposite of what declaring the
+// reporting form was meant to achieve.
+func TestExportReportersAlsoImplementTheBaseExporter(t *testing.T) {
+	for name, task := range RegisteredTasks {
+		if _, ok := task.(appExportReporter); ok {
+			if _, ok := task.(AppExporter); !ok {
+				t.Errorf("task %q implements ExportAppReport but not ExportApp, so exportAppPlay skips it entirely", name)
+			}
+		}
+		if _, ok := task.(globalExportReporter); ok {
+			if _, ok := task.(GlobalExporter); !ok {
+				t.Errorf("task %q implements ExportGlobalReport but not ExportGlobal, so exportGlobalPlay skips it entirely", name)
+			}
+		}
+	}
+}

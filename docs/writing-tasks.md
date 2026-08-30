@@ -95,7 +95,9 @@ A few conventions to follow:
 - Every task must implement `ExportSupport() ExportSupport`, declaring whether `docket export` can
   reconstruct it from a live server: `ExportSupported`, `ExportPartial`, or `ExportUnsupported`,
   with a `Caveat` explaining anything short of supported. The generator renders it in an Export
-  support section, and a coverage test fails the build if a task ships without a decision.
+  support section, and a coverage test fails the build if a task ships without a decision. To
+  actually export, implement `ExportApp` or `ExportGlobal` as well - see
+  [exporting a task](#exporting-a-task) below.
 - Every task must also implement `ProbeSupport() ProbeSupport`, declaring how much of its own state
   `Plan()` can read back: `ProbeSupported`, `ProbePartial` (some fields have no read command), or
   `ProbeUnsupported` (none do, so the task reports drift on every run and never converges). Name
@@ -181,6 +183,48 @@ func (t LollipopTask) Plan() PlanResult {
 command - `docket validate` calls the same method offline and surfaces any error as
 `invalid_task_input`, catching the mistake before a server is ever contacted. Keep the error strings
 identical to what `Plan()` used to return so `plan`, `apply`, and `validate` all read the same.
+
+## Exporting a task
+
+A task that declares itself exportable also implements one of two methods, and is listed in the
+matching order slice in `tasks/export.go`: `ExportApp(app string)` plus an entry in `appExportOrder`
+for app-scoped state, `ExportGlobal()` plus an entry in `globalExportOrder` for the rest. Both return
+task bodies - the task's own struct, populated from the server - and the engine handles
+vars-extraction and redaction afterwards. `TestExportSupportMatchesExportWiring` fails the build for
+an exporter no order list names, and for a task that claims to export without implementing one.
+
+Emit the desired `state` explicitly rather than leaning on the field's `default`, so the body is
+plannable exactly as the exporter returns it.
+
+When an exporter needs to say something about a particular resource - an asset it could not capture,
+a resource it read back but cannot emit as a task the loader would accept - implement the reporting
+form instead of logging: `ExportAppReport(app string, warn func(msg string))` or
+`ExportGlobalReport(warn func(msg string))`. The engine passes a `warn` callback wired to
+`ExportReport.Warnings`, so the message is rendered and masked like every other export diagnostic
+and reaches the operator with the run it belongs to.
+
+Implement the reporting form *alongside* the plain one, never instead of it. The engine asserts
+`AppExporter` / `GlobalExporter` before it looks for the reporter, so a task carrying only the
+reporting method exports nothing at all; `TestExportReportersAlsoImplementTheBaseExporter` catches
+that. The usual shape is a shared private method with two thin entry points, as
+`MaintenanceCustomPageTask` and `SchedulerK3sProfileTask` do:
+
+```go
+func (t LollipopTask) ExportGlobal() ([]interface{}, error) {
+  return t.exportGlobal(func(string) {})
+}
+
+func (t LollipopTask) ExportGlobalReport(warn func(msg string)) ([]interface{}, error) {
+  return t.exportGlobal(warn)
+}
+```
+
+Warn *and leave the resource out* when the body you would emit is one `docket validate` refuses.
+Validation rejects the whole recipe rather than the single task, so emitting it costs the operator
+every other resource on the server. `dokku_scheduler_k3s_profile` is the worked example: dokku
+accepts profile names its own node-sysctls helm release cannot be named after, so the exporter runs
+each candidate body through its own `Validate()` - the same method `docket validate` calls - and
+reports the ones it drops, naming the resource and the remedy.
 
 ## Toggle and property tasks
 
