@@ -200,6 +200,22 @@ the closest real name:
 unknown input "appp" in --vars-file prod.yml; did you mean "app"?
 ```
 
+### A vars file that holds secrets
+
+A vars file supplying a value for an input declared `sensitive: true` is a secrets file, not a
+settings file, and docket says so when it is readable by anyone but its owner:
+
+```text
+warning: --vars-file prod.yml holds sensitive input values and is readable by other users (mode 0644); chmod 600 prod.yml
+```
+
+It is a warning rather than an error - the file is yours and docket only reads it - and it goes to
+stderr in every mode, so it stays out of the `--json` streams. A vars file of ordinary settings
+(`app`, `replicas`) never triggers it; the `sensitive: true` declaration is what makes the mode
+worth a word. `chmod 600` settles it. [`docket export`](command-reference.md#docket-export) writes
+its own vars-file at `0600` for the same reason, so an exported pair never trips this; a file you
+write yourself, or copy to another host, keeps whatever mode you gave it.
+
 ## Precedence
 
 When the same input is set in more than one place, the highest layer wins. From lowest to highest:

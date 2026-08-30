@@ -165,10 +165,15 @@ func (c *ApplyCommand) Run(args []string) int {
 		return 1
 	}
 
-	varsFileKeys, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	varsFileKeys, varsWarnings, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
+	}
+	// Warned about on stderr in every mode, --json included: the JSON stream
+	// goes to stdout through the emitter, so this cannot land in it (#489).
+	for _, w := range varsWarnings {
+		c.Ui.Warn(w)
 	}
 
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)

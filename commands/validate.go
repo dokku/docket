@@ -130,7 +130,8 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	if _, err := applyVarsFiles(c.arguments, flags, c.varsFiles); err != nil {
+	_, varsWarnings, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	if err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{
 				Code:    "vars_file_error",
@@ -140,6 +141,12 @@ func (c *ValidateCommand) Run(args []string) int {
 			c.Ui.Error(err.Error())
 		}
 		return 1
+	}
+	// Warned about on stderr in both modes. It is not a validate_problem: the
+	// recipe is fine, and a clean --json run has to keep writing nothing to
+	// stdout so a consumer can treat any output as failure (#489).
+	for _, w := range varsWarnings {
+		c.Ui.Warn(w)
 	}
 
 	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)

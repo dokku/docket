@@ -443,7 +443,7 @@ func TestLoadVarsFilesYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.yml", "app: api\nreplicas: 3\ndebug: true\n")
 
-	merged, sources, err := loadVarsFiles([]string{path})
+	merged, sources, _, err := loadVarsFiles([]string{path})
 	if err != nil {
 		t.Fatalf("loadVarsFiles failed: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestLoadVarsFilesJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.json", `{"app":"api","replicas":3,"debug":false}`)
 
-	merged, _, err := loadVarsFiles([]string{path})
+	merged, _, _, err := loadVarsFiles([]string{path})
 	if err != nil {
 		t.Fatalf("loadVarsFiles failed: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestLoadVarsFilesJSON(t *testing.T) {
 }
 
 func TestLoadVarsFilesMissingFile(t *testing.T) {
-	_, _, err := loadVarsFiles([]string{"/nonexistent/path/vars.yml"})
+	_, _, _, err := loadVarsFiles([]string{"/nonexistent/path/vars.yml"})
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -496,7 +496,7 @@ func TestLoadVarsFilesNonMappingError(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "list.yml", "- one\n- two\n")
 
-	_, _, err := loadVarsFiles([]string{path})
+	_, _, _, err := loadVarsFiles([]string{path})
 	if err == nil {
 		t.Fatal("expected error for top-level list")
 	}
@@ -510,7 +510,7 @@ func TestLoadVarsFilesMultiFileLastWins(t *testing.T) {
 	a := writeTempFile(t, dir, "a.yml", "app: from-a\nshared: from-a\n")
 	b := writeTempFile(t, dir, "b.yml", "shared: from-b\nextra: only-b\n")
 
-	merged, sources, err := loadVarsFiles([]string{a, b})
+	merged, sources, _, err := loadVarsFiles([]string{a, b})
 	if err != nil {
 		t.Fatalf("loadVarsFiles failed: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestLoadVarsFilesEmptyYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "empty.yml", "")
 
-	merged, _, err := loadVarsFiles([]string{path})
+	merged, _, _, err := loadVarsFiles([]string{path})
 	if err != nil {
 		t.Fatalf("loadVarsFiles on empty file failed: %v", err)
 	}
@@ -692,7 +692,7 @@ func TestSetFromVarsFileBool(t *testing.T) {
 func TestApplyVarsFilesEmptyPathsNoOp(t *testing.T) {
 	args := map[string]*Argument{"app": argFor(t, "string", "default")}
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
-	if _, err := applyVarsFiles(args, flags, nil); err != nil {
+	if _, _, err := applyVarsFiles(args, flags, nil); err != nil {
 		t.Fatalf("expected nil error for empty paths, got %v", err)
 	}
 	if *args["app"].stringValue != "default" {
@@ -708,7 +708,7 @@ func TestApplyVarsFilesUpdatesUnsetArgument(t *testing.T) {
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
 	flags.String("app", "default", "")
 
-	if _, err := applyVarsFiles(args, flags, []string{path}); err != nil {
+	if _, _, err := applyVarsFiles(args, flags, []string{path}); err != nil {
 		t.Fatalf("applyVarsFiles failed: %v", err)
 	}
 	if got := *args["app"].stringValue; got != "from-vars" {
@@ -729,7 +729,7 @@ func TestApplyVarsFilesCLIOverridesVarsFile(t *testing.T) {
 		t.Fatalf("flags.Parse failed: %v", err)
 	}
 
-	if _, err := applyVarsFiles(args, flags, []string{path}); err != nil {
+	if _, _, err := applyVarsFiles(args, flags, []string{path}); err != nil {
 		t.Fatalf("applyVarsFiles failed: %v", err)
 	}
 	if got := *args["app"].stringValue; got != "from-cli" {
@@ -744,7 +744,7 @@ func TestApplyVarsFilesUnknownKey(t *testing.T) {
 	args := map[string]*Argument{"app": argFor(t, "string", "")}
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
 
-	_, err := applyVarsFiles(args, flags, []string{path})
+	_, _, err := applyVarsFiles(args, flags, []string{path})
 	if err == nil {
 		t.Fatal("expected error for unknown key")
 	}
@@ -762,7 +762,7 @@ func TestApplyVarsFilesUnknownKeyNoSuggestionWhenFar(t *testing.T) {
 	args := map[string]*Argument{"app": argFor(t, "string", "")}
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
 
-	_, err := applyVarsFiles(args, flags, []string{path})
+	_, _, err := applyVarsFiles(args, flags, []string{path})
 	if err == nil {
 		t.Fatal("expected error for unknown key")
 	}
@@ -779,7 +779,7 @@ func TestApplyVarsFilesMultiFileLastWins(t *testing.T) {
 	args := map[string]*Argument{"app": argFor(t, "string", "")}
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
 
-	if _, err := applyVarsFiles(args, flags, []string{a, b}); err != nil {
+	if _, _, err := applyVarsFiles(args, flags, []string{a, b}); err != nil {
 		t.Fatalf("applyVarsFiles failed: %v", err)
 	}
 	if got := *args["app"].stringValue; got != "from-b" {
@@ -794,7 +794,7 @@ func TestApplyVarsFilesCoercionFailureNamesInput(t *testing.T) {
 	args := map[string]*Argument{"replicas": argFor(t, "int", 0)}
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
 
-	_, err := applyVarsFiles(args, flags, []string{path})
+	_, _, err := applyVarsFiles(args, flags, []string{path})
 	if err == nil {
 		t.Fatal("expected coercion error")
 	}
@@ -812,7 +812,7 @@ func TestApplyVarsFilesJSONFloatCoercesToInt(t *testing.T) {
 	args := map[string]*Argument{"replicas": argFor(t, "int", 0)}
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
 
-	if _, err := applyVarsFiles(args, flags, []string{path}); err != nil {
+	if _, _, err := applyVarsFiles(args, flags, []string{path}); err != nil {
 		t.Fatalf("applyVarsFiles failed: %v", err)
 	}
 	if got := *args["replicas"].intValue; got != 5 {
