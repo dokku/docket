@@ -297,6 +297,74 @@ func TestBuildPerPlayContextRespectsUserSet(t *testing.T) {
 	}
 }
 
+// TestBuildPerPlayContextResolvesTypedDefaults covers #495. A play-local
+// default used to layer in as the raw text the recipe wrote, while the same
+// input reached the base context as the typed pointer flag registration
+// allocated - so `type: bool, default: on` rendered as `on` in a play-local
+// input and as `true` in a file-level one. Both halves now hold the same shape.
+func TestBuildPerPlayContextResolvesTypedDefaults(t *testing.T) {
+	playInputs := []Input{
+		{Name: "debug", Type: "bool", Default: "on"},
+		{Name: "quiet", Type: "bool", Default: "0"},
+		{Name: "replicas", Type: "int", Default: "3"},
+		{Name: "ratio", Type: "float", Default: "1.5"},
+		{Name: "app", Default: "web"},
+		{Name: "broken", Type: "bool", Default: "mabye"},
+		{Name: "untyped", Type: "duration", Default: "5s"},
+	}
+
+	out := BuildPerPlayContext(map[string]interface{}{}, playInputs, nil)
+
+	if v, ok := out["debug"].(*bool); !ok || v == nil || !*v {
+		t.Errorf("debug = %#v, want a *bool holding true", out["debug"])
+	}
+	if v, ok := out["quiet"].(*bool); !ok || v == nil || *v {
+		t.Errorf("quiet = %#v, want a *bool holding false", out["quiet"])
+	}
+	if v, ok := out["replicas"].(*int); !ok || v == nil || *v != 3 {
+		t.Errorf("replicas = %#v, want a *int holding 3", out["replicas"])
+	}
+	if v, ok := out["ratio"].(*float64); !ok || v == nil || *v != 1.5 {
+		t.Errorf("ratio = %#v, want a *float64 holding 1.5", out["ratio"])
+	}
+	// A string default is already the text it renders as.
+	if v, ok := out["app"].(string); !ok || v != "web" {
+		t.Errorf("app = %#v, want the raw string %q", out["app"], "web")
+	}
+	// A default the loader rejects keeps its text rather than becoming a zero:
+	// validate collects its problems and keeps rendering, and the text is what
+	// an unsafe_input_value diagnostic has to see.
+	if v, ok := out["broken"].(string); !ok || v != "mabye" {
+		t.Errorf("broken = %#v, want the raw string %q", out["broken"], "mabye")
+	}
+	if v, ok := out["untyped"].(string); !ok || v != "5s" {
+		t.Errorf("untyped = %#v, want the raw string %q", out["untyped"], "5s")
+	}
+}
+
+// TestBuildPerPlayContextAllocatesPerCall: two plays declaring the same input
+// name with different defaults must not alias one pointer.
+func TestBuildPerPlayContextAllocatesPerCall(t *testing.T) {
+	base := map[string]interface{}{}
+	first := BuildPerPlayContext(base, []Input{{Name: "debug", Type: "bool", Default: "true"}}, nil)
+	second := BuildPerPlayContext(base, []Input{{Name: "debug", Type: "bool", Default: "false"}}, nil)
+
+	firstValue, ok := first["debug"].(*bool)
+	if !ok {
+		t.Fatalf("first debug = %#v, want a *bool", first["debug"])
+	}
+	secondValue, ok := second["debug"].(*bool)
+	if !ok {
+		t.Fatalf("second debug = %#v, want a *bool", second["debug"])
+	}
+	if firstValue == secondValue {
+		t.Fatal("both plays share one pointer; the second default overwrote the first")
+	}
+	if !*firstValue || *secondValue {
+		t.Errorf("values = (%v, %v), want (true, false)", *firstValue, *secondValue)
+	}
+}
+
 func TestMergePlayTagsDedupsAndPreservesOrder(t *testing.T) {
 	got := mergePlayTags([]string{"deploy"}, []string{"api", "deploy"})
 	want := []string{"deploy", "api"}

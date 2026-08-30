@@ -124,20 +124,6 @@ func (c *Argument) SetStringValue(ptr *string) {
 	c.stringValue = ptr
 }
 
-// isTrueString and isFalseString delegate to tasks.ParseInputBool so the flag
-// path, the --vars-file coercion in coerceBool, and the invalid_input_default
-// diagnostic all agree on which spellings are a bool. Splitting them back apart
-// would let a `default:` the validator accepts fail to register, or the reverse.
-func isTrueString(s string) bool {
-	v, ok := tasks.ParseInputBool(s)
-	return ok && v
-}
-
-func isFalseString(s string) bool {
-	v, ok := tasks.ParseInputBool(s)
-	return ok && !v
-}
-
 func getTaskYamlFilename(s []string) string {
 	path, _ := resolveTaskFileFromArgs(s)
 	return path
@@ -510,20 +496,45 @@ func coerceFloat(value interface{}) (float64, error) {
 	return 0, fmt.Errorf("expected float, got %T", value)
 }
 
+// coerceBool reads a --vars-file value for a `type: bool` input. Strings go
+// through tasks.ParseInputBool so the vars file, a recipe `default:`, and the
+// invalid_input_default diagnostic all agree on which spellings are a bool.
+//
+// A native number is a bool only when it is exactly 1 or 0 - the spelling pflag
+// takes for `--debug=1`, which a hand-written or generated vars file has no
+// reason to spell differently (#495). Any other number is an error rather than
+// C-style truthiness. The reverse does not hold: coerceInt and coerceFloat
+// reject a native bool, the same way pflag refuses `--replicas=true`.
 func coerceBool(value interface{}) (bool, error) {
 	switch v := value.(type) {
 	case bool:
 		return v, nil
 	case string:
-		if isTrueString(v) {
-			return true, nil
-		}
-		if isFalseString(v) {
-			return false, nil
+		if b, ok := tasks.ParseInputBool(v); ok {
+			return b, nil
 		}
 		return false, fmt.Errorf("expected bool, got %q", v)
+	case int:
+		return coerceBoolNumber(float64(v), v)
+	case int64:
+		return coerceBoolNumber(float64(v), v)
+	case float64:
+		return coerceBoolNumber(v, v)
 	}
 	return false, fmt.Errorf("expected bool, got %T", value)
+}
+
+// coerceBoolNumber maps the numbers pflag spells a bool with onto one, naming
+// the value rather than its Go type in the error a number outside that pair
+// raises: "expected bool, got 2" is actionable where "got int" is not.
+func coerceBoolNumber(n float64, original interface{}) (bool, error) {
+	switch n {
+	case 1:
+		return true, nil
+	case 0:
+		return false, nil
+	}
+	return false, fmt.Errorf("expected bool, got %v", original)
 }
 
 // loadVarsFiles parses each path left-to-right and returns three views of the
@@ -749,7 +760,11 @@ func holdsSensitiveInput(keys []string, arguments map[string]*Argument) bool {
 //
 // A sensitive value is registered only when the recipe declared it or the user
 // supplied it. Registering an implicit zero would hand the masker "0" or
-// "false" and blank out every unrelated occurrence of that substring.
+// "false" and blank out every unrelated occurrence of that substring. A
+// declared one still registers whatever the input resolved to, so a
+// `sensitive: true, type: bool, default: 1` hands it the literal "true" - the
+// documented reason to keep `sensitive:` for string inputs holding real
+// secrets.
 func buildInputContext(arguments map[string]*Argument, userSet map[string]bool) (map[string]interface{}, []string, error) {
 	names := make([]string, 0, len(arguments))
 	for name := range arguments {

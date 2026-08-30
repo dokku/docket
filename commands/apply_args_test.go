@@ -10,46 +10,80 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-func TestIsTrueString(t *testing.T) {
-	trueValues := []string{"true", "yes", "on", "y", "Y"}
-	for _, v := range trueValues {
-		if !isTrueString(v) {
-			t.Errorf("isTrueString(%q) = false, want true", v)
-		}
+// TestCoerceBool covers the --vars-file half of #495: a string goes through
+// tasks.ParseInputBool, so the vars file reads the same vocabulary a `default:`
+// does, and a native 1 / 0 is the bool pflag reads `--debug=1` as.
+func TestCoerceBool(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   interface{}
+		want    bool
+		wantErr bool
+	}{
+		{"native true", true, true, false},
+		{"native false", false, false, false},
+		{"string true", "true", true, false},
+		{"string cased", "TRUE", true, false},
+		{"string yes", "yes", true, false},
+		{"string on", "On", true, false},
+		{"string t", "t", true, false},
+		{"string one", "1", true, false},
+		{"string false", "false", false, false},
+		{"string no", "No", false, false},
+		{"string off", "off", false, false},
+		{"string f", "F", false, false},
+		{"string zero", "0", false, false},
+		{"int one", 1, true, false},
+		{"int zero", 0, false, false},
+		{"int64 one", int64(1), true, false},
+		{"float one", float64(1), true, false},
+		{"float zero", float64(0), false, false},
+		{"other int rejected", 2, false, true},
+		{"negative int rejected", -1, false, true},
+		{"fractional float rejected", 1.5, false, true},
+		{"unrelated string rejected", "maybe", false, true},
+		{"empty string rejected", "", false, true},
+		{"list rejected", []interface{}{true}, false, true},
 	}
-
-	falseValues := []string{"false", "no", "off", "n", "N", "", "maybe", "1", "0"}
-	for _, v := range falseValues {
-		if isTrueString(v) {
-			t.Errorf("isTrueString(%q) = true, want false", v)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := coerceBool(tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("coerceBool(%#v) = %v, want an error", tt.value, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("coerceBool(%#v) failed: %v", tt.value, err)
+			}
+			if got != tt.want {
+				t.Errorf("coerceBool(%#v) = %v, want %v", tt.value, got, tt.want)
+			}
+		})
 	}
 }
 
-func TestIsFalseString(t *testing.T) {
-	falseValues := []string{"false", "no", "off", "n", "N"}
-	for _, v := range falseValues {
-		if !isFalseString(v) {
-			t.Errorf("isFalseString(%q) = false, want true", v)
-		}
+// TestCoerceBoolNumberErrorNamesTheValue: "expected bool, got 2" is actionable
+// where "expected bool, got int" is not.
+func TestCoerceBoolNumberErrorNamesTheValue(t *testing.T) {
+	_, err := coerceBool(2)
+	if err == nil {
+		t.Fatal("expected an error for 2")
 	}
-
-	trueValues := []string{"true", "yes", "on", "y", "Y", "", "maybe", "1", "0"}
-	for _, v := range trueValues {
-		if isFalseString(v) {
-			t.Errorf("isFalseString(%q) = true, want false", v)
-		}
+	if !strings.Contains(err.Error(), "got 2") {
+		t.Errorf("error = %q, want it to name the value", err)
 	}
 }
 
-func TestIsTrueAndFalseAreMutuallyExclusive(t *testing.T) {
-	allValues := []string{"true", "false", "yes", "no", "on", "off", "y", "n", "Y", "N", "", "maybe"}
-	for _, v := range allValues {
-		isTrue := isTrueString(v)
-		isFalse := isFalseString(v)
-		if isTrue && isFalse {
-			t.Errorf("value %q is both true and false", v)
-		}
+// TestCoerceIntAndFloatStillRejectBool: the widening runs one way. pflag takes
+// `--debug=1` and refuses `--replicas=true`, and the vars file matches it.
+func TestCoerceIntAndFloatStillRejectBool(t *testing.T) {
+	if _, err := coerceInt(true); err == nil {
+		t.Error("coerceInt(true) succeeded, want an error")
+	}
+	if _, err := coerceFloat(true); err == nil {
+		t.Error("coerceFloat(true) succeeded, want an error")
 	}
 }
 
@@ -664,9 +698,13 @@ func TestSetFromVarsFileBool(t *testing.T) {
 		{"string true", "true", true, false},
 		{"string yes", "yes", true, false},
 		{"string on", "on", true, false},
+		{"string cased", "True", true, false},
 		{"string false", "false", false, false},
 		{"string no", "no", false, false},
-		{"int rejected", 1, false, true},
+		{"int one", 1, true, false},
+		{"int zero", 0, false, false},
+		{"float one", float64(1), true, false},
+		{"other int rejected", 2, false, true},
 		{"unrelated string rejected", "banana", false, true},
 	}
 	for _, tt := range tests {

@@ -87,7 +87,7 @@ func TestValidateReportsInvalidInputDeclarations(t *testing.T) {
 `,
 			code:    "invalid_input_default",
 			message: `input "debug" declares type bool but its default "maybe" is not a valid bool`,
-			hint:    "use one of true, yes, on, y",
+			hint:    "use one of true, yes, on, y, t, 1 (or false, no, off, n, f, 0); case does not matter",
 		},
 	}
 

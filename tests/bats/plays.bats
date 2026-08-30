@@ -500,3 +500,25 @@ EOF
   assert_output --partial "docket-test-noop-api"
   assert_output --partial "docket-test-noop-worker"
 }
+
+# #495: a play-local input default layered into the render context as the raw
+# text the recipe wrote, while the same input reached the base context as the
+# typed value flag registration produced. A play-local `type: bool, default: on`
+# rendered as `on` where a file-level one rendered as `true`.
+@test "plays: a play-local typed default resolves to its type" {
+  write_tasks_file <<EOF
+---
+- inputs:
+    - { name: file_debug, type: bool, default: on }
+- name: api
+  inputs:
+    - { name: play_debug, type: bool, default: on }
+    - { name: replicas, type: int, default: 007 }
+  tasks:
+    - dokku_app:
+        app: "web-{{ .file_debug }}-{{ .play_debug }}-{{ .replicas }}"
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "web-true-true-7"
+}

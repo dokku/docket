@@ -977,10 +977,10 @@ func extractPlayInputs(recipe *yaml.Node) [][]inputWithNode {
 }
 
 // buildSigilContext assembles the variable map sigil renders against. Inputs
-// with a non-empty Default contribute their default value; inputs without a
-// default contribute validatePlaceholder so the render does not error on
-// missing keys. Names collide cleanly across plays since sigil receives a
-// single flat namespace.
+// with a non-empty Default contribute that default resolved to its declared
+// type; inputs without a default contribute validatePlaceholder so the render
+// does not error on missing keys. Names collide cleanly across plays since
+// sigil receives a single flat namespace.
 //
 // `.item` and `.index` references in loop-body templates are hidden from
 // the file-level render via escapeLoopVars / unescapeLoopVars, so they
@@ -1000,7 +1000,10 @@ func buildSigilContext(plays [][]inputWithNode) map[string]interface{} {
 				continue
 			}
 			if in.Default != "" {
-				context[in.Name] = in.Default
+				// Coerced the way the flag path coerces it, so validate
+				// renders the recipe apply would render: a `type: bool,
+				// default: on` is checked as `true`, not as `on` (#495).
+				context[in.Name] = inputDefaultValue(in.Type, in.Default)
 			} else if _, ok := context[in.Name]; !ok {
 				context[in.Name] = validatePlaceholder
 			}
@@ -1137,7 +1140,9 @@ func inputDefaultHint(typ, def string) string {
 	switch typ {
 	case "bool":
 		if _, ok := ParseInputBool(def); !ok {
-			return `use one of true, yes, on, y (or false, no, off, n)`
+			return fmt.Sprintf("use one of %s (or %s); case does not matter",
+				strings.Join(InputBoolTrueSpellings, ", "),
+				strings.Join(InputBoolFalseSpellings, ", "))
 		}
 	case "int":
 		if _, ok := ParseInputInt(def); !ok {
