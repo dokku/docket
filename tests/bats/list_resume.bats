@@ -415,6 +415,24 @@ EOF
   assert_output --partial '"name":"deploy (item=***)"'
 }
 
+@test "--list-tasks masks a sensitive input resolved from its default" {
+  # #490: the listing renders resolved values, and with no override the
+  # resolved value is the input's own `default:`. It reaches the mask registry
+  # through the same Argument.StringValue() a --vars-file or CLI value does, so
+  # a secret written into `default:` masks like any other.
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: app_name, default: listdefaultzzz, sensitive: true }
+  tasks:
+    - dokku_app: { app: "{{ .app_name }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  refute_output --partial "listdefaultzzz"
+  assert_output --partial "dokku_app[app=***]"
+}
+
 @test "--list-tasks masks a whitespace-padded sensitive loop item in the name" {
   # #473: the `(item=<value>)` suffix renders the item through TrimSpace, so a
   # secret carrying leading or trailing whitespace stopped matching the literal
