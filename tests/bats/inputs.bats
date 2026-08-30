@@ -195,3 +195,60 @@ EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE" --strict --debug=false
   assert_success
 }
+
+# #495: a bool `default:` used to read a vocabulary that was neither a superset
+# nor a subset of the one pflag parses `--debug=...` with, so the same spelling
+# meant two different things in one recipe. The table is now the union, matched
+# case-insensitively.
+
+@test "a bool default takes the spellings the command line takes" {
+  for default_value in 1 t True TRUE On YES; do
+    write_tasks_file <<EOF
+---
+- inputs:
+    - { name: debug, type: bool, default: $default_value }
+  tasks:
+    - dokku_app: { app: "web-{{ .debug }}" }
+EOF
+    run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+    assert_success
+
+    run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+    assert_success
+    assert_output --partial "dokku_app[app=web-true]"
+  done
+
+  for default_value in 0 f False FALSE Off N; do
+    write_tasks_file <<EOF
+---
+- inputs:
+    - { name: debug, type: bool, default: $default_value }
+  tasks:
+    - dokku_app: { app: "web-{{ .debug }}" }
+EOF
+    run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+    assert_success
+
+    run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+    assert_success
+    assert_output --partial "dokku_app[app=web-false]"
+  done
+}
+
+@test "docket validate still rejects a bool default in neither vocabulary" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: debug, type: bool, default: maybe }
+  tasks:
+    - dokku_app: { app: "web-{{ .debug }}" }
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial 'its default "maybe" is not a valid bool'
+  assert_output --partial 'use one of true, yes, on, y, t, 1 (or false, no, off, n, f, 0)'
+
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"invalid_input_default"'
+}

@@ -1529,3 +1529,50 @@ func TestValidateCLIReferencesSkippedWithoutStrict(t *testing.T) {
 		t.Errorf("non-strict should not surface unknown_start_at_task; got: %+v", *p)
 	}
 }
+
+// TestBuildSigilContextResolvesTypedDefaults covers the validate half of #495.
+// validate renders every input from its declared default, and it used to render
+// the raw text where apply renders the coerced value - so a recipe apply
+// rendered as `web-true` was checked as `web-On`.
+func TestBuildSigilContextResolvesTypedDefaults(t *testing.T) {
+	data := []byte(`---
+- inputs:
+    - { name: debug, type: bool, default: On }
+    - { name: replicas, type: int, default: 3 }
+    - { name: app, default: web }
+    - { name: unset, type: bool }
+  tasks:
+    - dokku_app: { app: "{{ .app }}-{{ .debug }}-{{ .replicas }}" }
+`)
+	context := buildSigilContext(declaredInputs(data, FormatYAML))
+
+	rendered, err := renderRecipeBytes(data, context)
+	if err != nil {
+		t.Fatalf("render failed: %v", err)
+	}
+	if !strings.Contains(string(rendered), "web-true-3") {
+		t.Errorf("validate rendered the raw default text; got:\n%s", rendered)
+	}
+	// An input with no default keeps its placeholder rather than resolving to
+	// the type's zero value, so the render still cannot fail on a missing key.
+	if got, ok := context["unset"].(string); !ok || got != validatePlaceholder {
+		t.Errorf("unset = %#v, want the validate placeholder", context["unset"])
+	}
+}
+
+// TestBuildSigilContextKeepsUnparseableDefaultText: validate collects problems
+// and keeps rendering, so a default the loader rejects has to reach the render
+// as the text that was written. Substituting a zero value there would hide the
+// value an unsafe_input_value diagnostic exists to attribute.
+func TestBuildSigilContextKeepsUnparseableDefaultText(t *testing.T) {
+	data := []byte(`---
+- inputs:
+    - { name: debug, type: bool, default: mabye }
+  tasks:
+    - dokku_app: { app: "web-{{ .debug }}" }
+`)
+	context := buildSigilContext(declaredInputs(data, FormatYAML))
+	if got, ok := context["debug"].(string); !ok || got != "mabye" {
+		t.Errorf("debug = %#v, want the raw text %q", context["debug"], "mabye")
+	}
+}

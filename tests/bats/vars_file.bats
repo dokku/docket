@@ -323,3 +323,54 @@ EOF
   assert_output --partial 'he said "hi" loudly'
   dokku_clean_app docket-test-dq
 }
+
+# #495: coerceBool read the same narrow table a `default:` did, so `debug: 1` in
+# a vars file was an error while `--debug=1` on the command line was not.
+
+@test "a vars file spells a bool the way the command line does" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: debug, type: bool, default: false }
+  tasks:
+    - dokku_app: { app: "web-{{ .debug }}" }
+EOF
+
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<'EOF'
+debug: 1
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_success
+  assert_output --partial "dokku_app[app=web-true]"
+
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<'EOF'
+debug: "On"
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_success
+  assert_output --partial "dokku_app[app=web-true]"
+
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<'EOF'
+debug: 0
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_success
+  assert_output --partial "dokku_app[app=web-false]"
+}
+
+@test "a vars file rejects a number that is not a bool" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: debug, type: bool, default: false }
+  tasks:
+    - dokku_app: { app: "web-{{ .debug }}" }
+EOF
+  cat >"$BATS_TEST_TMPDIR/vars.yml" <<'EOF'
+debug: 2
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --vars-file "$BATS_TEST_TMPDIR/vars.yml"
+  assert_failure
+  assert_output --partial 'input "debug"'
+  assert_output --partial "expected bool, got 2"
+}

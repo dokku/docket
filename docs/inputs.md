@@ -60,10 +60,12 @@ reports one that is not as `invalid_input_default`, and a `type:` outside the fo
 `invalid_input_type`, both naming the input and the line it sits on; `plan` and `apply` refuse the
 recipe offline with the same message rather than running it.
 
-A `bool` default is spelled `true`, `yes`, `on`, or `y` (or `false`, `no`, `off`, `n`) - the same
-vocabulary a `--vars-file` uses, and deliberately not pflag's, which is what parses a `--debug=1`
-typed on the command line. A `default:` is read as the text of the scalar you wrote, so an unquoted
-`default: true` is fine but `default: True` is not.
+A `bool` default is spelled `true`, `yes`, `on`, `y`, `t`, or `1` (or `false`, `no`, `off`, `n`,
+`f`, `0`), in any case - `True` and `TRUE` read the same as `true`. That is the same vocabulary a
+`--vars-file` uses, and it is a superset of pflag's, which is what parses a `--debug=1` typed on the
+command line, so every spelling the command line accepts is also a spelling a `default:` accepts.
+The reverse does not hold: pflag takes only `true`/`false`/`1`/`0`/`t`/`f`, so `--debug=yes` is not
+a command line docket accepts.
 
 ## Input names
 
@@ -291,9 +293,11 @@ Values are coerced to each input's declared `type`:
 - `string`: any scalar (a YAML boolean `true` becomes the string `"true"`).
 - `int`: whole numbers, including numeric strings and whole-valued JSON numbers.
 - `float`: floats, ints, and parseable numeric strings.
-- `bool`: native booleans, or a string spelled `true`/`yes`/`on`/`y` (or `false`/`no`/`off`/`n`).
-  A `--name=value` flag on the command line is parsed separately by pflag, which accepts
-  `true`/`false`/`1`/`0` but not `yes`/`on`.
+- `bool`: native booleans, a native `1` or `0`, or a string spelled `true`/`yes`/`on`/`y`/`t`/`1`
+  (or `false`/`no`/`off`/`n`/`f`/`0`) in any case. Any other number is an error rather than a
+  truthiness test, so `debug: 2` is refused. A `--name=value` flag on the command line is parsed
+  separately by pflag, which accepts the `true`/`false`/`1`/`0`/`t`/`f` subset of these but not
+  `yes`/`on`.
 
 A key in a vars file that does not match any declared input is a hard error, with a suggestion for
 the closest real name:

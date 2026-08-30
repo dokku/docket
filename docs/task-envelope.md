@@ -136,7 +136,9 @@ specific step, for example enabling Let's Encrypt only in production:
         state: present
 ```
 
-The expression sees the file-level inputs. Inside a `loop:` it also sees `.item` and `.index`.
+The expression sees the inputs visible to the play it sits in - the file-level ones plus that play's
+own [play-local inputs](inputs.md#per-play-inputs-precedence), each resolved to its declared `type:`.
+Inside a `loop:` it also sees `.item` and `.index`.
 Once any task has used `register:`, every later predicate also sees `.registered.<name>` (below).
 
 ## `loop`: repeat a task over a list
