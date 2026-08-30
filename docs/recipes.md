@@ -146,6 +146,11 @@ docket plan  --tasks tasks.yml --play api --tags deploy
 to one play, then the tag filter applies to the tasks inside it. An unknown play name produces an
 error listing the available plays.
 
+Those listed names are masked like every other name docket prints, so a play named after a
+`sensitive: true` input is safe to paste into a ticket. `--play` still matches on the real name,
+which means a name that masks down to `***` cannot be copied out of the error and used verbatim -
+give any play you need to select by name a spelling that carries no secret.
+
 ### How a play's `when` is evaluated
 
 A play-level `when:` is checked against the file-level variables only: file-level input defaults,

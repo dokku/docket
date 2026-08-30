@@ -109,6 +109,67 @@ EOF
   assert_output --partial '"second"'
 }
 
+@test "plays: --play hint masks a sensitive input in a play name" {
+  # #477: the hint listed every play's name in the clear, so a name that
+  # interpolated a sensitive input leaked. Nothing here contacts the server -
+  # the filter runs and returns before any dokku command.
+  write_tasks_file <<'EOF'
+---
+- name: "play-{{ .secret_value }}"
+  inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - dokku_app:
+        app: docket-test-playfilter-first
+- name: keepzzz
+  tasks:
+    - dokku_app:
+        app: docket-test-playfilter-second
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --secret_value=playleakzzz --play missing
+  assert_failure
+  refute_output --partial "playleakzzz"
+  assert_output --partial '"play-***"'
+  # A play name carrying no secret still prints in full.
+  assert_output --partial '"keepzzz"'
+}
+
+@test "plays: plan --play hint masks a sensitive input in a play name" {
+  write_tasks_file <<'EOF'
+---
+- name: "play-{{ .secret_value }}"
+  inputs:
+    - { name: secret_value, required: true, sensitive: true }
+  tasks:
+    - dokku_app:
+        app: docket-test-playfilter-first
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --secret_value=playleakzzz --play missing
+  assert_failure
+  refute_output --partial "playleakzzz"
+  assert_output --partial '"play-***"'
+}
+
+@test "plays: --play hint masks a task-declared secret in a play name" {
+  # The task-declared values join the mask registry only after the --play
+  # filter narrows the play list, so the hint registers them from the whole
+  # file before it renders (#477).
+  write_tasks_file <<'EOF'
+---
+- name: play-taskdeclaredzzz
+  tasks:
+    - name: configure the app
+      dokku_config:
+        app: docket-test-playfilter-first
+        config:
+          TOKEN: taskdeclaredzzz
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --play missing
+  assert_failure
+  refute_output --partial "taskdeclaredzzz"
+  assert_output --partial '"play-***"'
+}
+
 @test "plays: --play composes with --tags to filter tasks within the play" {
   require_dokku
   write_tasks_file <<EOF

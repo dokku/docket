@@ -136,6 +136,16 @@ func TestFilterPlaysByName(t *testing.T) {
 			t.Errorf("error missing %q\nfull: %v", want, err)
 		}
 	}
+
+	// An empty recipe has no name to suggest, so the hint says so rather
+	// than trailing off after the colon.
+	_, err = filterPlaysByName(nil, "missing")
+	if err == nil {
+		t.Fatal("expected error for unknown play in an empty list")
+	}
+	if !strings.Contains(err.Error(), "available plays: (none)") {
+		t.Errorf("expected the (none) hint\nfull: %v", err)
+	}
 }
 
 func playNames(plays []*tasks.Play) []string {
