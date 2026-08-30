@@ -9,10 +9,15 @@ import (
 	"sync"
 )
 
-// maskPlaceholder is what every sensitive value is replaced with in user-facing
+// MaskPlaceholder is what every sensitive value is replaced with in user-facing
 // output. Length is intentionally fixed at three asterisks so masked output
 // reveals nothing about the original value (no length, prefix, or suffix).
-const maskPlaceholder = "***"
+//
+// Exported because one caller has to render the placeholder without running
+// text through MaskString: commands/apply_args.go rewrites the usage-string
+// default of a `sensitive: true` input's flag, which `--help` prints before any
+// value has been registered here.
+const MaskPlaceholder = "***"
 
 var (
 	sensitiveMu     sync.RWMutex
@@ -152,7 +157,7 @@ func MaskString(s string) string {
 		if v == "" {
 			continue
 		}
-		s = strings.ReplaceAll(s, v, maskPlaceholder)
+		s = strings.ReplaceAll(s, v, MaskPlaceholder)
 	}
 	return s
 }

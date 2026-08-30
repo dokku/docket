@@ -32,6 +32,7 @@ Each input supports these properties:
 | `default` | bool / float / int / string | zero value for the type | Used when no value is supplied. |
 | `description` | string | `""` | Shown in `--help` output. |
 | `required` | bool | `false` | Flagged by `validate --strict` when it has no default and no supplied value. |
+| `sensitive` | bool | `false` | Masks the value as `***` wherever docket prints it. See [Sensitive inputs](#sensitive-inputs). |
 | `type` | string | `string` | One of `bool`, `float`, `int`, `string`. Controls how supplied values are coerced. |
 
 Inputs are substituted into task bodies with the [sigil](https://github.com/gliderlabs/sigil)
@@ -144,6 +145,72 @@ Declaring one is reported as `reserved_input_name` by `docket validate` (and rej
 `help`, `v`, and `version` are handled by the CLI framework rather than registered as flags, so
 they are usable as input names.
 
+## Sensitive inputs
+
+An input declared `sensitive: true` holds a secret. Docket registers whatever value the input
+resolves to - whichever layer [precedence](#precedence) picked, a declared `default:` included -
+and replaces every occurrence of that literal with `***` in the text it prints.
+
+```yaml
+---
+- inputs:
+    - name: deploy_token
+      description: "Token the sync reads the private repo with"
+      required: true
+      sensitive: true
+  tasks:
+    - dokku_git_sync:
+        app: api
+        remote: "https://x-access-token:{{ .deploy_token }}@github.com/example/api.git"
+```
+
+Masking is display-only. The task still receives the real value and still sends it to the server;
+this is not encryption, and it is not storage. The recipe on disk, the `--vars-file` beside it, and
+anything `docket fmt` writes all carry the value in the clear. `sensitive:` governs what docket
+prints, nothing else.
+
+What it prints is every stream docket emits: the human output of `apply`, `plan`, and `validate`,
+the `--verbose` command echoes, `--json` on all three, `--list-tasks` on both the human and the JSON
+path, error messages, the hints an unmatched `--play` or `--start-at-task` prints, and the
+`DOKKU_TRACE` debug log. Inside those, a secret is masked wherever it landed: task names, play
+names, tags, `when:` predicates and the errors they raise, and loop items at any depth, object keys
+included. [JSON output](json-output.md) has the field-by-field list.
+
+Docket's own vocabulary is never masked. The `type`, `phase`, `probe`, and `status` fields are fixed
+enums rather than recipe content, and decorations like `(group)` and `[block]` are docket's words
+rather than yours - an input whose value happens to be `group` does not blank them out.
+
+A task type can also mark its own fields secret, with no input involved: `dokku_config` treats every
+value in its `config:` map that way, and a field that exists to carry a credential - a
+`dokku_registry_auth` password, a `dokku_certs` key - is marked in the task's definition. Those
+values are registered and masked on identical terms. The `sensitive:` input property is how you
+protect a value the task would otherwise have no reason to suspect, like the token in the `remote:`
+above. See [Writing tasks](writing-tasks.md) for the task side.
+
+### Masking widens rather than narrows
+
+Masking is literal substring replacement, and docket registers every spelling it can print a value
+in rather than only the one you supplied. A value carrying leading or trailing whitespace masks its
+trimmed spelling too, because a loop item is trimmed on its way into a task name. A value that a
+generated resource address has to quote masks its Go-escaped spelling too, so `sec"ret` masks both
+itself and `sec\"ret`. Padding or punctuating a secret widens what masks; it never narrows it.
+
+The cost of substring replacement is that a short or common value masks unrelated output as well.
+`sensitive: true` is accepted on any `type`, but what gets registered is the value as substituted -
+an `int` registers its digits, a `bool` registers `true` or `false` - so keep it for `string` inputs
+holding real secrets. An input that resolves to an empty string registers nothing at all.
+[JSON output](json-output.md#correlating-runs) lists the caveats in full, including why a task name
+masked down to `***` cannot be pasted back into `--start-at-task`.
+
+### Keep the secret out of `default:`
+
+`--help` renders a sensitive input's default as `(default "***")` rather than the literal, but that
+is the only cover a `default:` gets. A default is recipe text: it sits in the file in the clear,
+survives `docket fmt`, and travels with the recipe wherever the recipe goes. Declare the input
+`required: true` with no default and supply the value through a `--vars-file` or a CLI flag instead.
+That is the shape [`docket export`](command-reference.md#docket-export) writes - a recipe of
+`required: true, sensitive: true` inputs beside a `0600` vars-file holding the values.
+
 ## Layered values with `--vars-file`
 
 For anything beyond a couple of overrides, keep values in a file and pass it with `--vars-file`.
@@ -251,3 +318,4 @@ In a [multi-play recipe](recipes.md#multi-play-recipes), there are two kinds of 
 - [Recipes](recipes.md) - plays and multi-play structure
 - [Task envelope](task-envelope.md) - using inputs in `when:` and `loop:` expressions
 - [Command reference](command-reference.md#docket-validate) - `validate --strict` checks required inputs
+- [Command reference](command-reference.md#docket-export) - the vars-file `docket export` writes is a `--vars-file`

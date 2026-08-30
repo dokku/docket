@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
 
 	sigil "github.com/gliderlabs/sigil"
@@ -303,10 +304,32 @@ func registerInputFlags(f *flag.FlagSet, data []byte, format string) (map[string
 		default:
 			return arguments, fmt.Errorf("Error parsing input '%s': invalid type", input.Name)
 		}
+		if input.Sensitive {
+			maskFlagDefault(f, input.Name, input.Default)
+		}
 		arguments[input.Name] = arg
 	}
 
 	return arguments, nil
+}
+
+// maskFlagDefault replaces the usage-string default of a `sensitive: true`
+// input's flag with the mask placeholder. pflag renders `(default <DefValue>)`
+// straight from this field, and `--help` is rendered before the recipe is
+// parsed - the mask registry is still empty at that point, so no MaskString at
+// the print site could have caught it (#490).
+//
+// Only the display copy changes. The flag's Value still holds the real default,
+// so the input still resolves to it, and the run that follows still registers
+// and masks it like any other sensitive value. An input that declared no
+// default has nothing to hide, and is the shape `docket export` generates.
+func maskFlagDefault(f *flag.FlagSet, name, def string) {
+	if def == "" {
+		return
+	}
+	if fl := f.Lookup(name); fl != nil {
+		fl.DefValue = subprocess.MaskPlaceholder
+	}
 }
 
 // parseInputDocument decodes data as a Recipe in the given on-disk
