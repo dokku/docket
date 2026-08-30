@@ -91,6 +91,13 @@ func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 		return f
 	}
 
+	// The only error registerInputFlags still returns is an unreadable or
+	// unparseable recipe, which leaves nothing to register. Run re-resolves the
+	// recipe through loadRecipe and reports that properly, with the diagnostics
+	// the raw bytes deserve, so swallowing it here costs nothing - the same
+	// contract preloadRecipeForFlags already relies on. A malformed *input* no
+	// longer reaches this line: it is registered anyway, and rejected by the
+	// loader with a positioned diagnostic (#493).
 	arguments, err := registerInputFlags(f, data, format)
 	if err != nil {
 		return f
@@ -130,7 +137,7 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	_, varsWarnings, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	varsFileKeys, varsWarnings, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
 	if err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{
@@ -195,13 +202,21 @@ func (c *ValidateCommand) Run(args []string) int {
 	c.tasksFormat = recipe.Format
 	data := recipe.Data
 
-	overrides := map[string]bool{}
+	// --strict flags a required input nothing satisfies, which is the same
+	// question apply and plan ask before they run - so it is answered by the
+	// same predicate. The old proxy, HasValue(), could not answer it: a bool /
+	// int / float flag pointer is never nil, so every non-string input counted
+	// as supplied and input_missing never fired for one (#493).
+	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
+	overrides := make(map[string]bool, len(c.arguments))
+
 	var sensitiveValues []string
 	for name, argument := range c.arguments {
-		if argument.HasValue() {
-			overrides[name] = true
-		}
-		if argument.Sensitive {
+		overrides[name] = argument.IsSatisfied(userSet[name])
+		// Only a value the recipe declared or the user supplied is a secret.
+		// An implicit zero would register "0" or "false" and mask every
+		// unrelated occurrence of that substring.
+		if argument.Sensitive && (argument.HasDefault || userSet[name]) {
 			if v := argument.StringValue(); v != "" {
 				sensitiveValues = append(sensitiveValues, v)
 			}

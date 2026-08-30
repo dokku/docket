@@ -29,9 +29,9 @@ Each input supports these properties:
 | Property | Type | Default | Notes |
 |----------|------|---------|-------|
 | `name` | string | `""` | The variable name used in `{{ .name }}` templates. |
-| `default` | bool / float / int / string | zero value for the type | Used when no value is supplied. |
+| `default` | bool / float / int / string | zero value for the type | Used when no value is supplied. See [types and defaults](#types-and-defaults). |
 | `description` | string | `""` | Shown in `--help` output. |
-| `required` | bool | `false` | Flagged by `validate --strict` when it has no default and no supplied value. |
+| `required` | bool | `false` | Stops `plan` / `apply` when it has no default and no supplied value; flagged offline by `validate --strict`. |
 | `sensitive` | bool | `false` | Masks the value as `***` wherever docket prints it. See [Sensitive inputs](#sensitive-inputs). |
 | `type` | string | `string` | One of `bool`, `float`, `int`, `string`. Controls how supplied values are coerced. |
 
@@ -39,6 +39,31 @@ Inputs are substituted into task bodies with the [sigil](https://github.com/glid
 template library, which wraps Go's `text/template`. Anything sigil supports is available in a task
 body. Inputs themselves must not reference other variables - they are resolved first, in a separate
 phase, and then injected.
+
+## Types and defaults
+
+`default:` is optional on every type. Omit it and the input starts at the zero value for its `type:` -
+`""` for a `string`, `0` for an `int` or a `float`, `false` for a `bool`:
+
+```yaml
+---
+- inputs:
+    - { name: debug, type: bool }        # starts false
+    - { name: replicas, type: int }      # starts 0
+    - { name: app_name, default: web }
+  tasks:
+    - dokku_app: { app: "{{ .app_name }}" }
+```
+
+A default you do write has to be readable as the type it is declared under. `docket validate`
+reports one that is not as `invalid_input_default`, and a `type:` outside the four above as
+`invalid_input_type`, both naming the input and the line it sits on; `plan` and `apply` refuse the
+recipe offline with the same message rather than running it.
+
+A `bool` default is spelled `true`, `yes`, `on`, or `y` (or `false`, `no`, `off`, `n`) - the same
+vocabulary a `--vars-file` uses, and deliberately not pflag's, which is what parses a `--debug=1`
+typed on the command line. A `default:` is read as the text of the scalar you wrote, so an unquoted
+`default: true` is fine but `default: True` is not.
 
 ## Input names
 
@@ -116,9 +141,17 @@ quick way to see what a recipe accepts.
 
 An input you do not supply falls back to its declared `default:`. There is no interactive prompt -
 docket is meant to run unattended in scripts and CI. An input declared `required: true` with no
-default and no supplied value renders as an empty string; `docket validate --strict` flags exactly
-that case so a recipe that cannot run without a runtime override fails the lint instead of deploying
-with a blank value.
+default and no supplied value stops the run before the first task, on every type:
+
+```text
+ !     Missing flag '--deploy_token'
+```
+
+`docket validate --strict` flags exactly that case offline, as `input_missing`, so a recipe that
+cannot run without a runtime override fails the lint instead of failing the deploy. Declaring a
+`default:` satisfies the requirement, and so does supplying a value on the command line or through
+a `--vars-file` - a value being the operative word: `--name=` types the flag and supplies nothing,
+and is refused the same way passing nothing at all is.
 
 These input names collide with docket's own command flags and cannot be used as input names.
 Declaring one is reported as `reserved_input_name` by `docket validate` (and rejected by `plan` /
@@ -198,7 +231,9 @@ itself and `sec\"ret`. Padding or punctuating a secret widens what masks; it nev
 The cost of substring replacement is that a short or common value masks unrelated output as well.
 `sensitive: true` is accepted on any `type`, but what gets registered is the value as substituted -
 an `int` registers its digits, a `bool` registers `true` or `false` - so keep it for `string` inputs
-holding real secrets. An input that resolves to an empty string registers nothing at all.
+holding real secrets. An input that resolves to an empty string registers nothing at all, and
+neither does one left at the zero value its type starts from: an `int` you never supplied would
+otherwise register `0` and blank out every unrelated digit in the output.
 [JSON output](json-output.md#correlating-runs) lists the caveats in full, including why a task name
 masked down to `***` cannot be pasted back into `--start-at-task`.
 
