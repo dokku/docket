@@ -224,18 +224,26 @@ func (c *PlanCommand) Run(args []string) int {
 	// declared inputs the surviving play's when: depends on.
 	fileLevelKeys := tasks.FileLevelInputNames(plays)
 
-	plays, err = filterPlaysByName(plays, c.play)
+	selected, err := filterPlaysByName(plays, c.play)
 	if err != nil {
+		// The hint names every play in the file, so a value any of their tasks
+		// declares sensitive is in scope for this message - unlike the filtered
+		// collection below, which deliberately leaves out a play --play
+		// excluded. Registering the whole file costs nothing here: this branch
+		// prints one line and returns.
+		subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
 		c.Ui.Error(err.Error())
 		return 1
 	}
+	plays = selected
 
 	// Task-declared sensitive values join the input-level ones registered
 	// above, ahead of the --list-tasks branch below: it renders the whole
 	// resolved plan and returns without reaching the run loop. Collecting
 	// from the filtered play list rather than the whole file keeps a value
 	// that is only secret in a play --play excluded from masking output it
-	// never appears in.
+	// never appears in. The unmatched --play branch above is the one place
+	// that collects from the whole file, and says why.
 	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
 
 	if c.listTasks {

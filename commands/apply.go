@@ -234,11 +234,18 @@ func (c *ApplyCommand) Run(args []string) int {
 	// declared inputs the surviving play's when: depends on.
 	fileLevelKeys := tasks.FileLevelInputNames(plays)
 
-	plays, err = filterPlaysByName(plays, c.play)
+	selected, err := filterPlaysByName(plays, c.play)
 	if err != nil {
+		// The hint names every play in the file, so a value any of their tasks
+		// declares sensitive is in scope for this message - unlike the filtered
+		// collection below, which deliberately leaves out a play --play
+		// excluded. Registering the whole file costs nothing here: this branch
+		// prints one line and returns.
+		subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
 		c.Ui.Error(err.Error())
 		return 1
 	}
+	plays = selected
 
 	// Task-declared sensitive values join the input-level ones registered
 	// above, ahead of anything that renders a task name. Both branches below
@@ -246,7 +253,9 @@ func (c *ApplyCommand) Run(args []string) int {
 	// --start-at-task hint lists every available name, and --list-tasks
 	// renders the whole resolved plan. Collecting from the filtered play
 	// list rather than the whole file keeps a value that is only secret in a
-	// play --play excluded from masking output it never appears in.
+	// play --play excluded from masking output it never appears in. The
+	// unmatched --play branch above is the one place that collects from the
+	// whole file, and says why.
 	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
 
 	if c.startAtTask != "" {
@@ -895,6 +904,43 @@ func formatStartAtTaskNames(plays []*tasks.Play) string {
 	return strings.Join(quoted, ", ")
 }
 
+// formatAvailablePlayNames builds the "available plays: ..." hint for an
+// unmatched --play error. Names render in source order, quoted so the user can
+// copy one verbatim back onto the CLI.
+//
+// Each name is masked before it is quoted, for the reason
+// formatStartAtTaskNames gives: `%q` escapes what it wraps, so masking the
+// finished message would be matching a registered literal against text that
+// carries the secret escaped (#477).
+func formatAvailablePlayNames(plays []*tasks.Play) string {
+	quoted := make([]string, 0, len(plays))
+	for _, play := range plays {
+		if play == nil {
+			continue
+		}
+		quoted = append(quoted, fmt.Sprintf("%q", subprocess.MaskString(play.Name)))
+	}
+	if len(quoted) == 0 {
+		return "(none)"
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// unknownPlayError is what filterPlaysByName returns for an unmatched --play.
+// It formats lazily rather than at construction so the caller can finish
+// populating the mask registry with the recipe's task-declared sensitive
+// values first: those are collected from the play list only after the filter
+// runs, and a message built eagerly would already have missed them (#477).
+type unknownPlayError struct {
+	target string
+	plays  []*tasks.Play
+}
+
+func (e *unknownPlayError) Error() string {
+	return fmt.Sprintf("--play %q: no play with that name; available plays: %s",
+		subprocess.MaskString(e.target), formatAvailablePlayNames(e.plays))
+}
+
 // filterPlaysByName narrows plays to the single play whose Name matches
 // target. An empty target returns plays unchanged. An unmatched target
 // returns an error so the user sees a clear "no such play" diagnostic
@@ -904,15 +950,11 @@ func filterPlaysByName(plays []*tasks.Play, target string) ([]*tasks.Play, error
 		return plays, nil
 	}
 	for _, play := range plays {
-		if play.Name == target {
+		if play != nil && play.Name == target {
 			return []*tasks.Play{play}, nil
 		}
 	}
-	names := make([]string, 0, len(plays))
-	for _, play := range plays {
-		names = append(names, fmt.Sprintf("%q", play.Name))
-	}
-	return nil, fmt.Errorf("--play %q: no play with that name; available plays: %v", target, names)
+	return nil, &unknownPlayError{target: target, plays: plays}
 }
 
 // newEmitter constructs the EventEmitter for this run. --json builds a
