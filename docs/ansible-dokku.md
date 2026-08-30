@@ -307,20 +307,32 @@ entry that does not exist yet, and `storage:set` plus the `storage:annotations:s
 | `create_host_dir: true` | `dokku_storage_entry` | `storage:create` creates the directory. Emit one entry task per distinct host directory, ahead of the `dokku_storage_mount` tasks that reference it. |
 | the host path itself | `dokku_storage_entry.path` | Omit it to get dokku's default, `/var/lib/dokku/data/storage/<name>`. |
 | `user` and `group` | `dokku_storage_entry.chown` | One value, not two: dokku's helper runs `chown -R <id>:<id>`, so a module call whose `user` and `group` differ cannot be expressed. The module's `"32767"` default is `chown: herokuish`. |
-| `os.chmod(host_dir, 0o777)` | **stays in the wrapper for now** | dokku creates the directory `0755`. `storage:create --mode` sets a different one as of dokku 0.38.27, but `dokku_storage_entry` has no `mode` field yet ([#480](https://github.com/dokku/docket/issues/480)). |
-| `destroy_host_dir: true` | **stays in the wrapper for now** | `dokku_storage_entry` with `state: absent` deregisters the entry and leaves the docker-local directory on disk. `storage:destroy --destroy-host-dir` removes it as of dokku 0.38.27, but the task does not pass the flag yet ([#480](https://github.com/dokku/docket/issues/480)). |
+| `os.chmod(host_dir, 0o777)` | `dokku_storage_entry.mode` | The module chmods unconditionally; docket leaves the directory at the `0755` dokku creates it with unless the recipe names a mode, so a wrapper reproducing the module sends `mode: "0777"` outright. Quote it, or send the 3 digit form - `755` and `0755` are the same value. |
+| `destroy_host_dir: true` | `dokku_storage_entry.destroy_host_dir` | Rides with `state: absent` and is refused anywhere else, since it is a flag on `storage:destroy`. Omit it and the directory survives the entry, which is the module's `destroy_host_dir: false`. Not quite equivalent: the module calls `os.rmdir`, which fails on a directory holding anything, where dokku removes the contents too. |
 | `os.lexists("/home/dokku/<app>")` | nothing to forward | The module stats the filesystem to decide whether the app exists. docket asks dokku, so a wrapper drops the probe rather than translating it. |
 
-One constraint on `chown` is worth knowing before a wrapper leans on it: dokku refuses the flag
-outright when the entry sits at a non-default `path`, and asks the operator to chown that path
-themselves. Ownership does converge, though. `dokku_storage_entry` compares `chown` against what
-the entry records and reaches for `storage:set` when the two disagree, which re-runs the chown on
-the docker-local directory - so a wrapper that changes `user` and `group` between runs gets the
-new ownership applied rather than recorded, the same as the module's own per-run `os.chown`.
+One constraint on `chown` and `mode` is worth knowing before a wrapper leans on either: dokku
+refuses both outright when the entry sits at a non-default `path`, and asks the operator to manage
+that path themselves. The same goes for `destroy_host_dir`, whose removal helper only ever operates
+on the default location. docket does not pre-empt any of the three, because the default path depends
+on the server's `DOKKU_LIB_ROOT` and docket may be driving that server over SSH - so a wrapper that
+sends a `path` gets the refusal from dokku at apply time.
 
-Everything else `storage:create` accepts other than `--mode` is a field on the task -
-`scheduler`, `size`, `access_mode`, `storage_class`, `namespace`, `reclaim_policy`,
-`annotations`, and `labels` - none of which the module has a counterpart for.
+Ownership and permissions do converge, though. `dokku_storage_entry` compares `chown` and `mode`
+against what the entry records and reaches for `storage:set` when they disagree, which re-runs the
+chown and the chmod on the docker-local directory - so a wrapper that changes `user`, `group`, or
+the mode between runs gets the new values applied rather than recorded, the same as the module's own
+per-run `os.chown` and `os.chmod`. dokku's chmod is not recursive, matching the module's; its chown
+is, which the `user` / `group` row above already notes.
+
+`docket plan` names the host directory in its mutation line whenever the destroy would take it -
+because the recipe set `destroy_host_dir`, or because the entry records `reclaim_policy: Delete`,
+which dokku honors on docker-local with or without the flag. A wrapper reporting `diff` in
+`check_mode` gets that for free.
+
+Everything else `storage:create` accepts is a field on the task - `scheduler`, `size`,
+`access_mode`, `storage_class`, `namespace`, `reclaim_policy`, `annotations`, and `labels` - none of
+which the module has a counterpart for.
 
 ## Required and optional fields disagree
 
@@ -364,11 +376,6 @@ task lands.
   plugin (`git-sync:set <app> remote`), which docket has no task for. Mind the name collision:
   docket's `dokku_git_sync` is core `git:sync`, which is what the `dokku_clone` module does. The two
   are unrelated.
-
-Separately, two pieces of `dokku_storage` stay in the wrapper for now: the `0o777` chmod and the
-`destroy_host_dir` removal. dokku 0.38.27 added a command for each, and exposing them on
-`dokku_storage_entry` is tracked in [#480](https://github.com/dokku/docket/issues/480). See
-[host directories](#host-directories).
 
 ## docket tasks with no ansible-dokku module
 

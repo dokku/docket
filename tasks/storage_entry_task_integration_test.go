@@ -1,9 +1,17 @@
 package tasks
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// dokkuStorageRoot is where dokku puts an entry's host directory when the
+// recipe names no path. The integration environment runs a stock install, so
+// DOKKU_LIB_ROOT is its default - the tests that stat a directory say so
+// rather than asking docket, which deliberately never computes this path.
+const dokkuStorageRoot = "/var/lib/dokku/data/storage"
 
 func TestIntegrationStorageEntry(t *testing.T) {
 	skipIfNoDokkuT(t)
@@ -212,6 +220,129 @@ func TestIntegrationStorageEntryConvergesChown(t *testing.T) {
 	}
 }
 
+func TestIntegrationStorageEntryConvergesMode(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "docket-test-entry-converge-mode"
+
+	destroy := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
+	destroy.Execute()
+	defer destroy.Execute()
+
+	create := StorageEntryTask{Name: name, Mode: "0750", State: StatePresent}
+	if result := create.Execute(); result.Error != nil {
+		t.Fatalf("failed to create entry: %v", result.Error)
+	}
+	hostDir := filepath.Join(dokkuStorageRoot, name)
+	assertDirModeT(t, hostDir, 0o750)
+
+	// The entry already exists, so the permission change goes through
+	// storage:set rather than a second storage:create - which is what re-runs
+	// the chmod on the host directory instead of only recording a new value.
+	converge := StorageEntryTask{Name: name, Mode: "0777", State: StatePresent}
+	plan := converge.Plan()
+	if plan.Status != PlanStatusModify {
+		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
+	}
+
+	result := converge.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to converge mode: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for a mode change")
+	}
+
+	if entry := findStorageEntryT(t, name); entry.Mode != "0777" {
+		t.Errorf("expected the registry to record mode '0777', got %q", entry.Mode)
+	}
+	assertDirModeT(t, hostDir, 0o777)
+
+	// A third run settles: the recipe now matches what the registry holds.
+	if result := converge.Execute(); result.Changed {
+		t.Error("expected changed=false once the mode matches")
+	}
+}
+
+func TestIntegrationStorageEntryNormalizesAThreeDigitMode(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "docket-test-entry-mode-normalize"
+
+	destroy := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
+	destroy.Execute()
+	defer destroy.Execute()
+
+	// dokku records the 4 digit form whatever the recipe wrote. docket has to
+	// compare the same way, or this recipe would report drift on every run and
+	// re-apply a mode that was already correct.
+	create := StorageEntryTask{Name: name, Mode: "700", State: StatePresent}
+	if result := create.Execute(); result.Error != nil {
+		t.Fatalf("failed to create entry: %v", result.Error)
+	}
+	if entry := findStorageEntryT(t, name); entry.Mode != "0700" {
+		t.Errorf("expected the registry to record mode '0700', got %q", entry.Mode)
+	}
+	assertDirModeT(t, filepath.Join(dokkuStorageRoot, name), 0o700)
+
+	if result := create.Execute(); result.Changed {
+		t.Error("expected changed=false for a three digit mode that is already applied")
+	}
+}
+
+func TestIntegrationStorageEntryDestroyHostDir(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	name := "docket-test-entry-destroy-host-dir"
+	hostDir := filepath.Join(dokkuStorageRoot, name)
+
+	cleanup := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
+	cleanup.Execute()
+	defer cleanup.Execute()
+
+	create := StorageEntryTask{Name: name, State: StatePresent}
+	if result := create.Execute(); result.Error != nil {
+		t.Fatalf("failed to create entry: %v", result.Error)
+	}
+	if _, err := os.Stat(hostDir); err != nil {
+		t.Fatalf("expected %s to exist after create: %v", hostDir, err)
+	}
+
+	// A plain destroy deregisters the entry and leaves the directory, which is
+	// the half dokku_storage_entry has always covered.
+	if result := (StorageEntryTask{Name: name, State: StateAbsent}).Execute(); result.Error != nil {
+		t.Fatalf("failed to destroy entry: %v", result.Error)
+	}
+	if _, err := os.Stat(hostDir); err != nil {
+		t.Fatalf("expected a plain destroy to leave %s in place: %v", hostDir, err)
+	}
+
+	// The flag is the other half: re-create, then destroy the directory too.
+	if result := create.Execute(); result.Error != nil {
+		t.Fatalf("failed to re-create entry: %v", result.Error)
+	}
+
+	destroy := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
+	plan := destroy.Plan()
+	if plan.Status != PlanStatusDestroy {
+		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusDestroy, plan.Status, plan.Error)
+	}
+	if len(plan.Mutations) != 1 || !strings.Contains(plan.Mutations[0], hostDir) {
+		t.Errorf("expected the plan to name %s, got %v", hostDir, plan.Mutations)
+	}
+
+	result := destroy.Execute()
+	if result.Error != nil {
+		t.Fatalf("failed to destroy entry and host directory: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for destroy")
+	}
+	if _, err := os.Stat(hostDir); !os.IsNotExist(err) {
+		t.Errorf("expected %s to be removed, stat returned: %v", hostDir, err)
+	}
+}
+
 func TestIntegrationStorageEntryConvergesOneAnnotationKey(t *testing.T) {
 	skipIfNoDokkuT(t)
 
@@ -282,6 +413,21 @@ func TestIntegrationStorageEntryRefusesAPathChange(t *testing.T) {
 	}
 	if plan.Error == nil || !strings.Contains(plan.Error.Error(), "records path") {
 		t.Errorf("expected an immutable-path error, got: %v", plan.Error)
+	}
+}
+
+// assertDirModeT checks the host directory's permission bits on disk. It is
+// what separates a converge that re-runs the chmod from one that only
+// rewrites the registry's JSON - the registry cannot tell the two apart, and
+// neither can docket's own probe.
+func assertDirModeT(t *testing.T, dir string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("failed to stat %s: %v", dir, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Errorf("expected %s to have mode %04o, got %04o", dir, want, got)
 	}
 }
 

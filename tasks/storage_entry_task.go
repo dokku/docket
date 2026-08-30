@@ -16,13 +16,17 @@ import (
 // exist independently of any single app, and an attachment created via
 // dokku_storage_mount references them by name.
 //
-// The entry name selects the entry; every other field is compared against
-// what `storage:list-entries` records for it, so a recipe that changes one
-// converges on the next apply rather than being applied once at create
-// time. A field the recipe omits is unmanaged: it is neither compared nor
-// cleared, which is what stops a recipe naming only `name` and `chown`
-// from dropping a `size` it never mentions. Clearing an attribute is a
-// manual `dokku storage:set <name> <property>` with no value.
+// The entry name selects the entry; every other attribute is compared
+// against what `storage:list-entries` records for it, so a recipe that
+// changes one converges on the next apply rather than being applied once at
+// create time. A field the recipe omits is unmanaged: it is neither
+// compared nor cleared, which is what stops a recipe naming only `name` and
+// `chown` from dropping a `size` it never mentions. Clearing an attribute is
+// a manual `dokku storage:set <name> <property>` with no value.
+//
+// `destroy_host_dir` is the one field that is not an attribute. It modifies
+// the `storage:destroy` the `absent` state issues, so there is nothing on
+// the entry to compare it against and nothing for an export to reconstruct.
 //
 // Four fields cannot be converged, because dokku cannot change them on an
 // entry that exists: `storage:set` refuses an access-mode or storage-class
@@ -57,6 +61,10 @@ type StorageEntryTask struct {
 	// creation and again whenever the recipe changes it.
 	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Ownership applied to the entry's host directory: an ownership preset or a numeric uid (0-65535). dokku sets the owner and the group to the same id, and refuses the value unless the entry sits at its default host path. Converged on an entry that exists, which re-runs the chown on a docker-local directory"`
 
+	// Mode is the octal permission set applied to the entry's host
+	// directory, on creation and again whenever the recipe changes it.
+	Mode string `required:"false" yaml:"mode,omitempty" description:"Octal permissions applied to the entry's host directory: a 3 or 4 digit mode, recorded in its 4 digit form so 755 and 0755 are the same value (docker-local scheduler; rejected on k3s). dokku refuses the value unless the entry sits at its default host path, and applies it non-recursively. Converged on an entry that exists, which re-runs the chmod on a docker-local directory. Omit it to leave the directory at the 0755 dokku creates it with"`
+
 	// ReclaimPolicy is the reclaim policy (k3s scheduler)
 	ReclaimPolicy string `required:"false" yaml:"reclaim_policy,omitempty" options:"Retain,Delete" description:"Reclaim policy applied to the underlying volume (k3s scheduler). Converged on an entry that exists"`
 
@@ -65,6 +73,10 @@ type StorageEntryTask struct {
 
 	// Labels are the volume labels (k3s scheduler)
 	Labels map[string]string `required:"false" yaml:"labels,omitempty" description:"Map of labels set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone"`
+
+	// DestroyHostDir removes the host directory alongside the entry, and
+	// is only meaningful under state 'absent'.
+	DestroyHostDir bool `required:"false" yaml:"destroy_host_dir,omitempty" description:"Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set"`
 
 	// State is the desired state of the storage entry
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage entry"`
@@ -91,12 +103,12 @@ func (t StorageEntryTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t StorageEntryTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "every field the task accepts is exported; an entry's directory mode is not, since the task has no mode field yet (tracked in dokku/docket#480)"}
+	return ExportSupport{Status: ExportSupported}
 }
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t StorageEntryTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbeSupported, Caveat: "every field is compared against what storage:list-entries records for the entry, which is the recorded chown rather than the host directory's ownership on disk; a directory chowned out of band is not detected"}
+	return ProbeSupport{Status: ProbeSupported, Caveat: "every attribute is compared against what storage:list-entries records for the entry, which is the recorded chown and mode rather than the host directory's ownership and permissions on disk; a directory chowned or chmodded out of band is not detected"}
 }
 
 // Examples returns the examples for the storage entry task
@@ -117,6 +129,13 @@ func (t StorageEntryTask) Examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Set the permissions on an entry's host directory",
+			StorageEntryTask: StorageEntryTask{
+				Name: "node-js-app-data",
+				Mode: "0777",
+			},
+		},
+		{
 			Name: "Create a storage entry at an explicit host path",
 			StorageEntryTask: StorageEntryTask{
 				Name: "node-js-app-data",
@@ -128,6 +147,14 @@ func (t StorageEntryTask) Examples() ([]Doc, error) {
 			StorageEntryTask: StorageEntryTask{
 				Name:  "node-js-app-data",
 				State: StateAbsent,
+			},
+		},
+		{
+			Name: "Destroy a storage entry and remove its host directory",
+			StorageEntryTask: StorageEntryTask{
+				Name:           "node-js-app-data",
+				DestroyHostDir: true,
+				State:          StateAbsent,
 			},
 		},
 	})
@@ -162,6 +189,9 @@ func (t StorageEntryTask) createArgs() []string {
 	if t.Chown != "" {
 		args = append(args, "--chown", t.Chown)
 	}
+	if t.Mode != "" {
+		args = append(args, "--mode", normalizeDirectoryMode(t.Mode))
+	}
 	if t.ReclaimPolicy != "" {
 		args = append(args, "--reclaim-policy", t.ReclaimPolicy)
 	}
@@ -195,7 +225,10 @@ func kvFlags(flag string, values map[string]string) []string {
 // that renders a flag but is missing here would be silently accepted under
 // state 'absent', where storage:destroy has nowhere to put it. 'scheduler'
 // is deliberately absent - it carries a default, so it is never empty by
-// the time Validate runs.
+// the time Validate runs. So is 'destroy_host_dir', which renders a flag on
+// storage:destroy rather than storage:create and is therefore the one field
+// state 'absent' wants rather than refuses; Validate rejects it from the
+// other direction instead.
 func (t StorageEntryTask) setEntryOptions() []string {
 	var set []string
 	for _, opt := range []struct {
@@ -208,6 +241,7 @@ func (t StorageEntryTask) setEntryOptions() []string {
 		{"storage_class", t.StorageClass != ""},
 		{"namespace", t.Namespace != ""},
 		{"chown", t.Chown != ""},
+		{"mode", t.Mode != ""},
 		{"reclaim_policy", t.ReclaimPolicy != ""},
 		{"annotations", len(t.Annotations) > 0},
 		{"labels", len(t.Labels) > 0},
@@ -223,6 +257,25 @@ func (t StorageEntryTask) setEntryOptions() []string {
 // place of an absolute path on a docker-local entry. Mirrors the regexp in
 // dokku's plugins/storage/entry.go.
 var dockerNamedVolume = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
+
+// directoryMode matches the 3 or 4 digit octal directory mode dokku accepts
+// for --mode. Mirrors the regexp in dokku's plugins/storage/entry.go.
+var directoryMode = regexp.MustCompile(`^[0-7]{3,4}$`)
+
+// normalizeDirectoryMode canonicalizes a mode to the 4 digit form the
+// registry records, mirroring NormalizeDirectoryMode in dokku's
+// plugins/storage/entry.go. Convergence depends on it: dokku stores 0755
+// whether the caller wrote 755 or 0755, so comparing the raw recipe value
+// against the recorded one would report drift on every run for a recipe
+// that wrote three digits, and each apply would "fix" a mode that was
+// already correct. Callers validate the value first, so a mode that is
+// neither 3 nor 4 digits is returned unchanged rather than mangled.
+func normalizeDirectoryMode(mode string) string {
+	if len(mode) == 3 {
+		return "0" + mode
+	}
+	return mode
+}
 
 // storageAccessModes lists the values dokku accepts for --access-mode.
 var storageAccessModes = map[string]bool{
@@ -247,6 +300,13 @@ func (t StorageEntryTask) Validate() error {
 			return fmt.Errorf("'%s' must not be set for state 'absent'", strings.Join(set, "', '"))
 		}
 		return nil
+	}
+
+	// The mirror of the check above: storage:destroy is the only command
+	// that takes the flag, so a recipe asking for it under any other state
+	// is asking for a removal that will never happen.
+	if t.DestroyHostDir {
+		return errors.New("'destroy_host_dir' must not be set for state 'present'")
 	}
 
 	// An omitted scheduler is docker-local: createArgs drops the flag so
@@ -285,12 +345,19 @@ func (t StorageEntryTask) Validate() error {
 		if t.ReclaimPolicy != "" && t.ReclaimPolicy != "Retain" && t.ReclaimPolicy != "Delete" {
 			return errors.New("'reclaim_policy' must be one of Retain, Delete")
 		}
+		if t.Mode != "" {
+			return errors.New("'mode' must not be set for scheduler 'k3s'")
+		}
 	default:
 		return fmt.Errorf("'scheduler' must be one of docker-local, k3s, got %q", t.Scheduler)
 	}
 
 	if t.Chown != "" && !validChown(t.Chown) {
 		return errors.New("'chown' must be one of heroku, herokuish, paketo, root, false or a numeric uid (0-65535)")
+	}
+
+	if t.Mode != "" && !directoryMode.MatchString(t.Mode) {
+		return errors.New("'mode' must be a 3 or 4 digit octal directory mode, such as 0755")
 	}
 
 	for _, m := range []struct {
@@ -379,15 +446,28 @@ func (t StorageEntryTask) Plan() PlanResult {
 			if entry == nil {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
-			inputs := []subprocess.ExecCommandInput{{
-				Command: "dokku",
-				Args:    []string{"--quiet", "storage:destroy", "--force", t.Name},
-			}}
+			// dokku refuses the flag outright on anything but a docker-local
+			// entry, where the underlying volume follows the reclaim policy
+			// instead. Reporting it here fails the plan rather than the apply,
+			// the same way an immutable attribute mismatch does.
+			if t.DestroyHostDir && entry.Scheduler != "docker-local" {
+				return PlanResult{
+					Status: PlanStatusError,
+					Error: fmt.Errorf("storage entry %s records scheduler %q: 'destroy_host_dir' only applies to a docker-local entry, whose counterpart elsewhere is the entry's reclaim_policy",
+						t.Name, entry.Scheduler),
+				}
+			}
+			args := []string{"--quiet", "storage:destroy", "--force"}
+			if t.DestroyHostDir {
+				args = append(args, "--destroy-host-dir")
+			}
+			args = append(args, t.Name)
+			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "entry present",
-				Mutations: []string{fmt.Sprintf("destroy storage entry %s", t.Name)},
+				Mutations: []string{formatStorageEntryDestroy(t, *entry)},
 				Commands:  resolveCommands(inputs),
 				apply: func() TaskOutputState {
 					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
@@ -442,15 +522,19 @@ func immutableStorageEntryAttributes(t StorageEntryTask, e storageEntry) []stora
 
 // mutableStorageEntryAttributes are the scalar fields `storage:set`
 // converges, in struct field order so plan and apply build byte-identical
-// argv across runs. dokku re-applies the host directory's ownership
-// whenever a storage:set touches chown, so setting it here changes the
-// directory on a docker-local entry rather than only the recorded value -
-// which is the whole reason attribute convergence is worth doing.
+// argv across runs. dokku re-applies the host directory's ownership and
+// permissions whenever a storage:set touches chown or mode, so setting
+// either here changes the directory on a docker-local entry rather than only
+// the recorded value - which is the whole reason attribute convergence is
+// worth doing. mode is normalized to the 4 digit form the registry records,
+// or a recipe writing three digits would drift forever against its own
+// applied value.
 func mutableStorageEntryAttributes(t StorageEntryTask, e storageEntry) []storageEntryAttribute {
 	return []storageEntryAttribute{
 		{Field: "size", Property: "size", Desired: t.Size, Current: e.Size},
 		{Field: "namespace", Property: "namespace", Desired: t.Namespace, Current: e.Namespace},
 		{Field: "chown", Property: "chown", Desired: t.Chown, Current: e.Chown},
+		{Field: "mode", Property: "mode", Desired: normalizeDirectoryMode(t.Mode), Current: e.Mode},
 		{Field: "reclaim_policy", Property: "reclaim-policy", Desired: t.ReclaimPolicy, Current: e.ReclaimPolicy},
 	}
 }
@@ -541,6 +625,28 @@ func formatStorageEntrySet(label, desired, current string) string {
 	return fmt.Sprintf("set %s=%s (was %q)", label, desired, current)
 }
 
+// formatStorageEntryDestroy renders the destroy mutation, naming the host
+// directory when the apply would take it with the entry. dokku removes it
+// either because the recipe asked or because the entry records a Delete
+// reclaim policy, so the recipe's flag alone does not answer the question -
+// a plan reporting only what the recipe asked for would stay silent about a
+// directory that is about to go.
+//
+// One case over-reports: dokku's removal helper only ever operates on the
+// default host path, so a Delete policy on a custom path is warned about and
+// skipped. dokku's own entry validation refuses to create that combination,
+// which leaves only entries written before it did - and docket cannot tell
+// them apart anyway, since the default path depends on the server's
+// DOKKU_LIB_ROOT.
+func formatStorageEntryDestroy(t StorageEntryTask, entry storageEntry) string {
+	removesHostDir := entry.Scheduler == "docker-local" &&
+		(t.DestroyHostDir || entry.ReclaimPolicy == "Delete")
+	if !removesHostDir {
+		return fmt.Sprintf("destroy storage entry %s", t.Name)
+	}
+	return fmt.Sprintf("destroy storage entry %s and its host directory %s", t.Name, entry.HostPath)
+}
+
 // ExportGlobal reads the named storage registry entries and returns a
 // dokku_storage_entry task per explicitly-created entry. Auto-generated
 // "legacy-" entries (created implicitly by legacy bind-mounts) are skipped
@@ -548,9 +654,11 @@ func formatStorageEntrySet(label, desired, current string) string {
 //
 // storage:list-entries marshals the whole entry, so every field the task
 // can set comes back from the one call. Reconstructing all of them is what
-// makes the export lossless: dropping chown would lose the host
-// directory's ownership, and dropping size would produce a k3s entry the
-// task's own validation rejects.
+// makes the export lossless: dropping chown or mode would lose the host
+// directory's ownership and permissions, and dropping size would produce a
+// k3s entry the task's own validation rejects. destroy_host_dir is not
+// exported because it is not state - it modifies a destroy the exported
+// recipe does not perform.
 func (t StorageEntryTask) ExportGlobal() ([]interface{}, error) {
 	entries, err := storageEntries()
 	if err != nil {
@@ -572,6 +680,7 @@ func (t StorageEntryTask) ExportGlobal() ([]interface{}, error) {
 			StorageClass:  e.StorageClass,
 			Namespace:     e.Namespace,
 			Chown:         e.Chown,
+			Mode:          e.Mode,
 			ReclaimPolicy: e.ReclaimPolicy,
 			Annotations:   e.Annotations,
 			Labels:        e.Labels,
@@ -590,6 +699,7 @@ type storageEntry struct {
 	StorageClass  string            `json:"storage_class"`
 	Namespace     string            `json:"namespace"`
 	Chown         string            `json:"chown"`
+	Mode          string            `json:"mode"`
 	ReclaimPolicy string            `json:"reclaim_policy"`
 	Annotations   map[string]string `json:"annotations"`
 	Labels        map[string]string `json:"labels"`

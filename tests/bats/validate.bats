@@ -337,6 +337,65 @@ EOF
   assert_output --partial "dokku reads an empty value as a delete"
 }
 
+@test "docket validate exits 1 on a storage entry mode that is not octal" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_entry:
+        name: docket-test-validate-data
+        mode: "0888"
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'mode' must be a 3 or 4 digit octal directory mode"
+}
+
+@test "docket validate exits 1 on a storage entry mode under the k3s scheduler" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_entry:
+        name: docket-test-validate-data
+        scheduler: k3s
+        size: 2Gi
+        mode: "0777"
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'mode' must not be set for scheduler 'k3s'"
+}
+
+@test "docket validate exits 1 on destroy_host_dir outside state absent" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_entry:
+        name: docket-test-validate-data
+        destroy_host_dir: true
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'destroy_host_dir' must not be set for state 'present'"
+}
+
+@test "docket validate accepts an unquoted octal storage entry mode" {
+  # A YAML scalar reaches the string field verbatim, so 0755 is the mode the
+  # recipe wrote rather than a number YAML has reinterpreted as decimal.
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_entry:
+        name: docket-test-validate-data
+        mode: 0755
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+}
+
 @test "docket validate exits 1 on a scheduler-k3s profile name too long for its helm release (#482)" {
   write_tasks_file <<EOF
 ---

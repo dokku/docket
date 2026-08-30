@@ -6,11 +6,11 @@ Creates or destroys a named storage registry entry
 
 ## Export support
 
-Partial - every field the task accepts is exported; an entry's directory mode is not, since the task has no mode field yet (tracked in dokku/docket#480).
+Supported.
 
 ## Probe support
 
-Supported - every field is compared against what storage:list-entries records for the entry, which is the recorded chown rather than the host directory's ownership on disk; a directory chowned out of band is not detected.
+Supported - every attribute is compared against what storage:list-entries records for the entry, which is the recorded chown and mode rather than the host directory's ownership and permissions on disk; a directory chowned or chmodded out of band is not detected.
 
 ## Identity
 
@@ -28,9 +28,11 @@ Keyed by `name`.
 | `storage_class` | string | no |  |  | Storage class name (k3s scheduler; rejected on docker-local, and mutually exclusive with path). Cannot be changed on an entry that exists; a recipe that disagrees with the recorded value is reported as an error |
 | `namespace` | string | no |  |  | Namespace (scheduler-dependent). Converged on an entry that exists |
 | `chown` | string | no |  | heroku, herokuish, paketo, root, false | Ownership applied to the entry's host directory: an ownership preset or a numeric uid (0-65535). dokku sets the owner and the group to the same id, and refuses the value unless the entry sits at its default host path. Converged on an entry that exists, which re-runs the chown on a docker-local directory |
+| `mode` | string | no |  |  | Octal permissions applied to the entry's host directory: a 3 or 4 digit mode, recorded in its 4 digit form so 755 and 0755 are the same value (docker-local scheduler; rejected on k3s). dokku refuses the value unless the entry sits at its default host path, and applies it non-recursively. Converged on an entry that exists, which re-runs the chmod on a docker-local directory. Omit it to leave the directory at the 0755 dokku creates it with |
 | `reclaim_policy` | string | no |  | Retain, Delete | Reclaim policy applied to the underlying volume (k3s scheduler). Converged on an entry that exists |
 | `annotations` | dict | no |  |  | Map of annotations set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone |
 | `labels` | dict | no |  |  | Map of labels set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone |
+| `destroy_host_dir` | bool | no |  |  | Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set |
 | `state` | string | no | present | present, absent | Desired state of the storage entry |
 
 ## Examples
@@ -51,6 +53,14 @@ dokku_storage_entry:
     chown: root
 ```
 
+### Set the permissions on an entry's host directory
+
+```yaml
+dokku_storage_entry:
+    name: node-js-app-data
+    mode: "0777"
+```
+
 ### Create a storage entry at an explicit host path
 
 ```yaml
@@ -64,6 +74,15 @@ dokku_storage_entry:
 ```yaml
 dokku_storage_entry:
     name: node-js-app-data
+    state: absent
+```
+
+### Destroy a storage entry and remove its host directory
+
+```yaml
+dokku_storage_entry:
+    name: node-js-app-data
+    destroy_host_dir: true
     state: absent
 ```
 
