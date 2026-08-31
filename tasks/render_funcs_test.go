@@ -78,9 +78,9 @@ func TestDoubleQuoteEscape(t *testing.T) {
 	if got, err := DoubleQuoteEscape(nil); err != nil || got != "" {
 		t.Errorf("DoubleQuoteEscape(nil) = %q, %v; want \"\", nil", got, err)
 	}
-	// The apply/plan context stores input values as *string, and sigil passes
-	// that pointer to the filter verbatim; it must be dereferenced, not
-	// formatted as an address.
+	// A context assembled outside the flag path can still hold a *string, and
+	// sigil passes that pointer to the filter verbatim; it must be
+	// dereferenced, not formatted as an address.
 	s := `say "hi"`
 	if got, err := DoubleQuoteEscape(&s); err != nil || got != `say \"hi\"` {
 		t.Errorf("DoubleQuoteEscape(*string) = %q, %v; want %q", got, err, `say \"hi\"`)
@@ -91,9 +91,11 @@ func TestDoubleQuoteEscape(t *testing.T) {
 	}
 }
 
-// TestGetTasksDoubleQuoteEscapePointerValue guards the #371 apply path: the
-// real apply/plan context holds *string values (pflag hands back pointers), and
-// the dq filter must dereference them rather than render the pointer address.
+// TestGetTasksDoubleQuoteEscapePointerValue guards the #371 apply path end to
+// end. The apply/plan context held *string values (pflag hands back pointers)
+// until #497 moved it to concrete ones; scalarArg's deref stays as the guard
+// for a context built anywhere else, and this pins it - the dq filter must
+// dereference a pointer rather than render its address.
 func TestGetTasksDoubleQuoteEscapePointerValue(t *testing.T) {
 	data := []byte(`---
 - tasks:

@@ -141,6 +141,24 @@ own [play-local inputs](inputs.md#per-play-inputs-precedence), each resolved to 
 Inside a `loop:` it also sees `.item` and `.index`.
 Once any task has used `register:`, every later predicate also sees `.registered.<name>` (below).
 
+A predicate that is only an input's name is a truthiness test on that input's value, so a `bool`
+input needs no comparison spelled out:
+
+```yaml
+- inputs:
+    - { name: debug, type: bool }
+  tasks:
+    - name: only when debugging
+      when: debug
+      dokku_app: { app: web }
+```
+
+`when: debug` skips the task until the input is true; on an `int` input a bare `when:` is false
+while the value is `0`, and on a `string` one while it is empty. `not debug` and `debug == true` say
+the same thing more explicitly. The rule is expr's: `false`, `0`, `""`, `nil`, and an empty list or
+map are false, everything else is true. A `{{ if .debug }}` in a task body reads the same value the
+same way.
+
 ## `loop`: repeat a task over a list
 
 `loop:` expands a single task into one copy per item, so you do not repeat yourself. The value is

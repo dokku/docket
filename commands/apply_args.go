@@ -60,6 +60,36 @@ func (c Argument) HasValue() bool {
 	return c.GetValue() != nil
 }
 
+// ContextValue returns the value the recipe sees for this input: the concrete
+// Go value rather than the flag pointer GetValue reports.
+//
+// The pointer is pflag's, not something the recipe asked for, and putting it in
+// the render / predicate context leaked it into two evaluators that each read a
+// pointer as "true" (#497). expr dereferences the operands of an operator but
+// not a program that is nothing but an identifier, so `when: debug` tested the
+// pointer - never nil for a bool / int / float - instead of the value.
+// text/template's own isTrue counts any non-nil pointer as true, so
+// `{{ if .debug }}` in a recipe body did the same.
+//
+// It differs from GetValue in one place, on purpose: an empty string is a
+// value, not nil, so an input left at its zero value renders as the empty
+// string rather than as text/template's `<no value>`. GetValue keeps the nil
+// because HasValue, IsSatisfied, and StringValue read it as "nothing was
+// supplied".
+func (c Argument) ContextValue() interface{} {
+	switch {
+	case c.boolValue != nil:
+		return *c.boolValue
+	case c.intValue != nil:
+		return *c.intValue
+	case c.floatValue != nil:
+		return *c.floatValue
+	case c.stringValue != nil:
+		return *c.stringValue
+	}
+	return nil
+}
+
 // IsSatisfied reports whether this input has a non-empty value that the recipe
 // or the operator actually wrote. It is the test behind `required: true`, and
 // it needs both halves:
@@ -68,7 +98,7 @@ func (c Argument) HasValue() bool {
 // float is never nil - every non-string input looked satisfied, so `required:`
 // was enforced for strings only (#493). "The user typed the flag" alone cannot
 // answer it either, because `--app=` types the flag and supplies nothing; the
-// input would resolve to an empty string and render as `<no value>`.
+// input would resolve to an empty string and render an empty app name.
 //
 // userSet is whether the operator supplied a value for this input, on the
 // command line or through a --vars-file; see userSetKeys.
@@ -758,6 +788,10 @@ func holdsSensitiveInput(keys []string, arguments map[string]*Argument) bool {
 // Names are walked in sorted order so a recipe missing more than one required
 // input names the same one on every run.
 //
+// The context holds ContextValue, not GetValue: the flag pointer must not reach
+// the render or the predicates, which both read one as true whatever it points
+// at (#497).
+//
 // A sensitive value is registered only when the recipe declared it or the user
 // supplied it. Registering an implicit zero would hand the masker "0" or
 // "false" and blank out every unrelated occurrence of that substring. A
@@ -779,7 +813,7 @@ func buildInputContext(arguments map[string]*Argument, userSet map[string]bool) 
 		if argument.Required && !argument.IsSatisfied(userSet[name]) {
 			return nil, nil, fmt.Errorf("Missing flag '--%s'", name)
 		}
-		context[name] = argument.GetValue()
+		context[name] = argument.ContextValue()
 		if argument.Sensitive && (argument.HasDefault || userSet[name]) {
 			if v := argument.StringValue(); v != "" {
 				sensitiveValues = append(sensitiveValues, v)

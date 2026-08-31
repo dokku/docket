@@ -73,19 +73,21 @@ func ParseInputFloat(s string) (float64, bool) {
 }
 
 // inputDefaultValue resolves a declared `default:` to the value the input
-// renders as, in the same Go shape commands.registerInputFlags hands the flag
-// set: a typed pointer for bool / int / float, so a `default: on` renders as
+// renders as, in the same Go shape commands.buildInputContext hands the render
+// and predicate contexts: a bool / int / float, so a `default: on` renders as
 // `true` rather than as the text `on`, and both halves of a recipe's input
 // context hold the same thing (#495).
+//
+// The value is concrete rather than a typed pointer. A pointer reads as true
+// whatever it points at, in a bare `when: debug` and in a `{{ if .debug }}`
+// alike, which is #497; nothing downstream wants the pointer, so nothing is
+// handed one.
 //
 // The fallback is the raw text, not the type's zero value: a default that does
 // not parse, or a `type:` docket does not implement, is reported as
 // invalid_input_default / invalid_input_type, and `validate` collects its
 // problems and keeps rendering. Substituting a zero there would hide the text
 // an unsafe_input_value diagnostic needs to see.
-//
-// Each call allocates its own pointer, so two plays declaring the same input
-// name never share one.
 func inputDefaultValue(typ, def string) interface{} {
 	canonical, ok := CanonicalInputType(typ)
 	if !ok {
@@ -94,15 +96,15 @@ func inputDefaultValue(typ, def string) interface{} {
 	switch canonical {
 	case "bool":
 		if v, parsed := ParseInputBool(def); parsed {
-			return &v
+			return v
 		}
 	case "int":
 		if v, parsed := ParseInputInt(def); parsed {
-			return &v
+			return v
 		}
 	case "float":
 		if v, parsed := ParseInputFloat(def); parsed {
-			return &v
+			return v
 		}
 	}
 	return def

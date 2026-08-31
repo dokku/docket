@@ -121,7 +121,7 @@ func TestMissingRequiredInputIsDeterministic(t *testing.T) {
 
 // TestRequiredStringInputIsNotSatisfiedByAnEmptyValue: `--app=` types the flag
 // but supplies nothing. Counting that as an answer would let the input resolve
-// to "" and render as `<no value>`, which is why IsSatisfied checks the
+// to "" and render an app named `web-`, which is why IsSatisfied checks the
 // resolved value as well as where it came from.
 func TestRequiredStringInputIsNotSatisfiedByAnEmptyValue(t *testing.T) {
 	path := writeTasksFile(t, `---

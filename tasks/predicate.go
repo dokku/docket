@@ -82,9 +82,10 @@ func (c *identifierCollector) Visit(node *ast.Node) {
 }
 
 // EvalBool runs prog against env and reports the truthiness of the
-// result. Non-bool results are coerced via the standard expr truth rules
-// (nil, 0, "", and empty collections are false; everything else is
-// true). Returns an error when the program errors at run time.
+// result. Non-bool results are coerced by truthy, which follows the
+// standard expr truth rules (nil, 0, "", and empty collections are
+// false; everything else is true). Returns an error when the program
+// errors at run time.
 func EvalBool(prog *vm.Program, env map[string]interface{}) (bool, error) {
 	if prog == nil {
 		return true, nil
@@ -118,8 +119,8 @@ func EvalList(prog *vm.Program, env map[string]interface{}) ([]interface{}, erro
 
 // truthy mirrors expr's Boolean coercion: nil, false, zero numerics,
 // empty strings, and empty collections are false; everything else is
-// true. Reaching the default case for an unsupported type returns true
-// since a non-nil structural value is meaningful.
+// true. Only a value with no zero worth speaking of - a struct, a
+// channel, a func - reaches the closing `return true`.
 func truthy(v interface{}) bool {
 	switch x := v.(type) {
 	case nil:
@@ -139,15 +140,43 @@ func truthy(v interface{}) bool {
 	case map[string]interface{}:
 		return len(x) > 0
 	}
-	// Reflect fallback for typed collections (`[]string` from
-	// registered.foo.Commands, `[]TaskOutputState` from .Results, typed
-	// maps) that do not match the generic case arms above. A typed nil
-	// slice/map has Kind Slice/Map and length 0, so an empty one is
-	// correctly false rather than falling through to the default true.
+	// Reflect fallback for everything the case arms above cannot name: typed
+	// collections (`[]string` from registered.foo.Commands,
+	// `[]TaskOutputState` from .Results, typed maps), pointers, and the
+	// scalar kinds a plain type switch would miss. A typed nil slice/map has
+	// Kind Slice/Map and length 0, so an empty one is correctly false rather
+	// than falling through to the default true.
+	//
+	// The pointer arm is what makes `when: debug` follow a bool input rather
+	// than the pointer holding it (#497). expr emits an OpDeref for the
+	// operands of a binary or unary node, so `debug == true` was always
+	// correct, but a program that is nothing but a top-level identifier gets
+	// none and hands the raw value straight here. Nothing puts a flag pointer
+	// in the context any more - see commands.Argument.ContextValue - so this
+	// is the guard for a pointer arriving from anywhere else.
+	//
+	// The scalar arms cover the same hole one type down: an int32, a uint, a
+	// float32, or a named `type count int` matches no case above, and a zero
+	// one has no business being true.
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
+	case reflect.Ptr:
+		if rv.IsNil() {
+			return false
+		}
+		return truthy(rv.Elem().Interface())
 	case reflect.Slice, reflect.Array, reflect.Map:
 		return rv.Len() > 0
+	case reflect.Bool:
+		return rv.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int() != 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return rv.Uint() != 0
+	case reflect.Float32, reflect.Float64:
+		return rv.Float() != 0
+	case reflect.String:
+		return rv.String() != ""
 	}
 	return true
 }

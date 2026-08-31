@@ -257,6 +257,123 @@ func TestTruthyEmptyTypedSlice(t *testing.T) {
 	}
 }
 
+// truthyCount is a named scalar type: it has Kind Int but matches no case
+// arm in truthy's type switch, so it reaches the reflect fallback.
+type truthyCount int
+
+// TestTruthyDereferencesPointers pins #497. An input value used to reach a
+// predicate as the pointer pflag allocated for its flag; expr emits an OpDeref
+// for the operands of a binary or unary node, so `debug == true` was right,
+// but a program that is nothing but a top-level identifier gets none and handed
+// truthy the raw pointer, which matched no case arm and fell through to true.
+// A bare `when: debug` was therefore true for `--debug=false`.
+//
+// Nothing puts a flag pointer in the context any more, so this covers the arm
+// that keeps a pointer from anywhere else honest.
+func TestTruthyDereferencesPointers(t *testing.T) {
+	boolFalse, boolTrue := false, true
+	intZero, intThree := 0, 3
+	floatZero, floatOne := 0.0, 1.5
+	stringEmpty, stringSet := "", "x"
+	ptrToFalse := &boolFalse
+
+	falsy := []interface{}{
+		&boolFalse,
+		(*bool)(nil),
+		&intZero,
+		(*int)(nil),
+		&floatZero,
+		&stringEmpty,
+		(*string)(nil),
+		&ptrToFalse,
+	}
+	for _, v := range falsy {
+		if truthy(v) {
+			t.Errorf("truthy(%#v) = true, want false", v)
+		}
+	}
+
+	ptrToTrue := &boolTrue
+	truthyVals := []interface{}{
+		&boolTrue,
+		&intThree,
+		&floatOne,
+		&stringSet,
+		&ptrToTrue,
+	}
+	for _, v := range truthyVals {
+		if !truthy(v) {
+			t.Errorf("truthy(%#v) = false, want true", v)
+		}
+	}
+}
+
+// TestTruthyCoversNarrowAndNamedScalars is the same hole one type down: a
+// scalar kind truthy has no case arm for reached the reflect fallback, whose
+// switch only knew about collections, so a zero one counted as true.
+func TestTruthyCoversNarrowAndNamedScalars(t *testing.T) {
+	falsy := []interface{}{
+		int8(0), int16(0), int32(0),
+		uint(0), uint8(0), uint16(0), uint32(0), uint64(0),
+		float32(0),
+		truthyCount(0),
+	}
+	for _, v := range falsy {
+		if truthy(v) {
+			t.Errorf("truthy(%#v) = true, want false", v)
+		}
+	}
+	truthyVals := []interface{}{
+		int8(1), int32(-1),
+		uint(2), uint64(9),
+		float32(0.5),
+		truthyCount(3),
+	}
+	for _, v := range truthyVals {
+		if !truthy(v) {
+			t.Errorf("truthy(%#v) = false, want true", v)
+		}
+	}
+}
+
+// TestEvalBoolBareIdentifierFollowsThePointerValue drives #497 through the
+// evaluator rather than through truthy directly: the predicate is the bare
+// identifier the issue reports, and the env holds the pointer shape the apply
+// path used to hand it.
+func TestEvalBoolBareIdentifierFollowsThePointerValue(t *testing.T) {
+	prog, err := CompilePredicate(`debug`)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	debug := false
+	got, err := EvalBool(prog, map[string]interface{}{"debug": &debug})
+	if err != nil {
+		t.Fatalf("eval: %v", err)
+	}
+	if got {
+		t.Error("a bare identifier on a false bool should be falsy; got true")
+	}
+
+	debug = true
+	got, err = EvalBool(prog, map[string]interface{}{"debug": &debug})
+	if err != nil {
+		t.Fatalf("eval: %v", err)
+	}
+	if !got {
+		t.Error("a bare identifier on a true bool should be truthy; got false")
+	}
+
+	// The shape the apply path hands it now.
+	got, err = EvalBool(prog, map[string]interface{}{"debug": false})
+	if err != nil {
+		t.Fatalf("eval: %v", err)
+	}
+	if got {
+		t.Error("a bare identifier on a false bool value should be falsy; got true")
+	}
+}
+
 // TestEvalBoolEmptyTypedSliceFalsy exercises #354 through a predicate:
 // registered.foo.Commands is a []string, empty for a task that ran no
 // subprocess, so `when: registered.foo.Commands` is falsy and the task
