@@ -522,3 +522,33 @@ EOF
   assert_success
   assert_output --partial "web-true-true-7"
 }
+
+# #497: an input reached a predicate as the pointer pflag allocated for its
+# flag, and expr only dereferences the operands of an operator - a predicate
+# that is nothing but an identifier got the pointer, which is never nil for a
+# bool, and was true whatever the input held.
+@test "plays: a bare when: reads a play-local bool input" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: file_debug, type: bool, default: false }
+- name: api
+  inputs:
+    - { name: play_debug, type: bool, default: false }
+  tasks:
+    - name: from-file-level
+      when: file_debug
+      dokku_app: { app: docket-test-noop-a }
+    - name: from-play-local
+      when: play_debug
+      dokku_app: { app: docket-test-noop-b }
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "[skipped] from-file-level"
+  assert_output --partial "[skipped] from-play-local"
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks --file_debug=true --play_debug=true
+  assert_success
+  refute_output --partial "[skipped]"
+}

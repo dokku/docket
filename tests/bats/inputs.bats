@@ -252,3 +252,93 @@ EOF
   assert_failure
   assert_output --partial '"code":"invalid_input_default"'
 }
+
+# #497: an input value reached the render and the predicates as the pointer
+# pflag allocated for its flag, and both evaluators read a pointer as true
+# whatever it points at. expr emits a deref for the operands of an operator but
+# not for a predicate that is nothing but an identifier, and text/template's own
+# isTrue counts any non-nil pointer as true.
+
+@test "a bare when: on a bool input follows the value" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: debug, type: bool }
+  tasks:
+    - name: only when debugging
+      when: debug
+      dokku_app: { app: web }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "[skipped] only when debugging"
+
+  for false_value in false 0; do
+    run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --debug=$false_value
+    assert_success
+    assert_output --partial "[skipped] only when debugging"
+  done
+
+  for true_value in true 1; do
+    run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --debug=$true_value
+    assert_success
+    refute_output --partial "[skipped]"
+  done
+}
+
+@test "a bare when: on an int input follows the value" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: replicas, type: int }
+  tasks:
+    - name: scale
+      when: replicas
+      dokku_app: { app: web }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "[skipped] scale"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --replicas=2
+  assert_success
+  refute_output --partial "[skipped]"
+}
+
+@test "a template conditional follows a bool input" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: debug, type: bool }
+  tasks:
+    - dokku_app: { app: "cond-{{ if .debug }}on{{ else }}off{{ end }}" }
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "dokku_app[app=cond-off]"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --debug=true
+  assert_success
+  assert_output --partial "dokku_app[app=cond-on]"
+}
+
+@test "an omitted string default renders as the empty string" {
+  write_tasks_file <<'EOF'
+---
+- inputs:
+    - { name: suffix }
+  tasks:
+    - dokku_app: { app: "web{{ .suffix }}" }
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "dokku_app[app=web]"
+  refute_output --partial "<no value>"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --suffix=-api
+  assert_success
+  assert_output --partial "dokku_app[app=web-api]"
+}

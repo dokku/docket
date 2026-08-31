@@ -783,11 +783,11 @@ func renderRecipeBytes(data []byte, context map[string]interface{}) ([]byte, err
 // Default string are skipped so they cannot accidentally shadow a real
 // file-level value with "".
 //
-// A default is layered in resolved to its declared type, matching the typed
-// pointer the base context already holds for the same input from flag
-// registration. Injecting the raw text instead made a play-local
-// `type: bool, default: on` render as `on` where the file-level half rendered
-// `true`, and made `when: 'debug == true'` compare a string to a bool (#495).
+// A default is layered in resolved to its declared type, matching the value the
+// base context already holds for the same input from flag registration.
+// Injecting the raw text instead made a play-local `type: bool, default: on`
+// render as `on` where the file-level half rendered `true`, and made
+// `when: 'debug == true'` compare a string to a bool (#495).
 //
 // Exported because the apply / plan executors need to build the same
 // per-play context the loader used so per-task `when:` predicates see

@@ -67,6 +67,22 @@ command line, so every spelling the command line accepts is also a spelling a `d
 The reverse does not hold: pflag takes only `true`/`false`/`1`/`0`/`t`/`f`, so `--debug=yes` is not
 a command line docket accepts.
 
+Whatever the spelling, the input reaches the recipe as its declared type - a `bool` is a boolean and
+an `int` is a number, not the text you wrote. So naming an input on its own is a truthiness test,
+both in a [`when:`](task-envelope.md#when-run-a-task-conditionally) and in a `{{ if }}`:
+
+```yaml
+---
+- inputs:
+    - { name: debug, type: bool }
+  tasks:
+    - name: only when debugging
+      when: debug
+      dokku_app: { app: "web{{ if .debug }}-verbose{{ end }}" }
+```
+
+An input left at its zero value is false there, and renders as `false`, `0`, or the empty string.
+
 ## Input names
 
 Because an input is referenced as `{{ .name }}`, its `name` must be a valid template variable: a

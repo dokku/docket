@@ -299,9 +299,13 @@ func TestBuildPerPlayContextRespectsUserSet(t *testing.T) {
 
 // TestBuildPerPlayContextResolvesTypedDefaults covers #495. A play-local
 // default used to layer in as the raw text the recipe wrote, while the same
-// input reached the base context as the typed pointer flag registration
-// allocated - so `type: bool, default: on` rendered as `on` in a play-local
-// input and as `true` in a file-level one. Both halves now hold the same shape.
+// input reached the base context from flag registration already resolved - so
+// `type: bool, default: on` rendered as `on` in a play-local input and as
+// `true` in a file-level one. Both halves now hold the same shape.
+//
+// That shape is the concrete value, not a typed pointer: a pointer reads as
+// true in a bare `when: debug` and in a `{{ if .debug }}` whatever it points at
+// (#497).
 func TestBuildPerPlayContextResolvesTypedDefaults(t *testing.T) {
 	playInputs := []Input{
 		{Name: "debug", Type: "bool", Default: "on"},
@@ -315,17 +319,17 @@ func TestBuildPerPlayContextResolvesTypedDefaults(t *testing.T) {
 
 	out := BuildPerPlayContext(map[string]interface{}{}, playInputs, nil)
 
-	if v, ok := out["debug"].(*bool); !ok || v == nil || !*v {
-		t.Errorf("debug = %#v, want a *bool holding true", out["debug"])
+	if v, ok := out["debug"].(bool); !ok || !v {
+		t.Errorf("debug = %#v, want the bool true", out["debug"])
 	}
-	if v, ok := out["quiet"].(*bool); !ok || v == nil || *v {
-		t.Errorf("quiet = %#v, want a *bool holding false", out["quiet"])
+	if v, ok := out["quiet"].(bool); !ok || v {
+		t.Errorf("quiet = %#v, want the bool false", out["quiet"])
 	}
-	if v, ok := out["replicas"].(*int); !ok || v == nil || *v != 3 {
-		t.Errorf("replicas = %#v, want a *int holding 3", out["replicas"])
+	if v, ok := out["replicas"].(int); !ok || v != 3 {
+		t.Errorf("replicas = %#v, want the int 3", out["replicas"])
 	}
-	if v, ok := out["ratio"].(*float64); !ok || v == nil || *v != 1.5 {
-		t.Errorf("ratio = %#v, want a *float64 holding 1.5", out["ratio"])
+	if v, ok := out["ratio"].(float64); !ok || v != 1.5 {
+		t.Errorf("ratio = %#v, want the float64 1.5", out["ratio"])
 	}
 	// A string default is already the text it renders as.
 	if v, ok := out["app"].(string); !ok || v != "web" {
@@ -342,26 +346,29 @@ func TestBuildPerPlayContextResolvesTypedDefaults(t *testing.T) {
 	}
 }
 
-// TestBuildPerPlayContextAllocatesPerCall: two plays declaring the same input
-// name with different defaults must not alias one pointer.
-func TestBuildPerPlayContextAllocatesPerCall(t *testing.T) {
+// TestBuildPerPlayContextKeepsPlayDefaultsIndependent: two plays declaring the
+// same input name with different defaults each keep their own value. The
+// contexts used to hold pointers, where the risk was aliasing one allocation;
+// they hold values now, where the risk is one call writing into the map another
+// call handed back.
+func TestBuildPerPlayContextKeepsPlayDefaultsIndependent(t *testing.T) {
 	base := map[string]interface{}{}
 	first := BuildPerPlayContext(base, []Input{{Name: "debug", Type: "bool", Default: "true"}}, nil)
 	second := BuildPerPlayContext(base, []Input{{Name: "debug", Type: "bool", Default: "false"}}, nil)
 
-	firstValue, ok := first["debug"].(*bool)
+	firstValue, ok := first["debug"].(bool)
 	if !ok {
-		t.Fatalf("first debug = %#v, want a *bool", first["debug"])
+		t.Fatalf("first debug = %#v, want a bool", first["debug"])
 	}
-	secondValue, ok := second["debug"].(*bool)
+	secondValue, ok := second["debug"].(bool)
 	if !ok {
-		t.Fatalf("second debug = %#v, want a *bool", second["debug"])
+		t.Fatalf("second debug = %#v, want a bool", second["debug"])
 	}
-	if firstValue == secondValue {
-		t.Fatal("both plays share one pointer; the second default overwrote the first")
+	if !firstValue || secondValue {
+		t.Errorf("values = (%v, %v), want (true, false)", firstValue, secondValue)
 	}
-	if !*firstValue || *secondValue {
-		t.Errorf("values = (%v, %v), want (true, false)", *firstValue, *secondValue)
+	if _, ok := base["debug"]; ok {
+		t.Errorf("base gained the play-local key; got %v", base["debug"])
 	}
 }
 

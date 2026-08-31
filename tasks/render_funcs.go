@@ -81,11 +81,11 @@ func JSONScalar(v interface{}) (string, error) {
 // must render as an empty string rather than error so a filter survives the
 // empty-context render used for input discovery and the validate syntax check.
 //
-// The apply/plan context stores input values as typed pointers (*string, *int,
-// ...) because pflag hands back pointers. text/template auto-dereferences a
-// pointer for a bare `{{ .x }}`, but passes it verbatim to a filter argument
-// (`{{ .x | dq }}`), so the pointer must be dereferenced here or the address,
-// not the value, would be escaped.
+// The pointer loop is a guard. The apply/plan context holds concrete values
+// since #497, but text/template auto-dereferences a pointer for a bare
+// `{{ .x }}` and passes it verbatim to a filter argument (`{{ .x | dq }}`), so
+// a context assembled anywhere else that still carried a *string would have its
+// address escaped rather than its value.
 func scalarArg(v interface{}) string {
 	if v == nil {
 		return ""
