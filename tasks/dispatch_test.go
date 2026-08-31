@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -62,7 +63,7 @@ func TestExecutePlanProbeErrorPopulatesStderrFromExecError(t *testing.T) {
 		},
 		Err: errors.New("App nonexistent does not exist"),
 	}
-	got := ExecutePlan(PlanResult{
+	got := ExecutePlan(testCtx(), PlanResult{
 		Status:       PlanStatusError,
 		Error:        execErr,
 		DesiredState: StatePresent,
@@ -92,7 +93,7 @@ func TestExecutePlanExplicitProbeFieldsTakePrecedence(t *testing.T) {
 		},
 		Err: errors.New("boom"),
 	}
-	got := ExecutePlan(PlanResult{
+	got := ExecutePlan(testCtx(), PlanResult{
 		Status:       PlanStatusError,
 		Error:        execErr,
 		DesiredState: StatePresent,
@@ -120,14 +121,14 @@ func TestExecutePlanCopiesWarnings(t *testing.T) {
 		}
 	}
 
-	assertWarned("error branch", ExecutePlan(PlanResult{
+	assertWarned("error branch", ExecutePlan(testCtx(), PlanResult{
 		Status:       PlanStatusError,
 		Error:        errors.New("boom"),
 		DesiredState: StatePresent,
 		Warnings:     []PlanWarning{warn},
 	}))
 
-	assertWarned("in-sync branch", ExecutePlan(PlanResult{
+	assertWarned("in-sync branch", ExecutePlan(testCtx(), PlanResult{
 		InSync:       true,
 		DesiredState: StatePresent,
 		Warnings:     []PlanWarning{warn},
@@ -135,11 +136,11 @@ func TestExecutePlanCopiesWarnings(t *testing.T) {
 
 	// The apply closure returns a state with no warnings of its own; ExecutePlan
 	// appends the plan's warnings so the apply path still surfaces them.
-	assertWarned("apply branch", ExecutePlan(PlanResult{
+	assertWarned("apply branch", ExecutePlan(testCtx(), PlanResult{
 		Status:       PlanStatusModify,
 		DesiredState: StatePresent,
 		Warnings:     []PlanWarning{warn},
-		apply: func() TaskOutputState {
+		apply: func(ctx context.Context) TaskOutputState {
 			return TaskOutputState{Changed: true, State: StatePresent}
 		},
 	}))

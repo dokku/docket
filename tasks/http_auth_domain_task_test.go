@@ -7,7 +7,7 @@ import (
 
 func TestHttpAuthDomainTaskInvalidState(t *testing.T) {
 	task := HttpAuthDomainTask{App: "test-app", Domains: []string{"app.example.com"}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestHttpAuthDomainTaskInvalidState(t *testing.T) {
 
 func TestHttpAuthDomainTaskPresentMissingApp(t *testing.T) {
 	task := HttpAuthDomainTask{Domains: []string{"app.example.com"}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -26,7 +26,7 @@ func TestHttpAuthDomainTaskPresentMissingApp(t *testing.T) {
 
 func TestHttpAuthDomainTaskAbsentMissingApp(t *testing.T) {
 	task := HttpAuthDomainTask{Domains: []string{"app.example.com"}, State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -37,7 +37,7 @@ func TestHttpAuthDomainTaskAbsentMissingApp(t *testing.T) {
 
 func TestHttpAuthDomainTaskClearMissingApp(t *testing.T) {
 	task := HttpAuthDomainTask{State: StateClear}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -48,7 +48,7 @@ func TestHttpAuthDomainTaskClearMissingApp(t *testing.T) {
 
 func TestHttpAuthDomainTaskPresentEmptyDomains(t *testing.T) {
 	task := HttpAuthDomainTask{App: "test-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty domains and state=present should return an error")
 	}
@@ -59,7 +59,7 @@ func TestHttpAuthDomainTaskPresentEmptyDomains(t *testing.T) {
 
 func TestHttpAuthDomainTaskAbsentEmptyDomains(t *testing.T) {
 	task := HttpAuthDomainTask{App: "test-app", State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty domains and state=absent should return an error")
 	}
@@ -70,7 +70,7 @@ func TestHttpAuthDomainTaskAbsentEmptyDomains(t *testing.T) {
 
 func TestHttpAuthDomainTaskSetEmptyDomains(t *testing.T) {
 	task := HttpAuthDomainTask{App: "test-app", State: StateSet}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty domains and state=set should return an error")
 	}

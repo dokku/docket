@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,11 +60,11 @@ func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state Sta
 
 // planSchedulerK3sScopedPairsSet delegates to planPairsSet with a current-state
 // reader and a per-key command builder bound to the spec's scope.
-func planSchedulerK3sScopedPairsSet(spec schedulerK3sScopedPairsSpec) PlanResult {
-	return planPairsSet(
+func planSchedulerK3sScopedPairsSet(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
+	return planPairsSet(ctx,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,
-		func() (map[string]string, error) { return getSchedulerK3sScopedPairs(spec) },
+		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
 		func(key, value string) subprocess.ExecCommandInput {
 			return schedulerK3sScopedPairsCommand(spec, key, value)
 		},
@@ -73,11 +74,11 @@ func planSchedulerK3sScopedPairsSet(spec schedulerK3sScopedPairsSpec) PlanResult
 // planSchedulerK3sScopedPairsUnset delegates to planPairsUnset; the command
 // builder passes an empty value, which dokku's `:labels:set` / `:annotations:set`
 // interpret as "clear this key".
-func planSchedulerK3sScopedPairsUnset(spec schedulerK3sScopedPairsSpec) PlanResult {
-	return planPairsUnset(
+func planSchedulerK3sScopedPairsUnset(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
+	return planPairsUnset(ctx,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,
-		func() (map[string]string, error) { return getSchedulerK3sScopedPairs(spec) },
+		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
 		func(key, value string) subprocess.ExecCommandInput {
 			return schedulerK3sScopedPairsCommand(spec, key, value)
 		},
@@ -105,7 +106,7 @@ func schedulerK3sScopedPairsCommand(spec schedulerK3sScopedPairsSpec, key, value
 // `dokku scheduler-k3s:<kind>:report ... --format json`, which returns a flat
 // map keyed by `<rendered_process_type>.<resource_type>.<key>`, and strips the
 // prefix to recover the original keys.
-func getSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec) (map[string]string, error) {
+func getSchedulerK3sScopedPairs(ctx context.Context, spec schedulerK3sScopedPairsSpec) (map[string]string, error) {
 	args := []string{"--quiet", "scheduler-k3s:" + spec.Kind + ":report"}
 	if spec.Global {
 		args = append(args, "--global")
@@ -121,7 +122,7 @@ func getSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec) (map[string]st
 	args = append(args, "--process-type", effectiveProcessType)
 	args = append(args, "--format", "json")
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})
@@ -185,13 +186,13 @@ func schedulerK3sReportProcessTypeToTask(rendered string) string {
 // the task struct. Non-SSH errors and unparseable output are swallowed (return
 // nil) so a host without scheduler-k3s state does not fail the whole export,
 // mirroring the profile and chart exporters.
-func exportSchedulerK3sScopedPairs(kind, app string, global bool, build func(processType, resourceType string, pairs map[string]string) interface{}) ([]interface{}, error) {
+func exportSchedulerK3sScopedPairs(ctx context.Context, kind, app string, global bool, build func(processType, resourceType string, pairs map[string]string) interface{}) ([]interface{}, error) {
 	target := app
 	if global {
 		target = "--global"
 	}
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "scheduler-k3s:" + kind + ":report", target, "--format", "json"},
 	})

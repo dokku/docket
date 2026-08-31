@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/dokku/docket/subprocess"
@@ -72,8 +73,8 @@ func (t AppCloneTask) Examples() ([]Doc, error) {
 }
 
 // Execute clones an existing dokku app to a new app
-func (t AppCloneTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t AppCloneTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the AppCloneTask's inputs without contacting the server.
@@ -90,13 +91,13 @@ func (t AppCloneTask) Validate() error {
 }
 
 // Plan reports the drift the AppCloneTask would produce.
-func (t AppCloneTask) Plan() PlanResult {
+func (t AppCloneTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := appExists(t.App)
+			exists, err := appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -114,9 +115,9 @@ func (t AppCloneTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("target app %s missing", t.App),
 				Mutations: []string{fmt.Sprintf("clone %s -> %s", t.SourceApp, t.App)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},

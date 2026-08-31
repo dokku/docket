@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +27,7 @@ type ResourceContext struct {
 }
 
 // getResources retrieves the current resources for a given dokku application
-func getResources(subcommand string, rctx ResourceContext) (map[string]string, error) {
+func getResources(ctx context.Context, subcommand string, rctx ResourceContext) (map[string]string, error) {
 	args := []string{
 		"--quiet",
 		subcommand,
@@ -38,7 +39,7 @@ func getResources(subcommand string, rctx ResourceContext) (map[string]string, e
 
 	args = append(args, rctx.App)
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})
@@ -68,8 +69,8 @@ func getResources(subcommand string, rctx ResourceContext) (map[string]string, e
 // "reserve") from resource:report, one task per process type (in sorted order),
 // carrying only the explicitly-set (non-empty) resources. factory builds the
 // concrete task body for a (process type, resources) pair.
-func exportResourceTasks(app, kind string, factory func(app, processType string, resources map[string]string) interface{}) ([]interface{}, error) {
-	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func exportResourceTasks(ctx context.Context, app, kind string, factory func(app, processType string, resources map[string]string) interface{}) ([]interface{}, error) {
+	response, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "resource:report", app, "--format", "json"},
 	})
@@ -134,7 +135,7 @@ func validateResourceInput(state State, resources map[string]string) error {
 	return nil
 }
 
-func planResource(state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
+func planResource(ctx context.Context, state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
 	if err := validateResourceInput(state, resources); err != nil {
 		return planErr(err)
 	}
@@ -147,14 +148,14 @@ func planResource(state State, app, processType string, resources map[string]str
 	}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSetResource(subcommand, rctx) },
-		StateAbsent:  func() PlanResult { return planClearResource(subcommand, rctx) },
+		StatePresent: func() PlanResult { return planSetResource(ctx, subcommand, rctx) },
+		StateAbsent:  func() PlanResult { return planClearResource(ctx, subcommand, rctx) },
 	})
 }
 
 // planSetResource reports drift for a present-state resource set.
-func planSetResource(subcommand string, rctx ResourceContext) PlanResult {
-	currentResources, err := getResources(subcommand, rctx)
+func planSetResource(ctx context.Context, subcommand string, rctx ResourceContext) PlanResult {
+	currentResources, err := getResources(ctx, subcommand, rctx)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -196,7 +197,7 @@ func planSetResource(subcommand string, rctx ResourceContext) PlanResult {
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d resource(s) to set", len(mutations)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyResourceSet(subcommand, effective),
 	}
 }
@@ -223,8 +224,8 @@ func clearBeforeChanges(current, desired map[string]string) bool {
 }
 
 // planClearResource reports drift for an absent-state resource clear.
-func planClearResource(subcommand string, rctx ResourceContext) PlanResult {
-	currentResources, err := getResources(subcommand, rctx)
+func planClearResource(ctx context.Context, subcommand string, rctx ResourceContext) PlanResult {
+	currentResources, err := getResources(ctx, subcommand, rctx)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -246,7 +247,7 @@ func planClearResource(subcommand string, rctx ResourceContext) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    "would clear all resources",
 		Mutations: []string{fmt.Sprintf("clear resources via %s-clear", subcommand)},
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyResourceClear(subcommand, rctx),
 	}
 }
@@ -283,19 +284,19 @@ func resourceSetInputs(subcommand string, rctx ResourceContext) []subprocess.Exe
 
 // applyResourceSet returns a closure that runs the underlying resource
 // set command. ClearBefore is honored by clearing before setting.
-func applyResourceSet(subcommand string, rctx ResourceContext) func() TaskOutputState {
+func applyResourceSet(subcommand string, rctx ResourceContext) func(ctx context.Context) TaskOutputState {
 	inputs := resourceSetInputs(subcommand, rctx)
-	return func() TaskOutputState {
-		return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+	return func(ctx context.Context) TaskOutputState {
+		return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 	}
 }
 
 // applyResourceClear returns a closure that runs the underlying resource
 // clear command (subcommand + "-clear").
-func applyResourceClear(subcommand string, rctx ResourceContext) func() TaskOutputState {
+func applyResourceClear(subcommand string, rctx ResourceContext) func(ctx context.Context) TaskOutputState {
 	inputs := []subprocess.ExecCommandInput{resourceClearInput(subcommand, rctx)}
-	return func() TaskOutputState {
-		return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+	return func(ctx context.Context) TaskOutputState {
+		return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 	}
 }
 

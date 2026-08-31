@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -90,14 +91,14 @@ func (t ServiceBackupTask) ProbeSupport() ProbeSupport {
 // credentials and encryption passphrase have no read command, so they are
 // omitted (a partial export) and must be re-supplied before the recipe backs
 // up. Services without a schedule are skipped.
-func (t ServiceBackupTask) ExportGlobal() ([]interface{}, error) {
-	services, err := listServices()
+func (t ServiceBackupTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	services, err := listServices(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []interface{}
 	for _, s := range services {
-		content, scheduled, err := serviceBackupScheduled(s.Type, s.Name)
+		content, scheduled, err := serviceBackupScheduled(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -197,8 +198,8 @@ func (t ServiceBackupTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the backup configuration for a dokku service
-func (t ServiceBackupTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ServiceBackupTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // hasAuth reports whether any AWS credential field was provided.
@@ -241,13 +242,13 @@ func (t ServiceBackupTask) Validate() error {
 }
 
 // Plan reports the drift the ServiceBackupTask would produce.
-func (t ServiceBackupTask) Plan() PlanResult {
+func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -282,7 +283,7 @@ func (t ServiceBackupTask) Plan() PlanResult {
 			}
 
 			if t.Schedule != "" {
-				content, scheduled, err := serviceBackupScheduled(t.Service, t.Name)
+				content, scheduled, err := serviceBackupScheduled(ctx, t.Service, t.Name)
 				if err != nil {
 					return PlanResult{Status: PlanStatusError, Error: err}
 				}
@@ -307,14 +308,14 @@ func (t ServiceBackupTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "backup configuration not in sync",
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -325,7 +326,7 @@ func (t ServiceBackupTask) Plan() PlanResult {
 			inputs := []subprocess.ExecCommandInput{}
 			mutations := []string{}
 
-			_, scheduled, err := serviceBackupScheduled(t.Service, t.Name)
+			_, scheduled, err := serviceBackupScheduled(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -359,9 +360,9 @@ func (t ServiceBackupTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "backup configuration present",
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -373,8 +374,8 @@ func (t ServiceBackupTask) Plan() PlanResult {
 // transport-level failure (`*subprocess.SSHError`) is propagated; a
 // dokku-level non-zero exit (no schedule configured) is treated as
 // "not scheduled."
-func serviceBackupScheduled(service, name string) (string, bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func serviceBackupScheduled(ctx context.Context, service, name string) (string, bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",

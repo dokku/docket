@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +18,12 @@ import (
 
 type ApplyCommand struct {
 	command.Meta
+
+	// Ctx is the run context, populated from main.go with the process signal
+	// context. It carries cancellation down through every task's Plan and
+	// Execute. Nil when the command was constructed directly (tests do this),
+	// in which case Run falls back to context.Background().
+	Ctx context.Context
 
 	tasksFile string
 	// tasksFormatFlag is the raw --tasks-format value; tasksFormat is
@@ -183,6 +190,7 @@ func (c *ApplyCommand) Run(args []string) int {
 		c.Ui.Warn(w)
 	}
 
+	ctx := runContext(c.Ctx)
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
 
 	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
@@ -213,7 +221,7 @@ func (c *ApplyCommand) Run(args []string) int {
 
 	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
 
-	context, sensitiveValues, err := buildInputContext(c.arguments, userSet)
+	inputCtx, sensitiveValues, err := buildInputContext(c.arguments, userSet)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
@@ -226,7 +234,7 @@ func (c *ApplyCommand) Run(args []string) int {
 	subprocess.SetGlobalSensitive(sensitiveValues)
 	defer subprocess.SetGlobalSensitive(nil)
 
-	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, context, userSet)
+	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
 		c.Ui.Error(subprocess.MaskString(fmt.Sprintf("task error: %v", err)))
 		return 1
@@ -278,7 +286,7 @@ func (c *ApplyCommand) Run(args []string) int {
 			skips:         c.skipTags,
 			fileLevelKeys: fileLevelKeys,
 			userSet:       userSet,
-			context:       context,
+			context:       inputCtx,
 			jsonOut:       c.json,
 		})
 	}
@@ -290,7 +298,7 @@ func (c *ApplyCommand) Run(args []string) int {
 	emitter := c.newEmitter()
 	start := time.Now()
 	counts := ApplyCounts{}
-	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(context, fileLevelKeys, userSet))
+	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(inputCtx, fileLevelKeys, userSet))
 	hasError := false
 	// startedAtTask gates --start-at-task: false until an envelope name
 	// matches c.startAtTask, at which point every subsequent task runs
@@ -308,6 +316,11 @@ func (c *ApplyCommand) Run(args []string) int {
 
 playLoop:
 	for _, play := range plays {
+		// Checked per play as well as per task so a cancelled run does not
+		// print the header of a play whose tasks will never run.
+		if ctx.Err() != nil {
+			break playLoop
+		}
 		if play.IsFileLevel() {
 			// Inputs-only plays carry no tasks; their inputs are
 			// already folded into fileLevelKeys above. They produce
@@ -334,9 +347,10 @@ playLoop:
 
 		emitter.PlayStart(play.Name, resolvedHost)
 
-		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(context, play.Inputs, userSet))
+		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(inputCtx, play.Inputs, userSet))
 
 		ac := &applyContext{
+			ctx:         ctx,
 			play:        play,
 			playExprCtx: playExprCtx,
 			registered:  registered,
@@ -357,11 +371,14 @@ playLoop:
 		// target before the gate could flip `started`, silently no-oping
 		// the run.
 		for _, name := range play.Tasks.Keys() {
+			if ctx.Err() != nil {
+				break playLoop
+			}
 			env := play.Tasks.GetEnvelope(name)
 			outcome := c.executeTask(env, name, ac, nil, "")
 			if outcome.abort {
 				emitter.ApplySummary(counts, time.Since(start))
-				return 1
+				return c.runExit(ctx, true, 0)
 			}
 			if outcome.failed {
 				failed = true
@@ -376,10 +393,27 @@ playLoop:
 
 	emitter.ApplySummary(counts, time.Since(start))
 
+	return c.runExit(ctx, hasError, counts.Changed)
+}
+
+// runExit turns the run's verdict into an exit code, and is the one place that
+// asks whether the run was cancelled. The question has to be asked here rather
+// than tracked by the loop: an interrupt that lands mid-task also makes that
+// task fail, so the loop leaves through the error path and never reaches its
+// own cancellation check. Reporting the interrupt separately from a task
+// failure is what lets an operator tell "I pressed Ctrl-C" from "something
+// broke", and a cancelled run never returns the --detailed-exitcode "changed"
+// code: a wrapper reads 2 as "the run completed and changed something", and an
+// interrupted run completed nothing.
+func (c *ApplyCommand) runExit(ctx context.Context, hasError bool, changed int) int {
+	if ctx.Err() != nil {
+		c.Ui.Error("run cancelled")
+		return 1
+	}
 	if hasError {
 		return 1
 	}
-	if c.detailedExitCode && counts.Changed > 0 {
+	if c.detailedExitCode && changed > 0 {
 		return 2
 	}
 	return 0
@@ -388,6 +422,10 @@ playLoop:
 // applyContext bundles the run-wide state apply's per-task helpers
 // share so the function signatures stay tractable.
 type applyContext struct {
+	// ctx is the run context. Every task this play executes is run under it,
+	// so cancelling it stops the run rather than only the child process of
+	// whichever task happens to be in flight.
+	ctx         context.Context
 	play        *tasks.Play
 	playExprCtx map[string]interface{}
 	registered  map[string]tasks.RegisteredValue
@@ -520,7 +558,7 @@ func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac 
 		ac.emitter.TaskWarning(ac.play.Name, name, "deprecated", msg)
 	}
 
-	state := env.Task.Execute()
+	state := env.Task.Execute(ac.ctx)
 	ac.counts.Tasks++
 
 	// Probe diagnostics raised during planning (carried out on the state by
@@ -646,7 +684,8 @@ func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *ap
 	}
 
 	// Walk block children. Stop at the first child whose post-override
-	// outcome is failed AND ignore_errors did not swallow it. A
+	// outcome is failed AND ignore_errors did not swallow it, or as soon as
+	// the run context is cancelled. A
 	// swallowed (ignored) child does NOT trigger rescue per #210 rule:
 	// ignore_errors is the "swallow" path; rescue is the "handle" path.
 	var (
@@ -655,6 +694,9 @@ func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *ap
 		lastChildState   tasks.TaskOutputState
 	)
 	for i, child := range env.Block {
+		if ac.ctx.Err() != nil {
+			break
+		}
 		childName := child.Name
 		if childName == "" {
 			childName = fmt.Sprintf("%s.block[%d]", name, i)
@@ -678,6 +720,9 @@ func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *ap
 	rescueErr := error(nil)
 	if blockFailedState != nil {
 		for i, child := range env.Rescue {
+			if ac.ctx.Err() != nil {
+				break
+			}
 			childName := child.Name
 			if childName == "" {
 				childName = fmt.Sprintf("%s.rescue[%d]", name, i)
@@ -700,9 +745,15 @@ func (c *ApplyCommand) executeGroup(env *tasks.TaskEnvelope, name string, ac *ap
 		}
 	}
 
-	// Always children run unconditionally.
+	// Always children run unconditionally - except under a cancelled run,
+	// where every one of them would fail on the dead context the moment it
+	// reached a subprocess. Skipping them reports the interrupt once instead
+	// of once per cleanup task.
 	alwaysErr := error(nil)
 	for i, child := range env.Always {
+		if ac.ctx.Err() != nil {
+			break
+		}
 		childName := child.Name
 		if childName == "" {
 			childName = fmt.Sprintf("%s.always[%d]", name, i)

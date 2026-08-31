@@ -7,7 +7,7 @@ import (
 
 func TestAclServiceTaskInvalidState(t *testing.T) {
 	task := AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"alice"}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -16,7 +16,7 @@ func TestAclServiceTaskInvalidState(t *testing.T) {
 func TestAclServiceTaskMissingService(t *testing.T) {
 	for _, st := range []State{StatePresent, StateAbsent} {
 		task := AclServiceTask{Type: "redis", Users: []string{"alice"}, State: st}
-		result := task.Execute()
+		result := task.Execute(testCtx())
 		if result.Error == nil {
 			t.Fatalf("Execute without service (state=%s) should return an error", st)
 		}
@@ -29,7 +29,7 @@ func TestAclServiceTaskMissingService(t *testing.T) {
 func TestAclServiceTaskMissingType(t *testing.T) {
 	for _, st := range []State{StatePresent, StateAbsent} {
 		task := AclServiceTask{Service: "my-redis", Users: []string{"alice"}, State: st}
-		result := task.Execute()
+		result := task.Execute(testCtx())
 		if result.Error == nil {
 			t.Fatalf("Execute without type (state=%s) should return an error", st)
 		}
@@ -41,7 +41,7 @@ func TestAclServiceTaskMissingType(t *testing.T) {
 
 func TestAclServiceTaskPresentEmptyUsers(t *testing.T) {
 	task := AclServiceTask{Service: "my-redis", Type: "redis", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty users and state=present should return an error")
 	}

@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -8,10 +9,10 @@ import (
 
 // domainsEnabled probes whether the domains plugin is enabled for an app
 // via `dokku --quiet domains:report <app> --domains-app-enabled`.
-func domainsEnabled(ctx ToggleContext) (bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func domainsEnabled(ctx context.Context, tc ToggleContext) (bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"--quiet", "domains:report", ctx.App, "--domains-app-enabled"},
+		Args:    []string{"--quiet", "domains:report", tc.App, "--domains-app-enabled"},
 	})
 	if err != nil {
 		return false, err
@@ -21,8 +22,8 @@ func domainsEnabled(ctx ToggleContext) (bool, error) {
 
 // ExportApp emits a dokku_domains_toggle task only when the domains plugin is
 // disabled for the app (it is enabled by default).
-func (t DomainsToggleTask) ExportApp(app string) ([]interface{}, error) {
-	enabled, err := domainsEnabled(ToggleContext{App: app})
+func (t DomainsToggleTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	enabled, err := domainsEnabled(ctx, ToggleContext{App: app})
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +85,13 @@ func (t DomainsToggleTask) Examples() ([]Doc, error) {
 }
 
 // Execute enables or disables the domains plugin
-func (t DomainsToggleTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t DomainsToggleTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the DomainsToggleTask would produce.
-func (t DomainsToggleTask) Plan() PlanResult {
-	return planToggle(t.State, t.App, "domains:enable", "domains:disable", domainsEnabled)
+func (t DomainsToggleTask) Plan(ctx context.Context) PlanResult {
+	return planToggle(ctx, t.State, t.App, "domains:enable", "domains:disable", domainsEnabled)
 }
 
 // init registers the DomainsToggleTask with the task registry

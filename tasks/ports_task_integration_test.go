@@ -11,7 +11,7 @@ import (
 // getReportedPorts queries dokku ports:report to get the current mappings for
 // an app, so assertions do not lean on the task's own probe.
 func getReportedPorts(appName string) []string {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "ports:report", appName, "--ports-map"},
 	})
@@ -29,9 +29,9 @@ func TestIntegrationPortsAddAndRemove(t *testing.T) {
 
 	appName := "docket-test-ports"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	portMappings := []PortMapping{
 		{Scheme: "http", Host: 8080, Container: 5000},
@@ -39,7 +39,7 @@ func TestIntegrationPortsAddAndRemove(t *testing.T) {
 
 	// add port
 	addTask := PortsTask{App: appName, PortMappings: portMappings, State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add port: %v", result.Error)
 	}
@@ -51,7 +51,7 @@ func TestIntegrationPortsAddAndRemove(t *testing.T) {
 	}
 
 	// add same port again (idempotent)
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent add failed: %v", result.Error)
 	}
@@ -61,7 +61,7 @@ func TestIntegrationPortsAddAndRemove(t *testing.T) {
 
 	// remove port
 	removeTask := PortsTask{App: appName, PortMappings: portMappings, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove port: %v", result.Error)
 	}
@@ -73,7 +73,7 @@ func TestIntegrationPortsAddAndRemove(t *testing.T) {
 	}
 
 	// remove again (idempotent)
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent remove failed: %v", result.Error)
 	}
@@ -90,16 +90,16 @@ func TestIntegrationPortsPresentRejectsSchemeHostCollision(t *testing.T) {
 
 	appName := "docket-test-ports-collision"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	seedTask := PortsTask{
 		App:          appName,
 		PortMappings: []PortMapping{{Scheme: "http", Host: 8080, Container: 5000}},
 		State:        StatePresent,
 	}
-	if result := seedTask.Execute(); result.Error != nil {
+	if result := seedTask.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to seed ports: %v", result.Error)
 	}
 
@@ -108,7 +108,7 @@ func TestIntegrationPortsPresentRejectsSchemeHostCollision(t *testing.T) {
 		PortMappings: []PortMapping{{Scheme: "http", Host: 8080, Container: 6000}},
 		State:        StatePresent,
 	}
-	result := collidingTask.Execute()
+	result := collidingTask.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected an error when adding a mapping on an already-bound scheme:host pair")
 	}
@@ -130,9 +130,9 @@ func TestIntegrationPortsSetAndClear(t *testing.T) {
 
 	appName := "docket-test-ports-set-clear"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// seed two mappings so set has something to replace
 	seedTask := PortsTask{
@@ -143,7 +143,7 @@ func TestIntegrationPortsSetAndClear(t *testing.T) {
 		},
 		State: StatePresent,
 	}
-	if result := seedTask.Execute(); result.Error != nil {
+	if result := seedTask.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to seed ports: %v", result.Error)
 	}
 
@@ -153,7 +153,7 @@ func TestIntegrationPortsSetAndClear(t *testing.T) {
 		PortMappings: []PortMapping{{Scheme: "http", Host: 8082, Container: 5000}},
 		State:        StateSet,
 	}
-	result := setTask.Execute()
+	result := setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set ports: %v", result.Error)
 	}
@@ -170,7 +170,7 @@ func TestIntegrationPortsSetAndClear(t *testing.T) {
 	}
 
 	// set again (idempotent)
-	result = setTask.Execute()
+	result = setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent set failed: %v", result.Error)
 	}
@@ -180,7 +180,7 @@ func TestIntegrationPortsSetAndClear(t *testing.T) {
 
 	// clear drops every mapping in one call
 	clearTask := PortsTask{App: appName, State: StateClear}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear ports: %v", result.Error)
 	}
@@ -196,7 +196,7 @@ func TestIntegrationPortsSetAndClear(t *testing.T) {
 	}
 
 	// clear again (idempotent)
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent clear failed: %v", result.Error)
 	}

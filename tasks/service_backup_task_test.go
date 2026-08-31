@@ -9,7 +9,7 @@ import (
 
 func TestServiceBackupTaskInvalidState(t *testing.T) {
 	task := ServiceBackupTask{Service: "postgres", Name: "my-db", Schedule: "0 3 * * *", Bucket: "b", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -17,7 +17,7 @@ func TestServiceBackupTaskInvalidState(t *testing.T) {
 
 func TestServiceBackupTaskScheduleRequiresBucket(t *testing.T) {
 	task := ServiceBackupTask{Service: "postgres", Name: "my-db", Schedule: "0 3 * * *"}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with schedule and no bucket should return an error")
 	}
@@ -25,7 +25,7 @@ func TestServiceBackupTaskScheduleRequiresBucket(t *testing.T) {
 
 func TestServiceBackupTaskBucketRequiresSchedule(t *testing.T) {
 	task := ServiceBackupTask{Service: "postgres", Name: "my-db", Bucket: "my-bucket"}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with bucket and no schedule should return an error")
 	}
@@ -33,7 +33,7 @@ func TestServiceBackupTaskBucketRequiresSchedule(t *testing.T) {
 
 func TestServiceBackupTaskPartialAuthRejected(t *testing.T) {
 	task := ServiceBackupTask{Service: "postgres", Name: "my-db", AwsAccessKeyID: "AKIA"}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with only an access key id should return an error")
 	}
@@ -91,7 +91,7 @@ func TestServiceBackupTaskValidateAuthChain(t *testing.T) {
 
 func TestServiceBackupTaskPresentRequiresSomething(t *testing.T) {
 	task := ServiceBackupTask{Service: "postgres", Name: "my-db"}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with nothing to configure should return an error")
 	}

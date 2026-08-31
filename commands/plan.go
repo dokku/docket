@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -18,6 +19,12 @@ import (
 // per-task Plan() method; the apply path is never invoked.
 type PlanCommand struct {
 	command.Meta
+
+	// Ctx is the run context, populated from main.go with the process signal
+	// context. It carries cancellation down through every task's Plan and
+	// Execute. Nil when the command was constructed directly (tests do this),
+	// in which case Run falls back to context.Background().
+	Ctx context.Context
 
 	tasksFile string
 	// tasksFormatFlag is the raw --tasks-format value; tasksFormat is
@@ -173,6 +180,7 @@ func (c *PlanCommand) Run(args []string) int {
 		c.Ui.Warn(w)
 	}
 
+	ctx := runContext(c.Ctx)
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
 
 	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
@@ -203,7 +211,7 @@ func (c *PlanCommand) Run(args []string) int {
 
 	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
 
-	context, sensitiveValues, err := buildInputContext(c.arguments, userSet)
+	inputCtx, sensitiveValues, err := buildInputContext(c.arguments, userSet)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
@@ -216,7 +224,7 @@ func (c *PlanCommand) Run(args []string) int {
 	subprocess.SetGlobalSensitive(sensitiveValues)
 	defer subprocess.SetGlobalSensitive(nil)
 
-	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, context, userSet)
+	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
 		c.Ui.Error(subprocess.MaskString(fmt.Sprintf("task error: %v", err)))
 		return 1
@@ -256,7 +264,7 @@ func (c *PlanCommand) Run(args []string) int {
 			skips:         c.skipTags,
 			fileLevelKeys: fileLevelKeys,
 			userSet:       userSet,
-			context:       context,
+			context:       inputCtx,
 			jsonOut:       c.json,
 		})
 	}
@@ -270,7 +278,7 @@ func (c *PlanCommand) Run(args []string) int {
 	counts := PlanCounts{}
 	hasError := false
 	hasDrift := false
-	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(context, fileLevelKeys, userSet))
+	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(inputCtx, fileLevelKeys, userSet))
 	// registered + loopAccum carry the same role as in apply: predicates
 	// in plan mode see `.registered.<name>` based on the
 	// post-override synthesized TaskOutputState of prior tasks.
@@ -279,7 +287,13 @@ func (c *PlanCommand) Run(args []string) int {
 	registered := map[string]tasks.RegisteredValue{}
 	loopAccum := loopRegisterAccumulator{}
 
+playLoop:
 	for _, play := range plays {
+		// Checked per play as well as per task so a cancelled run does not
+		// print the header of a play whose tasks will never be probed.
+		if ctx.Err() != nil {
+			break playLoop
+		}
 		if play.IsFileLevel() {
 			// Inputs-only plays carry no tasks; their inputs are
 			// already folded into fileLevelKeys above. They produce
@@ -303,9 +317,10 @@ func (c *PlanCommand) Run(args []string) int {
 
 		emitter.PlayStart(play.Name, resolvedHost)
 
-		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(context, play.Inputs, userSet))
+		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(inputCtx, play.Inputs, userSet))
 
 		pc := &planContext{
+			ctx:         ctx,
 			play:        play,
 			playExprCtx: playExprCtx,
 			registered:  registered,
@@ -315,6 +330,9 @@ func (c *PlanCommand) Run(args []string) int {
 		}
 
 		for _, name := range tasks.FilterByTags(play.Tasks, c.tags, c.skipTags) {
+			if ctx.Err() != nil {
+				break playLoop
+			}
 			env := play.Tasks.GetEnvelope(name)
 			outcome := planTask(env, name, pc, nil, "")
 			if outcome.errored {
@@ -328,6 +346,13 @@ func (c *PlanCommand) Run(args []string) int {
 
 	emitter.PlanSummary(counts, time.Since(start))
 
+	// An interrupt that lands mid-probe also fails that task, so the loop
+	// leaves through the error path rather than its own cancellation check;
+	// asking here catches every route out. See ApplyCommand.runExit.
+	if ctx.Err() != nil {
+		c.Ui.Error("run cancelled")
+		return 1
+	}
 	if hasError {
 		return 1
 	}
@@ -349,6 +374,9 @@ func (c *PlanCommand) newEmitter() EventEmitter {
 // planContext bundles the run-wide plan state per-task helpers share so
 // planTask / planLeaf / planGroup signatures stay tractable.
 type planContext struct {
+	// ctx is the run context. Every task this play plans is probed under it,
+	// so cancelling it stops the run rather than only the probe in flight.
+	ctx         context.Context
 	play        *tasks.Play
 	playExprCtx map[string]interface{}
 	registered  map[string]tasks.RegisteredValue
@@ -420,7 +448,7 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 		pc.emitter.TaskWarning(pc.play.Name, name, "deprecated", msg)
 	}
 
-	result := env.Task.Plan()
+	result := env.Task.Plan(pc.ctx)
 	pc.counts.Tasks++
 
 	// Probe diagnostics raised during planning surface as informational
@@ -556,6 +584,9 @@ func planGroup(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask
 		lastChildState   tasks.TaskOutputState
 	)
 	for i, child := range env.Block {
+		if pc.ctx.Err() != nil {
+			break
+		}
 		childName := child.Name
 		if childName == "" {
 			childName = fmt.Sprintf("%s.block[%d]", name, i)
@@ -581,6 +612,9 @@ func planGroup(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask
 			failedTaskCtx = blockFailedState
 		}
 		for i, child := range env.Rescue {
+			if pc.ctx.Err() != nil {
+				break
+			}
 			childName := child.Name
 			if childName == "" {
 				childName = fmt.Sprintf("%s.rescue[%d]", name, i)
@@ -592,6 +626,9 @@ func planGroup(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask
 			lastChildState = childOutcome.state
 		}
 		for i, child := range env.Always {
+			if pc.ctx.Err() != nil {
+				break
+			}
 			childName := child.Name
 			if childName == "" {
 				childName = fmt.Sprintf("%s.always[%d]", name, i)

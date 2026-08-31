@@ -10,11 +10,11 @@ func TestIntegrationAppClone(t *testing.T) {
 	sourceApp := "docket-test-clone-source"
 	targetApp := "docket-test-clone-target"
 
-	destroyApp(sourceApp)
-	destroyApp(targetApp)
-	createApp(sourceApp)
-	defer destroyApp(sourceApp)
-	defer destroyApp(targetApp)
+	destroyApp(testCtx(), sourceApp)
+	destroyApp(testCtx(), targetApp)
+	createApp(testCtx(), sourceApp)
+	defer destroyApp(testCtx(), sourceApp)
+	defer destroyApp(testCtx(), targetApp)
 
 	// clone the source app to the target
 	cloneTask := AppCloneTask{
@@ -23,7 +23,7 @@ func TestIntegrationAppClone(t *testing.T) {
 		SkipDeploy: true,
 		State:      StatePresent,
 	}
-	result := cloneTask.Execute()
+	result := cloneTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clone app: %v", result.Error)
 	}
@@ -33,13 +33,13 @@ func TestIntegrationAppClone(t *testing.T) {
 	if result.State != StatePresent {
 		t.Errorf("expected state 'present', got '%s'", result.State)
 	}
-	exists, _ := appExists(targetApp)
+	exists, _ := appExists(testCtx(), targetApp)
 	if !exists {
 		t.Errorf("expected target app %q to exist after clone", targetApp)
 	}
 
 	// cloning again should be idempotent (target already exists)
-	result = cloneTask.Execute()
+	result = cloneTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second clone: %v", result.Error)
 	}

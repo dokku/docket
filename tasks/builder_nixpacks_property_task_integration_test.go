@@ -8,9 +8,9 @@ func TestIntegrationBuilderNixpacksPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-nixpacks"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		property string
@@ -33,7 +33,7 @@ func TestIntegrationBuilderNixpacksPropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := BuilderNixpacksPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "builder-nixpacks global " + tc.property,
 					setTask:   BuilderNixpacksPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

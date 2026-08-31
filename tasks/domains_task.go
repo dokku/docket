@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"github.com/dokku/docket/subprocess"
 	"sort"
@@ -88,8 +89,8 @@ func (t DomainsTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the domains
-func (t DomainsTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t DomainsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the DomainsTask's inputs without contacting the server.
@@ -101,21 +102,21 @@ func (t DomainsTask) Validate() error {
 }
 
 // Plan reports the drift the DomainsTask would produce.
-func (t DomainsTask) Plan() PlanResult {
+func (t DomainsTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planDomainsPresent(t) },
-		StateAbsent:  func() PlanResult { return planDomainsAbsent(t) },
-		StateSet:     func() PlanResult { return planDomainsSet(t) },
-		StateClear:   func() PlanResult { return planDomainsClear(t) },
+		StatePresent: func() PlanResult { return planDomainsPresent(ctx, t) },
+		StateAbsent:  func() PlanResult { return planDomainsAbsent(ctx, t) },
+		StateSet:     func() PlanResult { return planDomainsSet(ctx, t) },
+		StateClear:   func() PlanResult { return planDomainsClear(ctx, t) },
 	})
 }
 
 // planDomainsPresent reports drift for the present-state domain add.
-func planDomainsPresent(t DomainsTask) PlanResult {
-	currentDomains, err := getDomains(t.App, t.Global)
+func planDomainsPresent(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -146,14 +147,14 @@ func planDomainsPresent(t DomainsTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("%d domain(s) to add", len(toAdd)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, toAdd, StatePresent, StateAbsent),
 	}
 }
 
 // planDomainsAbsent reports drift for the absent-state domain remove.
-func planDomainsAbsent(t DomainsTask) PlanResult {
-	currentDomains, err := getDomains(t.App, t.Global)
+func planDomainsAbsent(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -180,14 +181,14 @@ func planDomainsAbsent(t DomainsTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d domain(s) to remove", len(toRemove)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, toRemove, StateAbsent, StatePresent),
 	}
 }
 
 // planDomainsSet reports drift for the set-state full replacement.
-func planDomainsSet(t DomainsTask) PlanResult {
-	currentDomains, err := getDomains(t.App, t.Global)
+func planDomainsSet(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -221,14 +222,14 @@ func planDomainsSet(t DomainsTask) PlanResult {
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, t.Domains, StateSet, StateAbsent),
 	}
 }
 
 // planDomainsClear reports drift for the clear-state operation.
-func planDomainsClear(t DomainsTask) PlanResult {
-	currentDomains, err := getDomains(t.App, t.Global)
+func planDomainsClear(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -251,7 +252,7 @@ func planDomainsClear(t DomainsTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d domain(s)", len(currentDomains)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, nil, StateClear, StatePresent),
 	}
 }
@@ -272,10 +273,10 @@ func dokkuArgsInputs(subcommand, target string, extra []string) []subprocess.Exe
 // applyDokkuArgs returns a closure that runs `dokku --quiet <subcommand>
 // <target> <extra...>`. It is used by domains plan paths to share the
 // boilerplate around constructing the subprocess call.
-func applyDokkuArgs(subcommand, target string, extra []string, finalState State, errState State) func() TaskOutputState {
+func applyDokkuArgs(subcommand, target string, extra []string, finalState State, errState State) func(ctx context.Context) TaskOutputState {
 	inputs := dokkuArgsInputs(subcommand, target, extra)
-	return func() TaskOutputState {
-		return runExecInputs(TaskOutputState{State: errState}, finalState, inputs)
+	return func(ctx context.Context) TaskOutputState {
+		return runExecInputs(ctx, TaskOutputState{State: errState}, finalState, inputs)
 	}
 }
 
@@ -300,8 +301,8 @@ func validateDomainsTask(t DomainsTask, requireDomains bool) error {
 
 // ExportApp reads the app's vhosts and returns a dokku_domains task that sets
 // exactly that set, or nil when the app has no custom domains.
-func (t DomainsTask) ExportApp(app string) ([]interface{}, error) {
-	domains, err := getDomains(app, false)
+func (t DomainsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	domains, err := getDomains(ctx, app, false)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +318,7 @@ func (t DomainsTask) ExportApp(app string) ([]interface{}, error) {
 }
 
 // getDomains fetches current domains for an app or globally
-func getDomains(app string, global bool) (map[string]bool, error) {
+func getDomains(ctx context.Context, app string, global bool) (map[string]bool, error) {
 	reportFlag := "--domains-app-vhosts"
 	args := []string{
 		"domains:report",
@@ -332,7 +333,7 @@ func getDomains(app string, global bool) (map[string]bool, error) {
 		}
 	}
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})

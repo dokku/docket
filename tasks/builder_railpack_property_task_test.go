@@ -7,7 +7,7 @@ import (
 
 func TestBuilderRailpackPropertyTaskInvalidState(t *testing.T) {
 	task := BuilderRailpackPropertyTask{App: "test-app", Property: "railpackjson-path", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestBuilderRailpackPropertyTaskInvalidState(t *testing.T) {
 
 func TestBuilderRailpackPropertyTaskMissingApp(t *testing.T) {
 	task := BuilderRailpackPropertyTask{Property: "railpackjson-path", Value: "railpack.json", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestBuilderRailpackPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "railpack.json",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestBuilderRailpackPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestBuilderRailpackPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "railpack.json",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

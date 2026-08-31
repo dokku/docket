@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -224,11 +225,11 @@ func (e *errUnknownProperty) Error() string {
 //   - (value, nil) when the looked-up key exists in the JSON payload
 //   - ("", *errUnknownProperty) when the JSON parsed but the key was absent
 //   - ("", err) when the exec or JSON parse failed
-func getProperty(subcommand, app string, global bool, property string, keys map[string]PropertyKeys) (string, error) {
+func getProperty(ctx context.Context, subcommand, app string, global bool, property string, keys map[string]PropertyKeys) (string, error) {
 	plugin := pluginFromSubcommand(subcommand)
 	args := getPropertyArgs(plugin, app, global)
 
-	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	response, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})
@@ -284,11 +285,11 @@ func getProperty(subcommand, app string, global bool, property string, keys map[
 // A probeable dynamic family cannot be enumerated in keys, so the properties the
 // payload happens to carry are synthesized into it first; without that a set
 // letsencrypt `dns-provider-<KEY>` credential is dropped from the export (#449).
-func exportProperties(task PropertyTableDocer, app string, factory func(app, property, value string) interface{}) ([]interface{}, error) {
+func exportProperties(ctx context.Context, task PropertyTableDocer, app string, factory func(app, property, value string) interface{}) ([]interface{}, error) {
 	table := task.PropertyTable()
 	keys := table.Keys
 	plugin := table.Plugin()
-	payload, err := readPropertyReport(plugin, app, false)
+	payload, err := readPropertyReport(ctx, plugin, app, false)
 	if err != nil {
 		return nil, err
 	}
@@ -326,11 +327,11 @@ func exportProperties(task PropertyTableDocer, app string, factory func(app, pro
 // globally-scoped state (for example scheduler-k3s bootstrap keys) is captured
 // instead of silently dropped (#327). Probeable dynamic properties are
 // synthesized into keys the same way exportProperties does it.
-func exportGlobalProperties(task PropertyTableDocer, factory func(property, value string) interface{}) ([]interface{}, error) {
+func exportGlobalProperties(ctx context.Context, task PropertyTableDocer, factory func(property, value string) interface{}) ([]interface{}, error) {
 	table := task.PropertyTable()
 	keys := table.Keys
 	plugin := table.Plugin()
-	payload, err := readPropertyReport(plugin, "", true)
+	payload, err := readPropertyReport(ctx, plugin, "", true)
 	if err != nil {
 		return nil, err
 	}
@@ -369,8 +370,8 @@ func exportGlobalProperties(task PropertyTableDocer, factory func(property, valu
 // error. A JSON parse failure is always an error, since the exec succeeded so the
 // plugin responded with something unparseable (for example a deprecation line
 // printed before the JSON payload) rather than being absent (#329).
-func readPropertyReport(plugin, app string, global bool) (map[string]string, error) {
-	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func readPropertyReport(ctx context.Context, plugin, app string, global bool) (map[string]string, error) {
+	response, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    getPropertyArgs(plugin, app, global),
 	})
@@ -379,7 +380,7 @@ func readPropertyReport(plugin, app string, global bool) (map[string]string, err
 		if errors.As(err, &sshErr) {
 			return nil, err
 		}
-		if installed, ierr := pluginInstalled(plugin); ierr != nil || !installed {
+		if installed, ierr := pluginInstalled(ctx, plugin); ierr != nil || !installed {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("dokku %s:report failed: %w", plugin, err)
@@ -703,7 +704,7 @@ func validatePropertyInput(task PropertyTableDocer, state State, app string, glo
 	return nil
 }
 
-func planProperty(task PropertyTableDocer, state State, app string, global bool, property, value string) PlanResult {
+func planProperty(ctx context.Context, task PropertyTableDocer, state State, app string, global bool, property, value string) PlanResult {
 	if err := validatePropertyInput(task, state, app, global, property, value); err != nil {
 		return planErr(err)
 	}
@@ -741,13 +742,13 @@ func planProperty(task PropertyTableDocer, state State, app string, global bool,
 			// Dynamic property families have no probe key; treat as drift
 			// and run the mutation unconditionally.
 			if _, mapped := keys[property]; !mapped && isDynamicProperty(plugin, property) {
-				return runUnprobedSet(subcommand, target, property, value)
+				return runUnprobedSet(ctx, subcommand, target, property, value)
 			}
 
 			// Probe; treat dokku-level failure as "drift, must mutate"
 			// (matches pre-probe behavior for unsupported plugins) but
 			// surface SSH transport failures so the user sees `! ssh:`.
-			current, probeErr := getProperty(subcommand, app, global, property, keys)
+			current, probeErr := getProperty(ctx, subcommand, app, global, property, keys)
 			if sensitive {
 				subprocess.AddGlobalSensitive(current)
 			}
@@ -782,17 +783,17 @@ func planProperty(task PropertyTableDocer, state State, app string, global bool,
 				Status:    status,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("set %s=%s", property, value)},
-				Commands:  resolveCommands(inputs),
+				Commands:  resolveCommands(ctx, inputs),
 				Warnings:  warnings,
 				apply:     applyPropertySet(subcommand, target, property, value),
 			}
 		},
 		StateAbsent: func() PlanResult {
 			if _, mapped := keys[property]; !mapped && isDynamicProperty(plugin, property) {
-				return runUnprobedUnset(subcommand, target, property)
+				return runUnprobedUnset(ctx, subcommand, target, property)
 			}
 
-			current, probeErr := getProperty(subcommand, app, global, property, keys)
+			current, probeErr := getProperty(ctx, subcommand, app, global, property, keys)
 			if sensitive {
 				subprocess.AddGlobalSensitive(current)
 			}
@@ -823,7 +824,7 @@ func planProperty(task PropertyTableDocer, state State, app string, global bool,
 				Status:    PlanStatusDestroy,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("unset %s", property)},
-				Commands:  resolveCommands(inputs),
+				Commands:  resolveCommands(ctx, inputs),
 				Warnings:  warnings,
 				apply:     applyPropertyUnset(subcommand, target, property),
 			}
@@ -858,28 +859,28 @@ func validateProperty(plugin, property string, global bool, keys map[string]Prop
 
 // runUnprobedSet returns a PlanResult that runs `:set` unconditionally for
 // dynamic properties that have no probe key (e.g. traefik dns-provider-*).
-func runUnprobedSet(subcommand, target, property, value string) PlanResult {
+func runUnprobedSet(ctx context.Context, subcommand, target, property, value string) PlanResult {
 	inputs := propertySetInputs(subcommand, target, property, value)
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("would set %s on %s (no probe key)", property, target),
 		Mutations: []string{fmt.Sprintf("set %s=%s", property, value)},
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyPropertySet(subcommand, target, property, value),
 	}
 }
 
 // runUnprobedUnset returns a PlanResult that runs `:set` (no value, the unset
 // form) unconditionally for dynamic properties with no probe key.
-func runUnprobedUnset(subcommand, target, property string) PlanResult {
+func runUnprobedUnset(ctx context.Context, subcommand, target, property string) PlanResult {
 	inputs := propertyUnsetInputs(subcommand, target, property)
 	return PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("would unset %s on %s (no probe key)", property, target),
 		Mutations: []string{fmt.Sprintf("unset %s", property)},
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyPropertyUnset(subcommand, target, property),
 	}
 }
@@ -900,19 +901,19 @@ func propertyUnsetInputs(subcommand, target, property string) []subprocess.ExecC
 
 // applyPropertySet returns a closure that runs `dokku <subcommand> <target>
 // <property> <value>` and converts the result into a TaskOutputState.
-func applyPropertySet(subcommand, target, property, value string) func() TaskOutputState {
+func applyPropertySet(subcommand, target, property, value string) func(ctx context.Context) TaskOutputState {
 	inputs := propertySetInputs(subcommand, target, property, value)
-	return func() TaskOutputState {
-		return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+	return func(ctx context.Context) TaskOutputState {
+		return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 	}
 }
 
 // applyPropertyUnset returns a closure that runs `dokku <subcommand> <target>
 // <property>` (no value, which dokku interprets as unset) and converts the
 // result into a TaskOutputState.
-func applyPropertyUnset(subcommand, target, property string) func() TaskOutputState {
+func applyPropertyUnset(subcommand, target, property string) func(ctx context.Context) TaskOutputState {
 	inputs := propertyUnsetInputs(subcommand, target, property)
-	return func() TaskOutputState {
-		return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+	return func(ctx context.Context) TaskOutputState {
+		return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 	}
 }

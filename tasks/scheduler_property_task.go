@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // SchedulerPropertyTask manages the scheduler configuration for a given dokku application
 type SchedulerPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t SchedulerPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the scheduler property
-func (t SchedulerPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SchedulerPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // schedulerPropertyTable maps scheduler property names to the JSON keys
@@ -88,20 +90,20 @@ func (t SchedulerPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerPropertyTask would produce.
-func (t SchedulerPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t SchedulerPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t SchedulerPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t SchedulerPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return SchedulerPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t SchedulerPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t SchedulerPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return SchedulerPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

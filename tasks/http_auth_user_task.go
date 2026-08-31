@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -180,8 +181,8 @@ func (t HttpAuthUserTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the app's HTTP auth users
-func (t HttpAuthUserTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t HttpAuthUserTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the HttpAuthUserTask's inputs without contacting the server.
@@ -233,15 +234,15 @@ func (t HttpAuthUserTask) Validate() error {
 }
 
 // Plan reports the drift the HttpAuthUserTask would produce.
-func (t HttpAuthUserTask) Plan() PlanResult {
+func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planHttpAuthUsersPresent(t) },
-		StateSet:     func() PlanResult { return planHttpAuthUsersSet(t) },
+		StatePresent: func() PlanResult { return planHttpAuthUsersPresent(ctx, t) },
+		StateSet:     func() PlanResult { return planHttpAuthUsersSet(ctx, t) },
 		StateAbsent: func() PlanResult {
-			current, err := getHttpAuthUsers(t.App)
+			current, err := getHttpAuthUsers(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -275,9 +276,9 @@ func (t HttpAuthUserTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -291,8 +292,8 @@ func (t HttpAuthUserTask) Plan() PlanResult {
 // only when update_password forces it. A hash is readable, so a hash user
 // converges on its own - the stored-hash comparison is evaluated first, which
 // also stops update_password from re-importing a hash that already matches.
-func planHttpAuthUsersPresent(t HttpAuthUserTask) PlanResult {
-	current, hashes, res := readHttpAuthUserState(t)
+func planHttpAuthUsersPresent(ctx context.Context, t HttpAuthUserTask) PlanResult {
+	current, hashes, res := readHttpAuthUserState(ctx, t)
 	if res != nil {
 		return *res
 	}
@@ -328,9 +329,9 @@ func planHttpAuthUsersPresent(t HttpAuthUserTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("%d user(s) to add or update", len(toApply)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
@@ -342,8 +343,8 @@ func planHttpAuthUsersPresent(t HttpAuthUserTask) PlanResult {
 // `http-auth:import-users --replace`, which is what that flag is for. A
 // cleartext password cannot be written into the htpasswd stream, so a list with
 // any password user falls back to removing the strays and upserting the rest.
-func planHttpAuthUsersSet(t HttpAuthUserTask) PlanResult {
-	current, hashes, res := readHttpAuthUserState(t)
+func planHttpAuthUsersSet(ctx context.Context, t HttpAuthUserTask) PlanResult {
+	current, hashes, res := readHttpAuthUserState(ctx, t)
 	if res != nil {
 		return *res
 	}
@@ -414,9 +415,9 @@ func planHttpAuthUsersSet(t HttpAuthUserTask) PlanResult {
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d user change(s)", len(mutations)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateSet, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateSet, inputs)
 		},
 	}
 }
@@ -429,8 +430,8 @@ func planHttpAuthUsersSet(t HttpAuthUserTask) PlanResult {
 // plugin answers, so a password-only recipe costs exactly one round trip and is
 // unaffected by the newer export-users command. The hash overlay is read only
 // when it is needed.
-func readHttpAuthUserState(t HttpAuthUserTask) (map[string]bool, map[string]string, *PlanResult) {
-	current, err := getHttpAuthUsers(t.App)
+func readHttpAuthUserState(ctx context.Context, t HttpAuthUserTask) (map[string]bool, map[string]string, *PlanResult) {
+	current, err := getHttpAuthUsers(ctx, t.App)
 	if err != nil {
 		return nil, nil, &PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -446,7 +447,7 @@ func readHttpAuthUserState(t HttpAuthUserTask) (map[string]bool, map[string]stri
 		return current, map[string]string{}, nil
 	}
 
-	hashes, err := getHttpAuthUserHashes(t.App)
+	hashes, err := getHttpAuthUserHashes(ctx, t.App)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -528,8 +529,8 @@ func httpAuthUserUpsertInputs(app string, users []HttpAuthUser, replace bool) []
 // Comparison against a desired hash is byte-exact. A future plugin that
 // normalized entries on import would surface as perpetual drift rather than
 // silent divergence.
-func getHttpAuthUserHashes(appName string) (map[string]string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getHttpAuthUserHashes(ctx context.Context, appName string) (map[string]string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",
@@ -563,8 +564,8 @@ func getHttpAuthUserHashes(appName string) (map[string]string, error) {
 // string. A transport-level failure (`*subprocess.SSHError`) is propagated; a
 // dokku-level non-zero exit (e.g. app does not exist) is treated as "no users";
 // malformed JSON surfaces as an error.
-func getHttpAuthUsers(appName string) (map[string]bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getHttpAuthUsers(ctx context.Context, appName string) (map[string]bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"http-auth:report",
@@ -611,8 +612,8 @@ func getHttpAuthUsers(appName string) (map[string]bool, error) {
 // though every listed user is exported and the sibling exact-set exporters
 // (dokku_http_auth_domain, dokku_domains, dokku_ports) emit `set`: an exported
 // recipe should not silently delete a user that exists only on the destination.
-func (t HttpAuthUserTask) ExportApp(app string) ([]interface{}, error) {
-	hashes, err := getHttpAuthUserHashes(app)
+func (t HttpAuthUserTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	hashes, err := getHttpAuthUserHashes(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {

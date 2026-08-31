@@ -7,7 +7,7 @@ import (
 
 func TestAppLockTaskInvalidState(t *testing.T) {
 	task := AppLockTask{App: "test-app", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestAppLockTaskInvalidState(t *testing.T) {
 
 func TestAppLockTaskPresentMissingApp(t *testing.T) {
 	task := AppLockTask{State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -26,7 +26,7 @@ func TestAppLockTaskPresentMissingApp(t *testing.T) {
 
 func TestAppLockTaskAbsentMissingApp(t *testing.T) {
 	task := AppLockTask{State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}

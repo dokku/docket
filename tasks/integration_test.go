@@ -10,8 +10,8 @@ func TestIntegrationGetTasksFullWorkflow(t *testing.T) {
 	appName := "docket-test-workflow"
 
 	// ensure clean state
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	data := []byte(`---
 - tasks:
@@ -28,7 +28,7 @@ func TestIntegrationGetTasksFullWorkflow(t *testing.T) {
 
 	for _, name := range tasks.Keys() {
 		task := tasks.Get(name)
-		state := task.Execute()
+		state := task.Execute(testCtx())
 		if state.Error != nil {
 			t.Fatalf("task %q failed: %v", name, state.Error)
 		}
@@ -43,8 +43,8 @@ func TestIntegrationMultiTaskWorkflow(t *testing.T) {
 
 	appName := "docket-test-multi"
 
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	data := []byte(`---
 - tasks:
@@ -75,7 +75,7 @@ func TestIntegrationMultiTaskWorkflow(t *testing.T) {
 
 	for _, name := range tasks.Keys() {
 		task := tasks.Get(name)
-		state := task.Execute()
+		state := task.Execute(testCtx())
 		if state.Error != nil {
 			t.Fatalf("task %q failed: %v", name, state.Error)
 		}

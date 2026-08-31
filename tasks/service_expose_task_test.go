@@ -10,7 +10,7 @@ import (
 
 func TestServiceExposeTaskInvalidState(t *testing.T) {
 	task := ServiceExposeTask{Service: "redis", Name: "test-service", Ports: []string{"6379"}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -18,7 +18,7 @@ func TestServiceExposeTaskInvalidState(t *testing.T) {
 
 func TestServiceExposeTaskPresentRequiresPorts(t *testing.T) {
 	task := ServiceExposeTask{Service: "redis", Name: "test-service"}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with present state and no ports should return an error")
 	}
@@ -74,7 +74,7 @@ func TestServiceExposeSameOrderInSync(t *testing.T) {
 		"--quiet redis:info my-svc --exposed-ports": "1111->1111 2222->2222",
 	}))()
 
-	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan()
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -88,7 +88,7 @@ func TestServiceExposeReorderReportsDrift(t *testing.T) {
 		"--quiet redis:info my-svc --exposed-ports": "1111->1111 2222->2222",
 	}))()
 
-	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"2222", "1111"}, State: StatePresent}.Plan()
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"2222", "1111"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -121,7 +121,7 @@ func TestServiceExposeCreatesWhenNotExposed(t *testing.T) {
 		"--quiet redis:info my-svc --exposed-ports": "",
 	}))()
 
-	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan()
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}

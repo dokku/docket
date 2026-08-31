@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,8 +87,8 @@ func (t HttpAuthTask) Examples() ([]Doc, error) {
 }
 
 // Execute enables or disables HTTP authentication for an app
-func (t HttpAuthTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t HttpAuthTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the HttpAuthTask's inputs without contacting the server.
@@ -111,13 +112,13 @@ func (t HttpAuthTask) Validate() error {
 }
 
 // Plan reports the drift the HttpAuthTask would produce.
-func (t HttpAuthTask) Plan() PlanResult {
+func (t HttpAuthTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			enabled, err := httpAuthEnabled(t.App)
+			enabled, err := httpAuthEnabled(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -140,14 +141,14 @@ func (t HttpAuthTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "http-auth disabled",
 				Mutations: []string{"http-auth:enable " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			enabled, err := httpAuthEnabled(t.App)
+			enabled, err := httpAuthEnabled(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -163,9 +164,9 @@ func (t HttpAuthTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "http-auth enabled",
 				Mutations: []string{"http-auth:disable " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -178,8 +179,8 @@ func (t HttpAuthTask) Plan() PlanResult {
 // proxy property plugins). A transport-level failure (`*subprocess.SSHError`)
 // is propagated; a dokku-level non-zero exit (e.g. app does not exist) is
 // treated as "disabled"; malformed JSON surfaces as an error.
-func httpAuthEnabled(appName string) (bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func httpAuthEnabled(ctx context.Context, appName string) (bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"http-auth:report",
@@ -222,8 +223,8 @@ type httpAuthState struct {
 // matches those readers: a transport-level failure (`*subprocess.SSHError`) is
 // propagated, a dokku-level non-zero exit (e.g. app does not exist) is treated
 // as "nothing set", and malformed JSON surfaces as an error.
-func getHttpAuthState(appName string) (httpAuthState, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getHttpAuthState(ctx context.Context, appName string) (httpAuthState, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"http-auth:report",
@@ -269,8 +270,8 @@ func getHttpAuthState(appName string) (httpAuthState, error) {
 // an input. A disabled app that still carries users, allowed IPs or auth
 // domains emits `state: absent`, undoing the enable those tasks force; a
 // disabled app with nothing configured emits no task at all.
-func (t HttpAuthTask) ExportApp(app string) ([]interface{}, error) {
-	state, err := getHttpAuthState(app)
+func (t HttpAuthTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	state, err := getHttpAuthState(ctx, app)
 	if err != nil {
 		return nil, err
 	}

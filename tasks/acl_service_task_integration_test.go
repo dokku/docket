@@ -15,17 +15,17 @@ func TestIntegrationAclService(t *testing.T) {
 	serviceName := "docket-test-acl-service"
 
 	// ensure clean state and create the redis service
-	destroyService(serviceType, serviceName)
-	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	destroyService(testCtx(), serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to create redis service: %v", r.Error)
 	}
 	t.Cleanup(func() {
-		destroyService(serviceType, serviceName)
+		destroyService(testCtx(), serviceType, serviceName)
 	})
 
 	assertACL := func(t *testing.T, label string, want []string) {
 		t.Helper()
-		got, err := getAclServiceUsers(serviceType, serviceName)
+		got, err := getAclServiceUsers(testCtx(), serviceType, serviceName)
 		if err != nil {
 			t.Fatalf("%s: getAclServiceUsers failed: %v", label, err)
 		}
@@ -51,7 +51,7 @@ func TestIntegrationAclService(t *testing.T) {
 
 	// add two users
 	addTask := AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{"alice", "bob"}, State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add users: %v", result.Error)
 	}
@@ -64,7 +64,7 @@ func TestIntegrationAclService(t *testing.T) {
 	assertACL(t, "after add", []string{"alice", "bob"})
 
 	// add same users again - idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -75,7 +75,7 @@ func TestIntegrationAclService(t *testing.T) {
 
 	// remove one user
 	removeTask := AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{"bob"}, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove user: %v", result.Error)
 	}
@@ -88,7 +88,7 @@ func TestIntegrationAclService(t *testing.T) {
 	assertACL(t, "after remove bob", []string{"alice"})
 
 	// remove same user again - idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -98,13 +98,13 @@ func TestIntegrationAclService(t *testing.T) {
 	assertACL(t, "after idempotent remove", []string{"alice"})
 
 	// re-add bob and carol, then clear with empty users
-	if err := (AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{"bob", "carol"}, State: StatePresent}).Execute().Error; err != nil {
+	if err := (AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{"bob", "carol"}, State: StatePresent}).Execute(testCtx()).Error; err != nil {
 		t.Fatalf("failed to re-add users: %v", err)
 	}
 	assertACL(t, "after re-add", []string{"alice", "bob", "carol"})
 
 	clearTask := AclServiceTask{Service: serviceName, Type: serviceType, State: StateAbsent}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear ACL: %v", result.Error)
 	}
@@ -114,7 +114,7 @@ func TestIntegrationAclService(t *testing.T) {
 	assertACL(t, "after clear", nil)
 
 	// clear again - idempotent
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second clear: %v", result.Error)
 	}

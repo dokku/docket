@@ -7,7 +7,7 @@ import (
 
 func TestLetsencryptTaskInvalidState(t *testing.T) {
 	task := LetsencryptTask{App: "test-app", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestLetsencryptTaskInvalidState(t *testing.T) {
 
 func TestLetsencryptTaskPresentMissingApp(t *testing.T) {
 	task := LetsencryptTask{State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -26,7 +26,7 @@ func TestLetsencryptTaskPresentMissingApp(t *testing.T) {
 
 func TestLetsencryptTaskAbsentMissingApp(t *testing.T) {
 	task := LetsencryptTask{State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}

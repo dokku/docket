@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,8 +71,8 @@ func (t DockerOptionsTask) ProbeSupport() ProbeSupport {
 // `<phase>-list` report keys (dokku/dokku#8799), so each stored option -
 // including values that contain spaces - is emitted as a discrete task without
 // whitespace splitting.
-func (t DockerOptionsTask) ExportApp(app string) ([]interface{}, error) {
-	scoped, err := getDockerOptions(app)
+func (t DockerOptionsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	scoped, err := getDockerOptions(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -138,8 +139,8 @@ func (t DockerOptionsTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the docker option
-func (t DockerOptionsTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t DockerOptionsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the DockerOptionsTask's inputs without contacting the server.
@@ -151,13 +152,13 @@ func (t DockerOptionsTask) Validate() error {
 }
 
 // Plan reports the drift the DockerOptionsTask would produce.
-func (t DockerOptionsTask) Plan() PlanResult {
+func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			current, err := getDockerOptions(t.App)
+			current, err := getDockerOptions(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -174,14 +175,14 @@ func (t DockerOptionsTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("missing on %s", describeDockerOptionsScope(scope)),
 				Mutations: []string{fmt.Sprintf("add %s option %q", describeDockerOptionsScope(scope), t.Option)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			current, err := getDockerOptions(t.App)
+			current, err := getDockerOptions(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -198,9 +199,9 @@ func (t DockerOptionsTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("present on %s", describeDockerOptionsScope(scope)),
 				Mutations: []string{fmt.Sprintf("remove %s option %q", describeDockerOptionsScope(scope), t.Option)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -271,8 +272,8 @@ func validateDockerOptionsTask(t DockerOptionsTask) error {
 // of truth here, so options are recovered as discrete entries even when their
 // values contain spaces. The space-joined shorthand keys and the legacy
 // `docker-options-*` duplicates are ignored.
-func getDockerOptions(app string) (map[dockerOptionsScope][]string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getDockerOptions(ctx context.Context, app string) (map[dockerOptionsScope][]string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "docker-options:report", app, "--format", "json"},
 	})

@@ -10,7 +10,7 @@ import (
 
 func TestProxyToggleTaskInvalidState(t *testing.T) {
 	task := ProxyToggleTask{App: "test-app", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -27,7 +27,7 @@ func TestProxyToggleTaskPlanSurfacesSSHError(t *testing.T) {
 		}
 	})()
 
-	plan := ProxyToggleTask{App: "web", State: StateAbsent}.Plan()
+	plan := ProxyToggleTask{App: "web", State: StateAbsent}.Plan(testCtx())
 	if plan.Status != PlanStatusError {
 		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusError)
 	}

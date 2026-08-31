@@ -7,7 +7,7 @@ import (
 
 func TestCronPropertyTaskInvalidState(t *testing.T) {
 	task := CronPropertyTask{App: "test-app", Property: "mailto", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestCronPropertyTaskInvalidState(t *testing.T) {
 
 func TestCronPropertyTaskMissingApp(t *testing.T) {
 	task := CronPropertyTask{Property: "mailto", Value: "ops@example.com", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestCronPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "ops@example.com",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestCronPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestCronPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "true",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

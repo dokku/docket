@@ -7,7 +7,7 @@ import (
 
 func TestProxyPropertyTaskInvalidState(t *testing.T) {
 	task := ProxyPropertyTask{App: "test-app", Property: "type", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestProxyPropertyTaskInvalidState(t *testing.T) {
 
 func TestProxyPropertyTaskMissingApp(t *testing.T) {
 	task := ProxyPropertyTask{Property: "type", Value: "nginx", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestProxyPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "nginx",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestProxyPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestProxyPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "nginx",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

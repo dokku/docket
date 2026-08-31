@@ -1,15 +1,12 @@
 package subprocess
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
-
-	"context"
 
 	execute "github.com/alexellis/go-execute/v2"
 	"github.com/fatih/color"
@@ -143,13 +140,16 @@ func (ecr ExecCommandResponse) StdoutBytes() []byte {
 // PlanResult.Commands renders byte-identical to the strings apply emits via
 // state.Commands; sharing the rendering logic keeps the two views from drifting.
 //
-// The function mirrors the dispatch in CallExecCommandWithContext and
-// CallSshCommandWithContext: when the (possibly defaulted) Host is set and the
-// command is `dokku`, the SSH transport's bare `cmd args` form is returned
-// because remote sudo is wrapped server-side via DOKKU_SUDO and never appears
-// in the displayed command. Otherwise the local path's sudo-wrap-when-true
-// form is returned.
-func ResolveCommandString(input ExecCommandInput) string {
+// The function mirrors the dispatch in CallExecCommand and CallSshCommand:
+// when the (possibly defaulted) Host is set and the command is `dokku`, the
+// SSH transport's bare `cmd args` form is returned because remote sudo is
+// wrapped server-side via DOKKU_SUDO and never appears in the displayed
+// command. Otherwise the local path's sudo-wrap-when-true form is returned.
+//
+// ctx is not read yet. It is here because this function has to mirror that
+// dispatch, and the dispatch is what reads the per-invocation target once
+// #423 moves it off the package global.
+func ResolveCommandString(ctx context.Context, input ExecCommandInput) string {
 	if input.Host == "" {
 		input.Host = GetDefaultHost()
 	}
@@ -166,7 +166,7 @@ func ResolveCommandString(input ExecCommandInput) string {
 }
 
 // resolveLocalCommandString joins a local command and args into the masked
-// form CallExecCommandWithContext records on the response.
+// form CallExecCommand records on the response.
 func resolveLocalCommandString(command string, args []string) string {
 	if len(args) == 0 {
 		return MaskString(command)
@@ -183,17 +183,10 @@ func resolveSshCommandString(command string, args []string) string {
 	return MaskString(command + " " + strings.Join(args, " "))
 }
 
-// CallExecCommand executes a command on the local host
-func CallExecCommand(input ExecCommandInput) (ExecCommandResponse, error) {
-	ctx := context.Background()
-	return CallExecCommandWithContext(ctx, input)
-}
-
-// execRunner is the executor CallExecCommand and CallExecCommandWithContext
-// delegate to. It defaults to defaultExecRunner (the real implementation) and
-// can be swapped in tests via SetExecRunner so unit tests return canned
-// responses without spawning a process or contacting a server. Production code
-// must never reassign it.
+// execRunner is the executor CallExecCommand delegates to. It defaults to
+// defaultExecRunner (the real implementation) and can be swapped in tests via
+// SetExecRunner so unit tests return canned responses without spawning a
+// process or contacting a server. Production code must never reassign it.
 //
 // The swap mutates package state and is therefore test-only and not safe under
 // t.Parallel().
@@ -209,7 +202,7 @@ func SetExecRunner(fn func(ctx context.Context, input ExecCommandInput) (ExecCom
 	return func() { execRunner = prev }
 }
 
-// CallExecCommandWithContext executes a command on the local host with the given context.
+// CallExecCommand executes a command on the local host under ctx.
 //
 // When `input.Host` is set (or a default has been configured via
 // SetDefaultHost) and the command is `dokku`, dispatch is routed
@@ -218,9 +211,15 @@ func SetExecRunner(fn func(ctx context.Context, input ExecCommandInput) (ExecCom
 // when a host is configured, since the remote side may not have those
 // binaries (and tests expect local execution).
 //
+// The context is the caller's: cancelling it kills the child process, and a
+// deadline on it bounds the call. Nothing in this package installs a signal
+// handler any more - the command layer wires SIGINT to the run context via
+// signal.NotifyContext, so one interrupt aborts the run rather than the
+// current task.
+//
 // The call is routed through the swappable execRunner so tests can substitute a
 // fake executor; defaultExecRunner is the production path.
-func CallExecCommandWithContext(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
+func CallExecCommand(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
 	return execRunner(ctx, input)
 }
 
@@ -231,19 +230,8 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		input.Host = GetDefaultHost()
 	}
 	if input.Host != "" && input.Command == "dokku" {
-		return CallSshCommandWithContext(ctx, input.Host, input)
+		return CallSshCommand(ctx, input.Host, input)
 	}
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGQUIT,
-		syscall.SIGTERM)
-	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		<-signals
-		cancel()
-	}()
 
 	// isatty reports whether our own stdout is a terminal, which is the
 	// signal used below to decide whether the child may read the terminal.

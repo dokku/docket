@@ -7,7 +7,7 @@ import (
 
 func TestAclAppTaskInvalidState(t *testing.T) {
 	task := AclAppTask{App: "test-app", Users: []string{"alice"}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestAclAppTaskInvalidState(t *testing.T) {
 
 func TestAclAppTaskPresentMissingApp(t *testing.T) {
 	task := AclAppTask{Users: []string{"alice"}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -26,7 +26,7 @@ func TestAclAppTaskPresentMissingApp(t *testing.T) {
 
 func TestAclAppTaskAbsentMissingApp(t *testing.T) {
 	task := AclAppTask{State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -37,7 +37,7 @@ func TestAclAppTaskAbsentMissingApp(t *testing.T) {
 
 func TestAclAppTaskPresentEmptyUsers(t *testing.T) {
 	task := AclAppTask{App: "test-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty users and state=present should return an error")
 	}

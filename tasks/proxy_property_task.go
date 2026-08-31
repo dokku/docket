@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // ProxyPropertyTask manages the proxy configuration for a given dokku application
 type ProxyPropertyTask PropertyFields
 
@@ -71,8 +73,8 @@ func (t ProxyPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the proxy property
-func (t ProxyPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ProxyPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // proxyPropertyTable maps proxy property names to the JSON keys emitted by
@@ -98,20 +100,20 @@ func (t ProxyPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the ProxyPropertyTask would produce.
-func (t ProxyPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t ProxyPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t ProxyPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t ProxyPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return ProxyPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t ProxyPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t ProxyPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return ProxyPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

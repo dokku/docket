@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -99,8 +100,8 @@ func (t RegistryAuthTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the registry authentication
-func (t RegistryAuthTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t RegistryAuthTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the RegistryAuthTask's inputs without contacting the server.
@@ -117,7 +118,7 @@ func (t RegistryAuthTask) Validate() error {
 // Plan reports the drift the RegistryAuthTask would produce. dokku registry
 // plugins do not expose a probe for current login state, so the plan
 // reports drift unconditionally.
-func (t RegistryAuthTask) Plan() PlanResult {
+func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -144,9 +145,9 @@ func (t RegistryAuthTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "registry login state not probed",
 				Mutations: []string{fmt.Sprintf("registry:login %s %s as %s", target, t.Server, t.Username)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -164,9 +165,9 @@ func (t RegistryAuthTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "registry login state not probed",
 				Mutations: []string{fmt.Sprintf("registry:logout %s %s", target, t.Server)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

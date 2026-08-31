@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/dokku/docket/subprocess"
@@ -64,18 +65,18 @@ func (t AppLockTask) Examples() ([]Doc, error) {
 }
 
 // Execute locks or unlocks the app
-func (t AppLockTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t AppLockTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the AppLockTask would produce.
-func (t AppLockTask) Plan() PlanResult {
+func (t AppLockTask) Plan(ctx context.Context) PlanResult {
 	if t.App == "" {
 		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			locked, err := appLocked(t.App)
+			locked, err := appLocked(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -91,14 +92,14 @@ func (t AppLockTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "app unlocked",
 				Mutations: []string{"lock " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			locked, err := appLocked(t.App)
+			locked, err := appLocked(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -114,9 +115,9 @@ func (t AppLockTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "app locked",
 				Mutations: []string{"unlock " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -125,8 +126,8 @@ func (t AppLockTask) Plan() PlanResult {
 
 // ExportApp emits a dokku_app_lock task only when the app is locked (apps are
 // unlocked by default).
-func (t AppLockTask) ExportApp(app string) ([]interface{}, error) {
-	locked, err := appLocked(app)
+func (t AppLockTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	locked, err := appLocked(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -140,8 +141,8 @@ func (t AppLockTask) ExportApp(app string) ([]interface{}, error) {
 // the probe could not run - a transport failure, a missing dokku binary,
 // or a cancellation; (false, nil) when dokku reports unlocked; (true,
 // nil) when locked.
-func appLocked(app string) (bool, error) {
-	return subprocess.Probe(subprocess.ExecCommandInput{
+func appLocked(ctx context.Context, app string) (bool, error) {
+	return subprocess.Probe(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "apps:locked", app},
 	})

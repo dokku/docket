@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"testing"
 )
 
@@ -10,10 +11,10 @@ import (
 // generator omit the section and the coverage test name the offender.
 type probelessTask struct{}
 
-func (t probelessTask) Doc() string              { return "" }
-func (t probelessTask) Examples() ([]Doc, error) { return nil, nil }
-func (t probelessTask) Plan() PlanResult         { return PlanResult{} }
-func (t probelessTask) Execute() TaskOutputState { return TaskOutputState{} }
+func (t probelessTask) Doc() string                                 { return "" }
+func (t probelessTask) Examples() ([]Doc, error)                    { return nil, nil }
+func (t probelessTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
+func (t probelessTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
 
 func TestTaskProbeSupportUndeclared(t *testing.T) {
 	support, ok := TaskProbeSupport(probelessTask{})

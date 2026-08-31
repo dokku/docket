@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -131,14 +132,14 @@ func (t ServiceCreateTask) ProbeSupport() ProbeSupport {
 // separately - but the image it runs is exported, so a service recreated on
 // another server comes up on the same version rather than whatever that
 // server's plugin defaults to, which is what its `:import` counterpart needs.
-func (t ServiceCreateTask) ExportGlobal() ([]interface{}, error) {
-	services, err := listServices()
+func (t ServiceCreateTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	services, err := listServices(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []interface{}
 	for _, s := range services {
-		image, version, err := serviceImage(s.Type, s.Name)
+		image, version, err := serviceImage(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -206,8 +207,8 @@ func (t ServiceCreateTask) Examples() ([]Doc, error) {
 }
 
 // Execute creates or destroys a dokku service
-func (t ServiceCreateTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ServiceCreateTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // setCreateOptions returns the recipe keys of every create-time option the
@@ -487,18 +488,18 @@ func (t ServiceCreateTask) Validate() error {
 }
 
 // Plan reports the drift the ServiceCreateTask would produce.
-func (t ServiceCreateTask) Plan() PlanResult {
+func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if exists {
-				if drift := planServiceImageDrift(t); drift != nil {
+				if drift := planServiceImageDrift(ctx, t); drift != nil {
 					return *drift
 				}
 				return PlanResult{InSync: true, Status: PlanStatusOK}
@@ -513,14 +514,14 @@ func (t ServiceCreateTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("%s service %s missing", t.Service, t.Name),
 				Mutations: []string{fmt.Sprintf("%s:create %s%s", t.Service, t.Name, t.imageSuffix())},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -536,9 +537,9 @@ func (t ServiceCreateTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%s service %s present", t.Service, t.Name),
 				Mutations: []string{fmt.Sprintf("%s:destroy %s", t.Service, t.Name)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -554,13 +555,13 @@ func (t ServiceCreateTask) Plan() PlanResult {
 // It is a package-level func rather than a method because
 // TestProbeSupportMatchesPlanWiring walks the tasks package for plan-returning
 // methods and allows exactly one per task, Plan itself.
-func planServiceImageDrift(t ServiceCreateTask) *PlanResult {
+func planServiceImageDrift(ctx context.Context, t ServiceCreateTask) *PlanResult {
 	mode := t.imageDriftMode()
 	if mode == imageDriftIgnore || !t.pinsImage() {
 		return nil
 	}
 
-	ref, err := serviceImageRef(t.Service, t.Name)
+	ref, err := serviceImageRef(ctx, t.Service, t.Name)
 	if err != nil {
 		return &PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -595,7 +596,7 @@ func planServiceImageDrift(t ServiceCreateTask) *PlanResult {
 				t.Service, t.Name, running, t.pinnedDescription(image)),
 		}
 	case imageDriftUpgrade:
-		return planServiceImageUpgrade(t, running, image)
+		return planServiceImageUpgrade(ctx, t, running, image)
 	}
 
 	return &PlanResult{
@@ -615,7 +616,7 @@ func planServiceImageDrift(t ServiceCreateTask) *PlanResult {
 // so the only half that may need filling is the name.
 //
 // Package-level for the same reason as planServiceImageDrift.
-func planServiceImageUpgrade(t ServiceCreateTask, running, image string) *PlanResult {
+func planServiceImageUpgrade(ctx context.Context, t ServiceCreateTask, running, image string) *PlanResult {
 	if t.Image != "" {
 		image = t.Image
 	} else if image == "" || strings.Contains(running, "@") {
@@ -633,7 +634,7 @@ func planServiceImageUpgrade(t ServiceCreateTask, running, image string) *PlanRe
 
 	restartApps := false
 	if t.RestartApps {
-		apps, err := serviceLinkedApps(t.Service, t.Name)
+		apps, err := serviceLinkedApps(ctx, t.Service, t.Name)
 		if err != nil {
 			return &PlanResult{Status: PlanStatusError, Error: err}
 		}
@@ -662,9 +663,9 @@ func planServiceImageUpgrade(t ServiceCreateTask, running, image string) *PlanRe
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("image drift: %s -> %s", running, target),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
 		},
 	}
 }
@@ -673,8 +674,8 @@ func planServiceImageUpgrade(t ServiceCreateTask, running, image string) *PlanRe
 // when the probe could not run - a transport failure, a missing dokku
 // binary, or a cancellation, (false, nil) when dokku reports the service
 // absent, (true, nil) when present.
-func serviceExists(service, name string) (bool, error) {
-	return subprocess.Probe(subprocess.ExecCommandInput{
+func serviceExists(ctx context.Context, service, name string) (bool, error) {
+	return subprocess.Probe(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",
@@ -685,18 +686,18 @@ func serviceExists(service, name string) (bool, error) {
 }
 
 // destroyService destroys a dokku service
-func destroyService(service, name string) TaskOutputState {
+func destroyService(ctx context.Context, service, name string) TaskOutputState {
 	state := TaskOutputState{
 		Changed: false,
 		State:   "present",
 	}
-	exists, _ := serviceExists(service, name)
+	exists, _ := serviceExists(ctx, service, name)
 	if !exists {
 		state.State = "absent"
 		return state
 	}
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",

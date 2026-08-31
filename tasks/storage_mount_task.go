@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -165,8 +166,8 @@ func (t StorageMountTask) Examples() ([]Doc, error) {
 }
 
 // Execute attaches or detaches storage for a given app
-func (t StorageMountTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t StorageMountTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the StorageMountTask's inputs without contacting the server.
@@ -178,13 +179,13 @@ func (t StorageMountTask) Validate() error {
 }
 
 // Plan reports the drift the StorageMountTask would produce.
-func (t StorageMountTask) Plan() PlanResult {
+func (t StorageMountTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			existing, err := findMount(t.App, t.EntryName, t.HostDir, t.ContainerDir)
+			existing, err := findMount(ctx, t.App, t.EntryName, t.HostDir, t.ContainerDir)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -214,14 +215,14 @@ func (t StorageMountTask) Plan() PlanResult {
 				Status:    status,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("mount %s on %s", t.describeMount(), t.App)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			existing, err := findMount(t.App, t.EntryName, t.HostDir, t.ContainerDir)
+			existing, err := findMount(ctx, t.App, t.EntryName, t.HostDir, t.ContainerDir)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -237,9 +238,9 @@ func (t StorageMountTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "mount present",
 				Mutations: []string{fmt.Sprintf("unmount %s on %s", t.describeMount(), t.App)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -366,8 +367,8 @@ type existingMount struct {
 // "legacy-" entry name) use the host_dir form; named registry entries use the
 // entry_name form. Phases and process_type that match dokku's defaults are
 // omitted so the exported recipe stays minimal.
-func (t StorageMountTask) ExportApp(app string) ([]interface{}, error) {
-	attachments, err := readStorageAttachments(app)
+func (t StorageMountTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	attachments, err := readStorageAttachments(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -425,8 +426,8 @@ type reportAttachment struct {
 // A transport-level failure (*subprocess.SSHError) is propagated; a dokku-level
 // non-zero exit (e.g. app does not exist) or a JSON parse failure is treated as
 // "no attachments."
-func readStorageAttachments(app string) ([]reportAttachment, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func readStorageAttachments(ctx context.Context, app string) ([]reportAttachment, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "storage:report", app, "--format", "json"},
 	})
@@ -522,8 +523,8 @@ func isDefaultPhases(phases []string) bool {
 // only reports the deploy phase, which would hide run-only mounts. A
 // transport-level failure (`*subprocess.SSHError`) is propagated; a dokku-level
 // non-zero exit (e.g. app does not exist) is treated as "no mount."
-func findMount(app, entryName, hostDir, containerDir string) (*existingMount, error) {
-	attachments, err := readStorageAttachments(app)
+func findMount(ctx context.Context, app, entryName, hostDir, containerDir string) (*existingMount, error) {
+	attachments, err := readStorageAttachments(ctx, app)
 	if err != nil {
 		return nil, err
 	}

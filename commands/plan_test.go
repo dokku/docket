@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dokku/docket/tasks"
@@ -46,10 +47,14 @@ func TestPlanCommandHelpDoesNotPanic(t *testing.T) {
 }
 
 // TestPlanCommandUsesPlanInterface guards the contract between the commands
-// package and the tasks package: PlanCommand consumes tasks.Task, which
-// must expose Plan() returning tasks.PlanResult.
+// package and the tasks package: PlanCommand consumes tasks.Task, which must
+// expose Plan and Execute taking the run context and returning the plan /
+// output types the command layer switches on. The context parameter is the
+// part worth pinning - it is how cancellation and the target reach a task,
+// and dropping it would silently put both back on package globals.
 func TestPlanCommandUsesPlanInterface(t *testing.T) {
 	var _ interface {
-		Plan() tasks.PlanResult
+		Plan(ctx context.Context) tasks.PlanResult
+		Execute(ctx context.Context) tasks.TaskOutputState
 	} = (tasks.Task)(nil)
 }

@@ -14,7 +14,7 @@ func TestStorageMountTaskInvalidState(t *testing.T) {
 		ContainerDir: "/container",
 		State:        "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -39,7 +39,7 @@ func TestStorageMountRequiresExactlyOneSource(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := tc.task.Plan()
+			result := tc.task.Plan(testCtx())
 			if result.Error == nil {
 				t.Fatalf("expected error %q, got nil", tc.want)
 			}
@@ -58,7 +58,7 @@ func TestStorageMountRejectsInvalidPhase(t *testing.T) {
 		Phases:       []string{"deploy", "boot"},
 		State:        StatePresent,
 	}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error for invalid phase")
 	}
@@ -187,7 +187,7 @@ func exportMounts(t *testing.T, app, report string) []StorageMountTask {
 		"--quiet storage:report " + app + " --format json": report,
 	}))()
 
-	bodies, err := StorageMountTask{}.ExportApp(app)
+	bodies, err := StorageMountTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestStorageMountExportRecipeEmitsFields(t *testing.T) {
 		"--quiet storage:report node-js-app --format json": report,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{Apps: []string{"node-js-app"}})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Apps: []string{"node-js-app"}})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestStorageMountPlanFindsRunOnlyMount(t *testing.T) {
 		Phases:       []string{"run"},
 		State:        StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("Plan returned error: %v", plan.Error)
 	}
@@ -415,7 +415,7 @@ func TestStorageMountPlanVolumeOptionsDriftReportsModify(t *testing.T) {
 		VolumeOptions: "noexec,nosuid",
 		State:         StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("Plan returned error: %v", plan.Error)
 	}
@@ -443,7 +443,7 @@ func TestStorageMountPlanMissingReportsCreate(t *testing.T) {
 		ContainerDir: "/app/storage",
 		State:        StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("Plan returned error: %v", plan.Error)
 	}

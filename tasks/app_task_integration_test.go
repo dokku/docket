@@ -10,11 +10,11 @@ func TestIntegrationAppCreateAndDestroy(t *testing.T) {
 	appName := "docket-test-app"
 
 	// ensure clean state
-	destroyApp(appName)
+	destroyApp(testCtx(), appName)
 
 	// create the app
 	task := AppTask{App: appName, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create app: %v", result.Error)
 	}
@@ -26,7 +26,7 @@ func TestIntegrationAppCreateAndDestroy(t *testing.T) {
 	}
 
 	// creating again should be idempotent
-	result = task.Execute()
+	result = task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent create failed: %v", result.Error)
 	}
@@ -39,7 +39,7 @@ func TestIntegrationAppCreateAndDestroy(t *testing.T) {
 
 	// destroy the app
 	destroyTask := AppTask{App: appName, State: StateAbsent}
-	result = destroyTask.Execute()
+	result = destroyTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to destroy app: %v", result.Error)
 	}
@@ -51,7 +51,7 @@ func TestIntegrationAppCreateAndDestroy(t *testing.T) {
 	}
 
 	// destroying again should be idempotent
-	result = destroyTask.Execute()
+	result = destroyTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent destroy failed: %v", result.Error)
 	}

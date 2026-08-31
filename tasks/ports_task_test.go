@@ -15,7 +15,7 @@ func TestPortsTaskInvalidState(t *testing.T) {
 		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}},
 		State:        "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -23,7 +23,7 @@ func TestPortsTaskInvalidState(t *testing.T) {
 
 func TestPortsTaskEmptyPortMappings(t *testing.T) {
 	task := PortsTask{App: "test-app", PortMappings: []PortMapping{}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty port mappings should return an error")
 	}
@@ -157,7 +157,7 @@ func TestPortsSetPlansFullReplacement(t *testing.T) {
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "http", Host: 8080, Container: 5000}},
 		State:        StateSet,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -189,7 +189,7 @@ func TestPortsSetOnAppWithNoMappingsIsACreate(t *testing.T) {
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}},
 		State:        StateSet,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -210,7 +210,7 @@ func TestPortsSetConvergesWhenReportMatches(t *testing.T) {
 			{Scheme: "https", Host: 443, Container: 5000},
 		},
 		State: StateSet,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -227,7 +227,7 @@ func TestPortsClearPlansEveryMapping(t *testing.T) {
 		portsReportKey: "http:80:5000 https:443:5000",
 	}))()
 
-	plan := PortsTask{App: "web", State: StateClear}.Plan()
+	plan := PortsTask{App: "web", State: StateClear}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -255,7 +255,7 @@ func TestPortsClearIsInSyncWithoutMappings(t *testing.T) {
 		portsReportKey: "",
 	}))()
 
-	plan := PortsTask{App: "web", State: StateClear}.Plan()
+	plan := PortsTask{App: "web", State: StateClear}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -279,7 +279,7 @@ func TestPortsPresentPlansOnlyTheMissingMappings(t *testing.T) {
 			{Scheme: "https", Host: 443, Container: 5000},
 		},
 		State: StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -307,7 +307,7 @@ func TestPortsPresentRejectsCollisionWithAnExistingMapping(t *testing.T) {
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 6000}},
 		State:        StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error == nil {
 		t.Fatal("expected an error when the scheme:host pair is already bound to another container port")
 	}
@@ -328,7 +328,7 @@ func TestPortsPresentAllowsTheSameHostPortUnderAnotherScheme(t *testing.T) {
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "https", Host: 80, Container: 5000}},
 		State:        StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -352,7 +352,7 @@ func TestPortsAbsentPlansOnlyThePresentMappings(t *testing.T) {
 			{Scheme: "https", Host: 443, Container: 5000},
 		},
 		State: StateAbsent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}

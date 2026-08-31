@@ -31,7 +31,7 @@ func TestIntegrationTraefikPropertyAll(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.property+"/global", func(t *testing.T) {
 			unsetTask := TraefikPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-			defer unsetTask.Execute()
+			defer unsetTask.Execute(testCtx())
 			runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 				label:     "traefik global " + tc.property,
 				setTask:   TraefikPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
@@ -44,11 +44,11 @@ func TestIntegrationTraefikPropertyAll(t *testing.T) {
 	// isDynamicProperty fallback path.
 	t.Run("dns-provider-CLOUDFLARE_API_TOKEN/dynamic", func(t *testing.T) {
 		set := TraefikPropertyTask{Global: true, Property: "dns-provider-CLOUDFLARE_API_TOKEN", Value: "token123", State: StatePresent}
-		if r := set.Execute(); r.Error != nil {
+		if r := set.Execute(testCtx()); r.Error != nil {
 			t.Fatalf("set dynamic dns-provider key: %v", r.Error)
 		}
 		unset := TraefikPropertyTask{Global: true, Property: "dns-provider-CLOUDFLARE_API_TOKEN", State: StateAbsent}
-		if r := unset.Execute(); r.Error != nil {
+		if r := unset.Execute(testCtx()); r.Error != nil {
 			t.Fatalf("unset dynamic dns-provider key: %v", r.Error)
 		}
 	})

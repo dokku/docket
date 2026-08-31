@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,15 +86,15 @@ func (t GitSyncTask) Examples() ([]Doc, error) {
 }
 
 // Execute syncs a git repository to a dokku application
-func (t GitSyncTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t GitSyncTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the GitSyncTask would produce.
-func (t GitSyncTask) Plan() PlanResult {
+func (t GitSyncTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			match, err := checkAppSyncState(t.App, t.Remote, t.GitRef, t.SkipDeployBranch)
+			match, err := checkAppSyncState(ctx, t.App, t.Remote, t.GitRef, t.SkipDeployBranch)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -124,9 +125,9 @@ func (t GitSyncTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "remote/ref drift",
 				Mutations: []string{fmt.Sprintf("git:sync %s %s %s", t.App, t.Remote, ref)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -142,8 +143,8 @@ func (t GitSyncTask) Plan() PlanResult {
 // which case a matching remote is the most that can be verified offline). A
 // transport-level failure (`*subprocess.SSHError`) is propagated; any other
 // error is treated as "no match" so the planner proposes a re-sync.
-func checkAppSyncState(app, expectedRemote, expectedRef string, skipDeployBranch bool) (bool, error) {
-	source, err := getAppDeploySource(app)
+func checkAppSyncState(ctx context.Context, app, expectedRemote, expectedRef string, skipDeployBranch bool) (bool, error) {
+	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -167,7 +168,7 @@ func checkAppSyncState(app, expectedRemote, expectedRef string, skipDeployBranch
 		return true, nil
 	}
 
-	deployBranch, err := getGitDeployBranch(app)
+	deployBranch, err := getGitDeployBranch(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -182,8 +183,8 @@ func checkAppSyncState(app, expectedRemote, expectedRef string, skipDeployBranch
 // read from `git:report --format json` (JSON key `deploy-branch`). git:sync
 // sets it from the synced ref by default, so it is the offline signal for which
 // ref the app currently tracks.
-func getGitDeployBranch(app string) (string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getGitDeployBranch(ctx context.Context, app string) (string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"git:report", app, "--format", "json"},
 	})
@@ -204,8 +205,8 @@ func getGitDeployBranch(app string) (string, error) {
 // before the last "#" and the ref from the deploy-branch git:sync persisted -
 // not the SHA, which the probe cannot match against a branch or tag. It only
 // emits when the app was last deployed via git:sync.
-func (t GitSyncTask) ExportApp(app string) ([]interface{}, error) {
-	source, err := getAppDeploySource(app)
+func (t GitSyncTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +217,7 @@ func (t GitSyncTask) ExportApp(app string) ([]interface{}, error) {
 	if i := strings.LastIndex(source.SourceMetadata, "#"); i >= 0 {
 		remote = source.SourceMetadata[:i]
 	}
-	ref, err := getGitDeployBranch(app)
+	ref, err := getGitDeployBranch(ctx, app)
 	if err != nil {
 		return nil, err
 	}

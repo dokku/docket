@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -70,8 +71,8 @@ func (t LetsencryptTask) Examples() ([]Doc, error) {
 }
 
 // Execute enables or disables letsencrypt
-func (t LetsencryptTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t LetsencryptTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the LetsencryptTask's inputs without contacting the server.
@@ -83,13 +84,13 @@ func (t LetsencryptTask) Validate() error {
 }
 
 // Plan reports the drift the LetsencryptTask would produce.
-func (t LetsencryptTask) Plan() PlanResult {
+func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			active, err := letsencryptActive(t.App)
+			active, err := letsencryptActive(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -105,14 +106,14 @@ func (t LetsencryptTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "letsencrypt not active",
 				Mutations: []string{"letsencrypt:enable " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			active, err := letsencryptActive(t.App)
+			active, err := letsencryptActive(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -128,9 +129,9 @@ func (t LetsencryptTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "letsencrypt active",
 				Mutations: []string{"letsencrypt:disable " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -139,8 +140,8 @@ func (t LetsencryptTask) Plan() PlanResult {
 
 // ExportApp emits a dokku_letsencrypt task when letsencrypt is active for the
 // app (it is inactive by default, so a normal app needs no task).
-func (t LetsencryptTask) ExportApp(app string) ([]interface{}, error) {
-	active, err := letsencryptActive(app)
+func (t LetsencryptTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	active, err := letsencryptActive(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -152,8 +153,8 @@ func (t LetsencryptTask) ExportApp(app string) ([]interface{}, error) {
 
 // letsencryptActive reports whether letsencrypt is currently active for an app.
 // Mirrors the upstream `dokku letsencrypt:active <app>` output ("true"/"false").
-func letsencryptActive(app string) (bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func letsencryptActive(ctx context.Context, app string) (bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "letsencrypt:active", app},
 	})

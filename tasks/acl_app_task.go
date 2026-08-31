@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -82,8 +83,8 @@ func (t AclAppTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the app ACL
-func (t AclAppTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t AclAppTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the AclAppTask's inputs without contacting the server, so
@@ -99,13 +100,13 @@ func (t AclAppTask) Validate() error {
 }
 
 // Plan reports the drift the AclAppTask would produce.
-func (t AclAppTask) Plan() PlanResult {
+func (t AclAppTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			current, err := getAclAppUsers(t.App)
+			current, err := getAclAppUsers(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -132,14 +133,14 @@ func (t AclAppTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("%d user(s) to add", len(toAdd)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			current, err := getAclAppUsers(t.App)
+			current, err := getAclAppUsers(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -173,9 +174,9 @@ func (t AclAppTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -184,8 +185,8 @@ func (t AclAppTask) Plan() PlanResult {
 
 // getAclAppUsers reads the current ACL for an app via `acl:list APP`. The
 // plugin emits one username per line; an empty ACL produces no output.
-func getAclAppUsers(app string) (map[string]bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getAclAppUsers(ctx context.Context, app string) (map[string]bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "acl:list", app},
 	})
@@ -205,8 +206,8 @@ func getAclAppUsers(app string) (map[string]bool, error) {
 }
 
 // ExportApp reconstructs the app's ACL user list, or nil when it is empty.
-func (t AclAppTask) ExportApp(app string) ([]interface{}, error) {
-	users, err := getAclAppUsers(app)
+func (t AclAppTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	users, err := getAclAppUsers(ctx, app)
 	if err != nil {
 		return nil, err
 	}

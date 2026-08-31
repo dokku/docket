@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // LogsPropertyTask manages the logs configuration for a given dokku application
 type LogsPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t LogsPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the logs property
-func (t LogsPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t LogsPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // logsPropertyTable maps logs property names to the JSON keys emitted by
@@ -92,20 +94,20 @@ func (t LogsPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the LogsPropertyTask would produce.
-func (t LogsPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t LogsPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t LogsPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t LogsPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return LogsPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t LogsPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t LogsPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return LogsPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

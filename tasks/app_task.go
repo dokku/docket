@@ -1,6 +1,8 @@
 package tasks
 
 import (
+	"context"
+
 	"github.com/dokku/docket/subprocess"
 )
 
@@ -62,15 +64,15 @@ func (t AppTask) Examples() ([]Doc, error) {
 }
 
 // Execute creates or destroys an app
-func (t AppTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t AppTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the AppTask would produce.
-func (t AppTask) Plan() PlanResult {
+func (t AppTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := appExists(t.App)
+			exists, err := appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -83,14 +85,14 @@ func (t AppTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "app missing",
 				Mutations: []string{"create app " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := appExists(t.App)
+			exists, err := appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -103,9 +105,9 @@ func (t AppTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "app present",
 				Mutations: []string{"destroy app " + t.App},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -114,7 +116,7 @@ func (t AppTask) Plan() PlanResult {
 
 // ExportApp reconstructs the app itself. Enumeration already confirmed the app
 // exists, so this simply declares it present (its default state).
-func (t AppTask) ExportApp(app string) ([]interface{}, error) {
+func (t AppTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
 	return []interface{}{AppTask{App: app}}, nil
 }
 
@@ -123,8 +125,8 @@ func (t AppTask) ExportApp(app string) ([]interface{}, error) {
 // (false, err) when the probe could not run - a transport failure, a
 // missing dokku binary, or a cancellation. Plan() callers must
 // short-circuit on the error.
-func appExists(appName string) (bool, error) {
-	return subprocess.Probe(subprocess.ExecCommandInput{
+func appExists(ctx context.Context, appName string) (bool, error) {
+	return subprocess.Probe(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "apps:exists", appName},
 	})
@@ -146,22 +148,22 @@ func destroyAppInputs(app string) []subprocess.ExecCommandInput {
 
 // destroyApp is retained as an integration-test helper. It runs the
 // destroy-app apply path synchronously.
-func destroyApp(app string) TaskOutputState {
-	exists, _ := appExists(app)
+func destroyApp(ctx context.Context, app string) TaskOutputState {
+	exists, _ := appExists(ctx, app)
 	if !exists {
 		return TaskOutputState{Changed: false, State: StateAbsent}
 	}
-	return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, destroyAppInputs(app))
+	return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, destroyAppInputs(app))
 }
 
 // createApp is retained as an integration-test helper. It runs the
 // create-app apply path synchronously.
-func createApp(app string) TaskOutputState {
-	exists, _ := appExists(app)
+func createApp(ctx context.Context, app string) TaskOutputState {
+	exists, _ := appExists(ctx, app)
 	if exists {
 		return TaskOutputState{Changed: false, State: StatePresent}
 	}
-	return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, createAppInputs(app))
+	return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, createAppInputs(app))
 }
 
 // init registers the AppTask with the task registry

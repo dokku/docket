@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,8 +93,8 @@ func (t PluginTask) Examples() ([]Doc, error) {
 }
 
 // Execute installs or uninstalls the plugin
-func (t PluginTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t PluginTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the PluginTask's inputs without contacting the server.
@@ -108,13 +109,13 @@ func (t PluginTask) Validate() error {
 }
 
 // Plan reports the drift the PluginTask would produce.
-func (t PluginTask) Plan() PlanResult {
+func (t PluginTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			installed, err := pluginInstalled(t.Name)
+			installed, err := pluginInstalled(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -132,14 +133,14 @@ func (t PluginTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "plugin not installed",
 				Mutations: []string{fmt.Sprintf("install plugin %s", t.Name)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			installed, err := pluginInstalled(t.Name)
+			installed, err := pluginInstalled(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -155,9 +156,9 @@ func (t PluginTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "plugin installed",
 				Mutations: []string{fmt.Sprintf("uninstall plugin %s", t.Name)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -180,8 +181,8 @@ type pluginListEntry struct {
 // followed branch, and checked-out commit. Core plugins ship with dokku (and
 // plugin:uninstall rejects them), and plugins without a git source (a tarball or
 // local path) cannot be reinstalled declaratively, so both are skipped.
-func (t PluginTask) ExportGlobal() ([]interface{}, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func (t PluginTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
 	})
@@ -224,8 +225,8 @@ func (t PluginTask) ExportGlobal() ([]interface{}, error) {
 // pluginInstalled reports whether a plugin is installed by parsing
 // `dokku plugin:list`, whose first whitespace-delimited field per line is the
 // plugin name (mirrors dokku's own plugin:installed check).
-func pluginInstalled(name string) (bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func pluginInstalled(ctx context.Context, name string) (bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "plugin:list"},
 	})

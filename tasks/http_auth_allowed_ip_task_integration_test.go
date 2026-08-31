@@ -9,13 +9,13 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 	skipIfPluginMissingT(t, "http-auth")
 
 	appName := "docket-test-http-auth-allowed-ip"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	currentIps := func(t *testing.T, label string) map[string]bool {
 		t.Helper()
-		got, err := getHttpAuthAllowedIps(appName)
+		got, err := getHttpAuthAllowedIps(testCtx(), appName)
 		if err != nil {
 			t.Fatalf("%s: getHttpAuthAllowedIps failed: %v", label, err)
 		}
@@ -30,7 +30,7 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 
 	// initialize auth so the app has a valid htpasswd/nginx config; add-allowed-ip
 	// flips enabled=true but does not create an htpasswd file on its own
-	if result := (HttpAuthTask{App: appName, Username: "admin", Password: "secret", State: StatePresent}).Execute(); result.Error != nil {
+	if result := (HttpAuthTask{App: appName, Username: "admin", Password: "secret", State: StatePresent}).Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to enable http auth: %v", result.Error)
 	}
 
@@ -43,7 +43,7 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 		AllowedIps: []string{firstIp, secondIp},
 		State:      StatePresent,
 	}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add allowed ips: %v", result.Error)
 	}
@@ -57,7 +57,7 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 	assertHas(t, "after add", secondIp, true)
 
 	// adding the same allowed ips again is idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -67,7 +67,7 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 
 	// remove one allowed ip
 	removeTask := HttpAuthAllowedIpTask{App: appName, AllowedIps: []string{secondIp}, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove allowed ip: %v", result.Error)
 	}
@@ -81,7 +81,7 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 	assertHas(t, "after remove second", firstIp, true)
 
 	// removing the same allowed ip again is idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -91,7 +91,7 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 
 	// clearing with empty allowed_ips removes every remaining allowed ip
 	clearTask := HttpAuthAllowedIpTask{App: appName, State: StateAbsent}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear allowed ips: %v", result.Error)
 	}
@@ -103,7 +103,7 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 	}
 
 	// clearing again is idempotent
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second clear: %v", result.Error)
 	}

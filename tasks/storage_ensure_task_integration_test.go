@@ -9,16 +9,16 @@ func TestIntegrationStorageEnsure(t *testing.T) {
 
 	appName := "docket-test-storage"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	task := StorageEnsureTask{
 		App:   appName,
 		Chown: "herokuish",
 		State: StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to ensure storage: %v", result.Error)
 	}
@@ -32,16 +32,16 @@ func TestIntegrationStorageEnsureOmittedChown(t *testing.T) {
 
 	appName := "docket-test-storage-nochown"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// chown omitted: dokku applies its default (herokuish) ownership.
 	task := StorageEnsureTask{
 		App:   appName,
 		State: StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to ensure storage without chown: %v", result.Error)
 	}
@@ -55,9 +55,9 @@ func TestIntegrationStorageEnsureNumericChown(t *testing.T) {
 
 	appName := "docket-test-storage-numeric-chown"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// A raw numeric uid is accepted by dokku (ownership set to <uid>:<uid>).
 	task := StorageEnsureTask{
@@ -65,7 +65,7 @@ func TestIntegrationStorageEnsureNumericChown(t *testing.T) {
 		Chown: "32767",
 		State: StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to ensure storage with numeric chown: %v", result.Error)
 	}

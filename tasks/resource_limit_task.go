@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // ResourceLimitTask manages the resource limits for a given dokku application
 type ResourceLimitTask struct {
 	// App is the name of the app
@@ -82,13 +84,13 @@ func (t ResourceLimitTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or clears the resource limits for a given dokku application
-func (t ResourceLimitTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ResourceLimitTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // ExportApp reconstructs the app's resource limits, one task per process type.
-func (t ResourceLimitTask) ExportApp(app string) ([]interface{}, error) {
-	return exportResourceTasks(app, "limit", func(app, processType string, resources map[string]string) interface{} {
+func (t ResourceLimitTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportResourceTasks(ctx, app, "limit", func(app, processType string, resources map[string]string) interface{} {
 		return ResourceLimitTask{App: app, ProcessType: processType, Resources: resources}
 	})
 }
@@ -99,8 +101,8 @@ func (t ResourceLimitTask) Validate() error {
 }
 
 // Plan reports the drift the ResourceLimitTask would produce.
-func (t ResourceLimitTask) Plan() PlanResult {
-	return planResource(t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:limit")
+func (t ResourceLimitTask) Plan(ctx context.Context) PlanResult {
+	return planResource(ctx, t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:limit")
 }
 
 // init registers the ResourceLimitTask with the task registry

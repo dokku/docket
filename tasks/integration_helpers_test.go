@@ -14,7 +14,7 @@ func TestMain(m *testing.M) {
 }
 
 func dokkuAvailable() bool {
-	_, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	_, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"version"},
 	})
@@ -30,7 +30,7 @@ func skipIfNoDokkuT(t *testing.T) {
 }
 
 func dokkuPluginInstalled(plugin string) bool {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"plugin:list"},
 	})
@@ -55,7 +55,7 @@ func skipIfPluginMissingT(t *testing.T, plugin string) {
 }
 
 func dockerLinkSupported() bool {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"version", "--format", "{{.Server.Version}}"},
 	})
@@ -82,24 +82,24 @@ func dockerLinkSupported() bool {
 	// Docker >= 29 requires DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1
 	// on the daemon. Test by creating two containers with --link and checking
 	// if the link env vars are present.
-	subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"rm", "-f", "docket-link-test-target", "docket-link-test-client"},
 	})
 
-	_, err = subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	_, err = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"run", "-d", "--name", "docket-link-test-target", "alpine", "sleep", "30"},
 	})
 	if err != nil {
 		return false
 	}
-	defer subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	defer subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"rm", "-f", "docket-link-test-target", "docket-link-test-client"},
 	})
 
-	result, err = subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"run", "--rm", "--name", "docket-link-test-client", "--link", "docket-link-test-target:target", "alpine", "env"},
 	})
@@ -121,7 +121,7 @@ func skipIfDockerLinkUnsupportedT(t *testing.T) {
 // CONTAINER files (e.g., /home/dokku/APP/CONTAINER.web.1) which are the
 // authoritative source for the current deployment's containers.
 func getCurrentContainerIDs(appName, processType string) ([]string, error) {
-	scale, err := getPsScale(appName)
+	scale, err := getPsScale(testCtx(), appName)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ func getCurrentContainerIDs(appName, processType string) ([]string, error) {
 	}
 	var ids []string
 	for i := 1; i <= count; i++ {
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "cat",
 			Args:    []string{fmt.Sprintf("/home/dokku/%s/CONTAINER.%s.%d", appName, processType, i)},
 		})

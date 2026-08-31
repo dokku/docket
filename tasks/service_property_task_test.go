@@ -8,7 +8,7 @@ import (
 
 func TestServicePropertyTaskInvalidState(t *testing.T) {
 	task := ServicePropertyTask{Service: "redis", Name: "test-service", Property: "restart-policy", Value: "always", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -16,7 +16,7 @@ func TestServicePropertyTaskInvalidState(t *testing.T) {
 
 func TestServicePropertyTaskPresentRequiresValue(t *testing.T) {
 	task := ServicePropertyTask{Service: "redis", Name: "test-service", Property: "restart-policy"}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with present state and no value should return an error")
 	}
@@ -24,7 +24,7 @@ func TestServicePropertyTaskPresentRequiresValue(t *testing.T) {
 
 func TestServicePropertyTaskAbsentRejectsValue(t *testing.T) {
 	task := ServicePropertyTask{Service: "redis", Name: "test-service", Property: "restart-policy", Value: "always", State: StateAbsent}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with absent state and a value should return an error")
 	}
@@ -32,7 +32,7 @@ func TestServicePropertyTaskAbsentRejectsValue(t *testing.T) {
 
 func TestServicePropertyTaskRequiresProperty(t *testing.T) {
 	task := ServicePropertyTask{Service: "redis", Name: "test-service", Value: "always"}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with no property should return an error")
 	}

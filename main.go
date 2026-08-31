@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/dokku/docket/commands"
 
@@ -21,7 +23,19 @@ func main() {
 }
 
 func Run(args []string) int {
-	ctx := context.Background()
+	// One signal handler for the process, installed here rather than around
+	// every subprocess call. Cancelling this context is what makes an
+	// interrupt abort the run instead of only the task in flight, and
+	// NotifyContext restores the default disposition afterwards so a second
+	// Ctrl-C still kills a wedged process.
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGQUIT,
+		syscall.SIGTERM)
+	defer stop()
+
 	commandMeta := command.SetupRun(ctx, AppName, Version, args)
 	commandMeta.Ui = command.HumanZerologUiWithFields(commandMeta.Ui, make(map[string]interface{}, 0))
 	c := cli.NewCLI(AppName, Version)
@@ -39,10 +53,10 @@ func Run(args []string) int {
 func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFactory {
 	return map[string]cli.CommandFactory{
 		"apply": func() (cli.Command, error) {
-			return &commands.ApplyCommand{Meta: meta}, nil
+			return &commands.ApplyCommand{Meta: meta, Ctx: ctx}, nil
 		},
 		"export": func() (cli.Command, error) {
-			return &commands.ExportCommand{Meta: meta}, nil
+			return &commands.ExportCommand{Meta: meta, Ctx: ctx}, nil
 		},
 		"fmt": func() (cli.Command, error) {
 			return &commands.FmtCommand{Meta: meta}, nil
@@ -51,7 +65,7 @@ func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFact
 			return &commands.InitCommand{Meta: meta}, nil
 		},
 		"plan": func() (cli.Command, error) {
-			return &commands.PlanCommand{Meta: meta}, nil
+			return &commands.PlanCommand{Meta: meta, Ctx: ctx}, nil
 		},
 		"schema": func() (cli.Command, error) {
 			return &commands.SchemaCommand{Meta: meta}, nil

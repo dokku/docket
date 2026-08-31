@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,8 +56,8 @@ func validateSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec, s
 // computes the drifted keys, and emits one bulk `:set` call carrying a
 // `--metadata k=v` flag per drifted key. Dokku's `:set` is an additive merge,
 // so extra keys not in the spec are left alone.
-func planSchedulerK3sAutoscalingAuthSet(spec schedulerK3sAutoscalingAuthSpec) PlanResult {
-	current, err := getSchedulerK3sAutoscalingAuth(spec)
+func planSchedulerK3sAutoscalingAuthSet(ctx context.Context, spec schedulerK3sAutoscalingAuthSpec) PlanResult {
+	current, err := getSchedulerK3sAutoscalingAuth(ctx, spec)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -80,9 +81,9 @@ func planSchedulerK3sAutoscalingAuthSet(spec schedulerK3sAutoscalingAuthSpec) Pl
 		Status:    status,
 		Reason:    fmt.Sprintf("%d metadata key(s) to set", len(drifted)),
 		Mutations: formatSetMutations(drifted, spec.Metadata, current),
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
@@ -93,8 +94,8 @@ func planSchedulerK3sAutoscalingAuthSet(spec schedulerK3sAutoscalingAuthSpec) Pl
 // the only public-CLI route to clearing specific keys is to wipe the whole
 // trigger and re-set the keys the task does NOT name. Any key not in the
 // current map is skipped (already absent).
-func planSchedulerK3sAutoscalingAuthUnset(spec schedulerK3sAutoscalingAuthSpec) PlanResult {
-	current, err := getSchedulerK3sAutoscalingAuth(spec)
+func planSchedulerK3sAutoscalingAuthUnset(ctx context.Context, spec schedulerK3sAutoscalingAuthSpec) PlanResult {
+	current, err := getSchedulerK3sAutoscalingAuth(ctx, spec)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -137,9 +138,9 @@ func planSchedulerK3sAutoscalingAuthUnset(spec schedulerK3sAutoscalingAuthSpec) 
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d metadata key(s) to unset", len(toClear)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }
@@ -187,7 +188,7 @@ func schedulerK3sAutoscalingAuthClearCommand(spec schedulerK3sAutoscalingAuthSpe
 // metadata values (dokku only masks stdout and single-flag output, never the
 // JSON payload). We keep the entries under our trigger and strip the
 // `<trigger>.` prefix to recover the original metadata keys.
-func getSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec) (map[string]string, error) {
+func getSchedulerK3sAutoscalingAuth(ctx context.Context, spec schedulerK3sAutoscalingAuthSpec) (map[string]string, error) {
 	args := []string{"--quiet", "scheduler-k3s:autoscaling-auth:report"}
 	if spec.Global {
 		args = append(args, "--global")
@@ -196,7 +197,7 @@ func getSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec) (map[s
 	}
 	args = append(args, "--format", "json")
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})
@@ -238,13 +239,13 @@ func parseSchedulerK3sAutoscalingAuthReport(raw []byte, trigger string) (map[str
 // body. Non-SSH errors and unparseable output are swallowed (return nil) so a
 // host without scheduler-k3s state does not fail the whole export, mirroring
 // the profile and chart exporters.
-func exportSchedulerK3sAutoscalingAuth(app string, global bool, build func(trigger string, metadata map[string]string) interface{}) ([]interface{}, error) {
+func exportSchedulerK3sAutoscalingAuth(ctx context.Context, app string, global bool, build func(trigger string, metadata map[string]string) interface{}) ([]interface{}, error) {
 	target := app
 	if global {
 		target = "--global"
 	}
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "scheduler-k3s:autoscaling-auth:report", target, "--format", "json"},
 	})

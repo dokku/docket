@@ -10,7 +10,7 @@ import (
 
 func TestHttpAuthTaskInvalidState(t *testing.T) {
 	task := HttpAuthTask{App: "test-app", Username: "admin", Password: "secret", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -18,7 +18,7 @@ func TestHttpAuthTaskInvalidState(t *testing.T) {
 
 func TestHttpAuthTaskPresentWithoutUsername(t *testing.T) {
 	task := HttpAuthTask{App: "test-app", Password: "secret", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no username")
 	}
@@ -29,7 +29,7 @@ func TestHttpAuthTaskPresentWithoutUsername(t *testing.T) {
 
 func TestHttpAuthTaskPresentWithoutPassword(t *testing.T) {
 	task := HttpAuthTask{App: "test-app", Username: "admin", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no password")
 	}
@@ -55,7 +55,7 @@ func TestHttpAuthTaskEnableOmitsEmptyCredentials(t *testing.T) {
 		"http-auth:report test-app --format json": `{"enabled":"false"}`,
 	}))()
 
-	plan := HttpAuthTask{App: "test-app", State: StatePresent}.Plan()
+	plan := HttpAuthTask{App: "test-app", State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("Plan: %v", plan.Error)
 	}

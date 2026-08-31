@@ -8,9 +8,9 @@ func TestIntegrationSchedulerK3sPropertyAll(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		property string
@@ -46,7 +46,7 @@ func TestIntegrationSchedulerK3sPropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := SchedulerK3sPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "scheduler-k3s global " + tc.property,
 					setTask:   SchedulerK3sPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

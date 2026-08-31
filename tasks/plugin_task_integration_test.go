@@ -17,7 +17,7 @@ func TestIntegrationPlugin(t *testing.T) {
 	pluginCommittish := "v0.9.0"
 
 	uninstallPlugin := func() {
-		subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "plugin:uninstall", pluginName},
 		})
@@ -28,7 +28,7 @@ func TestIntegrationPlugin(t *testing.T) {
 
 	assertInstalled := func(t *testing.T, label string, want bool) {
 		t.Helper()
-		got, err := pluginInstalled(pluginName)
+		got, err := pluginInstalled(testCtx(), pluginName)
 		if err != nil {
 			t.Fatalf("%s: pluginInstalled failed: %v", label, err)
 		}
@@ -41,7 +41,7 @@ func TestIntegrationPlugin(t *testing.T) {
 
 	// install the plugin
 	installTask := PluginTask{Name: pluginName, URL: pluginURL, Committish: pluginCommittish, State: StatePresent}
-	result := installTask.Execute()
+	result := installTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to install plugin: %v", result.Error)
 	}
@@ -54,7 +54,7 @@ func TestIntegrationPlugin(t *testing.T) {
 	assertInstalled(t, "after install", true)
 
 	// install again - idempotent
-	result = installTask.Execute()
+	result = installTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second install: %v", result.Error)
 	}
@@ -64,7 +64,7 @@ func TestIntegrationPlugin(t *testing.T) {
 
 	// uninstall the plugin
 	uninstallTask := PluginTask{Name: pluginName, State: StateAbsent}
-	result = uninstallTask.Execute()
+	result = uninstallTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to uninstall plugin: %v", result.Error)
 	}
@@ -77,7 +77,7 @@ func TestIntegrationPlugin(t *testing.T) {
 	assertInstalled(t, "after uninstall", false)
 
 	// uninstall again - idempotent
-	result = uninstallTask.Execute()
+	result = uninstallTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second uninstall: %v", result.Error)
 	}
@@ -92,7 +92,7 @@ func TestIntegrationExportPlugin(t *testing.T) {
 	// A dokku predating plugin:list --format json ignores the flag and prints
 	// stdout text with a zero exit, so skip unless the output parses as a JSON
 	// array rather than guarding on a non-zero exit.
-	probe, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	probe, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
 	})
@@ -109,7 +109,7 @@ func TestIntegrationExportPlugin(t *testing.T) {
 	pluginCommittish := "v0.9.0"
 
 	uninstallPlugin := func() {
-		subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "plugin:uninstall", pluginName},
 		})
@@ -119,11 +119,11 @@ func TestIntegrationExportPlugin(t *testing.T) {
 	defer uninstallPlugin()
 
 	installTask := PluginTask{Name: pluginName, URL: pluginURL, Committish: pluginCommittish, State: StatePresent}
-	if result := installTask.Execute(); result.Error != nil {
+	if result := installTask.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to install plugin: %v", result.Error)
 	}
 
-	bodies, err := PluginTask{}.ExportGlobal()
+	bodies, err := PluginTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestIntegrationExportPlugin(t *testing.T) {
 
 	// The exported task round-trips: re-planning it against the same server is a
 	// no-op because the plugin is already installed.
-	plan := found.Plan()
+	plan := found.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("re-plan of exported task failed: %v", plan.Error)
 	}

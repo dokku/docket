@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // SchedulerK3sAnnotationsTask manages a group of scheduler-k3s annotations
 // scoped to a (process_type, resource_type) pair on a dokku application or
 // globally.
@@ -107,8 +109,8 @@ func (t SchedulerK3sAnnotationsTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or clears the scheduler-k3s annotations for the configured scope
-func (t SchedulerK3sAnnotationsTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SchedulerK3sAnnotationsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the SchedulerK3sAnnotationsTask's inputs without contacting the server.
@@ -117,14 +119,14 @@ func (t SchedulerK3sAnnotationsTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerK3sAnnotationsTask would produce.
-func (t SchedulerK3sAnnotationsTask) Plan() PlanResult {
+func (t SchedulerK3sAnnotationsTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsSet(spec) },
-		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsUnset(spec) },
+		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsSet(ctx, spec) },
+		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsUnset(ctx, spec) },
 	})
 }
 
@@ -143,8 +145,8 @@ func (t SchedulerK3sAnnotationsTask) spec() schedulerK3sScopedPairsSpec {
 
 // ExportApp reconstructs the app's annotations, one task per
 // (process_type, resource_type) scope, from scheduler-k3s:annotations:report.
-func (t SchedulerK3sAnnotationsTask) ExportApp(app string) ([]interface{}, error) {
-	return exportSchedulerK3sScopedPairs("annotations", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
+func (t SchedulerK3sAnnotationsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs(ctx, "annotations", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
 		return SchedulerK3sAnnotationsTask{
 			App:          app,
 			ProcessType:  processType,
@@ -156,8 +158,8 @@ func (t SchedulerK3sAnnotationsTask) ExportApp(app string) ([]interface{}, error
 
 // ExportGlobal reconstructs the global-scope annotations, one task per
 // (process_type, resource_type) scope, from scheduler-k3s:annotations:report.
-func (t SchedulerK3sAnnotationsTask) ExportGlobal() ([]interface{}, error) {
-	return exportSchedulerK3sScopedPairs("annotations", "", true, func(processType, resourceType string, pairs map[string]string) interface{} {
+func (t SchedulerK3sAnnotationsTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs(ctx, "annotations", "", true, func(processType, resourceType string, pairs map[string]string) interface{} {
 		return SchedulerK3sAnnotationsTask{
 			Global:       true,
 			ProcessType:  processType,

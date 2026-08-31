@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -25,8 +26,8 @@ type serviceInstance struct {
 // `<type>:<name>` for its own instances. A transport-level failure
 // (`*subprocess.SSHError`) is propagated; a dokku-level failure (no datastore
 // plugin installed, or an older dokku) degrades to "no services."
-func listServices() ([]serviceInstance, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func listServices(ctx context.Context) ([]serviceInstance, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "plugin:trigger", "service-list"},
 	})
@@ -65,8 +66,8 @@ func listServices() ([]serviceInstance, error) {
 // read from `<service>:links <name>` (one app per line on stdout). A
 // transport-level failure is propagated; a dokku-level failure (the service is
 // gone) degrades to "no links."
-func serviceLinkedApps(service, name string) (map[string]bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func serviceLinkedApps(ctx context.Context, service, name string) (map[string]bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", fmt.Sprintf("%s:links", service), name},
 	})
@@ -89,8 +90,8 @@ func serviceLinkedApps(service, name string) (map[string]bool, error) {
 // serviceDSN returns a datastore service's connection string (the value a link
 // injects into an app's config), read from `<service>:info <name> --dsn`. A
 // transport-level failure is propagated; any other failure yields an empty DSN.
-func serviceDSN(service, name string) (string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func serviceDSN(ctx context.Context, service, name string) (string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", fmt.Sprintf("%s:info", service), name, "--dsn"},
 	})
@@ -111,8 +112,8 @@ func serviceDSN(service, name string) (string, error) {
 // `--image-version` reconstruct on another server. A transport-level failure
 // (`*subprocess.SSHError`) is propagated; any other failure yields no image, as
 // does a service whose container is gone - dokku prints nothing in that case.
-func serviceImage(service, name string) (string, string, error) {
-	ref, err := serviceImageRef(service, name)
+func serviceImage(ctx context.Context, service, name string) (string, string, error) {
+	ref, err := serviceImageRef(ctx, service, name)
 	if err != nil {
 		return "", "", err
 	}
@@ -128,8 +129,8 @@ func serviceImage(service, name string) (string, string, error) {
 // `<service>:upgrade`. Error handling is serviceImage's: a transport-level
 // failure propagates, anything else - including a service whose container is
 // gone, where dokku prints nothing - yields the empty ref.
-func serviceImageRef(service, name string) (string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func serviceImageRef(ctx context.Context, service, name string) (string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", fmt.Sprintf("%s:info", service), name, "--version"},
 	})
@@ -161,21 +162,21 @@ func splitImageRef(ref string) (string, string) {
 // new server's credentials), and re-exporting the stale value would clobber the
 // fresh one. Enumerates services, keeps those linked to the app, and reads each
 // linked service's DSN.
-func linkedServiceDSNs(app string) (map[string]bool, error) {
-	services, err := listServices()
+func linkedServiceDSNs(ctx context.Context, app string) (map[string]bool, error) {
+	services, err := listServices(ctx)
 	if err != nil {
 		return nil, err
 	}
 	dsns := map[string]bool{}
 	for _, s := range services {
-		apps, err := serviceLinkedApps(s.Type, s.Name)
+		apps, err := serviceLinkedApps(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}
 		if !apps[app] {
 			continue
 		}
-		dsn, err := serviceDSN(s.Type, s.Name)
+		dsn, err := serviceDSN(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}

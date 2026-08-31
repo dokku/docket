@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/dokku/docket/subprocess"
@@ -94,8 +95,8 @@ func (t ServicePropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or clears the dokku service property
-func (t ServicePropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ServicePropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the ServicePropertyTask's inputs without contacting the server.
@@ -115,13 +116,13 @@ func (t ServicePropertyTask) Validate() error {
 // Plan reports the drift the ServicePropertyTask would produce. dokku has no
 // reliable way to read back a service set key, so the plan reports drift
 // unconditionally once the service is confirmed to exist.
-func (t ServicePropertyTask) Plan() PlanResult {
+func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -137,14 +138,14 @@ func (t ServicePropertyTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "service property state not probed",
 				Mutations: []string{fmt.Sprintf("%s:set %s %s %s", t.Service, t.Name, t.Property, t.Value)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -160,9 +161,9 @@ func (t ServicePropertyTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "service property state not probed",
 				Mutations: []string{fmt.Sprintf("%s:set %s %s (clear)", t.Service, t.Name, t.Property)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -57,8 +58,11 @@ func (t StubTask) ProbeSupport() tasks.ProbeSupport {
 	return tasks.ProbeSupport{Status: tasks.ProbeSupported}
 }
 
-func (t StubTask) Plan() tasks.PlanResult {
+func (t StubTask) Plan(ctx context.Context) tasks.PlanResult {
 	fixture := stubGet(t.Key)
+	if fixture.Hook != nil {
+		fixture.Hook()
+	}
 	if fixture.PlanError != nil {
 		return tasks.PlanResult{
 			Status:       tasks.PlanStatusError,
@@ -88,8 +92,11 @@ func (t StubTask) Plan() tasks.PlanResult {
 	}
 }
 
-func (t StubTask) Execute() tasks.TaskOutputState {
+func (t StubTask) Execute(ctx context.Context) tasks.TaskOutputState {
 	fixture := stubGet(t.Key)
+	if fixture.Hook != nil {
+		fixture.Hook()
+	}
 	if fixture.ExecuteError != nil {
 		return tasks.TaskOutputState{
 			Error:        fixture.ExecuteError,
@@ -143,6 +150,11 @@ type StubFixture struct {
 	// success TaskOutputState (apply mode) so tests can drive the run loops'
 	// warning drain. #353.
 	Warnings []tasks.PlanWarning
+	// Hook, when set, runs as the first thing Plan and Execute do. It exists
+	// so a test can make something happen *during* the run - cancelling the
+	// run context, recording that this task was reached - at a deterministic
+	// point rather than racing the executor from another goroutine.
+	Hook func()
 }
 
 var (

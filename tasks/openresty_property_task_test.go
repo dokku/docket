@@ -7,7 +7,7 @@ import (
 
 func TestOpenrestyPropertyTaskInvalidState(t *testing.T) {
 	task := OpenrestyPropertyTask{App: "test-app", Property: "proxy-read-timeout", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestOpenrestyPropertyTaskInvalidState(t *testing.T) {
 
 func TestOpenrestyPropertyTaskMissingApp(t *testing.T) {
 	task := OpenrestyPropertyTask{Property: "proxy-read-timeout", Value: "120s", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestOpenrestyPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "0.0.0.0",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestOpenrestyPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestOpenrestyPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "120s",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

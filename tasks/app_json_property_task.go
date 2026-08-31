@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // AppJsonPropertyTask manages the app.json configuration for a given dokku application
 type AppJsonPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t AppJsonPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the app.json property
-func (t AppJsonPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t AppJsonPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // appJsonPropertyTable maps app-json property names to the JSON keys emitted
@@ -87,20 +89,20 @@ func (t AppJsonPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the AppJsonPropertyTask would produce.
-func (t AppJsonPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t AppJsonPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t AppJsonPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t AppJsonPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return AppJsonPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t AppJsonPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t AppJsonPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return AppJsonPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

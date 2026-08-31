@@ -11,15 +11,22 @@ an execution context that maps to a single module; its fields can be templated f
 
 ## The Plan / Execute model
 
-Every task implements two methods. `Plan()` is the canonical one: it probes the live server once,
+Every task implements two methods. `Plan(ctx)` is the canonical one: it probes the live server once,
 computes the difference between the current and desired state, and returns a `PlanResult`. When the
 server is not already in the desired state, `Plan()` embeds an `apply` closure that performs the
-mutation. `Execute()` is always just `ExecutePlan(t.Plan())` - the shared `ExecutePlan` helper
-handles the in-sync, error, and apply cases uniformly, so the mutation logic lives in exactly one
-place per task.
+mutation. `Execute(ctx)` is always just `ExecutePlan(ctx, t.Plan(ctx))` - the shared `ExecutePlan`
+helper handles the in-sync, error, and apply cases uniformly, so the mutation logic lives in exactly
+one place per task.
 
 This split is why `plan` and `apply` agree: both call the same `Plan()`. `apply` reuses the probe
 to decide whether to mutate, which is what makes back-to-back applies no-ops.
+
+Both take a `context.Context`, and so does every helper below them. Pass it to each
+`subprocess.CallExecCommand` / `subprocess.Probe` call rather than reaching for
+`context.Background()`: it is what carries cancellation, so an interrupt or a caller's deadline
+reaches a task that is mid-command instead of waiting for the command to finish. The `apply` closure
+takes one rather than capturing the one `Plan()` ran under, because `ExecutePlan` invokes it
+separately and hands it the caller's current context.
 
 ## Adding a new task
 
@@ -27,7 +34,9 @@ Create `tasks/${TASK_NAME}_task.go`, where the task name is `lower_underscore_ca
 named `lollipop`, `tasks/lollipop_task.go` would contain:
 
 ```go
-package main
+package tasks
+
+import "context"
 
 type LollipopTask struct {
   App     string   `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
@@ -35,7 +44,9 @@ type LollipopTask struct {
   State   State    `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the lollipop"`
 }
 
-func (t LollipopTask) Plan() PlanResult {
+func (t LollipopTask) Plan(ctx context.Context) PlanResult {
+  // DispatchPlan keeps its argument-free branch signature; the closures capture
+  // ctx from the enclosing Plan.
   return DispatchPlan(t.State, map[State]func() PlanResult{
     "present": func() PlanResult {
       // Probe the server once, decide whether to mutate.
@@ -47,7 +58,7 @@ func (t LollipopTask) Plan() PlanResult {
         Status:    PlanStatusCreate, // or PlanStatusModify, PlanStatusDestroy
         Reason:    "...",
         Mutations: []string{"create lollipop"},
-        apply: func() TaskOutputState {
+        apply: func(ctx context.Context) TaskOutputState {
           // Run the underlying dokku command. Return Changed=true on success.
           return TaskOutputState{Changed: true, State: StatePresent}
         },
@@ -57,8 +68,8 @@ func (t LollipopTask) Plan() PlanResult {
   })
 }
 
-func (t LollipopTask) Execute() TaskOutputState {
-  return ExecutePlan(t.Plan())
+func (t LollipopTask) Execute(ctx context.Context) TaskOutputState {
+  return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 func init() {
@@ -170,7 +181,7 @@ func (t LollipopTask) Validate() error {
   return nil
 }
 
-func (t LollipopTask) Plan() PlanResult {
+func (t LollipopTask) Plan(ctx context.Context) PlanResult {
   if err := t.Validate(); err != nil {
     return planErr(err)
   }
@@ -178,8 +189,9 @@ func (t LollipopTask) Plan() PlanResult {
 }
 ```
 
-`Plan()` calls `Validate()` before it probes, so `plan` and `apply` still report the error. Because
-`Validate()` is a pure function of the struct - it must never call a probing or mutating dokku
+`Validate()` takes no context, and that is the point: it never contacts a server, so there is
+nothing to cancel. `Plan()` calls it before it probes, so `plan` and `apply` still report the error.
+Because it is a pure function of the struct - it must never call a probing or mutating dokku
 command - `docket validate` calls the same method offline and surfaces any error as
 `invalid_task_input`, catching the mistake before a server is ever contacted. Keep the error strings
 identical to what `Plan()` used to return so `plan`, `apply`, and `validate` all read the same.
@@ -187,8 +199,8 @@ identical to what `Plan()` used to return so `plan`, `apply`, and `validate` all
 ## Exporting a task
 
 A task that declares itself exportable also implements one of two methods, and is listed in the
-matching order slice in `tasks/export.go`: `ExportApp(app string)` plus an entry in `appExportOrder`
-for app-scoped state, `ExportGlobal()` plus an entry in `globalExportOrder` for the rest. Both return
+matching order slice in `tasks/export.go`: `ExportApp(ctx, app)` plus an entry in `appExportOrder`
+for app-scoped state, `ExportGlobal(ctx)` plus an entry in `globalExportOrder` for the rest. Both return
 task bodies - the task's own struct, populated from the server - and the engine handles
 vars-extraction and redaction afterwards. `TestExportSupportMatchesExportWiring` fails the build for
 an exporter no order list names, and for a task that claims to export without implementing one.
@@ -198,8 +210,8 @@ plannable exactly as the exporter returns it.
 
 When an exporter needs to say something about a particular resource - an asset it could not capture,
 a resource it read back but cannot emit as a task the loader would accept - implement the reporting
-form instead of logging: `ExportAppReport(app string, warn func(msg string))` or
-`ExportGlobalReport(warn func(msg string))`. The engine passes a `warn` callback wired to
+form instead of logging: `ExportAppReport(ctx, app, warn)` or
+`ExportGlobalReport(ctx, warn)`. The engine passes a `warn` callback wired to
 `ExportReport.Warnings`, so the message is rendered and masked like every other export diagnostic
 and reaches the operator with the run it belongs to.
 
@@ -217,12 +229,12 @@ that. The usual shape is a shared private method with two thin entry points, as
 `MaintenanceCustomPageTask` and `SchedulerK3sProfileTask` do:
 
 ```go
-func (t LollipopTask) ExportGlobal() ([]interface{}, error) {
-  return t.exportGlobal(func(string) {})
+func (t LollipopTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+  return t.exportGlobal(ctx, func(string) {})
 }
 
-func (t LollipopTask) ExportGlobalReport(warn func(msg string)) ([]interface{}, error) {
-  return t.exportGlobal(warn)
+func (t LollipopTask) ExportGlobalReport(ctx context.Context, warn func(msg string)) ([]interface{}, error) {
+  return t.exportGlobal(ctx, warn)
 }
 ```
 
@@ -264,13 +276,13 @@ type ChecksToggleTask ToggleFields
 
 // The probe reports the current position. A non-nil error (or a nil probe) is
 // treated as drift, so the enable/disable command runs anyway.
-func checksEnabled(ctx ToggleContext) (bool, error) {
-  // dokku checks:report <app> --format json
+func checksEnabled(ctx context.Context, tc ToggleContext) (bool, error) {
+  // dokku checks:report <tc.App> --format json
   // ... return true when nothing is disabled
 }
 
-func (t ChecksToggleTask) Plan() PlanResult {
-  return planToggle(t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
+func (t ChecksToggleTask) Plan(ctx context.Context) PlanResult {
+  return planToggle(ctx, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 ```
 
@@ -316,8 +328,8 @@ func (t NginxPropertyTask) Validate() error {
   return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
-func (t NginxPropertyTask) Plan() PlanResult {
-  return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t NginxPropertyTask) Plan(ctx context.Context) PlanResult {
+  return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 ```
 

@@ -11,13 +11,13 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	skipIfPluginMissingT(t, "http-auth")
 
 	appName := "docket-test-http-auth-user"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	currentUsers := func(t *testing.T, label string) map[string]bool {
 		t.Helper()
-		got, err := getHttpAuthUsers(appName)
+		got, err := getHttpAuthUsers(testCtx(), appName)
 		if err != nil {
 			t.Fatalf("%s: getHttpAuthUsers failed: %v", label, err)
 		}
@@ -31,7 +31,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	}
 
 	// enable http auth so the app has an initialized auth config
-	if result := (HttpAuthTask{App: appName, Username: "admin", Password: "secret", State: StatePresent}).Execute(); result.Error != nil {
+	if result := (HttpAuthTask{App: appName, Username: "admin", Password: "secret", State: StatePresent}).Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to enable http auth: %v", result.Error)
 	}
 
@@ -44,7 +44,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 		},
 		State: StatePresent,
 	}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add users: %v", result.Error)
 	}
@@ -58,7 +58,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	assertHas(t, "after add", "bob", true)
 
 	// adding the same users again is idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -68,7 +68,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 
 	// present for an existing user without update_password is in sync
 	noop := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "ignored"}}, State: StatePresent}
-	result = noop.Execute()
+	result = noop.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed present no-op: %v", result.Error)
 	}
@@ -78,7 +78,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 
 	// update_password re-issues add-user for an existing user
 	rotate := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "alice", Password: "new-pass"}}, UpdatePassword: boolPtr(true), State: StatePresent}
-	result = rotate.Execute()
+	result = rotate.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to rotate password: %v", result.Error)
 	}
@@ -88,7 +88,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 
 	// remove one user
 	removeTask := HttpAuthUserTask{App: appName, Users: []HttpAuthUser{{Username: "bob"}}, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove user: %v", result.Error)
 	}
@@ -102,7 +102,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	assertHas(t, "after remove bob", "alice", true)
 
 	// removing the same user again is idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -112,7 +112,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 
 	// clearing with empty users removes every remaining user
 	clearTask := HttpAuthUserTask{App: appName, State: StateAbsent}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear users: %v", result.Error)
 	}
@@ -124,7 +124,7 @@ func TestIntegrationHttpAuthUser(t *testing.T) {
 	}
 
 	// clearing again is idempotent
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second clear: %v", result.Error)
 	}
@@ -144,13 +144,13 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 	skipIfPluginMissingT(t, "http-auth")
 
 	appName := "docket-test-http-auth-hash"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	storedHashes := func(t *testing.T, label string) map[string]string {
 		t.Helper()
-		got, err := getHttpAuthUserHashes(appName)
+		got, err := getHttpAuthUserHashes(testCtx(), appName)
 		if err != nil {
 			t.Fatalf("%s: getHttpAuthUserHashes failed: %v", label, err)
 		}
@@ -158,7 +158,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 	}
 	usernames := func(t *testing.T, label string) []string {
 		t.Helper()
-		got, err := getHttpAuthUsers(appName)
+		got, err := getHttpAuthUsers(testCtx(), appName)
 		if err != nil {
 			t.Fatalf("%s: getHttpAuthUsers failed: %v", label, err)
 		}
@@ -175,7 +175,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 		},
 		State: StatePresent,
 	}
-	if result := seed.Execute(); result.Error != nil {
+	if result := seed.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to seed users: %v", result.Error)
 	}
 	seeded := storedHashes(t, "after seed")
@@ -193,7 +193,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 		},
 		State: StatePresent,
 	}
-	if plan := byHash.Plan(); !plan.InSync {
+	if plan := byHash.Plan(testCtx()); !plan.InSync {
 		t.Errorf("a task rebuilt from the stored hashes should be in sync, got status %v reason %q", plan.Status, plan.Reason)
 	}
 
@@ -205,7 +205,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 		Users: []HttpAuthUser{{Username: "carol", Hash: carolHash}},
 		State: StatePresent,
 	}
-	result := addCarol.Execute()
+	result := addCarol.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to import carol: %v", result.Error)
 	}
@@ -230,7 +230,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 		UpdatePassword: boolPtr(true),
 		State:          StatePresent,
 	}
-	if result := repeat.Execute(); result.Error != nil {
+	if result := repeat.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed idempotent import: %v", result.Error)
 	} else if result.Changed {
 		t.Error("expected Changed=false when the stored hash already matches")
@@ -243,7 +243,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 		Users: []HttpAuthUser{{Username: "carol", Hash: seeded["bob"]}},
 		State: StatePresent,
 	}
-	if result := rotate.Execute(); result.Error != nil {
+	if result := rotate.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to rotate carol's hash: %v", result.Error)
 	} else if !result.Changed {
 		t.Error("expected Changed=true when the desired hash differs from the stored one")
@@ -259,7 +259,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 		Users: []HttpAuthUser{{Username: "alice", Hash: seeded["alice"]}},
 		State: StateSet,
 	}
-	result = setTask.Execute()
+	result = setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set users: %v", result.Error)
 	}
@@ -273,7 +273,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 	if got := usernames(t, "after set"); !reflect.DeepEqual(got, []string{"alice"}) {
 		t.Errorf("users after set = %v, want [alice]", got)
 	}
-	if result := setTask.Execute(); result.Error != nil {
+	if result := setTask.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed idempotent set: %v", result.Error)
 	} else if result.Changed {
 		t.Error("expected Changed=false on idempotent set")
@@ -290,7 +290,7 @@ func TestIntegrationHttpAuthUserHashes(t *testing.T) {
 		},
 		State: StateSet,
 	}
-	result = mixed.Execute()
+	result = mixed.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed mixed set: %v", result.Error)
 	}

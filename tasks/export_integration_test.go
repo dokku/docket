@@ -14,16 +14,16 @@ func TestIntegrationExportConfigRoundTrip(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	app := "docket-test-export-config"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
 	set := ConfigTask{App: app, Restart: boolPtr(false), Config: map[string]string{"EXPORT_KEY": "export_value"}, State: StatePresent}
-	if r := set.Execute(); r.Error != nil {
+	if r := set.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set config: %v", r.Error)
 	}
 
-	bodies, err := ConfigTask{}.ExportApp(app)
+	bodies, err := ConfigTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestIntegrationExportConfigRoundTrip(t *testing.T) {
 	// The exporter omits state (the recipe loader defaults it to present); set
 	// it here since we plan the body directly without going through the loader.
 	cfg.State = StatePresent
-	if plan := cfg.Plan(); !plan.InSync {
+	if plan := cfg.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported config should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -49,18 +49,18 @@ func TestIntegrationExportReconstructsApp(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	app := "docket-test-export-app"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
-	if r := (ConfigTask{App: app, Config: map[string]string{"SECRET": "s3cr3t"}, State: StatePresent}).Execute(); r.Error != nil {
+	if r := (ConfigTask{App: app, Config: map[string]string{"SECRET": "s3cr3t"}, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set config: %v", r.Error)
 	}
-	if r := (DomainsTask{App: app, Domains: []string{"exp.example.com"}, State: StateSet}).Execute(); r.Error != nil {
+	if r := (DomainsTask{App: app, Domains: []string{"exp.example.com"}, State: StateSet}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set domains: %v", r.Error)
 	}
 
-	res, err := ExportRecipe(ExportOptions{Apps: []string{app}})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Apps: []string{app}})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -92,16 +92,16 @@ func TestIntegrationExportCerts(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	app := "docket-test-export-certs"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
 	certPath, keyPath := generateSelfSignedCert(t, app+".example.com")
-	if r := (CertsTask{App: app, Cert: certPath, Key: keyPath, State: StatePresent}).Execute(); r.Error != nil {
+	if r := (CertsTask{App: app, Cert: certPath, Key: keyPath, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("add cert: %v", r.Error)
 	}
 
-	bodies, err := CertsTask{}.ExportApp(app)
+	bodies, err := CertsTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestIntegrationExportCerts(t *testing.T) {
 		t.Errorf("exported key_content missing PEM: %q", c.KeyContent)
 	}
 	c.State = StatePresent
-	if plan := c.Plan(); !plan.InSync {
+	if plan := c.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported certs should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -132,16 +132,16 @@ func TestIntegrationExportGlobalCerts(t *testing.T) {
 
 	// best-effort cleanup before and after
 	cleanup := func() {
-		(CertsTask{Global: true, State: StateAbsent}).Execute()
+		(CertsTask{Global: true, State: StateAbsent}).Execute(testCtx())
 	}
 	cleanup()
 	defer cleanup()
 
-	if r := (CertsTask{Global: true, Cert: certPath, Key: keyPath, State: StatePresent}).Execute(); r.Error != nil {
+	if r := (CertsTask{Global: true, Cert: certPath, Key: keyPath, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("add global cert: %v", r.Error)
 	}
 
-	bodies, err := CertsTask{}.ExportGlobal()
+	bodies, err := CertsTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestIntegrationExportGlobalCerts(t *testing.T) {
 		t.Errorf("exported key_content missing PEM: %q", c.KeyContent)
 	}
 	c.State = StatePresent
-	if plan := c.Plan(); !plan.InSync {
+	if plan := c.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported global certs should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -177,15 +177,15 @@ func TestIntegrationExportGitPropertyGlobal(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	cleanup := GitPropertyTask{Global: true, Property: "archive-max-files", State: StateAbsent}
-	cleanup.Execute()
-	defer cleanup.Execute()
+	cleanup.Execute(testCtx())
+	defer cleanup.Execute(testCtx())
 
 	set := GitPropertyTask{Global: true, Property: "archive-max-files", Value: "4242", State: StatePresent}
-	if r := set.Execute(); r.Error != nil {
+	if r := set.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set global git property: %v", r.Error)
 	}
 
-	bodies, err := GitPropertyTask{}.ExportGlobal()
+	bodies, err := GitPropertyTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestIntegrationExportGitPropertyGlobal(t *testing.T) {
 
 	// The exporter omits state; set it as the recipe loader would before planning.
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported global property should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -229,15 +229,15 @@ func TestIntegrationExportSchedulerK3sProfile(t *testing.T) {
 
 	name := "docket-test-export-prof"
 	cleanup := SchedulerK3sProfileTask{Name: name, Role: "worker", State: StateAbsent}
-	cleanup.Execute()
-	defer cleanup.Execute()
+	cleanup.Execute(testCtx())
+	defer cleanup.Execute(testCtx())
 
 	set := SchedulerK3sProfileTask{Name: name, Role: "worker", KubeletArgs: []string{"foo=bar"}, TaintScheduling: true, State: StatePresent}
-	if r := set.Execute(); r.Error != nil {
+	if r := set.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("add profile: %v", r.Error)
 	}
 
-	bodies, err := SchedulerK3sProfileTask{}.ExportGlobal()
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestIntegrationExportSchedulerK3sProfile(t *testing.T) {
 	if found.State != StatePresent {
 		t.Errorf("exported state = %q, want %q", found.State, StatePresent)
 	}
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported profile should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -279,7 +279,7 @@ func TestIntegrationExportSchedulerK3sProfileLeavesOutUnappliableName(t *testing
 
 	name := "DocketTestExportBad"
 	removeProfile := func() {
-		subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "scheduler-k3s:profiles:remove", name},
 		})
@@ -287,7 +287,7 @@ func TestIntegrationExportSchedulerK3sProfileLeavesOutUnappliableName(t *testing
 	removeProfile()
 	defer removeProfile()
 
-	if _, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	if _, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "scheduler-k3s:profiles:add", name, "--role", "worker"},
 	}); err != nil {
@@ -295,7 +295,7 @@ func TestIntegrationExportSchedulerK3sProfileLeavesOutUnappliableName(t *testing
 	}
 
 	var warnings []string
-	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(func(msg string) {
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(testCtx(), func(msg string) {
 		warnings = append(warnings, msg)
 	})
 	if err != nil {
@@ -326,15 +326,15 @@ func TestIntegrationExportSchedulerK3sChart(t *testing.T) {
 
 	chart := "ingress-nginx"
 	cleanup := SchedulerK3sChartTask{Chart: chart, Values: map[string]any{"docket-test-key": ""}, State: StateAbsent}
-	cleanup.Execute()
-	defer cleanup.Execute()
+	cleanup.Execute(testCtx())
+	defer cleanup.Execute(testCtx())
 
 	set := SchedulerK3sChartTask{Chart: chart, Values: map[string]any{"docket-test-key": "docket-test-value"}, State: StatePresent}
-	if r := set.Execute(); r.Error != nil {
+	if r := set.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set chart value: %v", r.Error)
 	}
 
-	bodies, err := SchedulerK3sChartTask{}.ExportGlobal()
+	bodies, err := SchedulerK3sChartTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestIntegrationExportSchedulerK3sChart(t *testing.T) {
 		t.Errorf("exported chart value mismatch: %+v", found.Values)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported chart should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -366,9 +366,9 @@ func TestIntegrationSchedulerK3sAnnotationsExport(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	app := "docket-test-export-k3s-annotations"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
 	cleanup := SchedulerK3sAnnotationsTask{
 		App:          app,
@@ -376,7 +376,7 @@ func TestIntegrationSchedulerK3sAnnotationsExport(t *testing.T) {
 		Annotations:  map[string]string{"prometheus.io/scrape": "", "prometheus.io/port": ""},
 		State:        StateAbsent,
 	}
-	defer cleanup.Execute()
+	defer cleanup.Execute(testCtx())
 
 	set := SchedulerK3sAnnotationsTask{
 		App:          app,
@@ -384,11 +384,11 @@ func TestIntegrationSchedulerK3sAnnotationsExport(t *testing.T) {
 		Annotations:  map[string]string{"prometheus.io/scrape": "true", "prometheus.io/port": "9090"},
 		State:        StatePresent,
 	}
-	if r := set.Execute(); r.Error != nil {
+	if r := set.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set annotations: %v", r.Error)
 	}
 
-	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(app)
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -406,7 +406,7 @@ func TestIntegrationSchedulerK3sAnnotationsExport(t *testing.T) {
 		t.Errorf("exported annotations mismatch: %+v", found.Annotations)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported annotations should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -420,9 +420,9 @@ func TestIntegrationSchedulerK3sLabelsExport(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	app := "docket-test-export-k3s-labels"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
 	cleanup := SchedulerK3sLabelsTask{
 		App:          app,
@@ -431,7 +431,7 @@ func TestIntegrationSchedulerK3sLabelsExport(t *testing.T) {
 		Labels:       map[string]string{"tier": "", "app.kubernetes.io/component": ""},
 		State:        StateAbsent,
 	}
-	defer cleanup.Execute()
+	defer cleanup.Execute(testCtx())
 
 	set := SchedulerK3sLabelsTask{
 		App:          app,
@@ -440,11 +440,11 @@ func TestIntegrationSchedulerK3sLabelsExport(t *testing.T) {
 		Labels:       map[string]string{"tier": "edge", "app.kubernetes.io/component": "api"},
 		State:        StatePresent,
 	}
-	if r := set.Execute(); r.Error != nil {
+	if r := set.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set labels: %v", r.Error)
 	}
 
-	bodies, err := SchedulerK3sLabelsTask{}.ExportApp(app)
+	bodies, err := SchedulerK3sLabelsTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -462,7 +462,7 @@ func TestIntegrationSchedulerK3sLabelsExport(t *testing.T) {
 		t.Errorf("exported labels mismatch: %+v", found.Labels)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported labels should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -476,9 +476,9 @@ func TestIntegrationSchedulerK3sAutoscalingAuthExport(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	app := "docket-test-export-k3s-autoscaling-auth"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
 	cleanup := SchedulerK3sAutoscalingAuthTask{
 		App:      app,
@@ -486,7 +486,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthExport(t *testing.T) {
 		Metadata: map[string]string{"awsRegion": "", "secretName": ""},
 		State:    StateAbsent,
 	}
-	defer cleanup.Execute()
+	defer cleanup.Execute(testCtx())
 
 	set := SchedulerK3sAutoscalingAuthTask{
 		App:      app,
@@ -494,11 +494,11 @@ func TestIntegrationSchedulerK3sAutoscalingAuthExport(t *testing.T) {
 		Metadata: map[string]string{"awsRegion": "us-east-1", "secretName": "my-secret"},
 		State:    StatePresent,
 	}
-	if r := set.Execute(); r.Error != nil {
+	if r := set.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("set autoscaling-auth: %v", r.Error)
 	}
 
-	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportApp(app)
+	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthExport(t *testing.T) {
 		t.Errorf("exported metadata mismatch: %+v", found.Metadata)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported trigger auth should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -531,13 +531,13 @@ func TestIntegrationExportServiceCreate(t *testing.T) {
 
 	serviceType := "redis"
 	serviceName := "docket-test-export-svc-create"
-	destroyService(serviceType, serviceName)
-	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	destroyService(testCtx(), serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("create service: %v", r.Error)
 	}
-	defer destroyService(serviceType, serviceName)
+	defer destroyService(testCtx(), serviceType, serviceName)
 
-	bodies, err := ServiceCreateTask{}.ExportGlobal()
+	bodies, err := ServiceCreateTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -552,7 +552,7 @@ func TestIntegrationExportServiceCreate(t *testing.T) {
 		t.Fatalf("exported services do not include %s:%s: %+v", serviceType, serviceName, bodies)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported service create should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -567,16 +567,16 @@ func TestIntegrationExportServiceExpose(t *testing.T) {
 	serviceType := "redis"
 	serviceName := "docket-test-export-svc-expose"
 	hostPort := "16379"
-	destroyService(serviceType, serviceName)
-	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	destroyService(testCtx(), serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("create service: %v", r.Error)
 	}
-	defer destroyService(serviceType, serviceName)
-	if r := (ServiceExposeTask{Service: serviceType, Name: serviceName, Ports: []string{hostPort}, State: StatePresent}).Execute(); r.Error != nil {
+	defer destroyService(testCtx(), serviceType, serviceName)
+	if r := (ServiceExposeTask{Service: serviceType, Name: serviceName, Ports: []string{hostPort}, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("expose service: %v", r.Error)
 	}
 
-	bodies, err := ServiceExposeTask{}.ExportGlobal()
+	bodies, err := ServiceExposeTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -594,7 +594,7 @@ func TestIntegrationExportServiceExpose(t *testing.T) {
 		t.Errorf("exported expose ports = %v, want [%s]", found.Ports, hostPort)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported service expose should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -611,22 +611,22 @@ func TestIntegrationExportServiceLink(t *testing.T) {
 	appName := "docket-test-export-svc-link-app"
 	serviceType := "redis"
 	serviceName := "docket-test-export-svc-link"
-	destroyApp(appName)
-	destroyService(serviceType, serviceName)
-	createApp(appName)
-	defer destroyApp(appName)
-	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	destroyApp(testCtx(), appName)
+	destroyService(testCtx(), serviceType, serviceName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("create service: %v", r.Error)
 	}
 	defer func() {
-		(ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StateAbsent}).Execute()
-		destroyService(serviceType, serviceName)
+		(ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StateAbsent}).Execute(testCtx())
+		destroyService(testCtx(), serviceType, serviceName)
 	}()
-	if r := (ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	if r := (ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("link service: %v", r.Error)
 	}
 
-	bodies, err := ServiceLinkTask{}.ExportApp(appName)
+	bodies, err := ServiceLinkTask{}.ExportApp(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -641,13 +641,13 @@ func TestIntegrationExportServiceLink(t *testing.T) {
 		t.Fatalf("exported links do not include %s:%s for %s: %+v", serviceType, serviceName, appName, bodies)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported service link should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 
 	// The link injects REDIS_URL into the app's config; config export must drop
 	// it, since the link recreates it on apply with the new server's creds.
-	cfgBodies, err := ConfigTask{}.ExportApp(appName)
+	cfgBodies, err := ConfigTask{}.ExportApp(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("config ExportApp: %v", err)
 	}
@@ -669,20 +669,20 @@ func TestIntegrationExportServiceBackup(t *testing.T) {
 
 	serviceType := "redis"
 	serviceName := "docket-test-export-svc-backup"
-	destroyService(serviceType, serviceName)
-	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	destroyService(testCtx(), serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("create service: %v", r.Error)
 	}
-	defer destroyService(serviceType, serviceName)
+	defer destroyService(testCtx(), serviceType, serviceName)
 
 	schedule := "0 3 * * *"
 	bucket := "docket-test-bucket"
-	if r := (ServiceBackupTask{Service: serviceType, Name: serviceName, Schedule: schedule, Bucket: bucket, UseIam: true, State: StatePresent}).Execute(); r.Error != nil {
+	if r := (ServiceBackupTask{Service: serviceType, Name: serviceName, Schedule: schedule, Bucket: bucket, UseIam: true, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		// not every datastore plugin implements backup-schedule
 		t.Skipf("skipping: could not schedule backup (%v)", r.Error)
 	}
 
-	bodies, err := ServiceBackupTask{}.ExportGlobal()
+	bodies, err := ServiceBackupTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -703,7 +703,7 @@ func TestIntegrationExportServiceBackup(t *testing.T) {
 		t.Errorf("backup export should not include write-only credentials: %+v", *found)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported service backup should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -720,17 +720,17 @@ func TestIntegrationExportAclService(t *testing.T) {
 	serviceType := "redis"
 	serviceName := "docket-test-export-acl-svc"
 	user := "docket-test-acl-user"
-	destroyService(serviceType, serviceName)
-	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	destroyService(testCtx(), serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("create service: %v", r.Error)
 	}
-	defer destroyService(serviceType, serviceName)
+	defer destroyService(testCtx(), serviceType, serviceName)
 
-	if r := (AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{user}, State: StatePresent}).Execute(); r.Error != nil {
+	if r := (AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{user}, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Skipf("skipping: could not add acl user (%v)", r.Error)
 	}
 
-	bodies, err := AclServiceTask{}.ExportGlobal()
+	bodies, err := AclServiceTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -754,7 +754,7 @@ func TestIntegrationExportAclService(t *testing.T) {
 		t.Errorf("exported acl users %v missing %q", found.Users, user)
 	}
 	found.State = StatePresent
-	if plan := found.Plan(); !plan.InSync {
+	if plan := found.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported acl service should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
@@ -768,11 +768,11 @@ func TestIntegrationExportLetsencrypt(t *testing.T) {
 	skipIfPluginMissingT(t, "letsencrypt")
 
 	app := "docket-test-export-letsencrypt"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
-	bodies, err := LetsencryptTask{}.ExportApp(app)
+	bodies, err := LetsencryptTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -790,13 +790,13 @@ func TestIntegrationExportHttpAuth(t *testing.T) {
 	skipIfPluginMissingT(t, "http-auth")
 
 	app := "docket-test-export-http-auth"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
 	exported := func(t *testing.T, label string) []interface{} {
 		t.Helper()
-		bodies, err := HttpAuthTask{}.ExportApp(app)
+		bodies, err := HttpAuthTask{}.ExportApp(testCtx(), app)
 		if err != nil {
 			t.Fatalf("%s: ExportApp: %v", label, err)
 		}
@@ -814,24 +814,24 @@ func TestIntegrationExportHttpAuth(t *testing.T) {
 		if err := auth.Validate(); err != nil {
 			t.Errorf("%s: exported task must be valid, got: %v", label, err)
 		}
-		if plan := auth.Plan(); !plan.InSync {
+		if plan := auth.Plan(testCtx()); !plan.InSync {
 			t.Errorf("%s: exported task should report no drift, got status %v reason %q", label, plan.Status, plan.Reason)
 		}
 	}
 
-	if r := (HttpAuthTask{App: app, Username: "admin", Password: "secret", State: StatePresent}).Execute(); r.Error != nil {
+	if r := (HttpAuthTask{App: app, Username: "admin", Password: "secret", State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("enable http auth: %v", r.Error)
 	}
 	assertState(t, "enabled", exported(t, "enabled"), StatePresent)
 
 	// http-auth:disable only writes enabled=false; the htpasswd survives, so
 	// re-applying the exported users would turn auth back on without this.
-	if r := (HttpAuthTask{App: app, State: StateAbsent}).Execute(); r.Error != nil {
+	if r := (HttpAuthTask{App: app, State: StateAbsent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("disable http auth: %v", r.Error)
 	}
 	assertState(t, "disabled with users", exported(t, "disabled with users"), StateAbsent)
 
-	if r := (HttpAuthUserTask{App: app, State: StateAbsent}).Execute(); r.Error != nil {
+	if r := (HttpAuthUserTask{App: app, State: StateAbsent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("remove http auth users: %v", r.Error)
 	}
 	if bodies := exported(t, "disabled and unconfigured"); len(bodies) != 0 {
@@ -848,21 +848,21 @@ func TestIntegrationExportHttpAuthUserHashes(t *testing.T) {
 	skipIfPluginMissingT(t, "http-auth")
 
 	app := "docket-test-export-http-auth-user"
-	destroyApp(app)
-	createApp(app)
-	defer destroyApp(app)
+	destroyApp(testCtx(), app)
+	createApp(testCtx(), app)
+	defer destroyApp(testCtx(), app)
 
-	if bodies, err := (HttpAuthUserTask{}).ExportApp(app); err != nil {
+	if bodies, err := (HttpAuthUserTask{}).ExportApp(testCtx(), app); err != nil {
 		t.Fatalf("ExportApp on a fresh app: %v", err)
 	} else if len(bodies) != 0 {
 		t.Errorf("expected no exported task before any user exists, got %v", bodies)
 	}
 
-	if r := (HttpAuthTask{App: app, Username: "admin", Password: "secret", State: StatePresent}).Execute(); r.Error != nil {
+	if r := (HttpAuthTask{App: app, Username: "admin", Password: "secret", State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("enable http auth: %v", r.Error)
 	}
 
-	bodies, err := HttpAuthUserTask{}.ExportApp(app)
+	bodies, err := HttpAuthUserTask{}.ExportApp(testCtx(), app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -882,7 +882,7 @@ func TestIntegrationExportHttpAuthUserHashes(t *testing.T) {
 	if err := users.Validate(); err != nil {
 		t.Errorf("exported task must be valid, got: %v", err)
 	}
-	if plan := users.Plan(); !plan.InSync {
+	if plan := users.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }

@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // SchedulerK3sLabelsTask manages a group of scheduler-k3s labels scoped to a
 // (process_type, resource_type) pair on a dokku application or globally.
 type SchedulerK3sLabelsTask struct {
@@ -105,8 +107,8 @@ func (t SchedulerK3sLabelsTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or clears the scheduler-k3s labels for the configured scope
-func (t SchedulerK3sLabelsTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SchedulerK3sLabelsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the SchedulerK3sLabelsTask's inputs without contacting the server.
@@ -115,14 +117,14 @@ func (t SchedulerK3sLabelsTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerK3sLabelsTask would produce.
-func (t SchedulerK3sLabelsTask) Plan() PlanResult {
+func (t SchedulerK3sLabelsTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsSet(spec) },
-		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsUnset(spec) },
+		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsSet(ctx, spec) },
+		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsUnset(ctx, spec) },
 	})
 }
 
@@ -141,8 +143,8 @@ func (t SchedulerK3sLabelsTask) spec() schedulerK3sScopedPairsSpec {
 
 // ExportApp reconstructs the app's labels, one task per
 // (process_type, resource_type) scope, from scheduler-k3s:labels:report.
-func (t SchedulerK3sLabelsTask) ExportApp(app string) ([]interface{}, error) {
-	return exportSchedulerK3sScopedPairs("labels", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
+func (t SchedulerK3sLabelsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs(ctx, "labels", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
 		return SchedulerK3sLabelsTask{
 			App:          app,
 			ProcessType:  processType,
@@ -154,8 +156,8 @@ func (t SchedulerK3sLabelsTask) ExportApp(app string) ([]interface{}, error) {
 
 // ExportGlobal reconstructs the global-scope labels, one task per
 // (process_type, resource_type) scope, from scheduler-k3s:labels:report.
-func (t SchedulerK3sLabelsTask) ExportGlobal() ([]interface{}, error) {
-	return exportSchedulerK3sScopedPairs("labels", "", true, func(processType, resourceType string, pairs map[string]string) interface{} {
+func (t SchedulerK3sLabelsTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs(ctx, "labels", "", true, func(processType, resourceType string, pairs map[string]string) interface{} {
 		return SchedulerK3sLabelsTask{
 			Global:       true,
 			ProcessType:  processType,

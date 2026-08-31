@@ -13,7 +13,7 @@ import (
 
 func TestCertsTaskInvalidState(t *testing.T) {
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", Key: "/tmp/key", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -21,7 +21,7 @@ func TestCertsTaskInvalidState(t *testing.T) {
 
 func TestCertsTaskMissingApp(t *testing.T) {
 	task := CertsTask{Cert: "/tmp/cert", Key: "/tmp/key", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -32,7 +32,7 @@ func TestCertsTaskMissingApp(t *testing.T) {
 
 func TestCertsTaskGlobalWithApp(t *testing.T) {
 	task := CertsTask{App: "test-app", Global: true, Cert: "/tmp/cert", Key: "/tmp/key", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -43,7 +43,7 @@ func TestCertsTaskGlobalWithApp(t *testing.T) {
 
 func TestCertsTaskPresentMissingCert(t *testing.T) {
 	task := CertsTask{App: "test-app", Key: "/tmp/key", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without cert should return an error")
 	}
@@ -54,7 +54,7 @@ func TestCertsTaskPresentMissingCert(t *testing.T) {
 
 func TestCertsTaskPresentMissingKey(t *testing.T) {
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without key should return an error")
 	}
@@ -65,7 +65,7 @@ func TestCertsTaskPresentMissingKey(t *testing.T) {
 
 func TestCertsTaskInlineMissingKeyContent(t *testing.T) {
 	task := CertsTask{App: "test-app", CertContent: "cert-pem", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with cert_content but no key should return an error")
 	}
@@ -76,7 +76,7 @@ func TestCertsTaskInlineMissingKeyContent(t *testing.T) {
 
 func TestCertsTaskInlineMixedSources(t *testing.T) {
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", KeyContent: "key-pem", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with cert + key_content should return a validation error")
 	}
@@ -87,7 +87,7 @@ func TestCertsTaskInlineMixedSources(t *testing.T) {
 
 func TestCertsTaskInlineBothCertForms(t *testing.T) {
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", CertContent: "cert-pem", Key: "/tmp/key", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with both cert and cert_content should return a validation error")
 	}
@@ -234,7 +234,7 @@ func TestCertsEnabledGlobalUsesGlobalScope(t *testing.T) {
 		return subprocess.ExecCommandResponse{Stdout: "true"}, nil
 	})()
 
-	enabled, err := certsEnabled(CertsTask{Global: true})
+	enabled, err := certsEnabled(testCtx(), CertsTask{Global: true})
 	if err != nil {
 		t.Fatalf("certsEnabled: %v", err)
 	}

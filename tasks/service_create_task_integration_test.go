@@ -13,11 +13,11 @@ func TestIntegrationServiceCreateAndDestroy(t *testing.T) {
 	serviceType := "redis"
 
 	// ensure clean state
-	destroyService(serviceType, serviceName)
+	destroyService(testCtx(), serviceType, serviceName)
 
 	// create the service
 	task := ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create service: %v", result.Error)
 	}
@@ -29,7 +29,7 @@ func TestIntegrationServiceCreateAndDestroy(t *testing.T) {
 	}
 
 	// creating again should be idempotent
-	result = task.Execute()
+	result = task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent create failed: %v", result.Error)
 	}
@@ -42,7 +42,7 @@ func TestIntegrationServiceCreateAndDestroy(t *testing.T) {
 
 	// destroy the service
 	destroyTask := ServiceCreateTask{Service: serviceType, Name: serviceName, State: StateAbsent}
-	result = destroyTask.Execute()
+	result = destroyTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to destroy service: %v", result.Error)
 	}
@@ -54,7 +54,7 @@ func TestIntegrationServiceCreateAndDestroy(t *testing.T) {
 	}
 
 	// destroying again should be idempotent
-	result = destroyTask.Execute()
+	result = destroyTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent destroy failed: %v", result.Error)
 	}
@@ -80,8 +80,8 @@ func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
 	image := "redis"
 	imageVersion := "7.2.5"
 
-	destroyService(serviceType, serviceName)
-	t.Cleanup(func() { destroyService(serviceType, serviceName) })
+	destroyService(testCtx(), serviceType, serviceName)
+	t.Cleanup(func() { destroyService(testCtx(), serviceType, serviceName) })
 
 	task := ServiceCreateTask{
 		Service:      serviceType,
@@ -90,7 +90,7 @@ func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
 		ImageVersion: imageVersion,
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create pinned service: %v\n  commands: %v\n  stderr: %s", result.Error, result.Commands, result.Stderr)
 	}
@@ -98,7 +98,7 @@ func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
 		t.Fatalf("expected a changed, present service, got changed=%v state=%q", result.Changed, result.State)
 	}
 
-	gotImage, gotVersion, err := serviceImage(serviceType, serviceName)
+	gotImage, gotVersion, err := serviceImage(testCtx(), serviceType, serviceName)
 	if err != nil {
 		t.Fatalf("serviceImage: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
 		t.Errorf("service is running %q:%q, want %q:%q", gotImage, gotVersion, image, imageVersion)
 	}
 
-	if plan := task.Plan(); !plan.InSync {
+	if plan := task.Plan(testCtx()); !plan.InSync {
 		t.Errorf("expected the pinned service to be in sync on re-plan, got %+v", plan)
 	}
 }
@@ -126,8 +126,8 @@ const (
 // of them fighting over one service.
 func createDriftService(t *testing.T, name, tag string) {
 	t.Helper()
-	destroyService(driftService, name)
-	t.Cleanup(func() { destroyService(driftService, name) })
+	destroyService(testCtx(), driftService, name)
+	t.Cleanup(func() { destroyService(testCtx(), driftService, name) })
 
 	task := ServiceCreateTask{
 		Service:      driftService,
@@ -136,7 +136,7 @@ func createDriftService(t *testing.T, name, tag string) {
 		ImageVersion: tag,
 		State:        StatePresent,
 	}
-	if result := task.Execute(); result.Error != nil {
+	if result := task.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to create %s:%s: %v\n  commands: %v\n  stderr: %s", driftImage, tag, result.Error, result.Commands, result.Stderr)
 	}
 }
@@ -157,7 +157,7 @@ func TestIntegrationServiceCreateImageDriftWarns(t *testing.T) {
 		ImageVersion: driftOldTag,
 		State:        StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -167,7 +167,7 @@ func TestIntegrationServiceCreateImageDriftWarns(t *testing.T) {
 	if len(plan.Warnings) != 1 || plan.Warnings[0].Reason != WarnReasonServiceImageDrift {
 		t.Fatalf("expected one %s warning, got %v", WarnReasonServiceImageDrift, plan.Warnings)
 	}
-	if result := task.Execute(); result.Error != nil || result.Changed {
+	if result := task.Execute(testCtx()); result.Error != nil || result.Changed {
 		t.Errorf("warn mode must not change the server, got changed=%v err=%v", result.Changed, result.Error)
 	}
 }
@@ -188,7 +188,7 @@ func TestIntegrationServiceCreateImageDriftErrors(t *testing.T) {
 		ImageDrift:   imageDriftError,
 		State:        StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error == nil || plan.Status != PlanStatusError {
 		t.Fatalf("expected a plan error, got status=%q err=%v", plan.Status, plan.Error)
 	}
@@ -217,7 +217,7 @@ func TestIntegrationServiceCreateImageDriftUpgrades(t *testing.T) {
 		State:        StatePresent,
 	}
 
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -225,7 +225,7 @@ func TestIntegrationServiceCreateImageDriftUpgrades(t *testing.T) {
 		t.Fatalf("expected drift, got InSync=%v status=%q", plan.InSync, plan.Status)
 	}
 
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to upgrade: %v\n  commands: %v\n  stderr: %s", result.Error, result.Commands, result.Stderr)
 	}
@@ -233,7 +233,7 @@ func TestIntegrationServiceCreateImageDriftUpgrades(t *testing.T) {
 		t.Fatalf("expected a changed, present service, got changed=%v state=%q", result.Changed, result.State)
 	}
 
-	image, version, err := serviceImage(driftService, serviceName)
+	image, version, err := serviceImage(testCtx(), driftService, serviceName)
 	if err != nil {
 		t.Fatalf("serviceImage: %v", err)
 	}
@@ -241,10 +241,10 @@ func TestIntegrationServiceCreateImageDriftUpgrades(t *testing.T) {
 		t.Errorf("service is running %q:%q, want %q:%q", image, version, driftImage, driftNewTag)
 	}
 
-	if plan := task.Plan(); !plan.InSync || len(plan.Warnings) != 0 {
+	if plan := task.Plan(testCtx()); !plan.InSync || len(plan.Warnings) != 0 {
 		t.Errorf("the upgraded service must re-plan in sync and silent, got %+v", plan)
 	}
-	if second := task.Execute(); second.Error != nil || second.Changed {
+	if second := task.Execute(testCtx()); second.Error != nil || second.Changed {
 		t.Errorf("a second apply must be a no-op, got changed=%v err=%v", second.Changed, second.Error)
 	}
 }

@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -83,8 +84,8 @@ func (t GitFromImageTask) Examples() ([]Doc, error) {
 }
 
 // Execute deploys a git repository from a docker image
-func (t GitFromImageTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t GitFromImageTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the GitFromImageTask's inputs without contacting the server.
@@ -106,13 +107,13 @@ func (t GitFromImageTask) Validate() error {
 }
 
 // Plan reports the drift the GitFromImageTask would produce.
-func (t GitFromImageTask) Plan() PlanResult {
+func (t GitFromImageTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StateDeployed: func() PlanResult {
-			match, err := checkAppSourceImage(t.App, t.Image)
+			match, err := checkAppSourceImage(ctx, t.App, t.Image)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -135,9 +136,9 @@ func (t GitFromImageTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "image source drift",
 				Mutations: []string{fmt.Sprintf("git:from-image %s %s", t.App, t.Image)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
 				},
 			}
 		},
@@ -148,8 +149,8 @@ func (t GitFromImageTask) Plan() PlanResult {
 // docker image. A transport-level failure (`*subprocess.SSHError`) is
 // propagated; any other error is treated as "no match" so the planner
 // proposes a re-deploy.
-func checkAppSourceImage(app, expectedImage string) (bool, error) {
-	source, err := getAppDeploySource(app)
+func checkAppSourceImage(ctx context.Context, app, expectedImage string) (bool, error) {
+	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -163,8 +164,8 @@ func checkAppSourceImage(app, expectedImage string) (bool, error) {
 
 // ExportApp reconstructs a docker-image deploy source from apps:report. The
 // image reference is sensitive, so the engine lifts it into the vars-file.
-func (t GitFromImageTask) ExportApp(app string) ([]interface{}, error) {
-	source, err := getAppDeploySource(app)
+func (t GitFromImageTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		return nil, err
 	}

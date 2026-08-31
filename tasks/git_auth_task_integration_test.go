@@ -11,7 +11,7 @@ func TestIntegrationGitAuth(t *testing.T) {
 
 	// best-effort cleanup before and after
 	cleanup := func() {
-		(&GitAuthTask{Host: host, State: StateAbsent}).Execute()
+		(&GitAuthTask{Host: host, State: StateAbsent}).Execute(testCtx())
 	}
 	cleanup()
 	t.Cleanup(cleanup)
@@ -23,7 +23,7 @@ func TestIntegrationGitAuth(t *testing.T) {
 		Password: "secret-token",
 		State:    StatePresent,
 	}
-	result := setTask.Execute()
+	result := setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set git auth: %v", result.Error)
 	}
@@ -36,7 +36,7 @@ func TestIntegrationGitAuth(t *testing.T) {
 
 	// remove credentials
 	unsetTask := GitAuthTask{Host: host, State: StateAbsent}
-	result = unsetTask.Execute()
+	result = unsetTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to unset git auth: %v", result.Error)
 	}

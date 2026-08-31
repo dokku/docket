@@ -7,7 +7,7 @@ import (
 
 func TestDockerOptionsTaskInvalidState(t *testing.T) {
 	task := DockerOptionsTask{App: "test-app", Phase: "deploy", Option: "-v /a:/a", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestDockerOptionsTaskInvalidState(t *testing.T) {
 
 func TestDockerOptionsTaskMissingApp(t *testing.T) {
 	task := DockerOptionsTask{Phase: "deploy", Option: "-v /a:/a", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -27,7 +27,7 @@ func TestDockerOptionsTaskMissingApp(t *testing.T) {
 func TestDockerOptionsTaskInvalidPhase(t *testing.T) {
 	for _, phase := range []string{"", "start", "any"} {
 		task := DockerOptionsTask{App: "test-app", Phase: phase, Option: "-v /a:/a", State: StatePresent}
-		result := task.Execute()
+		result := task.Execute(testCtx())
 		if result.Error == nil {
 			t.Fatalf("Execute with invalid phase %q should return an error", phase)
 		}
@@ -39,7 +39,7 @@ func TestDockerOptionsTaskInvalidPhase(t *testing.T) {
 
 func TestDockerOptionsTaskMissingOption(t *testing.T) {
 	task := DockerOptionsTask{App: "test-app", Phase: "deploy", Option: "  ", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without option should return an error")
 	}
@@ -56,7 +56,7 @@ func TestDockerOptionsTaskProcessTypeRejectsDefaultSentinel(t *testing.T) {
 		Option:      "-v /a:/a",
 		State:       StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with process_type='_default_' should return an error")
 	}
@@ -74,7 +74,7 @@ func TestDockerOptionsTaskProcessTypeRejectsNonDeployPhase(t *testing.T) {
 			Option:      "-v /a:/a",
 			State:       StatePresent,
 		}
-		result := task.Execute()
+		result := task.Execute(testCtx())
 		if result.Error == nil {
 			t.Fatalf("Execute with process_type set and phase=%q should return an error", phase)
 		}

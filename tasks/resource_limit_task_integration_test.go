@@ -9,9 +9,9 @@ func TestIntegrationResourceLimit(t *testing.T) {
 
 	appName := "docket-test-reslimit"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// set resource limits
 	setTask := ResourceLimitTask{
@@ -19,7 +19,7 @@ func TestIntegrationResourceLimit(t *testing.T) {
 		Resources: map[string]string{"cpu": "100", "memory": "256"},
 		State:     StatePresent,
 	}
-	result := setTask.Execute()
+	result := setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set resource limits: %v", result.Error)
 	}
@@ -31,7 +31,7 @@ func TestIntegrationResourceLimit(t *testing.T) {
 	}
 
 	// setting same limits again should be idempotent
-	result = setTask.Execute()
+	result = setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent set failed: %v", result.Error)
 	}
@@ -44,7 +44,7 @@ func TestIntegrationResourceLimit(t *testing.T) {
 		App:   appName,
 		State: StateAbsent,
 	}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear resource limits: %v", result.Error)
 	}
@@ -56,7 +56,7 @@ func TestIntegrationResourceLimit(t *testing.T) {
 	}
 
 	// clear again should be idempotent
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent clear failed: %v", result.Error)
 	}
@@ -70,9 +70,9 @@ func TestIntegrationResourceLimitProcessType(t *testing.T) {
 
 	appName := "docket-test-reslimit-pt"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// set resource limits for a specific process type
 	setTask := ResourceLimitTask{
@@ -81,7 +81,7 @@ func TestIntegrationResourceLimitProcessType(t *testing.T) {
 		Resources:   map[string]string{"memory": "512"},
 		State:       StatePresent,
 	}
-	result := setTask.Execute()
+	result := setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set resource limits: %v", result.Error)
 	}
@@ -90,7 +90,7 @@ func TestIntegrationResourceLimitProcessType(t *testing.T) {
 	}
 
 	// idempotent
-	result = setTask.Execute()
+	result = setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent set failed: %v", result.Error)
 	}
@@ -106,7 +106,7 @@ func TestIntegrationResourceLimitProcessType(t *testing.T) {
 		ClearBefore: boolPtr(true),
 		State:       StatePresent,
 	}
-	result = clearBeforeTask.Execute()
+	result = clearBeforeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear_before and set: %v", result.Error)
 	}
@@ -120,7 +120,7 @@ func TestIntegrationResourceLimitProcessType(t *testing.T) {
 		ProcessType: "web",
 		State:       StateAbsent,
 	}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear: %v", result.Error)
 	}

@@ -10,7 +10,7 @@ import (
 
 func TestChecksToggleTaskInvalidState(t *testing.T) {
 	task := ChecksToggleTask{App: "test-app", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -27,7 +27,7 @@ func TestChecksToggleTaskPlanSurfacesSSHError(t *testing.T) {
 		}
 	})()
 
-	plan := ChecksToggleTask{App: "web", State: StatePresent}.Plan()
+	plan := ChecksToggleTask{App: "web", State: StatePresent}.Plan(testCtx())
 	if plan.Status != PlanStatusError {
 		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusError)
 	}

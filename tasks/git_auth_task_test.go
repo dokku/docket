@@ -7,7 +7,7 @@ import (
 
 func TestGitAuthTaskInvalidState(t *testing.T) {
 	task := GitAuthTask{Host: "github.com", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -16,7 +16,7 @@ func TestGitAuthTaskInvalidState(t *testing.T) {
 func TestGitAuthTaskMissingHost(t *testing.T) {
 	for _, st := range []State{StatePresent, StateAbsent} {
 		task := GitAuthTask{Username: "u", Password: "p", State: st}
-		result := task.Execute()
+		result := task.Execute(testCtx())
 		if result.Error == nil {
 			t.Fatalf("Execute without host (state=%s) should return an error", st)
 		}
@@ -28,7 +28,7 @@ func TestGitAuthTaskMissingHost(t *testing.T) {
 
 func TestGitAuthTaskPresentMissingUsername(t *testing.T) {
 	task := GitAuthTask{Host: "github.com", Password: "p", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without username should return an error")
 	}
@@ -39,7 +39,7 @@ func TestGitAuthTaskPresentMissingUsername(t *testing.T) {
 
 func TestGitAuthTaskPresentMissingPassword(t *testing.T) {
 	task := GitAuthTask{Host: "github.com", Username: "u", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without password should return an error")
 	}

@@ -10,9 +10,9 @@ func TestIntegrationHttpAuth(t *testing.T) {
 
 	appName := "docket-test-http-auth"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// enable http auth
 	enableTask := HttpAuthTask{
@@ -21,7 +21,7 @@ func TestIntegrationHttpAuth(t *testing.T) {
 		Password: "testpass",
 		State:    StatePresent,
 	}
-	result := enableTask.Execute()
+	result := enableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to enable http auth: %v", result.Error)
 	}
@@ -33,12 +33,12 @@ func TestIntegrationHttpAuth(t *testing.T) {
 	}
 
 	// verify auth is enabled via http-auth:report
-	if enabled, _ := httpAuthEnabled(appName); !enabled {
+	if enabled, _ := httpAuthEnabled(testCtx(), appName); !enabled {
 		t.Error("expected http auth to be enabled after enable")
 	}
 
 	// enabling again should be idempotent
-	result = enableTask.Execute()
+	result = enableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent enable failed: %v", result.Error)
 	}
@@ -54,7 +54,7 @@ func TestIntegrationHttpAuth(t *testing.T) {
 		App:   appName,
 		State: StateAbsent,
 	}
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to disable http auth: %v", result.Error)
 	}
@@ -66,12 +66,12 @@ func TestIntegrationHttpAuth(t *testing.T) {
 	}
 
 	// verify auth is disabled via http-auth:report
-	if enabled, _ := httpAuthEnabled(appName); enabled {
+	if enabled, _ := httpAuthEnabled(testCtx(), appName); enabled {
 		t.Error("expected http auth to be disabled after disable")
 	}
 
 	// disabling again should be idempotent
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent disable failed: %v", result.Error)
 	}
@@ -93,25 +93,25 @@ func TestIntegrationHttpAuthEnableWithoutCredentials(t *testing.T) {
 
 	appName := "docket-test-http-auth-bare"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	task := HttpAuthTask{App: appName, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to enable http auth without credentials: %v", result.Error)
 	}
 	if !result.Changed {
 		t.Error("expected changed=true for enabling http auth")
 	}
-	if enabled, _ := httpAuthEnabled(appName); !enabled {
+	if enabled, _ := httpAuthEnabled(testCtx(), appName); !enabled {
 		t.Error("expected http auth to be enabled after a credential-free enable")
 	}
 
 	// No user was seeded, so the app is enabled with an empty htpasswd - the
 	// state the exporter has to be able to represent.
-	users, err := getHttpAuthUsers(appName)
+	users, err := getHttpAuthUsers(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getHttpAuthUsers failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestIntegrationHttpAuthEnableWithoutCredentials(t *testing.T) {
 		t.Errorf("expected no seeded users, got %v", users)
 	}
 
-	if result := task.Execute(); result.Error != nil {
+	if result := task.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("idempotent enable failed: %v", result.Error)
 	} else if result.Changed {
 		t.Error("expected changed=false for already-enabled http auth")

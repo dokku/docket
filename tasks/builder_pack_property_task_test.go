@@ -7,7 +7,7 @@ import (
 
 func TestBuilderPackPropertyTaskInvalidState(t *testing.T) {
 	task := BuilderPackPropertyTask{App: "test-app", Property: "projecttoml-path", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestBuilderPackPropertyTaskInvalidState(t *testing.T) {
 
 func TestBuilderPackPropertyTaskMissingApp(t *testing.T) {
 	task := BuilderPackPropertyTask{Property: "projecttoml-path", Value: "project.toml", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestBuilderPackPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "project.toml",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestBuilderPackPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestBuilderPackPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "project.toml",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

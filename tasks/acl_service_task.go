@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,14 +59,14 @@ func (t AclServiceTask) ProbeSupport() ProbeSupport {
 // field inversion versus the other service tasks: Service holds the instance
 // name and Type the datastore type. Services with no ACL entries - and every
 // service when the dokku-acl plugin is absent - are skipped.
-func (t AclServiceTask) ExportGlobal() ([]interface{}, error) {
-	services, err := listServices()
+func (t AclServiceTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	services, err := listServices(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []interface{}
 	for _, s := range services {
-		users, err := getAclServiceUsers(s.Type, s.Name)
+		users, err := getAclServiceUsers(ctx, s.Type, s.Name)
 		if err != nil {
 			var sshErr *subprocess.SSHError
 			if errors.As(err, &sshErr) {
@@ -126,8 +127,8 @@ func (t AclServiceTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the service ACL
-func (t AclServiceTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t AclServiceTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the AclServiceTask's inputs without contacting the server.
@@ -142,13 +143,13 @@ func (t AclServiceTask) Validate() error {
 }
 
 // Plan reports the drift the AclServiceTask would produce.
-func (t AclServiceTask) Plan() PlanResult {
+func (t AclServiceTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			current, err := getAclServiceUsers(t.Type, t.Service)
+			current, err := getAclServiceUsers(ctx, t.Type, t.Service)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -175,14 +176,14 @@ func (t AclServiceTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("%d user(s) to add", len(toAdd)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			current, err := getAclServiceUsers(t.Type, t.Service)
+			current, err := getAclServiceUsers(ctx, t.Type, t.Service)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -216,9 +217,9 @@ func (t AclServiceTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -229,8 +230,8 @@ func (t AclServiceTask) Plan() PlanResult {
 // `acl:list-service TYPE SERVICE`. The plugin's `cmd-acl-list-service`
 // emits one username per line on STDERR (via `ls -1 ... >&2`), unlike
 // `acl:list` which uses stdout, so we read stderr here.
-func getAclServiceUsers(serviceType, service string) (map[string]bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getAclServiceUsers(ctx context.Context, serviceType, service string) (map[string]bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "acl:list-service", serviceType, service},
 	})

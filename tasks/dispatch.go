@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -11,10 +12,10 @@ import (
 // dispatch-aware command lines apply would echo on execution. Tasks call
 // it from Plan() to populate PlanResult.Commands so plan output and
 // apply --verbose render byte-identical strings for the same operation.
-func resolveCommands(inputs []subprocess.ExecCommandInput) []string {
+func resolveCommands(ctx context.Context, inputs []subprocess.ExecCommandInput) []string {
 	out := make([]string, len(inputs))
 	for i, in := range inputs {
-		out[i] = subprocess.ResolveCommandString(in)
+		out[i] = subprocess.ResolveCommandString(ctx, in)
 	}
 	return out
 }
@@ -27,11 +28,11 @@ func resolveCommands(inputs []subprocess.ExecCommandInput) []string {
 // WithExecResult so callers can inspect what the underlying subprocess
 // produced. When inputs is empty (no-op apply), the new fields stay
 // zero-valued.
-func runExecInputs(initial TaskOutputState, finalState State, inputs []subprocess.ExecCommandInput) TaskOutputState {
+func runExecInputs(ctx context.Context, initial TaskOutputState, finalState State, inputs []subprocess.ExecCommandInput) TaskOutputState {
 	state := initial
 	var last subprocess.ExecCommandResponse
 	for _, in := range inputs {
-		result, err := subprocess.CallExecCommand(in)
+		result, err := subprocess.CallExecCommand(ctx, in)
 		state.Commands = append(state.Commands, result.Command)
 		if err != nil {
 			return TaskOutputErrorFromExec(state, err, result)
@@ -78,7 +79,7 @@ func DispatchPlan(state State, funcMap map[State]func() PlanResult) PlanResult {
 
 // ExecutePlan applies a PlanResult to the server. It is the canonical
 // implementation of Task.Execute(): each task's Execute body is
-// `return ExecutePlan(t.Plan())`. ExecutePlan ensures the existing
+// `return ExecutePlan(ctx, t.Plan(ctx))`. ExecutePlan ensures the existing
 // `state.State == state.DesiredState` contract that commands/apply.go
 // relies on.
 //
@@ -91,7 +92,11 @@ func DispatchPlan(state State, funcMap map[State]func() PlanResult) PlanResult {
 //  3. otherwise       - invoke p.apply (must be non-nil) and return its
 //     TaskOutputState verbatim. apply is responsible for setting Changed
 //     and a final State that matches DesiredState on success.
-func ExecutePlan(p PlanResult) (out TaskOutputState) {
+//
+// ctx is handed to the apply closure rather than the closure capturing the
+// context Plan ran under, so applying a plan always uses the caller's current
+// cancellation and target.
+func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
 	// Probe diagnostics raised during planning ride out on every returned
 	// state so the apply run loop can drain them through the emitter, even on
 	// the error / in-sync branches that never invoke the apply closure.
@@ -136,7 +141,7 @@ func ExecutePlan(p PlanResult) (out TaskOutputState) {
 			State:        p.DesiredState,
 		}
 	}
-	out = p.apply()
+	out = p.apply(ctx)
 	if out.DesiredState == "" {
 		out.DesiredState = p.DesiredState
 	}

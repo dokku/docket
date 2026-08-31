@@ -7,7 +7,7 @@ import (
 
 func TestAppJsonPropertyTaskInvalidState(t *testing.T) {
 	task := AppJsonPropertyTask{App: "test-app", Property: "appjson-path", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestAppJsonPropertyTaskInvalidState(t *testing.T) {
 
 func TestAppJsonPropertyTaskMissingApp(t *testing.T) {
 	task := AppJsonPropertyTask{Property: "appjson-path", Value: "app.json", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestAppJsonPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "app.json",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestAppJsonPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestAppJsonPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "app.json",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

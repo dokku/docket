@@ -312,6 +312,19 @@ A multi-command task renders one continuation line per invocation under `--verbo
 Color output respects [`NO_COLOR`](https://no-color.org/): set `NO_COLOR=1` to disable ANSI escapes.
 Output is also plain automatically when piped to a non-TTY.
 
+### Interrupting a run
+
+`Ctrl-C` aborts the whole run, not just the task in flight. The interrupt ends whatever `dokku` or
+`ssh` command is executing, no further task is started - including the plays that would have
+followed - and `apply` prints `run cancelled` and exits `1`. That exit code is deliberate: an
+interrupted run reports `1` rather than the `2` `--detailed-exitcode` uses for "completed, and
+something changed", because it did not complete. A second `Ctrl-C` kills docket outright, in case
+the first one left something wedged.
+
+Cancellation reaches only the local process. Over SSH it ends the local `ssh` client; a `dokku`
+command already running on the remote host keeps going, so re-run `plan` afterwards to see where
+the server actually ended up.
+
 ### Inspecting and resuming
 
 Two flags help when a recipe grows long. `--list-tasks` previews the resolved plan without running,

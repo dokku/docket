@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -54,11 +55,11 @@ func TestDispatchPlanSetsDesiredState(t *testing.T) {
 // invariant that makes apply idempotent for the post-#198 design.
 func TestExecutePlanInSyncSkipsApply(t *testing.T) {
 	called := false
-	result := ExecutePlan(PlanResult{
+	result := ExecutePlan(testCtx(), PlanResult{
 		InSync:       true,
 		Status:       PlanStatusOK,
 		DesiredState: StatePresent,
-		apply: func() TaskOutputState {
+		apply: func(ctx context.Context) TaskOutputState {
 			called = true
 			return TaskOutputState{}
 		},
@@ -82,11 +83,11 @@ func TestExecutePlanInSyncSkipsApply(t *testing.T) {
 func TestExecutePlanErrorSkipsApply(t *testing.T) {
 	called := false
 	probeErr := errors.New("probe failed")
-	result := ExecutePlan(PlanResult{
+	result := ExecutePlan(testCtx(), PlanResult{
 		Status:       PlanStatusError,
 		Error:        probeErr,
 		DesiredState: StatePresent,
-		apply: func() TaskOutputState {
+		apply: func(ctx context.Context) TaskOutputState {
 			called = true
 			return TaskOutputState{}
 		},
@@ -103,11 +104,11 @@ func TestExecutePlanErrorSkipsApply(t *testing.T) {
 // the apply closure when the plan reports drift (the canonical path).
 func TestExecutePlanInvokesApplyOnDrift(t *testing.T) {
 	called := false
-	result := ExecutePlan(PlanResult{
+	result := ExecutePlan(testCtx(), PlanResult{
 		InSync:       false,
 		Status:       PlanStatusModify,
 		DesiredState: StatePresent,
-		apply: func() TaskOutputState {
+		apply: func(ctx context.Context) TaskOutputState {
 			called = true
 			return TaskOutputState{Changed: true, State: StatePresent}
 		},
@@ -127,7 +128,7 @@ func TestExecutePlanInvokesApplyOnDrift(t *testing.T) {
 // without an apply closure surfaces a clear error rather than silently
 // no-opping. Catches refactor mistakes where Plan() forgets to set apply.
 func TestExecutePlanMissingApplyIsError(t *testing.T) {
-	result := ExecutePlan(PlanResult{
+	result := ExecutePlan(testCtx(), PlanResult{
 		InSync:       false,
 		Status:       PlanStatusModify,
 		DesiredState: StatePresent,

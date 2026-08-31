@@ -8,9 +8,9 @@ func TestIntegrationBuilderLambdaPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-lambda"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		property string
@@ -33,7 +33,7 @@ func TestIntegrationBuilderLambdaPropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := BuilderLambdaPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "builder-lambda global " + tc.property,
 					setTask:   BuilderLambdaPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

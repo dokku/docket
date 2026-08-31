@@ -15,7 +15,7 @@ func exportResource(t *testing.T, addresses ...string) (string, ExportReport) {
 	if err != nil {
 		t.Fatalf("ParseResourceSelectors(%v): %v", addresses, err)
 	}
-	res, err := ExportRecipe(ExportOptions{Resources: selectors, Inline: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Resources: selectors, Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestParseResourceSelectorsAcceptsValidAddresses(t *testing.T) {
 func TestExportedRecipeLoadsWithoutNameCollisions(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{Inline: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

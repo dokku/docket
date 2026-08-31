@@ -7,7 +7,7 @@ import (
 
 func TestLogsPropertyTaskInvalidState(t *testing.T) {
 	task := LogsPropertyTask{App: "test-app", Property: "max-size", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestLogsPropertyTaskInvalidState(t *testing.T) {
 
 func TestLogsPropertyTaskMissingApp(t *testing.T) {
 	task := LogsPropertyTask{Property: "max-size", Value: "100m", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestLogsPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "100m",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestLogsPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestLogsPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "100m",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

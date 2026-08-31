@@ -78,12 +78,12 @@ func TestIntegrationCertsApp(t *testing.T) {
 	appName := "docket-test-certs"
 	certPath, keyPath := generateSelfSignedCert(t, appName+".example.com")
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// initial state - no cert
-	enabled, err := certsEnabled(CertsTask{App: appName})
+	enabled, err := certsEnabled(testCtx(), CertsTask{App: appName})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestIntegrationCertsApp(t *testing.T) {
 
 	// add cert
 	addTask := CertsTask{App: appName, Cert: certPath, Key: keyPath, State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add cert: %v", result.Error)
 	}
@@ -103,7 +103,7 @@ func TestIntegrationCertsApp(t *testing.T) {
 	if result.State != StatePresent {
 		t.Errorf("expected state 'present', got '%s'", result.State)
 	}
-	enabled, err = certsEnabled(CertsTask{App: appName})
+	enabled, err = certsEnabled(testCtx(), CertsTask{App: appName})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestIntegrationCertsApp(t *testing.T) {
 	}
 
 	// add again - should be idempotent (does not update; matches ansible-dokku semantics)
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -122,7 +122,7 @@ func TestIntegrationCertsApp(t *testing.T) {
 
 	// remove cert
 	removeTask := CertsTask{App: appName, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove cert: %v", result.Error)
 	}
@@ -132,7 +132,7 @@ func TestIntegrationCertsApp(t *testing.T) {
 	if result.State != StateAbsent {
 		t.Errorf("expected state 'absent', got '%s'", result.State)
 	}
-	enabled, err = certsEnabled(CertsTask{App: appName})
+	enabled, err = certsEnabled(testCtx(), CertsTask{App: appName})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestIntegrationCertsApp(t *testing.T) {
 	}
 
 	// remove again - idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -164,11 +164,11 @@ func TestIntegrationCertsAppInline(t *testing.T) {
 		t.Fatalf("read key: %v", err)
 	}
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
-	enabled, err := certsEnabled(CertsTask{App: appName})
+	enabled, err := certsEnabled(testCtx(), CertsTask{App: appName})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestIntegrationCertsAppInline(t *testing.T) {
 	}
 
 	addTask := CertsTask{App: appName, CertContent: string(certPEM), KeyContent: string(keyPEM), State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add cert inline: %v", result.Error)
 	}
@@ -187,7 +187,7 @@ func TestIntegrationCertsAppInline(t *testing.T) {
 	if result.State != StatePresent {
 		t.Errorf("expected state 'present', got '%s'", result.State)
 	}
-	enabled, err = certsEnabled(CertsTask{App: appName})
+	enabled, err = certsEnabled(testCtx(), CertsTask{App: appName})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestIntegrationCertsAppInline(t *testing.T) {
 		t.Errorf("expected cert to be enabled after inline add")
 	}
 
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second inline add: %v", result.Error)
 	}
@@ -204,7 +204,7 @@ func TestIntegrationCertsAppInline(t *testing.T) {
 	}
 
 	removeTask := CertsTask{App: appName, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove inline cert: %v", result.Error)
 	}
@@ -228,20 +228,20 @@ func TestIntegrationCertsGlobalInline(t *testing.T) {
 	}
 
 	cleanup := func() {
-		(CertsTask{Global: true, State: StateAbsent}).Execute()
+		(CertsTask{Global: true, State: StateAbsent}).Execute(testCtx())
 	}
 	cleanup()
 	defer cleanup()
 
 	addTask := CertsTask{Global: true, CertContent: string(certPEM), KeyContent: string(keyPEM), State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add global cert inline: %v", result.Error)
 	}
 	if !result.Changed {
 		t.Errorf("expected Changed=true on first global inline add")
 	}
-	enabled, err := certsEnabled(CertsTask{Global: true})
+	enabled, err := certsEnabled(testCtx(), CertsTask{Global: true})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestIntegrationCertsGlobalInline(t *testing.T) {
 		t.Errorf("expected global cert to be enabled after inline add")
 	}
 
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second global inline add: %v", result.Error)
 	}
@@ -266,14 +266,14 @@ func TestIntegrationCertsGlobal(t *testing.T) {
 
 	// best-effort cleanup before and after
 	cleanup := func() {
-		(CertsTask{Global: true, State: StateAbsent}).Execute()
+		(CertsTask{Global: true, State: StateAbsent}).Execute(testCtx())
 	}
 	cleanup()
 	defer cleanup()
 
 	// add global cert
 	addTask := CertsTask{Global: true, Cert: certPath, Key: keyPath, State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add global cert: %v", result.Error)
 	}
@@ -283,7 +283,7 @@ func TestIntegrationCertsGlobal(t *testing.T) {
 	if result.State != StatePresent {
 		t.Errorf("expected state 'present', got '%s'", result.State)
 	}
-	enabled, err := certsEnabled(CertsTask{Global: true})
+	enabled, err := certsEnabled(testCtx(), CertsTask{Global: true})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestIntegrationCertsGlobal(t *testing.T) {
 	}
 
 	// add again - idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second global add: %v", result.Error)
 	}
@@ -302,14 +302,14 @@ func TestIntegrationCertsGlobal(t *testing.T) {
 
 	// remove global cert
 	removeTask := CertsTask{Global: true, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove global cert: %v", result.Error)
 	}
 	if !result.Changed {
 		t.Errorf("expected Changed=true on first global remove")
 	}
-	enabled, err = certsEnabled(CertsTask{Global: true})
+	enabled, err = certsEnabled(testCtx(), CertsTask{Global: true})
 	if err != nil {
 		t.Fatalf("certsEnabled failed: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestIntegrationCertsGlobal(t *testing.T) {
 	}
 
 	// remove again - idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second global remove: %v", result.Error)
 	}

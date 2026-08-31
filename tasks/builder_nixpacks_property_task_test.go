@@ -7,7 +7,7 @@ import (
 
 func TestBuilderNixpacksPropertyTaskInvalidState(t *testing.T) {
 	task := BuilderNixpacksPropertyTask{App: "test-app", Property: "nixpackstoml-path", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestBuilderNixpacksPropertyTaskInvalidState(t *testing.T) {
 
 func TestBuilderNixpacksPropertyTaskMissingApp(t *testing.T) {
 	task := BuilderNixpacksPropertyTask{Property: "nixpackstoml-path", Value: "nixpacks.toml", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestBuilderNixpacksPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "nixpacks.toml",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestBuilderNixpacksPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestBuilderNixpacksPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "nixpacks.toml",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

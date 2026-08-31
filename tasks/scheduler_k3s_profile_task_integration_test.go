@@ -72,7 +72,7 @@ func TestIntegrationSchedulerK3sProfileAll(t *testing.T) {
 			setTask.State = StatePresent
 			unsetTask := tc.task
 			unsetTask.State = StateAbsent
-			defer unsetTask.Execute()
+			defer unsetTask.Execute(testCtx())
 			runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 				label:     "scheduler-k3s profile " + tc.name,
 				setTask:   setTask,
@@ -99,9 +99,9 @@ func TestIntegrationSchedulerK3sProfileFieldDrift(t *testing.T) {
 		AllowUnknownHosts: true,
 		State:             StatePresent,
 	}
-	defer SchedulerK3sProfileTask{Name: profileName, Role: "worker", State: StateAbsent}.Execute()
+	defer SchedulerK3sProfileTask{Name: profileName, Role: "worker", State: StateAbsent}.Execute(testCtx())
 
-	if result := seed.Execute(); result.Error != nil {
+	if result := seed.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("seed failed: %v", result.Error)
 	}
 
@@ -162,7 +162,7 @@ func TestIntegrationSchedulerK3sProfileFieldDrift(t *testing.T) {
 	for _, step := range steps {
 		t.Run(step.name, func(t *testing.T) {
 			next := step.mutate(current)
-			result := next.Execute()
+			result := next.Execute(testCtx())
 			if result.Error != nil {
 				t.Fatalf("apply failed: %v", result.Error)
 			}
@@ -170,7 +170,7 @@ func TestIntegrationSchedulerK3sProfileFieldDrift(t *testing.T) {
 				t.Errorf("expected Changed=true on drift apply, got false")
 			}
 
-			reapply := next.Execute()
+			reapply := next.Execute(testCtx())
 			if reapply.Error != nil {
 				t.Fatalf("re-apply failed: %v", reapply.Error)
 			}
@@ -178,7 +178,7 @@ func TestIntegrationSchedulerK3sProfileFieldDrift(t *testing.T) {
 				t.Errorf("expected Changed=false on immediate re-apply, got true")
 			}
 
-			entry, found, err := getSchedulerK3sProfile(profileName)
+			entry, found, err := getSchedulerK3sProfile(testCtx(), profileName)
 			if err != nil {
 				t.Fatalf("probe failed: %v", err)
 			}

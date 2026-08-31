@@ -7,7 +7,7 @@ import (
 
 func TestCaddyPropertyTaskInvalidState(t *testing.T) {
 	task := CaddyPropertyTask{App: "test-app", Property: "tls-internal", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestCaddyPropertyTaskInvalidState(t *testing.T) {
 
 func TestCaddyPropertyTaskMissingApp(t *testing.T) {
 	task := CaddyPropertyTask{Property: "tls-internal", Value: "true", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestCaddyPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "true",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestCaddyPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestCaddyPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "true",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

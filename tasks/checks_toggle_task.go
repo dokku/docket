@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -13,10 +14,10 @@ import (
 // "none" means every process has checks enabled. The JSON report is used
 // because dokku 0.38.21 renamed the flag-based `--checks-disabled` probe to
 // `--checks-disabled-list`; the report key is stable across those versions.
-func checksEnabled(ctx ToggleContext) (bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func checksEnabled(ctx context.Context, tc ToggleContext) (bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"checks:report", ctx.App, "--format", "json"},
+		Args:    []string{"checks:report", tc.App, "--format", "json"},
 	})
 	if err != nil {
 		return false, err
@@ -32,8 +33,8 @@ func checksEnabled(ctx ToggleContext) (bool, error) {
 
 // ExportApp emits a dokku_checks_toggle task only when checks are disabled
 // (they are enabled by default).
-func (t ChecksToggleTask) ExportApp(app string) ([]interface{}, error) {
-	enabled, err := checksEnabled(ToggleContext{App: app})
+func (t ChecksToggleTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	enabled, err := checksEnabled(ctx, ToggleContext{App: app})
 	if err != nil {
 		return nil, err
 	}
@@ -96,13 +97,13 @@ func (t ChecksToggleTask) Examples() ([]Doc, error) {
 }
 
 // Execute enables or disables the checks plugin
-func (t ChecksToggleTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ChecksToggleTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the ChecksToggleTask would produce.
-func (t ChecksToggleTask) Plan() PlanResult {
-	return planToggle(t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
+func (t ChecksToggleTask) Plan(ctx context.Context) PlanResult {
+	return planToggle(ctx, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 
 // init registers the ChecksToggleTask with the task registry

@@ -16,7 +16,7 @@ func startTestRegistry(t *testing.T) string {
 	containerName := "docket-test-registry"
 
 	// best-effort cleanup of any previous run
-	subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"rm", "-f", containerName},
 	})
@@ -24,7 +24,7 @@ func startTestRegistry(t *testing.T) string {
 	port := "5555"
 	server := "localhost:" + port
 
-	_, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	_, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args: []string{
 			"run", "-d", "--rm",
@@ -37,7 +37,7 @@ func startTestRegistry(t *testing.T) string {
 		t.Skipf("skipping integration test: failed to start registry:2 container: %v", err)
 	}
 	t.Cleanup(func() {
-		subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "docker",
 			Args:    []string{"rm", "-f", containerName},
 		})
@@ -46,7 +46,7 @@ func startTestRegistry(t *testing.T) string {
 	// wait until the registry is reachable
 	deadline := time.Now().Add(20 * time.Second)
 	for {
-		result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "curl",
 			Args:    []string{"-sf", "http://" + server + "/v2/"},
 		})
@@ -67,12 +67,12 @@ func TestIntegrationRegistryAuthApp(t *testing.T) {
 	server := startTestRegistry(t)
 
 	appName := "docket-test-registry-auth"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// best-effort cleanup of any leftover credential
-	(&RegistryAuthTask{App: appName, Server: server, State: StateAbsent}).Execute()
+	(&RegistryAuthTask{App: appName, Server: server, State: StateAbsent}).Execute(testCtx())
 
 	// log in
 	loginTask := RegistryAuthTask{
@@ -82,7 +82,7 @@ func TestIntegrationRegistryAuthApp(t *testing.T) {
 		Password: "testpassword",
 		State:    StatePresent,
 	}
-	result := loginTask.Execute()
+	result := loginTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to log in: %v", result.Error)
 	}
@@ -95,7 +95,7 @@ func TestIntegrationRegistryAuthApp(t *testing.T) {
 
 	// log out
 	logoutTask := RegistryAuthTask{App: appName, Server: server, State: StateAbsent}
-	result = logoutTask.Execute()
+	result = logoutTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to log out: %v", result.Error)
 	}
@@ -112,9 +112,9 @@ func TestIntegrationRegistryAuthGlobal(t *testing.T) {
 	server := startTestRegistry(t)
 
 	// best-effort cleanup of any leftover global credential
-	(&RegistryAuthTask{Global: true, Server: server, State: StateAbsent}).Execute()
+	(&RegistryAuthTask{Global: true, Server: server, State: StateAbsent}).Execute(testCtx())
 	t.Cleanup(func() {
-		(&RegistryAuthTask{Global: true, Server: server, State: StateAbsent}).Execute()
+		(&RegistryAuthTask{Global: true, Server: server, State: StateAbsent}).Execute(testCtx())
 	})
 
 	loginTask := RegistryAuthTask{
@@ -124,7 +124,7 @@ func TestIntegrationRegistryAuthGlobal(t *testing.T) {
 		Password: "testpassword",
 		State:    StatePresent,
 	}
-	result := loginTask.Execute()
+	result := loginTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to log in globally: %v", result.Error)
 	}
@@ -133,7 +133,7 @@ func TestIntegrationRegistryAuthGlobal(t *testing.T) {
 	}
 
 	logoutTask := RegistryAuthTask{Global: true, Server: server, State: StateAbsent}
-	result = logoutTask.Execute()
+	result = logoutTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to log out globally: %v", result.Error)
 	}
@@ -155,9 +155,9 @@ func TestIntegrationRegistryAuthPasswordNotInArgs(t *testing.T) {
 	// being naively quoted into argv).
 	server := startTestRegistry(t)
 	appName := "docket-test-registry-auth-stdin"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	pw := "p@ss with spaces and 'quotes\""
 	loginTask := RegistryAuthTask{
@@ -167,7 +167,7 @@ func TestIntegrationRegistryAuthPasswordNotInArgs(t *testing.T) {
 		Password: pw,
 		State:    StatePresent,
 	}
-	result := loginTask.Execute()
+	result := loginTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("login with whitespace password failed: %v", result.Error)
 	}
@@ -175,5 +175,5 @@ func TestIntegrationRegistryAuthPasswordNotInArgs(t *testing.T) {
 		t.Errorf("password should not appear in task message")
 	}
 
-	(&RegistryAuthTask{App: appName, Server: server, State: StateAbsent}).Execute()
+	(&RegistryAuthTask{App: appName, Server: server, State: StateAbsent}).Execute(testCtx())
 }

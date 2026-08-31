@@ -10,15 +10,15 @@ func TestIntegrationBuildpacks(t *testing.T) {
 
 	appName := "docket-test-buildpacks"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	bp := "https://github.com/heroku/heroku-buildpack-nodejs.git"
 
 	assertListed := func(t *testing.T, label string, want map[string]bool) {
 		t.Helper()
-		got, err := getBuildpacks(appName)
+		got, err := getBuildpacks(testCtx(), appName)
 		if err != nil {
 			t.Fatalf("%s: getBuildpacks failed: %v", label, err)
 		}
@@ -46,7 +46,7 @@ func TestIntegrationBuildpacks(t *testing.T) {
 		Buildpacks: []string{bp},
 		State:      StatePresent,
 	}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add buildpack: %v", result.Error)
 	}
@@ -59,7 +59,7 @@ func TestIntegrationBuildpacks(t *testing.T) {
 	assertListed(t, "after add", map[string]bool{bp: true})
 
 	// add same buildpack again - should be idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -74,7 +74,7 @@ func TestIntegrationBuildpacks(t *testing.T) {
 		Buildpacks: []string{bp},
 		State:      StateAbsent,
 	}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove buildpack: %v", result.Error)
 	}
@@ -87,7 +87,7 @@ func TestIntegrationBuildpacks(t *testing.T) {
 	assertListed(t, "after remove", map[string]bool{})
 
 	// remove same buildpack again - should be idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -97,7 +97,7 @@ func TestIntegrationBuildpacks(t *testing.T) {
 	assertListed(t, "after idempotent remove", map[string]bool{})
 
 	// add buildpack again, then clear
-	if err := addTask.Execute().Error; err != nil {
+	if err := addTask.Execute(testCtx()).Error; err != nil {
 		t.Fatalf("failed to re-add buildpack: %v", err)
 	}
 	assertListed(t, "after re-add", map[string]bool{bp: true})
@@ -106,7 +106,7 @@ func TestIntegrationBuildpacks(t *testing.T) {
 		App:   appName,
 		State: StateAbsent,
 	}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear buildpacks: %v", result.Error)
 	}
@@ -116,7 +116,7 @@ func TestIntegrationBuildpacks(t *testing.T) {
 	assertListed(t, "after clear", map[string]bool{})
 
 	// clear again - should be idempotent
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second clear: %v", result.Error)
 	}
@@ -134,16 +134,16 @@ func TestIntegrationBuildpacksOrder(t *testing.T) {
 
 	appName := "docket-test-buildpacks-order"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	nodejs := "https://github.com/heroku/heroku-buildpack-nodejs.git"
 	nginx := "https://github.com/heroku/heroku-buildpack-nginx.git"
 
 	assertOrder := func(label string, want []string) {
 		t.Helper()
-		got, err := getOrderedBuildpacks(appName)
+		got, err := getOrderedBuildpacks(testCtx(), appName)
 		if err != nil {
 			t.Fatalf("%s: getOrderedBuildpacks failed: %v", label, err)
 		}
@@ -153,7 +153,7 @@ func TestIntegrationBuildpacksOrder(t *testing.T) {
 	}
 
 	setTask := BuildpacksTask{App: appName, Buildpacks: []string{nodejs, nginx}, State: StatePresent}
-	result := setTask.Execute()
+	result := setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set ordered buildpacks: %v", result.Error)
 	}
@@ -162,7 +162,7 @@ func TestIntegrationBuildpacksOrder(t *testing.T) {
 	}
 	assertOrder("after set", []string{nodejs, nginx})
 
-	result = setTask.Execute()
+	result = setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent set failed: %v", result.Error)
 	}
@@ -172,7 +172,7 @@ func TestIntegrationBuildpacksOrder(t *testing.T) {
 	assertOrder("after idempotent set", []string{nodejs, nginx})
 
 	reorderTask := BuildpacksTask{App: appName, Buildpacks: []string{nginx, nodejs}, State: StatePresent}
-	result = reorderTask.Execute()
+	result = reorderTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to reorder buildpacks: %v", result.Error)
 	}
@@ -181,7 +181,7 @@ func TestIntegrationBuildpacksOrder(t *testing.T) {
 	}
 	assertOrder("after reorder", []string{nginx, nodejs})
 
-	result = reorderTask.Execute()
+	result = reorderTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent reorder failed: %v", result.Error)
 	}

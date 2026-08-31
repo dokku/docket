@@ -15,7 +15,7 @@ func TestListServicesParsesTypeAndName(t *testing.T) {
 		"--quiet plugin:trigger service-list": "redis:cache\npostgres:my-db\npostgres:analytics\n\nmalformed-line\n:bad\nbad:",
 	}))()
 
-	services, err := listServices()
+	services, err := listServices(testCtx())
 	if err != nil {
 		t.Fatalf("listServices: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
 		"--quiet redis:info cache --version":    "redis:7.2.5",
 	}))()
 
-	bodies, err := ServiceCreateTask{}.ExportGlobal()
+	bodies, err := ServiceCreateTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestExportServiceCreateOmitsUnreadableImage(t *testing.T) {
 		"--quiet plugin:trigger service-list": "redis:cache",
 	}))()
 
-	bodies, err := ServiceCreateTask{}.ExportGlobal()
+	bodies, err := ServiceCreateTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestServiceExposedPortListParsesHostSide(t *testing.T) {
 			defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 				"--quiet postgres:info svc --exposed-ports": tc.stdout,
 			}))()
-			got, err := serviceExposedPortList("postgres", "svc")
+			got, err := serviceExposedPortList(testCtx(), "postgres", "svc")
 			if err != nil {
 				t.Fatalf("serviceExposedPortList: %v", err)
 			}
@@ -152,7 +152,7 @@ func TestExportServiceExposeReadsHostPorts(t *testing.T) {
 		"--quiet redis:info cache --exposed-ports":    "-",
 	}))()
 
-	bodies, err := ServiceExposeTask{}.ExportGlobal()
+	bodies, err := ServiceExposeTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestExportServiceBackupParsesSchedule(t *testing.T) {
 		// redis has no schedule: unmapped -> empty content -> parse fails -> skipped
 	}))()
 
-	bodies, err := ServiceBackupTask{}.ExportGlobal()
+	bodies, err := ServiceBackupTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestExportServiceLinkEnumeratesForApp(t *testing.T) {
 		"--quiet redis:links cache":           "worker",
 	}))()
 
-	bodies, err := ServiceLinkTask{}.ExportApp("web")
+	bodies, err := ServiceLinkTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestExportServiceLinkEnumeratesForApp(t *testing.T) {
 		t.Errorf("unexpected link task: %+v", l)
 	}
 
-	bodies, err = ServiceLinkTask{}.ExportApp("worker")
+	bodies, err = ServiceLinkTask{}.ExportApp(testCtx(), "worker")
 	if err != nil {
 		t.Fatalf("ExportApp worker: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestExportAclServiceReadsUsers(t *testing.T) {
 		return subprocess.ExecCommandResponse{Stdout: responses[key], Stderr: stderr[key]}, nil
 	})()
 
-	bodies, err := AclServiceTask{}.ExportGlobal()
+	bodies, err := AclServiceTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestExportConfigExcludesLinkedServiceDSNs(t *testing.T) {
 		"--quiet postgres:info my-db --dsn":       dsn,
 	}))()
 
-	bodies, err := ConfigTask{}.ExportApp("web")
+	bodies, err := ConfigTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 		"--quiet postgres:info my-db --version":       "postgres:17.2",
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

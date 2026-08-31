@@ -7,7 +7,7 @@ import (
 
 func TestNginxPropertyTaskInvalidState(t *testing.T) {
 	task := NginxPropertyTask{App: "test-app", Property: "proxy-read-timeout", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestNginxPropertyTaskInvalidState(t *testing.T) {
 
 func TestNginxPropertyTaskMissingApp(t *testing.T) {
 	task := NginxPropertyTask{Property: "proxy-read-timeout", Value: "120s", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestNginxPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "120s",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestNginxPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestNginxPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "120s",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,8 +87,8 @@ func (t HttpAuthAllowedIpTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the app's HTTP auth allowed IPs
-func (t HttpAuthAllowedIpTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t HttpAuthAllowedIpTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the HttpAuthAllowedIpTask's inputs without contacting the server.
@@ -102,13 +103,13 @@ func (t HttpAuthAllowedIpTask) Validate() error {
 }
 
 // Plan reports the drift the HttpAuthAllowedIpTask would produce.
-func (t HttpAuthAllowedIpTask) Plan() PlanResult {
+func (t HttpAuthAllowedIpTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			current, err := getHttpAuthAllowedIps(t.App)
+			current, err := getHttpAuthAllowedIps(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -139,14 +140,14 @@ func (t HttpAuthAllowedIpTask) Plan() PlanResult {
 				Status:    status,
 				Reason:    fmt.Sprintf("%d allowed ip(s) to add", len(toAdd)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			current, err := getHttpAuthAllowedIps(t.App)
+			current, err := getHttpAuthAllowedIps(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -180,9 +181,9 @@ func (t HttpAuthAllowedIpTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%d allowed ip(s) to remove", len(toRemove)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -198,8 +199,8 @@ func (t HttpAuthAllowedIpTask) Plan() PlanResult {
 // fully drift-detectable. A transport-level failure (`*subprocess.SSHError`) is
 // propagated; a dokku-level non-zero exit (e.g. app does not exist) is treated
 // as "no allowed ips"; malformed JSON surfaces as an error.
-func getHttpAuthAllowedIps(appName string) (map[string]bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getHttpAuthAllowedIps(ctx context.Context, appName string) (map[string]bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"http-auth:report",
@@ -232,8 +233,8 @@ func getHttpAuthAllowedIps(appName string) (map[string]bool, error) {
 
 // ExportApp reconstructs the app's HTTP-auth allowed IPs, or nil when none are
 // set.
-func (t HttpAuthAllowedIpTask) ExportApp(app string) ([]interface{}, error) {
-	ips, err := getHttpAuthAllowedIps(app)
+func (t HttpAuthAllowedIpTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	ips, err := getHttpAuthAllowedIps(ctx, app)
 	if err != nil {
 		return nil, err
 	}

@@ -54,7 +54,7 @@ func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
 		Metadata: map[string]string{"secretName": ""},
 		State:    StateAbsent,
 	}
-	result := task.Plan()
+	result := task.Plan(testCtx())
 	if result.Error != nil {
 		t.Fatalf("Plan returned error: %v", result.Error)
 	}
@@ -90,7 +90,7 @@ func TestSchedulerK3sAutoscalingAuthTaskInvalidState(t *testing.T) {
 		Metadata: map[string]string{"awsRegion": "us-east-1"},
 		State:    "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -102,7 +102,7 @@ func TestSchedulerK3sAutoscalingAuthTaskMissingApp(t *testing.T) {
 		Metadata: map[string]string{"awsRegion": "us-east-1"},
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -119,7 +119,7 @@ func TestSchedulerK3sAutoscalingAuthTaskGlobalWithAppSet(t *testing.T) {
 		Metadata: map[string]string{"awsRegion": "us-east-1"},
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -134,7 +134,7 @@ func TestSchedulerK3sAutoscalingAuthTaskMissingTrigger(t *testing.T) {
 		Metadata: map[string]string{"awsRegion": "us-east-1"},
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when trigger is empty")
 	}
@@ -149,7 +149,7 @@ func TestSchedulerK3sAutoscalingAuthTaskPresentWithoutMetadata(t *testing.T) {
 		Trigger: "aws-secret-manager",
 		State:   StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no metadata")
 	}
@@ -164,7 +164,7 @@ func TestSchedulerK3sAutoscalingAuthTaskAbsentWithoutMetadata(t *testing.T) {
 		Trigger: "aws-secret-manager",
 		State:   StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has no metadata")
 	}
@@ -180,7 +180,7 @@ func TestSchedulerK3sAutoscalingAuthTaskEmptyMetadataKey(t *testing.T) {
 		Metadata: map[string]string{"": "value"},
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when a metadata key is empty")
 	}

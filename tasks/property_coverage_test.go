@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -409,12 +410,14 @@ func TestRejectedPropertyFamiliesReportIdenticallyFromPlanAndValidate(t *testing
 				continue
 			}
 
-			planner, ok := instance.(interface{ Plan() PlanResult })
+			planner, ok := instance.(interface {
+				Plan(ctx context.Context) PlanResult
+			})
 			if !ok {
 				t.Errorf("task %q has no Plan() to compare against", name)
 				continue
 			}
-			plan := planner.Plan()
+			plan := planner.Plan(testCtx())
 			if plan.Status != PlanStatusError || plan.Error == nil {
 				t.Errorf("task %q plans %q instead of rejecting it: status %q", name, property, plan.Status)
 				continue

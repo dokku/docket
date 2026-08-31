@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // BuildsPropertyTask manages the builds configuration for a given dokku application
 type BuildsPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t BuildsPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the builds property
-func (t BuildsPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t BuildsPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // buildsPropertyTable maps builds property names to the JSON keys emitted by
@@ -87,20 +89,20 @@ func (t BuildsPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the BuildsPropertyTask would produce.
-func (t BuildsPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t BuildsPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t BuildsPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t BuildsPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return BuildsPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t BuildsPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t BuildsPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return BuildsPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

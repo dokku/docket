@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -17,14 +18,14 @@ import (
 // values); the engine wraps each under the task's type-key and applies
 // vars-extraction/redaction uniformly afterwards.
 type AppExporter interface {
-	ExportApp(app string) ([]interface{}, error)
+	ExportApp(ctx context.Context, app string) ([]interface{}, error)
 }
 
 // GlobalExporter is the not-app-scoped counterpart of AppExporter (global
 // certs, networks, ssh keys, ...). It is defined here so global resources can
 // be added the same way; the engine runs these into a leading global play.
 type GlobalExporter interface {
-	ExportGlobal() ([]interface{}, error)
+	ExportGlobal(ctx context.Context) ([]interface{}, error)
 }
 
 // appExportReporter is an optional richer form of AppExporter: an exporter that
@@ -33,7 +34,7 @@ type GlobalExporter interface {
 // log line. exportAppPlay passes a warn callback wired to res.Report.Warnings
 // and prefers this method when the task implements it.
 type appExportReporter interface {
-	ExportAppReport(app string, warn func(msg string)) ([]interface{}, error)
+	ExportAppReport(ctx context.Context, app string, warn func(msg string)) ([]interface{}, error)
 }
 
 // globalExportReporter is the not-app-scoped counterpart of appExportReporter:
@@ -47,7 +48,7 @@ type appExportReporter interface {
 // asserts GlobalExporter first, so a task carrying only the reporting form is
 // skipped entirely.
 type globalExportReporter interface {
-	ExportGlobalReport(warn func(msg string)) ([]interface{}, error)
+	ExportGlobalReport(ctx context.Context, warn func(msg string)) ([]interface{}, error)
 }
 
 // globalExportOrder is the fixed order in which not-app-scoped task types are
@@ -288,7 +289,7 @@ func (res *ExportResult) SensitiveValues() []string {
 // before the app list is read, so a failure there still hands back what was
 // already collected - and with it the sensitive values the caller has to
 // register before it prints the failure (#488).
-func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
+func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
 	res := &ExportResult{
 		Vars:         map[string]string{},
 		usedVarNames: map[string]bool{},
@@ -300,7 +301,7 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 	// the export is narrowed to specific apps with --app, and when every
 	// --resource address is app-scoped.
 	if len(opts.Apps) == 0 && res.filter.wantsGlobalScope(inGlobal) {
-		if global := res.exportGlobalPlay(opts); global != nil {
+		if global := res.exportGlobalPlay(ctx, opts); global != nil {
 			res.plays = append(res.plays, global)
 		}
 	}
@@ -319,7 +320,7 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 		wantApps = selectedApps
 	}
 
-	apps, err := listApps()
+	apps, err := listApps(ctx)
 	if err != nil {
 		return res, err
 	}
@@ -333,7 +334,7 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 	sort.Strings(apps)
 
 	for _, app := range apps {
-		play := res.exportAppPlay(app, opts)
+		play := res.exportAppPlay(ctx, app, opts)
 		if play != nil {
 			res.plays = append(res.plays, play)
 		}
@@ -346,7 +347,7 @@ func ExportRecipe(opts ExportOptions) (*ExportResult, error) {
 
 // exportGlobalPlay builds the leading global play by running every registered
 // GlobalExporter. Returns nil when there are no global resources.
-func (res *ExportResult) exportGlobalPlay(opts ExportOptions) map[string]interface{} {
+func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOptions) map[string]interface{} {
 	var taskList []map[string]interface{}
 	var inputs []map[string]interface{}
 
@@ -365,12 +366,12 @@ func (res *ExportResult) exportGlobalPlay(opts ExportOptions) map[string]interfa
 		var bodies []interface{}
 		var err error
 		if reporter, ok := proto.(globalExportReporter); ok {
-			bodies, err = reporter.ExportGlobalReport(func(msg string) {
+			bodies, err = reporter.ExportGlobalReport(ctx, func(msg string) {
 				res.Report.Warnings = append(res.Report.Warnings,
 					fmt.Sprintf("global: %s: %s", typeKey, msg))
 			})
 		} else {
-			bodies, err = exporter.ExportGlobal()
+			bodies, err = exporter.ExportGlobal(ctx)
 		}
 		if err != nil {
 			res.Report.Warnings = append(res.Report.Warnings,
@@ -406,7 +407,7 @@ func (res *ExportResult) exportGlobalPlay(opts ExportOptions) map[string]interfa
 
 // exportAppPlay builds one play for a single app by running each app-scoped
 // exporter in appExportOrder. Returns nil when the app yields no tasks.
-func (res *ExportResult) exportAppPlay(app string, opts ExportOptions) map[string]interface{} {
+func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts ExportOptions) map[string]interface{} {
 	var taskList []map[string]interface{}
 	var inputs []map[string]interface{}
 
@@ -425,12 +426,12 @@ func (res *ExportResult) exportAppPlay(app string, opts ExportOptions) map[strin
 		var bodies []interface{}
 		var err error
 		if reporter, ok := proto.(appExportReporter); ok {
-			bodies, err = reporter.ExportAppReport(app, func(msg string) {
+			bodies, err = reporter.ExportAppReport(ctx, app, func(msg string) {
 				res.Report.Warnings = append(res.Report.Warnings,
 					fmt.Sprintf("%s: %s: %s", app, typeKey, msg))
 			})
 		} else {
-			bodies, err = exporter.ExportApp(app)
+			bodies, err = exporter.ExportApp(ctx, app)
 		}
 		if err != nil {
 			res.Report.Warnings = append(res.Report.Warnings,
@@ -883,8 +884,8 @@ func (res *ExportResult) AppCount() int {
 }
 
 // listApps returns every app on the server via `dokku apps:list`.
-func listApps() ([]string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func listApps(ctx context.Context) ([]string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "apps:list"},
 	})
