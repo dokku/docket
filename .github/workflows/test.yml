@@ -25,6 +25,11 @@ jobs:
           go-version-file: go.mod
       - name: run unit tests
         run: go test -v -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
+      # The concurrency tests around the per-invocation target assert that two
+      # runs in one process do not interfere, which only means something with
+      # the detector on.
+      - name: run unit tests under the race detector
+        run: go test -race -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
 
   integration-test:
     name: integration-test

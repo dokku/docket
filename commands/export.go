@@ -101,7 +101,7 @@ func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app (repeatable)")
 	f.StringArrayVar(&c.resources, "resource", nil, "restrict the export to the named resource address, e.g. 'dokku_config[app=my-app]' (repeatable); a bare task type exports every resource of that type")
 	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
-	f.BoolVar(&c.sudo, "sudo", false, "wrap the remote dokku call in sudo -n")
+	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via sudo -n, remotely with --host and locally without")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "trust an unknown SSH host key on first connect")
 	return f
 }
@@ -189,9 +189,13 @@ func (c *ExportCommand) Run(args []string) int {
 	}
 
 	ctx := runContext(c.Ctx)
-	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
-	if resolvedHost != "" {
-		defer subprocess.CloseSshControlMaster(resolvedHost)
+	// The target rides on the run context, so every exporter reads the same
+	// server without any of them holding a reference to it - and a second
+	// export in the same process can read a different one.
+	target := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
+	ctx = subprocess.ContextWithTarget(ctx, target)
+	if target.Host != "" {
+		defer subprocess.CloseSshControlMaster(target.Host)
 	}
 
 	toStdout := c.output == taskFileStdin

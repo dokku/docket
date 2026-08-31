@@ -144,3 +144,71 @@ EOF
   assert_success
   assert_output --partial "npm run start"
 }
+
+# argv_recipe is the one-task recipe the transport-argv cases below plan
+# against. They use `plan` rather than `apply` deliberately: the assertion is
+# about the ssh argv docket builds, and probing reads the server without
+# leaving root-owned state behind for the next test to trip over.
+argv_recipe() {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: ensure docket-test-ssh
+      dokku_app:
+        app: docket-test-ssh
+EOF
+}
+
+@test "--sudo wraps the remote dokku call in sudo -n" {
+  argv_recipe
+  # DOKKU_TRACE echoes the ssh argv, which is the only place the remote sudo
+  # wrap is visible: it happens on the server, so the command docket reports is
+  # the bare `dokku ...` form either way.
+  DOKKU_TRACE=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan \
+    --tasks "$TASKS_FILE" --sudo
+  assert_success
+  assert_output --partial "-- sudo -n dokku"
+}
+
+@test "DOKKU_SUDO=1 is equivalent to --sudo over ssh" {
+  argv_recipe
+  # The argv builder used to read DOKKU_SUDO out of the process environment
+  # itself. It now takes the setting from the target the commands layer
+  # resolved, so this is what proves the env var still reaches it.
+  DOKKU_TRACE=1 DOKKU_SUDO=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan \
+    --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "-- sudo -n dokku"
+}
+
+@test "no sudo wrap without --sudo or DOKKU_SUDO" {
+  argv_recipe
+  DOKKU_TRACE=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan \
+    --tasks "$TASKS_FILE"
+  assert_success
+  refute_output --partial "sudo -n"
+}
+
+@test "--accept-new-host-keys adds the ssh option" {
+  argv_recipe
+  DOKKU_TRACE=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan \
+    --tasks "$TASKS_FILE" --accept-new-host-keys
+  assert_success
+  assert_output --partial "StrictHostKeyChecking=accept-new"
+}
+
+@test "DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1 is equivalent to the flag" {
+  argv_recipe
+  DOKKU_TRACE=1 DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" \
+    run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "StrictHostKeyChecking=accept-new"
+}
+
+@test "the host-key option is absent unless asked for" {
+  argv_recipe
+  DOKKU_TRACE=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan \
+    --tasks "$TASKS_FILE"
+  assert_success
+  refute_output --partial "StrictHostKeyChecking=accept-new"
+}

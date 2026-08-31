@@ -1,10 +1,11 @@
 // Package subprocess SSH transport.
 //
-// When DOKKU_HOST is set, every dokku subprocess invocation is routed
-// through an `ssh` subprocess wrapper instead of executing locally. We
-// shell out to the user's `ssh` binary rather than using a Go SSH
-// library so we inherit the user's `~/.ssh/config`, `ProxyJump`, agent,
-// and known_hosts handling for free.
+// When the context's Target names a host - resolved by the commands layer from
+// --host or DOKKU_HOST - every dokku subprocess invocation is routed through an
+// `ssh` subprocess wrapper instead of executing locally. We shell out to the
+// user's `ssh` binary rather than using a Go SSH library so we inherit the
+// user's `~/.ssh/config`, `ProxyJump`, agent, and known_hosts handling for
+// free.
 //
 // All invocations in a single docket run share one TCP+SSH handshake
 // via OpenSSH ControlMaster multiplexing. The first `ssh` invocation
@@ -27,10 +28,11 @@
 // as the underlying error so the formatter renders it as a `dokku:`
 // failure.
 //
-// `input.Sudo` in `ExecCommandInput` means "wrap with local sudo" and
-// is meaningless when DOKKU_HOST is set. SSH dispatch ignores
-// `input.Sudo` and consults `DOKKU_SUDO=1` to decide whether to wrap
-// the *remote* dokku invocation in `sudo -n`.
+// Where a command runs, whether it is sudo-wrapped, and whether an unknown
+// host key is accepted all travel on the context as a `Target`. SSH dispatch
+// reads it the same way the local path does, so `--sudo` means "run dokku as
+// root" on both sides - remotely as `sudo -n` inside the ssh argv, locally as
+// `sudo -n -u root` around the child.
 package subprocess
 
 import (
@@ -167,24 +169,27 @@ func controlPath(host string, pid int) string {
 // shell (a non-printable byte such as a tab, newline, or null) yields an
 // error rather than a corrupted remote command.
 //
-// Reads two env vars at build time: DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1
-// adds `-o StrictHostKeyChecking=accept-new`; DOKKU_SUDO=1 wraps the
-// remote command in `sudo -n`.
-func buildSshArgv(target sshTarget, remote []string) ([]string, error) {
+// The sudo and host-key settings come from opts, the caller's per-invocation
+// Target. They used to be read from DOKKU_SUDO and
+// DOKKU_SSH_ACCEPT_NEW_HOST_KEYS here, which meant the commands layer had to
+// write them into the process environment to communicate them - and once
+// written, they applied to every invocation in the process for the rest of its
+// life.
+func buildSshArgv(parsed sshTarget, opts Target, remote []string) ([]string, error) {
 	argv := []string{
 		"-o", "ControlMaster=auto",
-		"-o", "ControlPath=" + controlPath(target.UserHost(), os.Getpid()),
+		"-o", "ControlPath=" + controlPath(parsed.UserHost(), os.Getpid()),
 		"-o", "ControlPersist=60",
 		"-o", "BatchMode=yes",
 	}
-	if os.Getenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS") == "1" {
+	if opts.AcceptNewHostKeys {
 		argv = append(argv, "-o", "StrictHostKeyChecking=accept-new")
 	}
-	if target.Port != "" && target.Port != "22" {
-		argv = append(argv, "-p", target.Port)
+	if parsed.Port != "" && parsed.Port != "22" {
+		argv = append(argv, "-p", parsed.Port)
 	}
-	argv = append(argv, target.UserHost(), "--")
-	if os.Getenv("DOKKU_SUDO") == "1" {
+	argv = append(argv, parsed.UserHost(), "--")
+	if opts.Sudo {
 		argv = append(argv, "sudo", "-n")
 	}
 	for _, arg := range remote {
@@ -202,16 +207,6 @@ func buildSshArgv(target sshTarget, remote []string) ([]string, error) {
 var (
 	sshLookPathOnce sync.Once
 	sshLookPathErr  error
-)
-
-// defaultHost is the package-level fallback used by CallExecCommand
-// when the per-call ExecCommandInput.Host is empty. The commands layer
-// (commands/apply.go and commands/plan.go) sets this once at start-of-
-// run from the resolved CLI flag / env var so tasks can keep building
-// transport-agnostic ExecCommandInput values.
-var (
-	defaultHostMu sync.RWMutex
-	defaultHost   string
 )
 
 // Probe runs input as a state probe and reports whether it matched
@@ -255,23 +250,6 @@ func Probe(ctx context.Context, input ExecCommandInput) (bool, error) {
 	return result.ExitCode == 0, nil
 }
 
-// SetDefaultHost registers the host that CallExecCommand
-// should use when ExecCommandInput.Host is empty. Pass an empty string
-// to clear the default. Mirrors the SetGlobalSensitive pattern.
-func SetDefaultHost(host string) {
-	defaultHostMu.Lock()
-	defer defaultHostMu.Unlock()
-	defaultHost = host
-}
-
-// GetDefaultHost returns the currently registered default host (or
-// empty string when none).
-func GetDefaultHost() string {
-	defaultHostMu.RLock()
-	defer defaultHostMu.RUnlock()
-	return defaultHost
-}
-
 func ensureSshAvailable() error {
 	sshLookPathOnce.Do(func() {
 		_, err := exec.LookPath("ssh")
@@ -282,22 +260,27 @@ func ensureSshAvailable() error {
 	return sshLookPathErr
 }
 
-// CallSshCommand executes a remote command over ssh against host under
-// ctx. The execution pipeline mirrors CallExecCommand (same DOKKU_TRACE
-// logging, masking, stdio wiring) so callers see identical behavior aside
-// from the transport.
+// CallSshCommand executes a remote command over ssh against target under ctx.
+// The execution pipeline mirrors CallExecCommand (same DOKKU_TRACE logging,
+// masking, stdio wiring) so callers see identical behavior aside from the
+// transport.
+//
+// It takes the whole Target rather than a host string because the argv it
+// builds depends on the sudo and host-key settings too, and a signature that
+// carried only the host would have to fetch those from somewhere else - which
+// is exactly how they ended up in the process environment.
 //
 // On exit code 255 (OpenSSH's transport-failure code), the returned
 // error is `*SSHError`. On any other non-zero exit, the returned error
 // is the plain underlying error so the formatter renders the failure
 // as a remote dokku error.
-func CallSshCommand(ctx context.Context, host string, input ExecCommandInput) (ExecCommandResponse, error) {
-	target, err := parseDokkuHost(host)
+func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) (ExecCommandResponse, error) {
+	parsed, err := parseDokkuHost(target.Host)
 	if err != nil {
-		return ExecCommandResponse{}, &SSHError{Host: host, Err: err}
+		return ExecCommandResponse{}, &SSHError{Host: target.Host, Err: err}
 	}
 	if err := ensureSshAvailable(); err != nil {
-		return ExecCommandResponse{}, &SSHError{Host: target.UserHost(), Err: err}
+		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Err: err}
 	}
 
 	// isatty reports whether our own stdout is a terminal, which is the
@@ -305,9 +288,9 @@ func CallSshCommand(ctx context.Context, host string, input ExecCommandInput) (E
 	isatty := !color.NoColor
 
 	remote := append([]string{input.Command}, input.Args...)
-	argv, err := buildSshArgv(target, remote)
+	argv, err := buildSshArgv(parsed, target, remote)
 	if err != nil {
-		return ExecCommandResponse{}, &SSHError{Host: target.UserHost(), Command: remote, Err: err}
+		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Command: remote, Err: err}
 	}
 
 	// The `ssh` client inherits docket's environment and directory; nothing is
@@ -354,7 +337,7 @@ func CallSshCommand(ctx context.Context, host string, input ExecCommandInput) (E
 		Cancelled: res.Cancelled,
 	}
 
-	return classifySshResult(target, remote, resp, runErr)
+	return classifySshResult(parsed, remote, resp, runErr)
 }
 
 // classifySshResult maps an ssh ExecTask result onto the docket error

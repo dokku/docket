@@ -12,10 +12,10 @@ import (
 
 func TestResolveCommandString(t *testing.T) {
 	t.Cleanup(func() { SetGlobalSensitive(nil) })
-	t.Cleanup(func() { SetDefaultHost("") })
 
 	tests := []struct {
 		name      string
+		target    Target
 		input     ExecCommandInput
 		sensitive []string
 		want      string
@@ -31,9 +31,16 @@ func TestResolveCommandString(t *testing.T) {
 			want:  "dokku --quiet apps:create api",
 		},
 		{
-			name:  "sudo wraps the command and args",
-			input: ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Sudo: true},
-			want:  "sudo -n -u root dokku apps:create api",
+			name:   "a sudo target wraps the local command and args",
+			target: Target{Sudo: true},
+			input:  ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}},
+			want:   "sudo -n -u root dokku apps:create api",
+		},
+		{
+			name:   "a sudo target leaves a non-dokku helper alone",
+			target: Target{Sudo: true},
+			input:  ExecCommandInput{Command: "docker", Args: []string{"image", "inspect", "api"}},
+			want:   "docker image inspect api",
 		},
 		{
 			name:      "sensitive values are masked",
@@ -42,34 +49,41 @@ func TestResolveCommandString(t *testing.T) {
 			want:      "dokku config:set api KEY=***",
 		},
 		{
-			name:  "ssh transport returns the bare form even with Sudo set",
-			input: ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Host: "alice@host", Sudo: true},
-			want:  "dokku apps:create api",
+			name:   "ssh transport returns the bare form even with sudo set",
+			target: Target{Host: "alice@host", Sudo: true},
+			input:  ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}},
+			want:   "dokku apps:create api",
 		},
 		{
-			name:  "non-dokku command runs locally even with Host set",
-			input: ExecCommandInput{Command: "echo", Args: []string{"hi"}, Host: "alice@host"},
-			want:  "echo hi",
+			name:   "non-dokku command runs locally even with a host set",
+			target: Target{Host: "alice@host"},
+			input:  ExecCommandInput{Command: "echo", Args: []string{"hi"}},
+			want:   "echo hi",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			SetGlobalSensitive(tc.sensitive)
 			t.Cleanup(func() { SetGlobalSensitive(nil) })
-			if got := ResolveCommandString(context.Background(), tc.input); got != tc.want {
+			ctx := ContextWithTarget(context.Background(), tc.target)
+			if got := ResolveCommandString(ctx, tc.input); got != tc.want {
 				t.Errorf("ResolveCommandString = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestResolveCommandStringHonorsDefaultHost(t *testing.T) {
-	t.Cleanup(func() { SetDefaultHost("") })
-	SetDefaultHost("alice@host")
-	got := ResolveCommandString(context.Background(), ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Sudo: true})
-	want := "dokku apps:create api"
-	if got != want {
-		t.Errorf("ResolveCommandString with default host = %q, want %q", got, want)
+// TestResolveCommandStringWithoutATargetRunsLocally pins the zero value: a
+// context carrying no target renders the local form, which is what docket does
+// when neither --host nor DOKKU_HOST is set.
+func TestResolveCommandStringWithoutATargetRunsLocally(t *testing.T) {
+	t.Parallel()
+	got := ResolveCommandString(context.Background(), ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"apps:create", "api"},
+	})
+	if want := "dokku apps:create api"; got != want {
+		t.Errorf("ResolveCommandString = %q, want %q", got, want)
 	}
 }
 

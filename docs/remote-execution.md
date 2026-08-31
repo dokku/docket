@@ -23,8 +23,13 @@ You do not need to teach docket about any of it.
 | Flag | Effect |
 |------|--------|
 | `--host <user@host:port>` | The remote host to ssh into. Overrides `DOKKU_HOST`. |
-| `--sudo` | Wrap the remote `dokku` call in `sudo -n` (passwordless sudo only). Equivalent to `DOKKU_SUDO=1`. |
+| `--sudo` | Run `dokku` as root, with passwordless sudo only. Equivalent to `DOKKU_SUDO=1`. |
 | `--accept-new-host-keys` | Pass `-o StrictHostKeyChecking=accept-new` so SSH trusts an unknown host on first connect. Equivalent to `DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1`. |
+
+`--sudo` works on both sides of the transport: with `--host` it wraps the remote invocation in
+`sudo -n`, and without one it runs the local `dokku` under `sudo -n -u root`. Either way it covers
+`dokku` alone - the `docker` and `curl` calls a few tasks make locally are docket's own plumbing and
+are never elevated. `-n` never prompts, so the account has to have passwordless sudo already.
 
 `--accept-new-host-keys` is convenient in CI, where seeding `known_hosts` ahead of time is awkward,
 but it gives up man-in-the-middle protection on the first connection. When you can, prefer seeding

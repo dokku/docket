@@ -7,32 +7,37 @@ import (
 	"github.com/dokku/docket/subprocess"
 )
 
-// resolveSshFlags merges the apply/plan SSH-related CLI flags with their
-// env-var counterparts and applies the result to package state for the
-// rest of the run:
+// resolveSshFlags merges the SSH-related CLI flags with their env-var
+// counterparts and returns the target for this run. Each setting takes the
+// flag when it is set and the environment otherwise:
 //
-//   - --host wins over DOKKU_HOST; the resolved value is stored on the
-//     subprocess package via SetDefaultHost so the dispatcher can read
-//     it from ExecCommandInput.Host without consulting the environment.
-//   - --sudo and --accept-new-host-keys are bridged to the env vars
-//     subprocess/ssh.go reads at argv-build time (DOKKU_SUDO,
-//     DOKKU_SSH_ACCEPT_NEW_HOST_KEYS).
+//   - --host over DOKKU_HOST
+//   - --sudo over DOKKU_SUDO=1
+//   - --accept-new-host-keys over DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1
 //
-// Returns the resolved host so callers can use it for play-header
-// rendering and ControlMaster teardown without re-reading env state.
-func resolveSshFlags(hostFlag string, sudo, acceptNewHostKeys bool) string {
-	host := hostFlag
-	if host == "" {
-		host = os.Getenv("DOKKU_HOST")
+// The caller puts the result on the run context with
+// subprocess.ContextWithTarget, and every dokku invocation under that context
+// reads it from there. Nothing is written to package state or to the process
+// environment: --sudo and --accept-new-host-keys used to be bridged through
+// os.Setenv so the SSH argv builder could read them back, which made them
+// sticky for the life of the process and impossible to vary per call.
+func resolveSshFlags(hostFlag string, sudo, acceptNewHostKeys bool) subprocess.Target {
+	return subprocess.Target{
+		Host:              firstNonEmpty(hostFlag, os.Getenv("DOKKU_HOST")),
+		Sudo:              sudo || os.Getenv("DOKKU_SUDO") == "1",
+		AcceptNewHostKeys: acceptNewHostKeys || os.Getenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS") == "1",
 	}
-	subprocess.SetDefaultHost(host)
-	if sudo {
-		_ = os.Setenv("DOKKU_SUDO", "1")
+}
+
+// firstNonEmpty returns the first of its arguments that is not the empty
+// string, which is how a flag beats the env var it shadows.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
 	}
-	if acceptNewHostKeys {
-		_ = os.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "1")
-	}
-	return host
+	return ""
 }
 
 // runContext returns the context every task in this run is planned and

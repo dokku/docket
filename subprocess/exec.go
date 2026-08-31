@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	execute "github.com/alexellis/go-execute/v2"
 	"github.com/fatih/color"
@@ -38,16 +39,6 @@ type ExecCommandInput struct {
 
 	// StderrWriter is the writer to write stderr to
 	StderrWriter io.Writer
-
-	// Sudo runs the command with sudo -n -u root
-	Sudo bool
-
-	// Host, when non-empty, routes the command through an `ssh` subprocess
-	// against [user@]host[:port] instead of executing locally. Only used
-	// when Command is "dokku"; non-dokku commands always run locally
-	// (the remote side may not have those binaries). When empty, the
-	// dispatcher consults the package default set by SetDefaultHost.
-	Host string
 }
 
 // ExecError wraps a CallExecCommand failure with the underlying
@@ -136,29 +127,24 @@ func (ecr ExecCommandResponse) StdoutBytes() []byte {
 }
 
 // ResolveCommandString returns the masked command line ExecCommandResponse.Command
-// would carry if input were executed now. Used by tasks' Plan() methods so
-// PlanResult.Commands renders byte-identical to the strings apply emits via
+// would carry if input were executed under ctx now. Used by tasks' Plan() methods
+// so PlanResult.Commands renders byte-identical to the strings apply emits via
 // state.Commands; sharing the rendering logic keeps the two views from drifting.
 //
-// The function mirrors the dispatch in CallExecCommand and CallSshCommand:
-// when the (possibly defaulted) Host is set and the command is `dokku`, the
-// SSH transport's bare `cmd args` form is returned because remote sudo is
-// wrapped server-side via DOKKU_SUDO and never appears in the displayed
-// command. Otherwise the local path's sudo-wrap-when-true form is returned.
-//
-// ctx is not read yet. It is here because this function has to mirror that
-// dispatch, and the dispatch is what reads the per-invocation target once
-// #423 moves it off the package global.
+// The function mirrors the dispatch in defaultExecRunner, and reads the target
+// from the same place, so plan and apply cannot disagree about where a command
+// was going. When the target names a host and the command is `dokku`, the SSH
+// transport's bare `cmd args` form is returned: remote sudo is wrapped
+// server-side and never appears in the displayed command. Otherwise the local
+// form is returned, sudo-wrapped when the target asks for it.
 func ResolveCommandString(ctx context.Context, input ExecCommandInput) string {
-	if input.Host == "" {
-		input.Host = GetDefaultHost()
-	}
-	if input.Host != "" && input.Command == "dokku" {
+	target := TargetFromContext(ctx)
+	if target.Host != "" && input.Command == "dokku" {
 		return resolveSshCommandString(input.Command, input.Args)
 	}
 	cmd := input.Command
 	args := input.Args
-	if input.Sudo {
+	if target.Sudo && input.Command == "dokku" {
 		args = append([]string{"-n", "-u", "root", cmd}, args...)
 		cmd = "sudo"
 	}
@@ -183,33 +169,85 @@ func resolveSshCommandString(command string, args []string) string {
 	return MaskString(command + " " + strings.Join(args, " "))
 }
 
-// execRunner is the executor CallExecCommand delegates to. It defaults to
-// defaultExecRunner (the real implementation) and can be swapped in tests via
-// SetExecRunner so unit tests return canned responses without spawning a
-// process or contacting a server. Production code must never reassign it.
-//
-// The swap mutates package state and is therefore test-only and not safe under
-// t.Parallel().
-var execRunner = defaultExecRunner
+// ExecRunner is the shape of the executor CallExecCommand delegates to. A test
+// supplies one to return canned responses without spawning a process or
+// contacting a server.
+type ExecRunner func(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error)
 
-// SetExecRunner swaps the executor and returns a function that restores the
-// previous one. Intended for tests:
+// runnerKey is the context key a per-invocation ExecRunner is stored under.
+type runnerKey struct{}
+
+// ContextWithRunner returns a copy of ctx whose dokku commands go to fn
+// instead of to a real process. It is the per-invocation form of
+// SetExecRunner: because the executor travels on the context rather than in a
+// package variable, two tests can install different fakes at the same time and
+// so can call t.Parallel().
 //
-//	defer subprocess.SetExecRunner(fake)()
-func SetExecRunner(fn func(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error)) func() {
-	prev := execRunner
-	execRunner = fn
-	return func() { execRunner = prev }
+// Production code must not use it. The seam exists so a test can drive a task
+// without a server; a caller that wants to change where commands actually run
+// sets a Target.
+func ContextWithRunner(ctx context.Context, fn ExecRunner) context.Context {
+	return context.WithValue(ctx, runnerKey{}, fn)
 }
 
-// CallExecCommand executes a command on the local host under ctx.
+// runnerFromContext returns the executor for this call: the context's, when it
+// carries one, else the package-level fallback.
+func runnerFromContext(ctx context.Context) ExecRunner {
+	if ctx != nil {
+		if fn, ok := ctx.Value(runnerKey{}).(ExecRunner); ok && fn != nil {
+			return fn
+		}
+	}
+	return globalExecRunner()
+}
+
+// execRunner is the package-level fallback for calls whose context carries no
+// runner. It defaults to defaultExecRunner (the real implementation) and can be
+// swapped in tests via SetExecRunner. Production code must never reassign it.
 //
-// When `input.Host` is set (or a default has been configured via
-// SetDefaultHost) and the command is `dokku`, dispatch is routed
-// through the SSH transport so the dokku invocation runs on the remote
-// host. Non-dokku subprocesses (echo/git/etc.) always run locally even
-// when a host is configured, since the remote side may not have those
-// binaries (and tests expect local execution).
+// The mutex is not for correctness under normal use - production never writes
+// it - but so that a test which does write it cannot race a concurrent test
+// reading it, which is otherwise a data race the moment anything runs in
+// parallel. Prefer ContextWithRunner in new tests; this exists for the ones
+// written before the seam moved onto the context.
+var (
+	execRunnerMu sync.RWMutex
+	execRunner   ExecRunner = defaultExecRunner
+)
+
+func globalExecRunner() ExecRunner {
+	execRunnerMu.RLock()
+	defer execRunnerMu.RUnlock()
+	return execRunner
+}
+
+// SetExecRunner swaps the package-level executor and returns a function that
+// restores the previous one. Intended for tests:
+//
+//	defer subprocess.SetExecRunner(fake)()
+//
+// It replaces process-wide state, so a test using it still cannot call
+// t.Parallel(); ContextWithRunner is the form that can.
+func SetExecRunner(fn ExecRunner) func() {
+	execRunnerMu.Lock()
+	prev := execRunner
+	execRunner = fn
+	execRunnerMu.Unlock()
+	return func() {
+		execRunnerMu.Lock()
+		execRunner = prev
+		execRunnerMu.Unlock()
+	}
+}
+
+// CallExecCommand executes a command under ctx, locally or on the remote the
+// context's Target names.
+//
+// When that target names a host and the command is `dokku`, dispatch is routed
+// through the SSH transport so the dokku invocation runs on the remote host.
+// Non-dokku subprocesses (echo/git/etc.) always run locally even when a host is
+// configured, since the remote side may not have those binaries (and tests
+// expect local execution).
 //
 // The context is the caller's: cancelling it kills the child process, and a
 // deadline on it bounds the call. Nothing in this package installs a signal
@@ -217,20 +255,19 @@ func SetExecRunner(fn func(ctx context.Context, input ExecCommandInput) (ExecCom
 // signal.NotifyContext, so one interrupt aborts the run rather than the
 // current task.
 //
-// The call is routed through the swappable execRunner so tests can substitute a
-// fake executor; defaultExecRunner is the production path.
+// The call is routed through a swappable executor so tests can substitute a
+// fake; defaultExecRunner is the production path.
 func CallExecCommand(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
-	return execRunner(ctx, input)
+	return runnerFromContext(ctx)(ctx, input)
 }
 
 // defaultExecRunner is the production executor: it runs the command locally, or
-// routes dokku commands through the SSH transport when a host is configured.
+// routes dokku commands through the SSH transport when the context's target
+// names a host.
 func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
-	if input.Host == "" {
-		input.Host = GetDefaultHost()
-	}
-	if input.Host != "" && input.Command == "dokku" {
-		return CallSshCommand(ctx, input.Host, input)
+	target := TargetFromContext(ctx)
+	if target.Host != "" && input.Command == "dokku" {
+		return CallSshCommand(ctx, target, input)
 	}
 
 	// isatty reports whether our own stdout is a terminal, which is the
@@ -239,7 +276,11 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 
 	command := input.Command
 	commandArgs := input.Args
-	if input.Sudo {
+	// Elevation is scoped to dokku for the same reason routing is: a task's
+	// local helper commands (docker, curl, tar) are docket's own plumbing, and
+	// requiring passwordless root for them because the operator asked for a
+	// sudo-wrapped dokku would be a surprise.
+	if target.Sudo && input.Command == "dokku" {
 		commandArgs = append([]string{"-n", "-u", "root", command}, commandArgs...)
 		command = "sudo"
 	}
