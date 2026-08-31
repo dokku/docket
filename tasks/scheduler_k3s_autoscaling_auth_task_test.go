@@ -39,8 +39,7 @@ func TestSchedulerK3sAutoscalingAuthTaskSensitiveValuesAbsentEmpty(t *testing.T)
 }
 
 func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 
 	// The server holds two metadata keys; the task clears one, so the other
 	// survives and is read back (with its secret value) for the restore call.

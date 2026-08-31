@@ -41,8 +41,7 @@ func TestGetPropertyArgsGlobal(t *testing.T) {
 }
 
 func TestPlanPropertyMasksSensitiveDriftValue(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 
 	keys := map[string]PropertyKeys{
 		"secret-prop": {PerApp: "", Global: "global-secret-prop", Sensitive: true},
@@ -75,8 +74,7 @@ func TestPlanPropertyMasksSensitiveDriftValue(t *testing.T) {
 }
 
 func TestPlanPropertyAbsentMasksSensitiveOldValue(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 
 	keys := map[string]PropertyKeys{
 		"secret-prop": {PerApp: "", Global: "global-secret-prop", Sensitive: true},
@@ -97,8 +95,7 @@ func TestPlanPropertyAbsentMasksSensitiveOldValue(t *testing.T) {
 }
 
 func TestPlanPropertyDoesNotMaskBenignDriftValue(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 
 	keys := map[string]PropertyKeys{
 		"timeout": {PerApp: "", Global: "global-timeout"},
@@ -228,8 +225,7 @@ func TestUnknownPropertyWarningInvalidFlag(t *testing.T) {
 // secret that reaches it must mask at emit time. The message is stored raw
 // (like PlanResult.Reason) so the assertion masks it the way the emitter does.
 func TestUnknownPropertyWarningMasksSensitiveStderr(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 	subprocess.AddGlobalSensitive("s3cr3t")
 
 	execErr := &subprocess.ExecError{
@@ -431,6 +427,7 @@ func TestDynamicPropertiesFromReport(t *testing.T) {
 // dns-provider-* credential that already matches the recipe plans as in sync
 // instead of reporting drift on every run.
 func TestPlanPropertyDynamicLetsencryptInSync(t *testing.T) {
+	isolateMaskRegistry(t)
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"token123"}`,
 	}))()
@@ -448,6 +445,7 @@ func TestPlanPropertyDynamicLetsencryptInSync(t *testing.T) {
 }
 
 func TestPlanPropertyDynamicLetsencryptGlobalInSync(t *testing.T) {
+	isolateMaskRegistry(t)
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-NAMECHEAP_API_USER":"deploy-bot"}`,
 	}))()
@@ -465,8 +463,7 @@ func TestPlanPropertyDynamicLetsencryptGlobalInSync(t *testing.T) {
 // mark on the synthesized keys: the probed credential reaches the drift reason
 // and must be registered with the masker.
 func TestPlanPropertyDynamicLetsencryptDriftMasksProbedValue(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"oldtoken"}`,
@@ -496,6 +493,7 @@ func TestPlanPropertyDynamicLetsencryptDriftMasksProbedValue(t *testing.T) {
 // state: the plugin only emits a row once the property holds a value, so an
 // absent row is an unset property and not a probe failure worth warning about.
 func TestPlanPropertyDynamicLetsencryptMissingRowPlansCreate(t *testing.T) {
+	isolateMaskRegistry(t)
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com"}`,
 	}))()
@@ -530,8 +528,7 @@ func TestPlanPropertyDynamicLetsencryptAbsentMissingRowIsInSync(t *testing.T) {
 }
 
 func TestPlanPropertyDynamicLetsencryptAbsentPlansDestroy(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 
 	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"livetoken"}`,
@@ -553,6 +550,7 @@ func TestPlanPropertyDynamicLetsencryptAbsentPlansDestroy(t *testing.T) {
 // family on the unprobed path while dokku/dokku#8928 is open (#450): it must not
 // even attempt a report read.
 func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
+	isolateMaskRegistry(t)
 	var ran []string
 	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		ran = append(ran, strings.Join(in.Args, " "))
@@ -578,8 +576,7 @@ func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
 // all the same, so the desired value must reach the masker before it lands in
 // the command echo or the plan mutation line.
 func TestPlanPropertyDynamicTraefikMasksCredential(t *testing.T) {
-	subprocess.SetGlobalSensitive(nil)
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	isolateMaskRegistry(t)
 
 	defer subprocess.SetExecRunner(func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		return subprocess.ExecCommandResponse{}, nil

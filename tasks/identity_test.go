@@ -138,8 +138,8 @@ func TestIdentityAddressMasksQuotedSensitiveValue(t *testing.T) {
 		{name: "a tab is escaped once the value is quoted", option: "--label tab,\tzzz"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			isolateMaskRegistry(t)
 			subprocess.SetGlobalSensitive([]string{tt.option})
-			defer subprocess.SetGlobalSensitive(nil)
 
 			address := IdentityAddress("dokku_docker_options", DockerOptionsTask{
 				App:    "api",

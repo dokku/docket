@@ -243,8 +243,8 @@ func TestServiceCreateTaskMasksSecretsInCommands(t *testing.T) {
 		State:        StatePresent,
 	}
 
+	isolateMaskRegistry(t)
 	subprocess.SetGlobalSensitive(sensitiveValuesFromTask(&task))
-	defer subprocess.SetGlobalSensitive(nil)
 	defer subprocess.SetExecRunner(serviceMissing())()
 
 	got := planCreateCommand(t, task)
@@ -874,8 +874,8 @@ func TestServiceCreateTaskImageDriftUpgradeMasksSecrets(t *testing.T) {
 	task := driftTask()
 	task.ImageDrift = imageDriftUpgrade
 	task.CustomEnv = map[string]string{"GREETING": "s3cret"}
+	isolateMaskRegistry(t)
 	subprocess.SetGlobalSensitive(sensitiveValuesFromTask(&task))
-	defer subprocess.SetGlobalSensitive(nil)
 
 	plan := task.Plan(testCtx())
 	if len(plan.Commands) != 1 {
