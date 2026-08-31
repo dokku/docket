@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,8 +119,8 @@ func (t SchedulerK3sChartTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or clears the configured chart values
-func (t SchedulerK3sChartTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SchedulerK3sChartTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the SchedulerK3sChartTask's inputs without contacting the server.
@@ -151,7 +152,7 @@ func (t SchedulerK3sChartTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerK3sChartTask would produce.
-func (t SchedulerK3sChartTask) Plan() PlanResult {
+func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -161,8 +162,8 @@ func (t SchedulerK3sChartTask) Plan() PlanResult {
 	// guaranteed nil.
 	desired, _ := flattenChartValues(t.Values)
 
-	currentFn := func() (map[string]string, error) {
-		return getSchedulerK3sChartValues(t.Chart)
+	currentFn := func(ctx context.Context) (map[string]string, error) {
+		return getSchedulerK3sChartValues(ctx, t.Chart)
 	}
 	commandFn := func(key, value string) subprocess.ExecCommandInput {
 		return subprocess.ExecCommandInput{
@@ -177,8 +178,8 @@ func (t SchedulerK3sChartTask) Plan() PlanResult {
 	}
 
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planPairsSet("chart value", desired, currentFn, commandFn) },
-		StateAbsent:  func() PlanResult { return planPairsUnset("chart value", desired, currentFn, commandFn) },
+		StatePresent: func() PlanResult { return planPairsSet(ctx, "chart value", desired, currentFn, commandFn) },
+		StateAbsent:  func() PlanResult { return planPairsUnset(ctx, "chart value", desired, currentFn, commandFn) },
 	})
 }
 
@@ -187,8 +188,8 @@ func (t SchedulerK3sChartTask) Plan() PlanResult {
 // keyed `<chart>.<override-key>`; this strips the `<chart>.` prefix to
 // return a map keyed by the override key alone (matching the form
 // callers hand back when setting).
-func getSchedulerK3sChartValues(chart string) (map[string]string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getSchedulerK3sChartValues(ctx context.Context, chart string) (map[string]string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",
@@ -343,8 +344,8 @@ func escapeChartSegment(segment string) string {
 // ExportGlobal reconstructs helm chart value overrides from charts:report,
 // which returns every override keyed "<chart>.<key>". Values are grouped into
 // one task per chart, keyed by the dotted override path.
-func (t SchedulerK3sChartTask) ExportGlobal() ([]interface{}, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func (t SchedulerK3sChartTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "scheduler-k3s:charts:report", "--format", "json"},
 	})

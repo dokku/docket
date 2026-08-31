@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,8 +95,8 @@ func (t HttpAuthDomainTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the app's HTTP auth domains
-func (t HttpAuthDomainTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t HttpAuthDomainTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the HttpAuthDomainTask's inputs without contacting the server.
@@ -121,21 +122,21 @@ func (t HttpAuthDomainTask) Validate() error {
 }
 
 // Plan reports the drift the HttpAuthDomainTask would produce.
-func (t HttpAuthDomainTask) Plan() PlanResult {
+func (t HttpAuthDomainTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planHttpAuthDomainsPresent(t) },
-		StateAbsent:  func() PlanResult { return planHttpAuthDomainsAbsent(t) },
-		StateSet:     func() PlanResult { return planHttpAuthDomainsSet(t) },
-		StateClear:   func() PlanResult { return planHttpAuthDomainsClear(t) },
+		StatePresent: func() PlanResult { return planHttpAuthDomainsPresent(ctx, t) },
+		StateAbsent:  func() PlanResult { return planHttpAuthDomainsAbsent(ctx, t) },
+		StateSet:     func() PlanResult { return planHttpAuthDomainsSet(ctx, t) },
+		StateClear:   func() PlanResult { return planHttpAuthDomainsClear(ctx, t) },
 	})
 }
 
 // planHttpAuthDomainsPresent reports drift for the present-state domain add.
-func planHttpAuthDomainsPresent(t HttpAuthDomainTask) PlanResult {
-	current, err := getHttpAuthDomains(t.App)
+func planHttpAuthDomainsPresent(ctx context.Context, t HttpAuthDomainTask) PlanResult {
+	current, err := getHttpAuthDomains(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -166,16 +167,16 @@ func planHttpAuthDomainsPresent(t HttpAuthDomainTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("%d domain(s) to add", len(toAdd)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
 
 // planHttpAuthDomainsAbsent reports drift for the absent-state domain remove.
-func planHttpAuthDomainsAbsent(t HttpAuthDomainTask) PlanResult {
-	current, err := getHttpAuthDomains(t.App)
+func planHttpAuthDomainsAbsent(ctx context.Context, t HttpAuthDomainTask) PlanResult {
+	current, err := getHttpAuthDomains(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -202,16 +203,16 @@ func planHttpAuthDomainsAbsent(t HttpAuthDomainTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d domain(s) to remove", len(toRemove)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }
 
 // planHttpAuthDomainsSet reports drift for the set-state full replacement.
-func planHttpAuthDomainsSet(t HttpAuthDomainTask) PlanResult {
-	current, err := getHttpAuthDomains(t.App)
+func planHttpAuthDomainsSet(ctx context.Context, t HttpAuthDomainTask) PlanResult {
+	current, err := getHttpAuthDomains(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -244,14 +245,14 @@ func planHttpAuthDomainsSet(t HttpAuthDomainTask) PlanResult {
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("http-auth:set-domains", t.App, t.Domains, StateSet, StateAbsent),
 	}
 }
 
 // planHttpAuthDomainsClear reports drift for the clear-state operation.
-func planHttpAuthDomainsClear(t HttpAuthDomainTask) PlanResult {
-	current, err := getHttpAuthDomains(t.App)
+func planHttpAuthDomainsClear(ctx context.Context, t HttpAuthDomainTask) PlanResult {
+	current, err := getHttpAuthDomains(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -273,7 +274,7 @@ func planHttpAuthDomainsClear(t HttpAuthDomainTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d domain(s)", len(current)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("http-auth:set-domains", t.App, nil, StateClear, StatePresent),
 	}
 }
@@ -289,8 +290,8 @@ func planHttpAuthDomainsClear(t HttpAuthDomainTask) PlanResult {
 // (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit (e.g. app
 // does not exist) is treated as "no domains"; malformed JSON surfaces as an
 // error.
-func getHttpAuthDomains(appName string) (map[string]bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getHttpAuthDomains(ctx context.Context, appName string) (map[string]bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"http-auth:report",
@@ -323,8 +324,8 @@ func getHttpAuthDomains(appName string) (map[string]bool, error) {
 
 // ExportApp reconstructs the domains HTTP auth is restricted to, or nil when
 // none are set. state:set replaces the whole domain set for an exact match.
-func (t HttpAuthDomainTask) ExportApp(app string) ([]interface{}, error) {
-	domains, err := getHttpAuthDomains(app)
+func (t HttpAuthDomainTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	domains, err := getHttpAuthDomains(ctx, app)
 	if err != nil {
 		return nil, err
 	}

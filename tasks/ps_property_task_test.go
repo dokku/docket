@@ -7,7 +7,7 @@ import (
 
 func TestPsPropertyTaskInvalidState(t *testing.T) {
 	task := PsPropertyTask{App: "test-app", Property: "restart-policy", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestPsPropertyTaskInvalidState(t *testing.T) {
 
 func TestPsPropertyTaskMissingApp(t *testing.T) {
 	task := PsPropertyTask{Property: "restart-policy", Value: "on-failure:5", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestPsPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "on-failure:5",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestPsPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestPsPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "on-failure:5",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

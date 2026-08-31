@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -57,14 +58,14 @@ func (t ServiceExposeTask) ProbeSupport() ProbeSupport {
 // on the server. Discovery is via listServices; the exposed host ports are read
 // from `<service>:info <name> --exposed-ports`. Services with no exposed ports
 // are skipped.
-func (t ServiceExposeTask) ExportGlobal() ([]interface{}, error) {
-	services, err := listServices()
+func (t ServiceExposeTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	services, err := listServices(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []interface{}
 	for _, s := range services {
-		ports, err := serviceExposedPortList(s.Type, s.Name)
+		ports, err := serviceExposedPortList(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -112,8 +113,8 @@ func (t ServiceExposeTask) Examples() ([]Doc, error) {
 }
 
 // Execute exposes or unexposes a dokku service
-func (t ServiceExposeTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ServiceExposeTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the ServiceExposeTask's inputs without contacting the server.
@@ -125,20 +126,20 @@ func (t ServiceExposeTask) Validate() error {
 }
 
 // Plan reports the drift the ServiceExposeTask would produce.
-func (t ServiceExposeTask) Plan() PlanResult {
+func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !exists {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
 			}
-			current, err := serviceExposedPortList(t.Service, t.Name)
+			current, err := serviceExposedPortList(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -170,21 +171,21 @@ func (t ServiceExposeTask) Plan() PlanResult {
 				Status:    status,
 				Reason:    fmt.Sprintf("%s service %s not exposed on %s", t.Service, t.Name, strings.Join(t.Ports, " ")),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := serviceExists(t.Service, t.Name)
+			exists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !exists {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
 			}
-			current, err := serviceExposedPortList(t.Service, t.Name)
+			current, err := serviceExposedPortList(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -200,9 +201,9 @@ func (t ServiceExposeTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%s service %s exposed", t.Service, t.Name),
 				Mutations: []string{fmt.Sprintf("%s:unexpose %s", t.Service, t.Name)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -217,8 +218,8 @@ func (t ServiceExposeTask) Plan() PlanResult {
 // Ports field holds. A transport-level failure (`*subprocess.SSHError`) is
 // propagated; a dokku-level non-zero exit (e.g. service not exposed) is treated
 // as "no ports exposed."
-func serviceExposedPortList(service, name string) ([]string, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func serviceExposedPortList(ctx context.Context, service, name string) ([]string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",

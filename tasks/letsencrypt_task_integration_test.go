@@ -15,12 +15,12 @@ func TestIntegrationLetsencrypt(t *testing.T) {
 	skipIfPluginMissingT(t, "letsencrypt")
 
 	appName := "docket-test-letsencrypt"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// fresh app should not be active
-	active, err := letsencryptActive(appName)
+	active, err := letsencryptActive(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("letsencryptActive failed: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestIntegrationLetsencrypt(t *testing.T) {
 
 	// disable on a non-active app is a no-op
 	disableTask := LetsencryptTask{App: appName, State: StateAbsent}
-	result := disableTask.Execute()
+	result := disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("disable on inactive app returned error: %v", result.Error)
 	}
@@ -42,7 +42,7 @@ func TestIntegrationLetsencrypt(t *testing.T) {
 	}
 
 	// disable again - still idempotent
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("second disable returned error: %v", result.Error)
 	}

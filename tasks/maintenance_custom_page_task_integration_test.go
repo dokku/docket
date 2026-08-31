@@ -50,13 +50,13 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 
 	appName := "docket-test-maintenance-custom-page"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// A freshly-created app has no custom page. If the installed plugin does
 	// not report the checksum, idempotency cannot be verified, so skip.
-	checksum, reported, err := maintenanceCustomPageState(appName)
+	checksum, reported, err := maintenanceCustomPageState(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("maintenanceCustomPageState failed: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 	// --- inline content source ---
 	content := "<html><body>inline down for maintenance</body></html>\n"
 	setInline := MaintenanceCustomPageTask{App: appName, Content: content, State: StatePresent}
-	result := setInline.Execute()
+	result := setInline.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set inline custom page: %v", result.Error)
 	}
@@ -90,7 +90,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maintenanceTarballChecksum failed: %v", err)
 	}
-	gotInline, _, err := maintenanceCustomPageState(appName)
+	gotInline, _, err := maintenanceCustomPageState(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("maintenanceCustomPageState failed: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 	}
 
 	// reapply identical content - idempotent
-	result = setInline.Execute()
+	result = setInline.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second inline set: %v", result.Error)
 	}
@@ -109,7 +109,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 
 	// change the content - should update
 	setInlineV2 := MaintenanceCustomPageTask{App: appName, Content: content + "<!-- v2 -->\n", State: StatePresent}
-	result = setInlineV2.Execute()
+	result = setInlineV2.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to update inline custom page: %v", result.Error)
 	}
@@ -123,7 +123,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 		"assets/style.css": "body { color: #333; }\n",
 	})
 	setTarball := MaintenanceCustomPageTask{App: appName, Tarball: tarPath, State: StatePresent}
-	result = setTarball.Execute()
+	result = setTarball.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set tarball custom page: %v", result.Error)
 	}
@@ -139,7 +139,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maintenanceTarballChecksum failed: %v", err)
 	}
-	gotTarball, _, err := maintenanceCustomPageState(appName)
+	gotTarball, _, err := maintenanceCustomPageState(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("maintenanceCustomPageState failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 	}
 
 	// reapply identical tarball - idempotent
-	result = setTarball.Execute()
+	result = setTarball.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second tarball set: %v", result.Error)
 	}
@@ -158,7 +158,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 
 	// --- remove ---
 	removeTask := MaintenanceCustomPageTask{App: appName, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove custom page: %v", result.Error)
 	}
@@ -168,7 +168,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 	if result.State != StateAbsent {
 		t.Errorf("expected state 'absent', got '%s'", result.State)
 	}
-	gotAfter, _, err := maintenanceCustomPageState(appName)
+	gotAfter, _, err := maintenanceCustomPageState(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("maintenanceCustomPageState failed: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestIntegrationMaintenanceCustomPage(t *testing.T) {
 	}
 
 	// remove again - idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -192,20 +192,20 @@ func TestIntegrationExportMaintenanceCustomPageRoundTrip(t *testing.T) {
 
 	appName := "docket-test-maintenance-custom-page-export"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// The export detects the page via the reported checksum. If the installed
 	// plugin does not report it, there is nothing to detect, so skip.
-	if _, reported, err := maintenanceCustomPageState(appName); err != nil {
+	if _, reported, err := maintenanceCustomPageState(testCtx(), appName); err != nil {
 		t.Fatalf("maintenanceCustomPageState failed: %v", err)
 	} else if !reported {
 		t.Skip("skipping: installed dokku-maintenance does not report custom-page-sha256")
 	}
 
 	// An app with no custom page exports nothing.
-	if bodies, err := (MaintenanceCustomPageTask{}).ExportApp(appName); err != nil {
+	if bodies, err := (MaintenanceCustomPageTask{}).ExportApp(testCtx(), appName); err != nil {
 		t.Fatalf("ExportApp with no custom page failed: %v", err)
 	} else if len(bodies) != 0 {
 		t.Fatalf("expected no export bodies for an app without a custom page, got %d", len(bodies))
@@ -213,7 +213,7 @@ func TestIntegrationExportMaintenanceCustomPageRoundTrip(t *testing.T) {
 
 	content := "<html><body>exported down for maintenance</body></html>\n"
 	set := MaintenanceCustomPageTask{App: appName, Content: content, State: StatePresent}
-	if result := set.Execute(); result.Error != nil {
+	if result := set.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to set custom page: %v", result.Error)
 	}
 
@@ -221,7 +221,7 @@ func TestIntegrationExportMaintenanceCustomPageRoundTrip(t *testing.T) {
 	// back via maintenance:custom-page-export, so the exported body carries the
 	// real Content. An older dokku-maintenance without the export command would
 	// instead carry an empty Content for the engine to lift into an input.
-	bodies, err := (MaintenanceCustomPageTask{}).ExportApp(appName)
+	bodies, err := (MaintenanceCustomPageTask{}).ExportApp(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("ExportApp failed: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestIntegrationExportMaintenanceCustomPageRoundTrip(t *testing.T) {
 		got.Content = content
 	}
 	got.State = StatePresent
-	plan := got.Plan()
+	plan := got.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("Plan after export failed: %v", plan.Error)
 	}

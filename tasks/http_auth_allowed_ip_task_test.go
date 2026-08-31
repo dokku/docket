@@ -7,7 +7,7 @@ import (
 
 func TestHttpAuthAllowedIpTaskInvalidState(t *testing.T) {
 	task := HttpAuthAllowedIpTask{App: "test-app", AllowedIps: []string{"192.0.2.1"}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestHttpAuthAllowedIpTaskInvalidState(t *testing.T) {
 
 func TestHttpAuthAllowedIpTaskPresentMissingApp(t *testing.T) {
 	task := HttpAuthAllowedIpTask{AllowedIps: []string{"192.0.2.1"}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -26,7 +26,7 @@ func TestHttpAuthAllowedIpTaskPresentMissingApp(t *testing.T) {
 
 func TestHttpAuthAllowedIpTaskAbsentMissingApp(t *testing.T) {
 	task := HttpAuthAllowedIpTask{State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -37,7 +37,7 @@ func TestHttpAuthAllowedIpTaskAbsentMissingApp(t *testing.T) {
 
 func TestHttpAuthAllowedIpTaskPresentEmptyAllowedIps(t *testing.T) {
 	task := HttpAuthAllowedIpTask{App: "test-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty allowed_ips and state=present should return an error")
 	}

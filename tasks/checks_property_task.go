@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // ChecksPropertyTask manages the checks configuration for a given dokku application
 type ChecksPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t ChecksPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the checks property
-func (t ChecksPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ChecksPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // checksPropertyTable maps checks property names to the JSON keys emitted by
@@ -87,20 +89,20 @@ func (t ChecksPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the ChecksPropertyTask would produce.
-func (t ChecksPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t ChecksPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t ChecksPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t ChecksPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return ChecksPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t ChecksPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t ChecksPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return ChecksPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

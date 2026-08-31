@@ -10,16 +10,16 @@ func TestIntegrationDockerOptions(t *testing.T) {
 
 	appName := "docket-test-docker-options"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	option := "-v /tmp/docket-test:/tmp/docket-test"
 	phase := "deploy"
 	scope := dockerOptionsScope{Phase: phase}
 
 	// initial state - option not present
-	current, err := getDockerOptions(appName)
+	current, err := getDockerOptions(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getDockerOptions failed: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestIntegrationDockerOptions(t *testing.T) {
 
 	// add option
 	addTask := DockerOptionsTask{App: appName, Phase: phase, Option: option, State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add option: %v", result.Error)
 	}
@@ -39,7 +39,7 @@ func TestIntegrationDockerOptions(t *testing.T) {
 	if result.State != StatePresent {
 		t.Errorf("expected state 'present', got '%s'", result.State)
 	}
-	current, err = getDockerOptions(appName)
+	current, err = getDockerOptions(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getDockerOptions failed: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestIntegrationDockerOptions(t *testing.T) {
 	}
 
 	// add same option - idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -58,7 +58,7 @@ func TestIntegrationDockerOptions(t *testing.T) {
 
 	// remove option
 	removeTask := DockerOptionsTask{App: appName, Phase: phase, Option: option, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove option: %v", result.Error)
 	}
@@ -68,7 +68,7 @@ func TestIntegrationDockerOptions(t *testing.T) {
 	if result.State != StateAbsent {
 		t.Errorf("expected state 'absent', got '%s'", result.State)
 	}
-	current, err = getDockerOptions(appName)
+	current, err = getDockerOptions(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getDockerOptions failed: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestIntegrationDockerOptions(t *testing.T) {
 	}
 
 	// remove again - idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -95,9 +95,9 @@ func TestIntegrationDockerOptionsExportRoundTrip(t *testing.T) {
 
 	appName := "docket-test-docker-options-export"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	phase := "deploy"
 	plainOption := "-v /tmp/docket-test:/tmp/docket-test"
@@ -107,12 +107,12 @@ func TestIntegrationDockerOptionsExportRoundTrip(t *testing.T) {
 
 	for _, option := range []string{plainOption, spacedOption} {
 		add := DockerOptionsTask{App: appName, Phase: phase, Option: option, State: StatePresent}
-		if r := add.Execute(); r.Error != nil {
+		if r := add.Execute(testCtx()); r.Error != nil {
 			t.Fatalf("failed to add option %q: %v", option, r.Error)
 		}
 	}
 
-	bodies, err := DockerOptionsTask{}.ExportApp(appName)
+	bodies, err := DockerOptionsTask{}.ExportApp(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestIntegrationDockerOptionsExportRoundTrip(t *testing.T) {
 	for _, body := range bodies {
 		task := body.(DockerOptionsTask)
 		task.State = StatePresent
-		if plan := task.Plan(); !plan.InSync {
+		if plan := task.Plan(testCtx()); !plan.InSync {
 			t.Errorf("exported task %+v should report no drift, got status %v reason %q", task, plan.Status, plan.Reason)
 		}
 	}
@@ -148,9 +148,9 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 
 	appName := "docket-test-docker-options-proc"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	option := "--memory=512m"
 	phase := "deploy"
@@ -159,7 +159,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 	defaultScope := dockerOptionsScope{Phase: phase}
 
 	// initial state - option not present in either scope
-	current, err := getDockerOptions(appName)
+	current, err := getDockerOptions(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getDockerOptions failed: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 		Option:      option,
 		State:       StatePresent,
 	}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add scoped option: %v", result.Error)
 	}
@@ -183,7 +183,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 		t.Errorf("expected Changed=true on first add")
 	}
 
-	current, err = getDockerOptions(appName)
+	current, err = getDockerOptions(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getDockerOptions failed: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 	}
 
 	// adding the same scoped option is idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second scoped add: %v", result.Error)
 	}
@@ -212,7 +212,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 		Option: option,
 		State:  StatePresent,
 	}
-	result = defaultAddTask.Execute()
+	result = defaultAddTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add default-scope option: %v", result.Error)
 	}
@@ -220,7 +220,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 		t.Errorf("expected Changed=true when adding the same option in the default scope")
 	}
 
-	current, err = getDockerOptions(appName)
+	current, err = getDockerOptions(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getDockerOptions failed: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 		Option:      option,
 		State:       StateAbsent,
 	}
-	result = removeScopedTask.Execute()
+	result = removeScopedTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove scoped option: %v", result.Error)
 	}
@@ -247,7 +247,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 		t.Errorf("expected Changed=true on first scoped remove")
 	}
 
-	current, err = getDockerOptions(appName)
+	current, err = getDockerOptions(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getDockerOptions failed: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestIntegrationDockerOptionsProcessType(t *testing.T) {
 	}
 
 	// idempotent scoped remove
-	result = removeScopedTask.Execute()
+	result = removeScopedTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second scoped remove: %v", result.Error)
 	}

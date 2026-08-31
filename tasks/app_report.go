@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/dokku/docket/subprocess"
 )
@@ -12,8 +13,8 @@ type AppDeploySource struct {
 }
 
 // getAppDeploySource retrieves the deploy source for an app via apps:report
-func getAppDeploySource(app string) (AppDeploySource, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getAppDeploySource(ctx context.Context, app string) (AppDeploySource, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"apps:report", app, "--format", "json"},
 	})

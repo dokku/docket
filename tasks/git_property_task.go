@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // GitPropertyTask manages the git configuration for a given dokku application
 type GitPropertyTask PropertyFields
 
@@ -71,8 +73,8 @@ func (t GitPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the git property
-func (t GitPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t GitPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // gitPropertyTable maps git property names to the JSON keys emitted by
@@ -102,20 +104,20 @@ func (t GitPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the GitPropertyTask would produce.
-func (t GitPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t GitPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t GitPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t GitPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return GitPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t GitPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t GitPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return GitPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

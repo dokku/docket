@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,8 +109,8 @@ func (t SchedulerK3sProfileTask) Examples() ([]Doc, error) {
 }
 
 // Execute drives the profile to the configured state.
-func (t SchedulerK3sProfileTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SchedulerK3sProfileTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the SchedulerK3sProfileTask's inputs without contacting the server.
@@ -121,14 +122,14 @@ func (t SchedulerK3sProfileTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerK3sProfileTask would produce.
-func (t SchedulerK3sProfileTask) Plan() PlanResult {
+func (t SchedulerK3sProfileTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSchedulerK3sProfileSet(t) },
-		StateAbsent:  func() PlanResult { return planSchedulerK3sProfileUnset(t) },
+		StatePresent: func() PlanResult { return planSchedulerK3sProfileSet(ctx, t) },
+		StateAbsent:  func() PlanResult { return planSchedulerK3sProfileUnset(ctx, t) },
 	})
 }
 
@@ -246,8 +247,8 @@ func validateSchedulerK3sProfile(t SchedulerK3sProfileTask) error {
 // boolean flags appear only when true; kubelet args are emitted in
 // user-declared order so the stored slice tracks the YAML for any apply that
 // actually runs.
-func planSchedulerK3sProfileSet(t SchedulerK3sProfileTask) PlanResult {
-	current, found, err := getSchedulerK3sProfile(t.Name)
+func planSchedulerK3sProfileSet(ctx context.Context, t SchedulerK3sProfileTask) PlanResult {
+	current, found, err := getSchedulerK3sProfile(ctx, t.Name)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -266,9 +267,9 @@ func planSchedulerK3sProfileSet(t SchedulerK3sProfileTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("profile %s drift", t.Name),
 		Mutations: []string{formatProfileSetMutation(t, current, found)},
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
@@ -276,8 +277,8 @@ func planSchedulerK3sProfileSet(t SchedulerK3sProfileTask) PlanResult {
 // planSchedulerK3sProfileUnset probes for the named profile and removes it
 // only when present. dokku's `profiles:remove` silently succeeds when the
 // profile is missing, but skipping the call keeps Changed=false honest.
-func planSchedulerK3sProfileUnset(t SchedulerK3sProfileTask) PlanResult {
-	_, found, err := getSchedulerK3sProfile(t.Name)
+func planSchedulerK3sProfileUnset(ctx context.Context, t SchedulerK3sProfileTask) PlanResult {
+	_, found, err := getSchedulerK3sProfile(ctx, t.Name)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -294,9 +295,9 @@ func planSchedulerK3sProfileUnset(t SchedulerK3sProfileTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("profile %s present", t.Name),
 		Mutations: []string{"remove profile " + t.Name},
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }
@@ -333,8 +334,8 @@ type schedulerK3sProfileEntry struct {
 // `scheduler-k3s:profiles:list --format json`. There is no `profiles:report`
 // subcommand, so the list call (returning every profile) is the only public
 // route to a single profile.
-func getSchedulerK3sProfile(name string) (schedulerK3sProfileEntry, bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getSchedulerK3sProfile(ctx context.Context, name string) (schedulerK3sProfileEntry, bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",
@@ -426,16 +427,16 @@ func formatProfileSetMutation(t SchedulerK3sProfileTask, current schedulerK3sPro
 // no-op warn callback. The export engine prefers ExportGlobalReport when
 // present, so the left-out-profile diagnostic reaches ExportReport.Warnings
 // rather than being discarded here.
-func (t SchedulerK3sProfileTask) ExportGlobal() ([]interface{}, error) {
-	return t.exportGlobal(func(string) {})
+func (t SchedulerK3sProfileTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return t.exportGlobal(ctx, func(string) {})
 }
 
 // ExportGlobalReport is the diagnostics-aware form of ExportGlobal (the
 // globalExportReporter interface): it routes the "profile left out" warning
 // through the engine's warn callback (wired to ExportReport.Warnings) instead
 // of dropping the profile silently.
-func (t SchedulerK3sProfileTask) ExportGlobalReport(warn func(msg string)) ([]interface{}, error) {
-	return t.exportGlobal(warn)
+func (t SchedulerK3sProfileTask) ExportGlobalReport(ctx context.Context, warn func(msg string)) ([]interface{}, error) {
+	return t.exportGlobal(ctx, warn)
 }
 
 // exportGlobal reconstructs every scheduler-k3s node profile from
@@ -453,8 +454,8 @@ func (t SchedulerK3sProfileTask) ExportGlobalReport(warn func(msg string)) ([]in
 // recipe that does come back applies. The warning names the profile and the
 // remedy, since a left-out profile is also one docket can no longer be asked to
 // remove.
-func (t SchedulerK3sProfileTask) exportGlobal(warn func(msg string)) ([]interface{}, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func (t SchedulerK3sProfileTask) exportGlobal(ctx context.Context, warn func(msg string)) ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "scheduler-k3s:profiles:list", "--format", "json"},
 	})

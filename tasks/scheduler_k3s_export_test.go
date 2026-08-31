@@ -84,7 +84,7 @@ func TestSchedulerK3sAnnotationsExportApp(t *testing.T) {
 		}`,
 	}))()
 
-	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp("myapp")
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(testCtx(), "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestSchedulerK3sAnnotationsExportGlobal(t *testing.T) {
 		"--quiet scheduler-k3s:annotations:report --global --format json": `{"global.deployment.managed-by":"docket"}`,
 	}))()
 
-	bodies, err := SchedulerK3sAnnotationsTask{}.ExportGlobal()
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSchedulerK3sLabelsExportApp(t *testing.T) {
 		"--quiet scheduler-k3s:labels:report myapp --format json": `{"web.deployment.tier":"edge","web.deployment.app.kubernetes.io/component":"api"}`,
 	}))()
 
-	bodies, err := SchedulerK3sLabelsTask{}.ExportApp("myapp")
+	bodies, err := SchedulerK3sLabelsTask{}.ExportApp(testCtx(), "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestSchedulerK3sAutoscalingAuthExportApp(t *testing.T) {
 		}`,
 	}))()
 
-	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportApp("myapp")
+	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportApp(testCtx(), "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestSchedulerK3sAutoscalingAuthExportGlobal(t *testing.T) {
 		"--quiet scheduler-k3s:autoscaling-auth:report --global --format json": `{"datadog.apiKey":"global-secret"}`,
 	}))()
 
-	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportGlobal()
+	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestSchedulerK3sScopedPairsExportEmpty(t *testing.T) {
 		"--quiet scheduler-k3s:annotations:report myapp --format json": `{}`,
 	}))()
 
-	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp("myapp")
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(testCtx(), "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestExportSchedulerK3sScopedAndAuthRecipe(t *testing.T) {
 		"--quiet scheduler-k3s:autoscaling-auth:report web --format json": `{"datadog.apiKey":"s3cr3t-key"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestSchedulerK3sProfileExportReportLeavesOutUnappliableProfiles(t *testing.
 	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
 
 	var warnings []string
-	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(func(msg string) {
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(testCtx(), func(msg string) {
 		warnings = append(warnings, msg)
 	})
 	if err != nil {
@@ -362,7 +362,7 @@ func TestSchedulerK3sProfileExportReportLeavesOutUnappliableProfiles(t *testing.
 func TestSchedulerK3sProfileExportGlobalDropsWithoutDiagnostics(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
 
-	bodies, err := SchedulerK3sProfileTask{}.ExportGlobal()
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestSchedulerK3sProfileExportGlobalDropsWithoutDiagnostics(t *testing.T) {
 func TestExportSchedulerK3sProfileRecipeOmitsUnappliableProfiles(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestExportSchedulerK3sProfileResourceAddressReportsAMissingProfile(t *testi
 	if err != nil {
 		t.Fatalf("ParseResourceSelectors: %v", err)
 	}
-	res, err := ExportRecipe(ExportOptions{Resources: selectors})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Resources: selectors})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

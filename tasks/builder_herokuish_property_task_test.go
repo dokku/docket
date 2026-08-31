@@ -7,7 +7,7 @@ import (
 
 func TestBuilderHerokuishPropertyTaskInvalidState(t *testing.T) {
 	task := BuilderHerokuishPropertyTask{App: "test-app", Property: "allowed", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestBuilderHerokuishPropertyTaskInvalidState(t *testing.T) {
 
 func TestBuilderHerokuishPropertyTaskMissingApp(t *testing.T) {
 	task := BuilderHerokuishPropertyTask{Property: "allowed", Value: "true", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestBuilderHerokuishPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "true",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestBuilderHerokuishPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestBuilderHerokuishPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "true",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

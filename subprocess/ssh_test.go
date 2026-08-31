@@ -322,7 +322,7 @@ func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
 
 	// The same failure surfaces through the dispatcher as a transport-level
 	// *SSHError so plan/apply render it with the `ssh:` prefix.
-	_, err := CallSshCommand("alice@host", ExecCommandInput{
+	_, err := CallSshCommand(context.Background(), "alice@host", ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"config:set", "app", "a\nb"},
 	})
@@ -418,7 +418,7 @@ func TestClassifySshResultSuccess(t *testing.T) {
 }
 
 func TestCallSshCommandReturnsSshErrorOnEmptyHost(t *testing.T) {
-	_, err := CallSshCommand("", ExecCommandInput{Command: "dokku", Args: []string{"version"}})
+	_, err := CallSshCommand(context.Background(), "", ExecCommandInput{Command: "dokku", Args: []string{"version"}})
 	if err == nil {
 		t.Fatal("expected error for empty host")
 	}
@@ -429,22 +429,22 @@ func TestCallSshCommandReturnsSshErrorOnEmptyHost(t *testing.T) {
 }
 
 func TestProbeSuccess(t *testing.T) {
-	matched, err := Probe(ExecCommandInput{Command: "true"})
+	matched, err := Probe(context.Background(), ExecCommandInput{Command: "true"})
 	if err != nil {
-		t.Fatalf("Probe(true) returned error: %v", err)
+		t.Fatalf("Probe(context.Background(), true) returned error: %v", err)
 	}
 	if !matched {
-		t.Error("Probe(true) should report matched=true")
+		t.Error("Probe(context.Background(), true) should report matched=true")
 	}
 }
 
 func TestProbeDokkuLevelFailure(t *testing.T) {
-	matched, err := Probe(ExecCommandInput{Command: "false"})
+	matched, err := Probe(context.Background(), ExecCommandInput{Command: "false"})
 	if err != nil {
-		t.Errorf("Probe(false) returned non-nil error %v - dokku-level exit should be normalised", err)
+		t.Errorf("Probe(context.Background(), false) returned non-nil error %v - dokku-level exit should be normalised", err)
 	}
 	if matched {
-		t.Error("Probe(false) should report matched=false")
+		t.Error("Probe(context.Background(), false) should report matched=false")
 	}
 }
 
@@ -455,7 +455,7 @@ func TestProbeSshTransportErrorPropagates(t *testing.T) {
 	t.Cleanup(func() { SetDefaultHost("") })
 	SetDefaultHost("docket-test@127.0.0.1:1")
 
-	matched, err := Probe(ExecCommandInput{
+	matched, err := Probe(context.Background(), ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "apps:exists", "anything"},
 	})
@@ -476,7 +476,7 @@ func TestProbeLocalExecErrorPropagates(t *testing.T) {
 	// rather than reporting the probed state as absent. This is the
 	// no-dokku-installed scenario: without propagation, plan would print a
 	// confident [+] create for every resource instead of [!].
-	matched, err := Probe(ExecCommandInput{
+	matched, err := Probe(context.Background(), ExecCommandInput{
 		Command: "nonexistent-binary-docket-test-12345",
 		Args:    []string{"--quiet", "apps:exists", "anything"},
 	})
@@ -499,7 +499,7 @@ func TestProbeExecRanFlagControlsAbsence(t *testing.T) {
 			return resp, &ExecError{Response: resp, Err: errors.New("absent"), Ran: true}
 		})()
 
-		matched, err := Probe(ExecCommandInput{Command: "dokku"})
+		matched, err := Probe(context.Background(), ExecCommandInput{Command: "dokku"})
 		if err != nil {
 			t.Fatalf("Probe should treat a ran non-zero exit as absent, got err %v", err)
 		}
@@ -514,7 +514,7 @@ func TestProbeExecRanFlagControlsAbsence(t *testing.T) {
 			return resp, &ExecError{Response: resp, Err: context.Canceled}
 		})()
 
-		matched, err := Probe(ExecCommandInput{Command: "dokku"})
+		matched, err := Probe(context.Background(), ExecCommandInput{Command: "dokku"})
 		if matched {
 			t.Error("Probe should report matched=false on a cancelled probe")
 		}

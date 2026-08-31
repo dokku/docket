@@ -7,7 +7,7 @@ import (
 
 func TestSchedulerPropertyTaskInvalidState(t *testing.T) {
 	task := SchedulerPropertyTask{App: "test-app", Property: "selected", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestSchedulerPropertyTaskInvalidState(t *testing.T) {
 
 func TestSchedulerPropertyTaskMissingApp(t *testing.T) {
 	task := SchedulerPropertyTask{Property: "selected", Value: "docker-local", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestSchedulerPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "docker-local",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestSchedulerPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestSchedulerPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "docker-local",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

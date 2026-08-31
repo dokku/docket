@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"testing"
 )
@@ -12,8 +13,12 @@ type mockTask struct {
 
 func (m mockTask) Doc() string              { return "" }
 func (m mockTask) Examples() ([]Doc, error) { return nil, nil }
-func (m mockTask) Plan() PlanResult         { return PlanResult{InSync: true, Status: PlanStatusOK} }
-func (m mockTask) Execute() TaskOutputState { return TaskOutputState{State: m.state} }
+func (m mockTask) Plan(ctx context.Context) PlanResult {
+	return PlanResult{InSync: true, Status: PlanStatusOK}
+}
+func (m mockTask) Execute(ctx context.Context) TaskOutputState {
+	return TaskOutputState{State: m.state}
+}
 
 func envelopeOf(name string, state State) *TaskEnvelope {
 	return &TaskEnvelope{Name: name, Task: mockTask{name: name, state: state}}
@@ -27,8 +32,8 @@ func TestOrderedStringEnvelopeMapSetAndGet(t *testing.T) {
 	if got == nil {
 		t.Fatal("Get returned nil for existing key")
 	}
-	if got.Execute().State != StatePresent {
-		t.Errorf("expected state 'present', got '%s'", got.Execute().State)
+	if got.Execute(testCtx()).State != StatePresent {
+		t.Errorf("expected state 'present', got '%s'", got.Execute(testCtx()).State)
 	}
 	if env := m.GetEnvelope("key1"); env == nil {
 		t.Fatal("GetEnvelope returned nil for existing key")
@@ -88,8 +93,8 @@ func TestOrderedStringEnvelopeMapOverwriteValue(t *testing.T) {
 	if got == nil {
 		t.Fatal("Get returned nil for overwritten key")
 	}
-	if got.Execute().State != StateAbsent {
-		t.Errorf("expected overwritten state 'absent', got '%s'", got.Execute().State)
+	if got.Execute(testCtx()).State != StateAbsent {
+		t.Errorf("expected overwritten state 'absent', got '%s'", got.Execute(testCtx()).State)
 	}
 	if keys := m.Keys(); len(keys) != 1 {
 		t.Fatalf("expected 1 key (deduped), got %d", len(keys))

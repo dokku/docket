@@ -15,7 +15,7 @@ import (
 
 func TestHttpAuthUserTaskInvalidState(t *testing.T) {
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "admin", Password: "secret"}}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -23,7 +23,7 @@ func TestHttpAuthUserTaskInvalidState(t *testing.T) {
 
 func TestHttpAuthUserTaskPresentMissingApp(t *testing.T) {
 	task := HttpAuthUserTask{Users: []HttpAuthUser{{Username: "admin", Password: "secret"}}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -34,7 +34,7 @@ func TestHttpAuthUserTaskPresentMissingApp(t *testing.T) {
 
 func TestHttpAuthUserTaskAbsentMissingApp(t *testing.T) {
 	task := HttpAuthUserTask{State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -45,7 +45,7 @@ func TestHttpAuthUserTaskAbsentMissingApp(t *testing.T) {
 
 func TestHttpAuthUserTaskPresentEmptyUsers(t *testing.T) {
 	task := HttpAuthUserTask{App: "test-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty users and state=present should return an error")
 	}
@@ -56,7 +56,7 @@ func TestHttpAuthUserTaskPresentEmptyUsers(t *testing.T) {
 
 func TestHttpAuthUserTaskPresentWithoutCredential(t *testing.T) {
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "admin"}}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when a present user has neither password nor hash")
 	}
@@ -67,7 +67,7 @@ func TestHttpAuthUserTaskPresentWithoutCredential(t *testing.T) {
 
 func TestHttpAuthUserTaskSetWithoutCredential(t *testing.T) {
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "admin"}}, State: StateSet}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when a set user has neither password nor hash")
 	}
@@ -78,7 +78,7 @@ func TestHttpAuthUserTaskSetWithoutCredential(t *testing.T) {
 
 func TestHttpAuthUserTaskSetEmptyUsers(t *testing.T) {
 	task := HttpAuthUserTask{App: "test-app", State: StateSet}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when state=set has no users")
 	}
@@ -95,7 +95,7 @@ func TestHttpAuthUserTaskPasswordAndHashAreExclusive(t *testing.T) {
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "admin", Password: "secret", Hash: "$6$abc$def"}},
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when a user carries both password and hash")
 	}
@@ -114,7 +114,7 @@ func TestHttpAuthUserTaskDuplicateUsernameRejected(t *testing.T) {
 			{Username: "admin", Password: "secret"},
 		},
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when a username is listed twice")
 	}
@@ -150,7 +150,7 @@ func TestHttpAuthUserTaskHashFramingRejected(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{tc.user}}
-			result := task.Execute()
+			result := task.Execute(testCtx())
 			if result.Error == nil {
 				t.Fatalf("expected error for %s", tc.name)
 			}
@@ -173,7 +173,7 @@ func TestHttpAuthUserTaskPasswordUsernameColonAllowed(t *testing.T) {
 
 func TestHttpAuthUserTaskMissingUsername(t *testing.T) {
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Password: "secret"}}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when a user has no username")
 	}
@@ -228,7 +228,7 @@ func TestHttpAuthUserTaskHashInSync(t *testing.T) {
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -252,7 +252,7 @@ func TestHttpAuthUserTaskHashIgnoresUpdatePassword(t *testing.T) {
 		Users:          []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		UpdatePassword: boolPtr(true),
 		State:          StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -269,7 +269,7 @@ func TestHttpAuthUserTaskHashDriftPlansImport(t *testing.T) {
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: "$6$rotated$ROTATED"}},
 		State: StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -304,7 +304,7 @@ func TestHttpAuthUserTaskMixedPlansImportFirst(t *testing.T) {
 			{Username: "alice", Hash: aliceHash},
 		},
 		State: StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -343,7 +343,7 @@ func TestHttpAuthUserTaskPasswordOnlySkipsExportUsers(t *testing.T) {
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Password: "secret"}},
 		State: StatePresent,
-	}.Plan()
+	}.Plan(testCtx())
 	if asked {
 		t.Error("a password-only task must not probe http-auth:export-users")
 	}
@@ -382,7 +382,7 @@ func TestHttpAuthUserTaskExecuteStreamsEntries(t *testing.T) {
 			{Username: "carol", Hash: "$6$cccc$CCCC"},
 		},
 		State: StatePresent,
-	}.Execute()
+	}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("Execute: %v", result.Error)
 	}
@@ -401,7 +401,7 @@ func TestHttpAuthUserTaskSetAllHashesUsesReplace(t *testing.T) {
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StateSet,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -435,7 +435,7 @@ func TestHttpAuthUserTaskSetWithPasswordAvoidsReplace(t *testing.T) {
 			{Username: "carol", Password: "secret"},
 		},
 		State: StateSet,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -463,7 +463,7 @@ func TestHttpAuthUserTaskSetInSync(t *testing.T) {
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StateSet,
-	}.Plan()
+	}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -479,7 +479,7 @@ func TestHttpAuthUserTaskSetReportsSetState(t *testing.T) {
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StateSet,
-	}.Execute()
+	}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("Execute: %v", result.Error)
 	}
@@ -501,7 +501,7 @@ func TestGetHttpAuthUserHashesSkipsMalformedLines(t *testing.T) {
 		"--quiet http-auth:export-users test-app": "# a comment\n\nalice:" + aliceHash + "\ntruncated:\nnoseparator\nbob:$6$b:b$BB\n",
 	}))()
 
-	got, err := getHttpAuthUserHashes("test-app")
+	got, err := getHttpAuthUserHashes(testCtx(), "test-app")
 	if err != nil {
 		t.Fatalf("getHttpAuthUserHashes: %v", err)
 	}

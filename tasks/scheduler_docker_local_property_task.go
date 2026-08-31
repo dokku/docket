@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // SchedulerDockerLocalPropertyTask manages the scheduler-docker-local configuration for a given dokku application
 type SchedulerDockerLocalPropertyTask struct {
 	// App is the name of the app
@@ -75,8 +77,8 @@ func (t SchedulerDockerLocalPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the scheduler-docker-local property
-func (t SchedulerDockerLocalPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SchedulerDockerLocalPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // schedulerDockerLocalPropertyTable maps scheduler-docker-local property
@@ -102,13 +104,13 @@ func (t SchedulerDockerLocalPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerDockerLocalPropertyTask would produce.
-func (t SchedulerDockerLocalPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, false, t.Property, t.Value)
+func (t SchedulerDockerLocalPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, false, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t SchedulerDockerLocalPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t SchedulerDockerLocalPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return SchedulerDockerLocalPropertyTask{App: app, Property: property, Value: value}
 	})
 }

@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -45,7 +46,10 @@ type ToggleContext struct {
 // (state: present) position. nil from a probe (or a non-nil error) is
 // treated as "drift, must mutate" so we still run the underlying command,
 // except an SSH transport failure, which is surfaced as a plan error.
-type ToggleProbe func(ctx ToggleContext) (enabled bool, err error)
+//
+// The Go context comes first, as everywhere else; tc is the toggle's own
+// addressing context.
+type ToggleProbe func(ctx context.Context, tc ToggleContext) (enabled bool, err error)
 
 // planToggle is the shared Plan() implementation for toggle tasks. The
 // probe reports whether the underlying plugin is currently in the
@@ -54,13 +58,13 @@ type ToggleProbe func(ctx ToggleContext) (enabled bool, err error)
 // underlying enable/disable command. An SSH transport failure short-
 // circuits to a plan error so an unreachable host is not mistaken for
 // drift.
-func planToggle(state State, app string, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
-	ctx := ToggleContext{App: app}
+func planToggle(ctx context.Context, state State, app string, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
+	tc := ToggleContext{App: app}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			if probe != nil {
-				enabled, err := probe(ctx)
+				enabled, err := probe(ctx, tc)
 				if err != nil {
 					var sshErr *subprocess.SSHError
 					if errors.As(err, &sshErr) {
@@ -77,13 +81,13 @@ func planToggle(state State, app string, enableCmd, disableCmd string, probe Tog
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("would run %s on %s", enableCmd, app),
 				Mutations: []string{fmt.Sprintf("%s %s", enableCmd, app)},
-				Commands:  resolveCommands(inputs),
+				Commands:  resolveCommands(ctx, inputs),
 				apply:     applyToggle(enableCmd, app, StatePresent),
 			}
 		},
 		StateAbsent: func() PlanResult {
 			if probe != nil {
-				enabled, err := probe(ctx)
+				enabled, err := probe(ctx, tc)
 				if err != nil {
 					var sshErr *subprocess.SSHError
 					if errors.As(err, &sshErr) {
@@ -100,7 +104,7 @@ func planToggle(state State, app string, enableCmd, disableCmd string, probe Tog
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("would run %s on %s", disableCmd, app),
 				Mutations: []string{fmt.Sprintf("%s %s", disableCmd, app)},
-				Commands:  resolveCommands(inputs),
+				Commands:  resolveCommands(ctx, inputs),
 				apply:     applyToggle(disableCmd, app, StateAbsent),
 			}
 		},
@@ -118,9 +122,9 @@ func toggleInputs(subcommand, target string) []subprocess.ExecCommandInput {
 // reports the resulting state. The original initial state matches finalState
 // (preserved from the pre-refactor behavior), so on error the reported State
 // remains finalState.
-func applyToggle(subcommand, target string, finalState State) func() TaskOutputState {
+func applyToggle(subcommand, target string, finalState State) func(ctx context.Context) TaskOutputState {
 	inputs := toggleInputs(subcommand, target)
-	return func() TaskOutputState {
-		return runExecInputs(TaskOutputState{State: finalState}, finalState, inputs)
+	return func(ctx context.Context) TaskOutputState {
+		return runExecInputs(ctx, TaskOutputState{State: finalState}, finalState, inputs)
 	}
 }

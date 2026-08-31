@@ -7,7 +7,7 @@ import (
 
 func TestStorageEnsureTaskInvalidState(t *testing.T) {
 	task := StorageEnsureTask{App: "test-app", Chown: "heroku", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -46,7 +46,7 @@ func TestStorageEnsureInvalidChownValue(t *testing.T) {
 
 func TestStorageEnsureAbsentStateReturnsError(t *testing.T) {
 	task := StorageEnsureTask{App: "test-app", Chown: "heroku", State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with absent state should return an error for storage ensure")
 	}

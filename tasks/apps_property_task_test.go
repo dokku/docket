@@ -7,7 +7,7 @@ import (
 
 func TestAppsPropertyTaskInvalidState(t *testing.T) {
 	task := AppsPropertyTask{App: "test-app", Property: "deploy-source", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestAppsPropertyTaskInvalidState(t *testing.T) {
 
 func TestAppsPropertyTaskMissingApp(t *testing.T) {
 	task := AppsPropertyTask{Property: "deploy-source", Value: "git", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestAppsPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "true",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestAppsPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestAppsPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "git",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

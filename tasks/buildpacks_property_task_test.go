@@ -7,7 +7,7 @@ import (
 
 func TestBuildpacksPropertyTaskInvalidState(t *testing.T) {
 	task := BuildpacksPropertyTask{App: "test-app", Property: "stack", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestBuildpacksPropertyTaskInvalidState(t *testing.T) {
 
 func TestBuildpacksPropertyTaskMissingApp(t *testing.T) {
 	task := BuildpacksPropertyTask{Property: "stack", Value: "gliderlabs/herokuish:latest", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestBuildpacksPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "gliderlabs/herokuish:latest",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestBuildpacksPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestBuildpacksPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "gliderlabs/herokuish:latest",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/dokku/docket/subprocess"
@@ -127,8 +128,8 @@ func (t PortsTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the app's port mappings
-func (t PortsTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t PortsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the PortsTask's inputs without contacting the server.
@@ -181,21 +182,21 @@ func (t PortsTask) Validate() error {
 }
 
 // Plan reports the drift the PortsTask would produce.
-func (t PortsTask) Plan() PlanResult {
+func (t PortsTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planPortsPresent(t) },
-		StateAbsent:  func() PlanResult { return planPortsAbsent(t) },
-		StateSet:     func() PlanResult { return planPortsSet(t) },
-		StateClear:   func() PlanResult { return planPortsClear(t) },
+		StatePresent: func() PlanResult { return planPortsPresent(ctx, t) },
+		StateAbsent:  func() PlanResult { return planPortsAbsent(ctx, t) },
+		StateSet:     func() PlanResult { return planPortsSet(ctx, t) },
+		StateClear:   func() PlanResult { return planPortsClear(ctx, t) },
 	})
 }
 
 // planPortsPresent reports drift for the present-state mapping add.
-func planPortsPresent(t PortsTask) PlanResult {
-	currentPorts, err := getPorts(t.App)
+func planPortsPresent(ctx context.Context, t PortsTask) PlanResult {
+	currentPorts, err := getPorts(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -233,14 +234,14 @@ func planPortsPresent(t PortsTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("%d port mapping(s) to add", len(toAdd)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:add", t.App, toAdd, StatePresent, StateAbsent),
 	}
 }
 
 // planPortsAbsent reports drift for the absent-state mapping remove.
-func planPortsAbsent(t PortsTask) PlanResult {
-	currentPorts, err := getPorts(t.App)
+func planPortsAbsent(ctx context.Context, t PortsTask) PlanResult {
+	currentPorts, err := getPorts(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -261,7 +262,7 @@ func planPortsAbsent(t PortsTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d port mapping(s) to remove", len(toRemove)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:remove", t.App, toRemove, StateAbsent, StatePresent),
 	}
 }
@@ -269,8 +270,8 @@ func planPortsAbsent(t PortsTask) PlanResult {
 // planPortsSet reports drift for the set-state full replacement. The itemized
 // mutations are the adds and removes the replacement works out to; the command
 // itself always carries the complete desired list.
-func planPortsSet(t PortsTask) PlanResult {
-	currentPorts, err := getPorts(t.App)
+func planPortsSet(ctx context.Context, t PortsTask) PlanResult {
+	currentPorts, err := getPorts(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -303,14 +304,14 @@ func planPortsSet(t PortsTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("%d port mapping change(s)", len(mutations)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:set", t.App, args, StateSet, StateAbsent),
 	}
 }
 
 // planPortsClear reports drift for the clear-state operation.
-func planPortsClear(t PortsTask) PlanResult {
-	currentPorts, err := getPorts(t.App)
+func planPortsClear(ctx context.Context, t PortsTask) PlanResult {
+	currentPorts, err := getPorts(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -328,7 +329,7 @@ func planPortsClear(t PortsTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d port mapping(s)", len(currentPorts)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
+		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:clear", t.App, nil, StateClear, StatePresent),
 	}
 }
@@ -357,8 +358,8 @@ func sortedPortMappings(mappings map[string]PortMapping) []string {
 // ExportApp reads the app's port mappings and returns a dokku_ports task, or
 // nil when none are configured. Mappings are sorted for deterministic output.
 // state:set replaces the whole mapping list for an exact match.
-func (t PortsTask) ExportApp(app string) ([]interface{}, error) {
-	mappings, err := getPorts(app)
+func (t PortsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	mappings, err := getPorts(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -375,10 +376,10 @@ func (t PortsTask) ExportApp(app string) ([]interface{}, error) {
 // getPorts gets the ports for a given app. A transport-level failure
 // (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit
 // (e.g. app does not exist) is treated as "no ports configured."
-func getPorts(appName string) (map[string]PortMapping, error) {
+func getPorts(ctx context.Context, appName string) (map[string]PortMapping, error) {
 	// dokku master has a --ports-map-json that would replace this text parse,
 	// but it is not in a release yet; see #431.
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",

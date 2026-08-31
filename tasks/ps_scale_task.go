@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -82,8 +83,8 @@ func (t PsScaleTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets the process scale for a given dokku application
-func (t PsScaleTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t PsScaleTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the PsScaleTask's inputs without contacting the server.
@@ -95,13 +96,13 @@ func (t PsScaleTask) Validate() error {
 }
 
 // Plan reports the drift the PsScaleTask would produce.
-func (t PsScaleTask) Plan() PlanResult {
+func (t PsScaleTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			existing, err := getPsScale(t.App)
+			existing, err := getPsScale(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -141,9 +142,9 @@ func (t PsScaleTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("%d process scale change(s)", len(mutations)),
 				Mutations: mutations,
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -152,8 +153,8 @@ func (t PsScaleTask) Plan() PlanResult {
 
 // ExportApp reads the app's process scale and returns a dokku_ps_scale task
 // when any process is scaled above zero (an undeployed app has nothing to set).
-func (t PsScaleTask) ExportApp(app string) ([]interface{}, error) {
-	scale, err := getPsScale(app)
+func (t PsScaleTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	scale, err := getPsScale(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +172,8 @@ func (t PsScaleTask) ExportApp(app string) ([]interface{}, error) {
 }
 
 // getPsScale retrieves the current process scale for a given dokku application
-func getPsScale(app string) (map[string]int, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getPsScale(ctx context.Context, app string) (map[string]int, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "ps:scale", app},
 	})

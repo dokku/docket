@@ -9,13 +9,13 @@ func TestIntegrationProxyToggle(t *testing.T) {
 
 	appName := "docket-test-proxy"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// enable proxy
 	enableTask := ProxyToggleTask{App: appName, State: StatePresent}
-	result := enableTask.Execute()
+	result := enableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to enable proxy: %v", result.Error)
 	}
@@ -25,7 +25,7 @@ func TestIntegrationProxyToggle(t *testing.T) {
 
 	// disable proxy
 	disableTask := ProxyToggleTask{App: appName, State: StateAbsent}
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to disable proxy: %v", result.Error)
 	}

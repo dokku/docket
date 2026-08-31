@@ -10,7 +10,7 @@ import (
 
 func TestDomainsTaskInvalidState(t *testing.T) {
 	task := DomainsTask{App: "test-app", Domains: []string{"example.com"}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -18,7 +18,7 @@ func TestDomainsTaskInvalidState(t *testing.T) {
 
 func TestDomainsTaskMissingApp(t *testing.T) {
 	task := DomainsTask{Domains: []string{"example.com"}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -26,7 +26,7 @@ func TestDomainsTaskMissingApp(t *testing.T) {
 
 func TestDomainsTaskGlobalWithApp(t *testing.T) {
 	task := DomainsTask{App: "test-app", Global: true, Domains: []string{"example.com"}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -39,7 +39,7 @@ func TestDomainsTaskEmptyDomains(t *testing.T) {
 	states := []State{StatePresent, StateAbsent, StateSet}
 	for _, s := range states {
 		task := DomainsTask{App: "test-app", Domains: []string{}, State: s}
-		result := task.Execute()
+		result := task.Execute(testCtx())
 		if result.Error == nil {
 			t.Fatalf("Execute with empty domains and state=%s should return an error", s)
 		}
@@ -61,7 +61,7 @@ func TestDomainsTaskClearRejectsDomains(t *testing.T) {
 
 func TestDomainsTaskClearNoDomains(t *testing.T) {
 	task := DomainsTask{App: "test-app", State: StateClear}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	// Should fail because dokku isn't running, but NOT because of missing domains
 	if result.Error != nil && strings.Contains(result.Error.Error(), "must not be empty") {
 		t.Error("clear state should not require domains")
@@ -90,7 +90,7 @@ func TestDomainsGlobalSetOmitsGlobalPositional(t *testing.T) {
 		"domains:report --global --domains-global-vhosts": "",
 	}))()
 
-	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan()
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -111,7 +111,7 @@ func TestDomainsGlobalSetConvergesWhenReportMatches(t *testing.T) {
 		"domains:report --global --domains-global-vhosts": "global.example.com",
 	}))()
 
-	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan()
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -125,7 +125,7 @@ func TestDomainsGlobalAddOmitsGlobalPositional(t *testing.T) {
 		"domains:report --global --domains-global-vhosts": "",
 	}))()
 
-	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StatePresent}.Plan()
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -143,7 +143,7 @@ func TestDomainsGlobalClearOmitsGlobalPositional(t *testing.T) {
 		"domains:report --global --domains-global-vhosts": "old.example.com",
 	}))()
 
-	plan := DomainsTask{Global: true, State: StateClear}.Plan()
+	plan := DomainsTask{Global: true, State: StateClear}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}

@@ -12,7 +12,7 @@ func TestIntegrationSshKey(t *testing.T) {
 	keyName := "docket-test-ssh-key"
 
 	removeSSHKey := func() {
-		subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "ssh-keys:remove", keyName},
 		})
@@ -23,7 +23,7 @@ func TestIntegrationSshKey(t *testing.T) {
 
 	assertPresent := func(t *testing.T, label string, want bool) {
 		t.Helper()
-		keys, err := sshKeysList()
+		keys, err := sshKeysList(testCtx())
 		if err != nil {
 			t.Fatalf("%s: sshKeysList failed: %v", label, err)
 		}
@@ -36,7 +36,7 @@ func TestIntegrationSshKey(t *testing.T) {
 
 	// add the key
 	addTask := SshKeyTask{Name: keyName, Key: testSSHKey1, State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add key: %v", result.Error)
 	}
@@ -49,7 +49,7 @@ func TestIntegrationSshKey(t *testing.T) {
 	assertPresent(t, "after add", true)
 
 	// add the same key again - idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -59,7 +59,7 @@ func TestIntegrationSshKey(t *testing.T) {
 
 	// rotate to a different key under the same name
 	rotateTask := SshKeyTask{Name: keyName, Key: testSSHKey2, State: StatePresent}
-	result = rotateTask.Execute()
+	result = rotateTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to rotate key: %v", result.Error)
 	}
@@ -69,7 +69,7 @@ func TestIntegrationSshKey(t *testing.T) {
 	assertPresent(t, "after rotate", true)
 
 	// rotation is now idempotent
-	result = rotateTask.Execute()
+	result = rotateTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second rotate: %v", result.Error)
 	}
@@ -79,7 +79,7 @@ func TestIntegrationSshKey(t *testing.T) {
 
 	// remove the key
 	removeTask := SshKeyTask{Name: keyName, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove key: %v", result.Error)
 	}
@@ -92,7 +92,7 @@ func TestIntegrationSshKey(t *testing.T) {
 	assertPresent(t, "after remove", false)
 
 	// remove again - idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}

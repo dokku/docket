@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ func TestSchedulerK3sChartTaskInvalidState(t *testing.T) {
 		Values: map[string]any{"replicaCount": "3"},
 		State:  "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -25,7 +26,7 @@ func TestSchedulerK3sChartTaskMissingChart(t *testing.T) {
 		Values: map[string]any{"replicaCount": "3"},
 		State:  StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when chart is empty")
 	}
@@ -39,7 +40,7 @@ func TestSchedulerK3sChartTaskPresentWithoutValues(t *testing.T) {
 		Chart: "ingress-nginx",
 		State: StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no values")
 	}
@@ -53,7 +54,7 @@ func TestSchedulerK3sChartTaskAbsentWithoutValues(t *testing.T) {
 		Chart: "ingress-nginx",
 		State: StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has no values")
 	}
@@ -94,7 +95,7 @@ func TestSchedulerK3sChartTaskRejectsListValue(t *testing.T) {
 		Values: map[string]any{"hosts": []any{"a", "b"}},
 		State:  StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when value is a list")
 	}
@@ -304,8 +305,8 @@ func TestSchedulerK3sChartTaskCommandShapeSet(t *testing.T) {
 	desired := map[string]string{"replicaCount": "3"}
 	chart := "ingress-nginx"
 	commandFn := schedulerK3sChartsCommandFor(t, chart)
-	plan := planPairsSet("chart value", desired,
-		func() (map[string]string, error) { return current, nil },
+	plan := planPairsSet(testCtx(), "chart value", desired,
+		func(ctx context.Context) (map[string]string, error) { return current, nil },
 		commandFn,
 	)
 	if len(plan.Commands) != 1 {
@@ -322,8 +323,8 @@ func TestSchedulerK3sChartTaskCommandShapeClear(t *testing.T) {
 	desired := map[string]string{"replicaCount": "ignored"}
 	chart := "ingress-nginx"
 	commandFn := schedulerK3sChartsCommandFor(t, chart)
-	plan := planPairsUnset("chart value", desired,
-		func() (map[string]string, error) { return current, nil },
+	plan := planPairsUnset(testCtx(), "chart value", desired,
+		func(ctx context.Context) (map[string]string, error) { return current, nil },
 		commandFn,
 	)
 	if len(plan.Commands) != 1 {

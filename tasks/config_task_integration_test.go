@@ -10,9 +10,9 @@ func TestIntegrationConfigSetAndUnset(t *testing.T) {
 	appName := "docket-test-config"
 
 	// ensure clean state
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// set config
 	setTask := ConfigTask{
@@ -21,7 +21,7 @@ func TestIntegrationConfigSetAndUnset(t *testing.T) {
 		Config:  map[string]string{"TEST_KEY": "test_value"},
 		State:   StatePresent,
 	}
-	result := setTask.Execute()
+	result := setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set config: %v", result.Error)
 	}
@@ -33,7 +33,7 @@ func TestIntegrationConfigSetAndUnset(t *testing.T) {
 	}
 
 	// setting same config again should be idempotent
-	result = setTask.Execute()
+	result = setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent set failed: %v", result.Error)
 	}
@@ -48,7 +48,7 @@ func TestIntegrationConfigSetAndUnset(t *testing.T) {
 		Config:  map[string]string{"TEST_KEY": ""},
 		State:   StateAbsent,
 	}
-	result = unsetTask.Execute()
+	result = unsetTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to unset config: %v", result.Error)
 	}
@@ -60,7 +60,7 @@ func TestIntegrationConfigSetAndUnset(t *testing.T) {
 	}
 
 	// unset again should be idempotent
-	result = unsetTask.Execute()
+	result = unsetTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent unset failed: %v", result.Error)
 	}
@@ -74,9 +74,9 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 
 	appName := "docket-test-multiconfig"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// set 3 keys
 	setTask := ConfigTask{
@@ -85,7 +85,7 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 		Config:  map[string]string{"KEY_A": "val_a", "KEY_B": "val_b", "KEY_C": "val_c"},
 		State:   StatePresent,
 	}
-	result := setTask.Execute()
+	result := setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set config: %v", result.Error)
 	}
@@ -100,7 +100,7 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 		Config:  map[string]string{"KEY_A": "val_a", "KEY_B": "val_b_updated", "KEY_C": "val_c"},
 		State:   StatePresent,
 	}
-	result = updateTask.Execute()
+	result = updateTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to update config: %v", result.Error)
 	}
@@ -109,7 +109,7 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 	}
 
 	// set same values again (idempotent)
-	result = updateTask.Execute()
+	result = updateTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent update failed: %v", result.Error)
 	}
@@ -124,7 +124,7 @@ func TestIntegrationConfigMultipleKeys(t *testing.T) {
 		Config:  map[string]string{"KEY_A": "", "KEY_B": "", "KEY_C": ""},
 		State:   StateAbsent,
 	}
-	result = unsetTask.Execute()
+	result = unsetTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to unset config: %v", result.Error)
 	}

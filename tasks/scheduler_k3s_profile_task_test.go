@@ -8,7 +8,7 @@ import (
 
 func TestSchedulerK3sProfileTaskMissingName(t *testing.T) {
 	task := SchedulerK3sProfileTask{Role: "worker", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when name is empty")
 	}
@@ -19,7 +19,7 @@ func TestSchedulerK3sProfileTaskMissingName(t *testing.T) {
 
 func TestSchedulerK3sProfileTaskMissingRole(t *testing.T) {
 	task := SchedulerK3sProfileTask{Name: "edge-pool", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when role is empty")
 	}
@@ -30,7 +30,7 @@ func TestSchedulerK3sProfileTaskMissingRole(t *testing.T) {
 
 func TestSchedulerK3sProfileTaskInvalidRole(t *testing.T) {
 	task := SchedulerK3sProfileTask{Name: "edge-pool", Role: "controlplane", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when role is invalid")
 	}
@@ -56,7 +56,7 @@ func TestSchedulerK3sProfileTaskInvalidKubeletArg(t *testing.T) {
 				KubeletArgs: tc.args,
 				State:       StatePresent,
 			}
-			result := task.Execute()
+			result := task.Execute(testCtx())
 			if result.Error == nil {
 				t.Fatalf("expected error for kubelet_args=%v", tc.args)
 			}
@@ -180,7 +180,7 @@ func TestSchedulerK3sProfileNameHelmLimitDerivation(t *testing.T) {
 
 func TestSchedulerK3sProfileTaskInvalidState(t *testing.T) {
 	task := SchedulerK3sProfileTask{Name: "edge-pool", Role: "worker", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when state is invalid")
 	}

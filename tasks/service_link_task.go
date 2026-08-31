@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"github.com/dokku/docket/subprocess"
 )
@@ -54,14 +55,14 @@ func (t ServiceLinkTask) ProbeSupport() ProbeSupport {
 // app appears in (serviceLinkedApps). The link, not dokku_config, is the source
 // of truth for the injected `<ALIAS>_URL`, so config export drops those values
 // (see linkedServiceDSNs).
-func (t ServiceLinkTask) ExportApp(app string) ([]interface{}, error) {
-	services, err := listServices()
+func (t ServiceLinkTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	services, err := listServices(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var out []interface{}
 	for _, s := range services {
-		apps, err := serviceLinkedApps(s.Type, s.Name)
+		apps, err := serviceLinkedApps(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -110,29 +111,29 @@ func (t ServiceLinkTask) Examples() ([]Doc, error) {
 }
 
 // Execute links or unlinks a dokku service to an app
-func (t ServiceLinkTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ServiceLinkTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the ServiceLinkTask would produce.
-func (t ServiceLinkTask) Plan() PlanResult {
+func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			svcExists, err := serviceExists(t.Service, t.Name)
+			svcExists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !svcExists {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
 			}
-			appOK, err := appExists(t.App)
+			appOK, err := appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !appOK {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("app %s does not exist", t.App)}
 			}
-			linked, err := serviceLinked(t.Service, t.Name, t.App)
+			linked, err := serviceLinked(ctx, t.Service, t.Name, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -148,28 +149,28 @@ func (t ServiceLinkTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("%s service %s not linked to %s", t.Service, t.Name, t.App),
 				Mutations: []string{fmt.Sprintf("%s:link %s %s", t.Service, t.Name, t.App)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			svcExists, err := serviceExists(t.Service, t.Name)
+			svcExists, err := serviceExists(ctx, t.Service, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !svcExists {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
 			}
-			appOK, err := appExists(t.App)
+			appOK, err := appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !appOK {
 				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("app %s does not exist", t.App)}
 			}
-			linked, err := serviceLinked(t.Service, t.Name, t.App)
+			linked, err := serviceLinked(ctx, t.Service, t.Name, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -185,9 +186,9 @@ func (t ServiceLinkTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%s service %s linked to %s", t.Service, t.Name, t.App),
 				Mutations: []string{fmt.Sprintf("%s:unlink %s %s", t.Service, t.Name, t.App)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -198,8 +199,8 @@ func (t ServiceLinkTask) Plan() PlanResult {
 // (false, err) when the probe could not run - a transport failure, a
 // missing dokku binary, or a cancellation; (false, nil) when dokku
 // reports no link; (true, nil) when linked.
-func serviceLinked(service, name, app string) (bool, error) {
-	return subprocess.Probe(subprocess.ExecCommandInput{
+func serviceLinked(ctx context.Context, service, name, app string) (bool, error) {
+	return subprocess.Probe(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",

@@ -17,28 +17,28 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	serviceType := "redis"
 
 	// ensure clean state
-	destroyApp(appName)
-	destroyService(serviceType, serviceName)
+	destroyApp(testCtx(), appName)
+	destroyService(testCtx(), serviceType, serviceName)
 
 	// create prerequisites
-	createApp(appName)
-	defer destroyApp(appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	createTask := ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}
-	createResult := createTask.Execute()
+	createResult := createTask.Execute(testCtx())
 	if createResult.Error != nil {
 		t.Fatalf("failed to create service: %v", createResult.Error)
 	}
 	defer func() {
 		// unlink before destroying service
 		unlinkTask := ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StateAbsent}
-		unlinkTask.Execute()
-		destroyService(serviceType, serviceName)
+		unlinkTask.Execute(testCtx())
+		destroyService(testCtx(), serviceType, serviceName)
 	}()
 
 	// verify service container is running via docker inspect
 	containerName := fmt.Sprintf("dokku.%s.%s", serviceType, serviceName)
-	inspectResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	inspectResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"inspect", "--format", "{{.State.Running}}", containerName},
 	})
@@ -51,7 +51,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 
 	// link service to app
 	linkTask := ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StatePresent}
-	result := linkTask.Execute()
+	result := linkTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to link service: %v", result.Error)
 	}
@@ -63,7 +63,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	}
 
 	// verify REDIS_URL config var was set by the link
-	configResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	configResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"config:get", appName, "REDIS_URL"},
 	})
@@ -79,7 +79,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	}
 
 	// verify the service container exposes the expected network alias via docker inspect
-	aliasResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	aliasResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"inspect", "--format", "{{.Config.Hostname}}", containerName},
 	})
@@ -96,13 +96,13 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 		Image: "dokku/smoke-test-app:dockerfile",
 		State: StateDeployed,
 	}
-	deployResult := deployTask.Execute()
+	deployResult := deployTask.Execute(testCtx())
 	if deployResult.Error != nil {
 		t.Fatalf("failed to deploy app: %v", deployResult.Error)
 	}
 
 	// find the running app container
-	appContainerResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	appContainerResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"ps", "--filter", fmt.Sprintf("label=com.dokku.app-name=%s", appName), "--filter", "label=com.dokku.process-type=web", "--format", "{{.ID}}"},
 	})
@@ -118,7 +118,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	appContainerID = appContainerIDs[0]
 
 	// verify the app container is running via docker inspect
-	appInspectResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	appInspectResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"inspect", "--format", "{{.State.Running}}", appContainerID},
 	})
@@ -130,7 +130,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	}
 
 	// verify REDIS_URL is present inside the running container via docker exec
-	execResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	execResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"exec", appContainerID, "env"},
 	})
@@ -143,7 +143,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	}
 
 	// linking again should be idempotent
-	result = linkTask.Execute()
+	result = linkTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent link failed: %v", result.Error)
 	}
@@ -156,7 +156,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 
 	// unlink service from app
 	unlinkTask := ServiceLinkTask{App: appName, Service: serviceType, Name: serviceName, State: StateAbsent}
-	result = unlinkTask.Execute()
+	result = unlinkTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to unlink service: %v", result.Error)
 	}
@@ -168,7 +168,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	}
 
 	// verify REDIS_URL config var was removed by the unlink
-	configResult, err = subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	configResult, err = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"config:get", appName, "REDIS_URL"},
 	})
@@ -177,7 +177,7 @@ func TestIntegrationServiceLinkAndUnlink(t *testing.T) {
 	}
 
 	// unlinking again should be idempotent
-	result = unlinkTask.Execute()
+	result = unlinkTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent unlink failed: %v", result.Error)
 	}

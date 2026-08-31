@@ -31,7 +31,7 @@ func TestMaintenanceCustomPageExportReportWarnsOnExtraAssets(t *testing.T) {
 	}))()
 
 	var warnings []string
-	bodies, err := MaintenanceCustomPageTask{}.ExportAppReport("myapp", func(msg string) {
+	bodies, err := MaintenanceCustomPageTask{}.ExportAppReport(testCtx(), "myapp", func(msg string) {
 		warnings = append(warnings, msg)
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestMaintenanceCustomPageExportReportNoExtraAssets(t *testing.T) {
 	}))()
 
 	var warnings []string
-	if _, err := (MaintenanceCustomPageTask{}).ExportAppReport("myapp", func(msg string) {
+	if _, err := (MaintenanceCustomPageTask{}).ExportAppReport(testCtx(), "myapp", func(msg string) {
 		warnings = append(warnings, msg)
 	}); err != nil {
 		t.Fatalf("ExportAppReport error: %v", err)
@@ -117,7 +117,7 @@ const (
 
 func TestMaintenanceCustomPageTaskInvalidState(t *testing.T) {
 	task := MaintenanceCustomPageTask{App: "test-app", Content: maintenanceTestPage, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -125,7 +125,7 @@ func TestMaintenanceCustomPageTaskInvalidState(t *testing.T) {
 
 func TestMaintenanceCustomPageTaskMissingApp(t *testing.T) {
 	task := MaintenanceCustomPageTask{Content: maintenanceTestPage, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -136,7 +136,7 @@ func TestMaintenanceCustomPageTaskMissingApp(t *testing.T) {
 
 func TestMaintenanceCustomPageTaskPresentMissingSource(t *testing.T) {
 	task := MaintenanceCustomPageTask{App: "test-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without content or tarball should return an error")
 	}
@@ -147,7 +147,7 @@ func TestMaintenanceCustomPageTaskPresentMissingSource(t *testing.T) {
 
 func TestMaintenanceCustomPageTaskPresentBothSources(t *testing.T) {
 	task := MaintenanceCustomPageTask{App: "test-app", Content: maintenanceTestPage, Tarball: "/tmp/page.tar", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with both content and tarball should return an error")
 	}
@@ -158,7 +158,7 @@ func TestMaintenanceCustomPageTaskPresentBothSources(t *testing.T) {
 
 func TestMaintenanceCustomPageTaskAbsentWithContent(t *testing.T) {
 	task := MaintenanceCustomPageTask{App: "test-app", Content: maintenanceTestPage, State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute absent with content should return an error")
 	}
@@ -169,7 +169,7 @@ func TestMaintenanceCustomPageTaskAbsentWithContent(t *testing.T) {
 
 func TestMaintenanceCustomPageTaskAbsentWithTarball(t *testing.T) {
 	task := MaintenanceCustomPageTask{App: "test-app", Tarball: "/tmp/page.tar", State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute absent with tarball should return an error")
 	}

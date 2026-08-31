@@ -10,7 +10,7 @@ import (
 
 func TestPsScaleTaskInvalidState(t *testing.T) {
 	task := PsScaleTask{App: "test-app", Scale: map[string]int{"web": 1}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -18,7 +18,7 @@ func TestPsScaleTaskInvalidState(t *testing.T) {
 
 func TestPsScaleTaskEmptyScale(t *testing.T) {
 	task := PsScaleTask{App: "test-app", Scale: map[string]int{}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty scale and state=present should return an error")
 	}
@@ -26,7 +26,7 @@ func TestPsScaleTaskEmptyScale(t *testing.T) {
 
 func TestPsScaleTaskNilScale(t *testing.T) {
 	task := PsScaleTask{App: "test-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with nil scale and state=present should return an error")
 	}
@@ -52,7 +52,7 @@ func TestPsScaleCommandDeterministicOrder(t *testing.T) {
 	// Repeat so a reintroduced map-order bug is caught reliably rather than
 	// passing by chance on a lucky iteration.
 	for i := 0; i < 20; i++ {
-		plan := task.Plan()
+		plan := task.Plan(testCtx())
 		if plan.Error != nil {
 			t.Fatalf("iteration %d: unexpected plan error: %v", i, plan.Error)
 		}

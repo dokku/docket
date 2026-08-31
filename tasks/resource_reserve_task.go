@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // ResourceReserveTask manages the resource reservations for a given dokku application
 type ResourceReserveTask struct {
 	// App is the name of the app
@@ -82,13 +84,13 @@ func (t ResourceReserveTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or clears the resource reservations for a given dokku application
-func (t ResourceReserveTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ResourceReserveTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // ExportApp reconstructs the app's resource reservations, one task per process type.
-func (t ResourceReserveTask) ExportApp(app string) ([]interface{}, error) {
-	return exportResourceTasks(app, "reserve", func(app, processType string, resources map[string]string) interface{} {
+func (t ResourceReserveTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportResourceTasks(ctx, app, "reserve", func(app, processType string, resources map[string]string) interface{} {
 		return ResourceReserveTask{App: app, ProcessType: processType, Resources: resources}
 	})
 }
@@ -99,8 +101,8 @@ func (t ResourceReserveTask) Validate() error {
 }
 
 // Plan reports the drift the ResourceReserveTask would produce.
-func (t ResourceReserveTask) Plan() PlanResult {
-	return planResource(t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:reserve")
+func (t ResourceReserveTask) Plan(ctx context.Context) PlanResult {
+	return planResource(ctx, t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:reserve")
 }
 
 // init registers the ResourceReserveTask with the task registry

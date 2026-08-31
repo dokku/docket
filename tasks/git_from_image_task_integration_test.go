@@ -9,16 +9,16 @@ func TestIntegrationGitFromImage(t *testing.T) {
 
 	appName := "docket-test-fromimage"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	task := GitFromImageTask{
 		App:   appName,
 		Image: "dokku/smoke-test-app:dockerfile",
 		State: StateDeployed,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to deploy from image: %v", result.Error)
 	}
@@ -30,7 +30,7 @@ func TestIntegrationGitFromImage(t *testing.T) {
 	}
 
 	// deploy same image again (idempotent)
-	result = task.Execute()
+	result = task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent deploy failed: %v", result.Error)
 	}

@@ -10,7 +10,7 @@ import (
 
 func TestNetworkTaskInvalidState(t *testing.T) {
 	task := NetworkTask{Name: "test-network", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -69,7 +69,7 @@ func TestNetworkExportGlobalOnlyDokkuManaged(t *testing.T) {
 		"--quiet network:list --format json": networkListFixture,
 	}))()
 
-	bodies, err := NetworkTask{}.ExportGlobal()
+	bodies, err := NetworkTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestExportNetworksBecomeTasks(t *testing.T) {
 		"--quiet network:list --format json": networkListFixture,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

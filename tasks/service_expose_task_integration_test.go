@@ -14,15 +14,15 @@ func TestIntegrationServiceExposeIdempotent(t *testing.T) {
 	serviceType := "redis"
 	serviceName := "docket-test-expose-svc"
 
-	destroyService(serviceType, serviceName)
-	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(); r.Error != nil {
+	destroyService(testCtx(), serviceType, serviceName)
+	if r := (ServiceCreateTask{Service: serviceType, Name: serviceName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to create service: %v", r.Error)
 	}
-	defer destroyService(serviceType, serviceName)
+	defer destroyService(testCtx(), serviceType, serviceName)
 
 	exposeTask := ServiceExposeTask{Service: serviceType, Name: serviceName, Ports: []string{"11111"}, State: StatePresent}
 
-	result := exposeTask.Execute()
+	result := exposeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to expose service: %v", result.Error)
 	}
@@ -33,7 +33,7 @@ func TestIntegrationServiceExposeIdempotent(t *testing.T) {
 		t.Errorf("expected state 'present', got %q", result.State)
 	}
 
-	result = exposeTask.Execute()
+	result = exposeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent expose failed: %v", result.Error)
 	}
@@ -41,7 +41,7 @@ func TestIntegrationServiceExposeIdempotent(t *testing.T) {
 		t.Error("expected changed=false when the service is already exposed on the same ports")
 	}
 
-	ports, err := serviceExposedPortList(serviceType, serviceName)
+	ports, err := serviceExposedPortList(testCtx(), serviceType, serviceName)
 	if err != nil {
 		t.Fatalf("failed to read exposed ports: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestIntegrationServiceExposeIdempotent(t *testing.T) {
 	}
 
 	unexposeTask := ServiceExposeTask{Service: serviceType, Name: serviceName, State: StateAbsent}
-	result = unexposeTask.Execute()
+	result = unexposeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to unexpose service: %v", result.Error)
 	}
@@ -61,7 +61,7 @@ func TestIntegrationServiceExposeIdempotent(t *testing.T) {
 		t.Errorf("expected state 'absent', got %q", result.State)
 	}
 
-	result = unexposeTask.Execute()
+	result = unexposeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent unexpose failed: %v", result.Error)
 	}

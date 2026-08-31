@@ -165,19 +165,19 @@ func TestIntegrationTaskExamples(t *testing.T) {
 			created := map[string]bool{}
 			t.Cleanup(func() {
 				for app := range created {
-					destroyApp(app)
+					destroyApp(testCtx(), app)
 				}
 				for _, app := range policy.cleanupApps {
-					destroyApp(app)
+					destroyApp(testCtx(), app)
 				}
 				for _, svc := range policy.cleanupServices {
 					if parts := strings.SplitN(svc, ":", 2); len(parts) == 2 {
-						destroyService(parts[0], parts[1])
+						destroyService(testCtx(), parts[0], parts[1])
 					}
 				}
 			})
 			for _, app := range policy.ensureApps {
-				createApp(app)
+				createApp(testCtx(), app)
 				created[app] = true
 			}
 			for _, app := range policy.deployApps {
@@ -231,9 +231,9 @@ func ensureExampleApp(t *testing.T, taskName string, task Task, created map[stri
 		return
 	}
 	if fresh {
-		destroyApp(app)
+		destroyApp(testCtx(), app)
 	}
-	createApp(app)
+	createApp(testCtx(), app)
 	created[app] = true
 }
 
@@ -241,8 +241,8 @@ func ensureExampleApp(t *testing.T, taskName string, task Task, created map[stri
 // a running app (ps:scale, service:link, app:clone source, letsencrypt) have one.
 func deployExampleApp(t *testing.T, app string) {
 	t.Helper()
-	createApp(app)
-	result := GitFromImageTask{App: app, Image: exampleDeployImage, State: StateDeployed}.Execute()
+	createApp(testCtx(), app)
+	result := GitFromImageTask{App: app, Image: exampleDeployImage, State: StateDeployed}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to deploy placeholder app %q: %v", app, result.Error)
 	}
@@ -309,21 +309,21 @@ func ensureExampleService(t *testing.T, taskName string, task Task) {
 	if service == "" || name == "" {
 		return
 	}
-	result := ServiceCreateTask{Service: service, Name: name, State: StatePresent}.Execute()
+	result := ServiceCreateTask{Service: service, Name: name, State: StatePresent}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create backing service %s/%s: %v", service, name, result.Error)
 	}
-	t.Cleanup(func() { destroyService(service, name) })
+	t.Cleanup(func() { destroyService(testCtx(), service, name) })
 }
 
 // applyExample runs Plan then apply for one decoded example, asserting the plan
 // did not error and the applied state converged on the desired state.
 func applyExample(t *testing.T, name string, task Task) {
 	t.Helper()
-	if plan := task.Plan(); plan.Status == PlanStatusError {
+	if plan := task.Plan(testCtx()); plan.Status == PlanStatusError {
 		t.Fatalf("example %q: Plan returned error status: %v", name, plan.Error)
 	}
-	state := task.Execute()
+	state := task.Execute(testCtx())
 	if state.Error != nil {
 		t.Fatalf("example %q: apply returned error: %v\n  commands: %v\n  exit: %d\n  stdout: %s\n  stderr: %s",
 			name, state.Error, state.Commands, state.ExitCode, state.Stdout, state.Stderr)
@@ -406,7 +406,7 @@ func setupHttpAuthEnabledExample(t *testing.T) (func(Task) Task, func()) {
 func setupHttpAuthDomainExample(t *testing.T) (func(Task) Task, func()) {
 	t.Helper()
 	enableHttpAuthExampleApp(t)
-	result := DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}, State: StateSet}.Execute()
+	result := DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}, State: StateSet}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add http-auth-domain example domains: %v", result.Error)
 	}
@@ -417,7 +417,7 @@ func setupHttpAuthDomainExample(t *testing.T) (func(Task) Task, func()) {
 // app (created via the task's ensureApps).
 func enableHttpAuthExampleApp(t *testing.T) {
 	t.Helper()
-	result := HttpAuthTask{App: "hello-world", Username: "admin", Password: "secret", State: StatePresent}.Execute()
+	result := HttpAuthTask{App: "hello-world", Username: "admin", Password: "secret", State: StatePresent}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to enable http-auth on example app: %v", result.Error)
 	}
@@ -427,12 +427,12 @@ func enableHttpAuthExampleApp(t *testing.T) {
 // named-entry examples attach, and removes it afterward.
 func setupStorageMountExample(t *testing.T) (func(Task) Task, func()) {
 	t.Helper()
-	result := StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish", State: StatePresent}.Execute()
+	result := StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish", State: StatePresent}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create storage entry for storage_mount example: %v", result.Error)
 	}
 	return nil, func() {
-		StorageEntryTask{Name: "node-js-app-data", State: StateAbsent}.Execute()
+		StorageEntryTask{Name: "node-js-app-data", State: StateAbsent}.Execute(testCtx())
 	}
 }
 
@@ -474,12 +474,12 @@ const (
 func setupLetsencryptExample(t *testing.T) (func(Task) Task, func()) {
 	t.Helper()
 	registerChalltestsrvA(t, letsencryptExampleDomain, "172.17.0.1")
-	result := DomainsTask{App: letsencryptExampleApp, Domains: []string{letsencryptExampleDomain}, State: StateSet}.Execute()
+	result := DomainsTask{App: letsencryptExampleApp, Domains: []string{letsencryptExampleDomain}, State: StateSet}.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set domain %q for letsencrypt example: %v", letsencryptExampleDomain, result.Error)
 	}
 	cleanup := func() {
-		DomainsTask{App: letsencryptExampleApp, State: StateClear}.Execute()
+		DomainsTask{App: letsencryptExampleApp, State: StateClear}.Execute(testCtx())
 		clearChalltestsrvA(letsencryptExampleDomain)
 	}
 	return nil, cleanup
@@ -491,7 +491,7 @@ func setupLetsencryptExample(t *testing.T) (func(Task) Task, func()) {
 func registerChalltestsrvA(t *testing.T, host, target string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"host":"%s.","addresses":["%s"]}`, host, target)
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "curl",
 		Args:    []string{"-sf", "-X", "POST", "-H", "Content-Type: application/json", "-d", body, challtestsrvURL + "/add-a"},
 	})
@@ -503,7 +503,7 @@ func registerChalltestsrvA(t *testing.T, host, target string) {
 // clearChalltestsrvA removes a published A record; best effort during cleanup.
 func clearChalltestsrvA(host string) {
 	body := fmt.Sprintf(`{"host":"%s."}`, host)
-	subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "curl",
 		Args:    []string{"-sf", "-X", "POST", "-H", "Content-Type: application/json", "-d", body, challtestsrvURL + "/clear-a"},
 	})
@@ -546,7 +546,7 @@ func registerGlobalPropertyRevert(t *testing.T, task Task) {
 	if !ok {
 		return
 	}
-	t.Cleanup(func() { clearTask.Execute() })
+	t.Cleanup(func() { clearTask.Execute(testCtx()) })
 }
 
 // taskStringField returns the value of a string field on a task struct, or ""

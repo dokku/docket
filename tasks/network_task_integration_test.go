@@ -7,7 +7,7 @@ import (
 )
 
 func dockerNetworkExists(name string) bool {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"network", "inspect", name, "--format", "{{.Name}}"},
 	})
@@ -23,7 +23,7 @@ func TestIntegrationNetworkCreateAndDestroy(t *testing.T) {
 	networkName := "docket-test-network"
 
 	// ensure clean state
-	destroyNetwork(networkName)
+	destroyNetwork(testCtx(), networkName)
 
 	// verify network does not exist via docker cli
 	if dockerNetworkExists(networkName) {
@@ -32,7 +32,7 @@ func TestIntegrationNetworkCreateAndDestroy(t *testing.T) {
 
 	// create the network
 	task := NetworkTask{Name: networkName, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create network: %v", result.Error)
 	}
@@ -49,7 +49,7 @@ func TestIntegrationNetworkCreateAndDestroy(t *testing.T) {
 	}
 
 	// verify network driver via docker cli
-	inspectResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	inspectResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"network", "inspect", networkName, "--format", "{{.Driver}}"},
 	})
@@ -62,7 +62,7 @@ func TestIntegrationNetworkCreateAndDestroy(t *testing.T) {
 	}
 
 	// creating again should be idempotent
-	result = task.Execute()
+	result = task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent create failed: %v", result.Error)
 	}
@@ -75,7 +75,7 @@ func TestIntegrationNetworkCreateAndDestroy(t *testing.T) {
 
 	// destroy the network
 	destroyTask := NetworkTask{Name: networkName, State: StateAbsent}
-	result = destroyTask.Execute()
+	result = destroyTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to destroy network: %v", result.Error)
 	}
@@ -92,7 +92,7 @@ func TestIntegrationNetworkCreateAndDestroy(t *testing.T) {
 	}
 
 	// destroying again should be idempotent
-	result = destroyTask.Execute()
+	result = destroyTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent destroy failed: %v", result.Error)
 	}
@@ -112,7 +112,7 @@ func TestIntegrationExportNetwork(t *testing.T) {
 	// nothing to distinguish dokku-created networks. network:list --format json
 	// serializes DokkuManaged for every network (including the built-ins that
 	// always exist), so its presence in the raw output gates the test.
-	probe, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	probe, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "network:list", "--format", "json"},
 	})
@@ -124,14 +124,14 @@ func TestIntegrationExportNetwork(t *testing.T) {
 	}
 
 	networkName := "docket-test-export-network"
-	destroyNetwork(networkName)
-	defer destroyNetwork(networkName)
+	destroyNetwork(testCtx(), networkName)
+	defer destroyNetwork(testCtx(), networkName)
 
-	if r := (NetworkTask{Name: networkName, State: StatePresent}).Execute(); r.Error != nil {
+	if r := (NetworkTask{Name: networkName, State: StatePresent}).Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to create network: %v", r.Error)
 	}
 
-	bodies, err := NetworkTask{}.ExportGlobal()
+	bodies, err := NetworkTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestIntegrationExportNetwork(t *testing.T) {
 	// the recipe loader defaults to present; set it here since we plan the body
 	// directly without going through the loader.
 	found.State = StatePresent
-	if plan := found.Plan(); plan.Error != nil {
+	if plan := found.Plan(testCtx()); plan.Error != nil {
 		t.Fatalf("re-plan of exported task failed: %v", plan.Error)
 	} else if !plan.InSync {
 		t.Errorf("exported task should be in sync after export, got %+v", plan)

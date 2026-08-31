@@ -9,13 +9,13 @@ func TestIntegrationDomainsToggle(t *testing.T) {
 
 	appName := "docket-test-domains"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// enable domains
 	enableTask := DomainsToggleTask{App: appName, State: StatePresent}
-	result := enableTask.Execute()
+	result := enableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to enable domains: %v", result.Error)
 	}
@@ -25,7 +25,7 @@ func TestIntegrationDomainsToggle(t *testing.T) {
 
 	// disable domains
 	disableTask := DomainsToggleTask{App: appName, State: StateAbsent}
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to disable domains: %v", result.Error)
 	}

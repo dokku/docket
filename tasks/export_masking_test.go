@@ -43,7 +43,7 @@ func assertNotRegistered(t *testing.T, res *ExportResult, unwanted string) {
 func TestExportRegistersConfigValues(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestExportRegistersConfigValues(t *testing.T) {
 func TestExportRedactStillRegistersTheRealValue(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{Redact: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Redact: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestExportRedactStillRegistersTheRealValue(t *testing.T) {
 func TestExportInlineRegistersValuesItDoesNotLift(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{Inline: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestExportRegistersSensitivePropertyValue(t *testing.T) {
 		"--quiet scheduler-k3s:report --global --format json": `{"global-token":"s3cr3ttoken","global-ingress-class":"nginx-ingress"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestExportRegistersSensitivePropertyValue(t *testing.T) {
 func TestExportRegistersHttpAuthHashes(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
-	res, err := ExportRecipe(ExportOptions{Inline: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestExportRegistersEveryLetsencryptPropertyValue(t *testing.T) {
 		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"tok3n"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestExportRegistersNothingForBenignProperties(t *testing.T) {
 		"--quiet git:report --global --format json": `{"global-deploy-branch":"main","global-archive-max-files":"100","global-keep-git-dir":""}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

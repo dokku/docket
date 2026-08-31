@@ -12,7 +12,7 @@ func TestSchedulerK3sLabelsTaskInvalidState(t *testing.T) {
 		Labels:       map[string]string{"tier": "edge"},
 		State:        "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -24,7 +24,7 @@ func TestSchedulerK3sLabelsTaskMissingApp(t *testing.T) {
 		Labels:       map[string]string{"tier": "edge"},
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -41,7 +41,7 @@ func TestSchedulerK3sLabelsTaskGlobalWithAppSet(t *testing.T) {
 		Labels:       map[string]string{"tier": "edge"},
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -56,7 +56,7 @@ func TestSchedulerK3sLabelsTaskMissingResourceType(t *testing.T) {
 		Labels: map[string]string{"tier": "edge"},
 		State:  StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when resource_type is empty")
 	}
@@ -71,7 +71,7 @@ func TestSchedulerK3sLabelsTaskPresentWithoutLabels(t *testing.T) {
 		ResourceType: "deployment",
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no labels")
 	}
@@ -86,7 +86,7 @@ func TestSchedulerK3sLabelsTaskAbsentWithoutLabels(t *testing.T) {
 		ResourceType: "deployment",
 		State:        StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has no labels")
 	}
@@ -102,7 +102,7 @@ func TestSchedulerK3sLabelsTaskEmptyLabelKey(t *testing.T) {
 		Labels:       map[string]string{"": "edge"},
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when a label key is empty")
 	}

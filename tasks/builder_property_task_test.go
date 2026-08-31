@@ -7,7 +7,7 @@ import (
 
 func TestBuilderPropertyTaskInvalidState(t *testing.T) {
 	task := BuilderPropertyTask{App: "test-app", Property: "selected", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestBuilderPropertyTaskInvalidState(t *testing.T) {
 
 func TestBuilderPropertyTaskMissingApp(t *testing.T) {
 	task := BuilderPropertyTask{Property: "selected", Value: "dockerfile", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestBuilderPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "dockerfile",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestBuilderPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestBuilderPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "dockerfile",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

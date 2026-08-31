@@ -7,7 +7,7 @@ import (
 
 func TestGitFromArchiveTaskInvalidState(t *testing.T) {
 	task := GitFromArchiveTask{App: "test-app", ArchiveURL: "https://example.com/a.tar", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestGitFromArchiveTaskInvalidState(t *testing.T) {
 
 func TestGitFromArchiveTaskMissingApp(t *testing.T) {
 	task := GitFromArchiveTask{ArchiveURL: "https://example.com/a.tar", State: "deployed"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -26,7 +26,7 @@ func TestGitFromArchiveTaskMissingApp(t *testing.T) {
 
 func TestGitFromArchiveTaskMissingArchiveURL(t *testing.T) {
 	task := GitFromArchiveTask{App: "test-app", State: "deployed"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without archive_url should return an error")
 	}
@@ -42,7 +42,7 @@ func TestGitFromArchiveTaskInvalidArchiveType(t *testing.T) {
 		ArchiveType: "bz2",
 		State:       "deployed",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error for invalid archive_type")
 	}
@@ -58,7 +58,7 @@ func TestGitFromArchiveTaskOnlyGitUsername(t *testing.T) {
 		GitUsername: "deploy-bot",
 		State:       "deployed",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when git_username is set without git_email")
 	}
@@ -74,7 +74,7 @@ func TestGitFromArchiveTaskOnlyGitEmail(t *testing.T) {
 		GitEmail:   "deploy@example.com",
 		State:      "deployed",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when git_email is set without git_username")
 	}

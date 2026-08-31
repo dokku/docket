@@ -3,6 +3,7 @@ package tasks
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -124,8 +125,8 @@ func (t CertsTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the SSL certificate
-func (t CertsTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t CertsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the CertsTask's inputs without contacting the server.
@@ -144,14 +145,14 @@ func (t CertsTask) Validate() error {
 }
 
 // Plan reports the drift the CertsTask would produce.
-func (t CertsTask) Plan() PlanResult {
+func (t CertsTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			hasContent := t.CertContent != "" && t.KeyContent != ""
-			enabled, err := certsEnabled(t)
+			enabled, err := certsEnabled(ctx, t)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -187,14 +188,14 @@ func (t CertsTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "certificate not installed",
 				Mutations: []string{fmt.Sprintf("install certificate for %s", target)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			enabled, err := certsEnabled(t)
+			enabled, err := certsEnabled(ctx, t)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -215,9 +216,9 @@ func (t CertsTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "certificate present",
 				Mutations: []string{fmt.Sprintf("remove certificate for %s", target)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -276,7 +277,7 @@ func buildCertTarball(certPEM, keyPEM string) ([]byte, error) {
 }
 
 // certsEnabled checks if a certificate is currently configured for an app or globally
-func certsEnabled(t CertsTask) (bool, error) {
+func certsEnabled(ctx context.Context, t CertsTask) (bool, error) {
 	args := []string{"--quiet", "certs:report", t.App, "--ssl-enabled"}
 	if t.Global {
 		// The `--global` scope is required: dokku-global-cert standardized
@@ -285,7 +286,7 @@ func certsEnabled(t CertsTask) (bool, error) {
 		args = []string{"--quiet", "global-cert:report", "--global", "--global-cert-enabled"}
 	}
 
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})
@@ -298,15 +299,15 @@ func certsEnabled(t CertsTask) (bool, error) {
 
 // ExportApp reconstructs an app's SSL certificate via certs:show. The cert and
 // key PEM are sensitive and lifted into the vars-file by the engine.
-func (t CertsTask) ExportApp(app string) ([]interface{}, error) {
-	return exportCert(CertsTask{App: app})
+func (t CertsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportCert(ctx, CertsTask{App: app})
 }
 
 // ExportGlobal reconstructs the global SSL certificate via global-cert:show
 // (dokku-global-cert 0.4.x+). The cert and key PEM are sensitive and lifted into
 // the vars-file by the engine.
-func (t CertsTask) ExportGlobal() ([]interface{}, error) {
-	return exportCert(CertsTask{Global: true})
+func (t CertsTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportCert(ctx, CertsTask{Global: true})
 }
 
 // exportCert probes whether a certificate is installed for the given scope (app
@@ -314,8 +315,8 @@ func (t CertsTask) ExportGlobal() ([]interface{}, error) {
 // A transport failure aborts the export; any other probe error (for example the
 // dokku-global-cert plugin not being installed) is swallowed so the scope is
 // skipped silently.
-func exportCert(t CertsTask) ([]interface{}, error) {
-	enabled, err := certsEnabled(t)
+func exportCert(ctx context.Context, t CertsTask) ([]interface{}, error) {
+	enabled, err := certsEnabled(ctx, t)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -334,7 +335,7 @@ func exportCert(t CertsTask) ([]interface{}, error) {
 	// A missing dokku-letsencrypt plugin (a non-SSH probe error) means the cert is
 	// not letsencrypt-managed, so fall through and export it as a manual cert.
 	if !t.Global {
-		active, lerr := letsencryptActive(t.App)
+		active, lerr := letsencryptActive(ctx, t.App)
 		if lerr != nil {
 			var sshErr *subprocess.SSHError
 			if errors.As(lerr, &sshErr) {
@@ -345,11 +346,11 @@ func exportCert(t CertsTask) ([]interface{}, error) {
 		}
 	}
 
-	crt, err := certsShow(t, "crt")
+	crt, err := certsShow(ctx, t, "crt")
 	if err != nil {
 		return nil, err
 	}
-	key, err := certsShow(t, "key")
+	key, err := certsShow(ctx, t, "key")
 	if err != nil {
 		return nil, err
 	}
@@ -362,12 +363,12 @@ func exportCert(t CertsTask) ([]interface{}, error) {
 // certsShow returns the scope's server.crt or server.key PEM. The per-app scope
 // uses core certs:show; the global scope uses global-cert:show (dokku-global-cert
 // 0.4.x+), mirroring the app/global branch in certsEnabled.
-func certsShow(t CertsTask, kind string) (string, error) {
+func certsShow(ctx context.Context, t CertsTask, kind string) (string, error) {
 	args := []string{"--quiet", "certs:show", t.App, kind}
 	if t.Global {
 		args = []string{"--quiet", "global-cert:show", kind}
 	}
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    args,
 	})

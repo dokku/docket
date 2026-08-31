@@ -7,7 +7,7 @@ import (
 
 func TestLetsencryptPropertyTaskInvalidState(t *testing.T) {
 	task := LetsencryptPropertyTask{App: "test-app", Property: "email", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestLetsencryptPropertyTaskInvalidState(t *testing.T) {
 
 func TestLetsencryptPropertyTaskMissingApp(t *testing.T) {
 	task := LetsencryptPropertyTask{Property: "email", Value: "admin@example.com", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestLetsencryptPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "admin@example.com",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestLetsencryptPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestLetsencryptPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "admin@example.com",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

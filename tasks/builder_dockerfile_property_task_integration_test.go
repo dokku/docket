@@ -8,9 +8,9 @@ func TestIntegrationBuilderDockerfilePropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-builder-dockerfile"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		property string
@@ -33,7 +33,7 @@ func TestIntegrationBuilderDockerfilePropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := BuilderDockerfilePropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "builder-dockerfile global " + tc.property,
 					setTask:   BuilderDockerfilePropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

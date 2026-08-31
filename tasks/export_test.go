@@ -64,7 +64,7 @@ func TestExportPluginsBecomeTasks(t *testing.T) {
 		]`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestExportPluginsBecomeTasks(t *testing.T) {
 func TestExportRecipeFileMode(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -189,7 +189,7 @@ func httpAuthExportFixture(users, entries string) map[string]string {
 func TestExportHttpAuthUserHashesBecomeVars(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
-	bodies, err := HttpAuthUserTask{}.ExportApp("web")
+	bodies, err := HttpAuthUserTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -210,11 +210,11 @@ func TestExportHttpAuthUserHashesBecomeVars(t *testing.T) {
 	if err := users.Validate(); err != nil {
 		t.Errorf("exported task must be valid, got: %v", err)
 	}
-	if plan := users.Plan(); !plan.InSync {
+	if plan := users.Plan(testCtx()); !plan.InSync {
 		t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestExportHttpAuthUserHashesBecomeVars(t *testing.T) {
 func TestExportHttpAuthUserRedactBlanksTheVar(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
-	res, err := ExportRecipe(ExportOptions{Redact: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Redact: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestExportHttpAuthUserRedactBlanksTheVar(t *testing.T) {
 func TestExportHttpAuthEnabledBecomesTask(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
-	bodies, err := HttpAuthTask{}.ExportApp("web")
+	bodies, err := HttpAuthTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestExportHttpAuthEnabledBecomesTask(t *testing.T) {
 		t.Errorf("exported http-auth task must be valid, got: %v", err)
 	}
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestExportHttpAuthEnabledWithoutUsersBecomesTask(t *testing.T) {
 	// assertion below tests the empty htpasswd rather than a missing fixture.
 	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("", "")))()
 
-	bodies, err := HttpAuthTask{}.ExportApp("web")
+	bodies, err := HttpAuthTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestExportHttpAuthEnabledWithoutUsersBecomesTask(t *testing.T) {
 		t.Errorf("exported http-auth task must be valid, got: %v", err)
 	}
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestExportHttpAuthDisabledWithConfigBecomesAbsentTask(t *testing.T) {
 				"http-auth:report web --format json": tc.report,
 			}))()
 
-			bodies, err := HttpAuthTask{}.ExportApp("web")
+			bodies, err := HttpAuthTask{}.ExportApp(testCtx(), "web")
 			if err != nil {
 				t.Fatalf("ExportApp: %v", err)
 			}
@@ -385,7 +385,7 @@ func TestExportHttpAuthDisabledWithConfigBecomesAbsentTask(t *testing.T) {
 				t.Errorf("exported http-auth task must be valid, got: %v", err)
 			}
 
-			res, err := ExportRecipe(ExportOptions{})
+			res, err := ExportRecipe(testCtx(), ExportOptions{})
 			if err != nil {
 				t.Fatalf("ExportRecipe: %v", err)
 			}
@@ -410,7 +410,7 @@ func TestExportHttpAuthDisabledEmitsNoTask(t *testing.T) {
 		"http-auth:report web --format json": `{"enabled":"false","users":"","allowed-ips":"","domains":""}`,
 	}))()
 
-	bodies, err := HttpAuthTask{}.ExportApp("web")
+	bodies, err := HttpAuthTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestExportHttpAuthDisabledEmitsNoTask(t *testing.T) {
 		t.Errorf("expected no exported task for an unconfigured app, got %v", bodies)
 	}
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestExportMaintenanceCustomPageBecomesInput(t *testing.T) {
 		"maintenance:report web --format json": `{"enabled":"false","custom-page-sha256":"7b645f273842a941c68302a4022ed03e219bd8db318ef32a92dddb148a72ef05"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestExportMaintenanceCustomPageAbsentEmitsNothing(t *testing.T) {
 				"maintenance:report web --format json": tc.report,
 			}))()
 
-			res, err := ExportRecipe(ExportOptions{})
+			res, err := ExportRecipe(testCtx(), ExportOptions{})
 			if err != nil {
 				t.Fatalf("ExportRecipe: %v", err)
 			}
@@ -499,7 +499,7 @@ func TestExportMaintenanceCustomPageAbsentEmitsNothing(t *testing.T) {
 func TestExportRecipeRedactBlanksVars(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{Redact: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Redact: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestExportRecipeRedactBlanksVars(t *testing.T) {
 func TestExportRecipeInlineKeepsValues(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{Inline: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestExportRecipeInlineKeepsValues(t *testing.T) {
 func TestExportRecipeAppFilter(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{Apps: []string{"app-two"}})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Apps: []string{"app-two"}})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -559,7 +559,7 @@ func TestExportGlobalCertBecomesGlobalTask(t *testing.T) {
 		"--quiet global-cert:show key":                              keyPEM,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -607,7 +607,7 @@ func TestExportInlineRedactBlanksSensitiveScalar(t *testing.T) {
 		"--quiet global-cert:show key":                              keyPEM,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{Inline: true, Redact: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true, Redact: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -636,7 +636,7 @@ func TestExportAppCertSkippedWhenLetsencryptActive(t *testing.T) {
 		"--quiet certs:show web key":             keyPEM,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -665,7 +665,7 @@ func TestExportAppCertExportedWhenLetsencryptInactive(t *testing.T) {
 		"--quiet certs:show web key":             keyPEM,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -695,7 +695,7 @@ func TestExportMaintenanceCustomPageInlinesContent(t *testing.T) {
 	}))()
 
 	// The task ExportApp yields a valid task carrying the real content.
-	bodies, err := MaintenanceCustomPageTask{}.ExportApp("web")
+	bodies, err := MaintenanceCustomPageTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -711,9 +711,9 @@ func TestExportMaintenanceCustomPageInlinesContent(t *testing.T) {
 	}
 
 	for _, inline := range []bool{false, true} {
-		res, err := ExportRecipe(ExportOptions{Inline: inline})
+		res, err := ExportRecipe(testCtx(), ExportOptions{Inline: inline})
 		if err != nil {
-			t.Fatalf("ExportRecipe(inline=%v): %v", inline, err)
+			t.Fatalf("ExportRecipe(testCtx(), inline=%v): %v", inline, err)
 		}
 		if _, ok := res.Vars["web_maintenance_custom_page"]; ok {
 			t.Errorf("inline=%v: content should be inlined, not lifted into a var", inline)
@@ -736,7 +736,7 @@ func TestExportMaintenanceCustomPageInlinesContent(t *testing.T) {
 func TestExportHttpAuthUserInlineKeepsTheHash(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
-	res, err := ExportRecipe(ExportOptions{Inline: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -766,7 +766,7 @@ func TestExportHttpAuthUserInlineKeepsTheHash(t *testing.T) {
 func TestExportHttpAuthUserInlineRedactLiftsAndWarns(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
 
-	res, err := ExportRecipe(ExportOptions{Inline: true, Redact: true})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true, Redact: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -803,7 +803,7 @@ func TestAppCountExcludesGlobalPlay(t *testing.T) {
 	responses["--quiet plugin:list --format json"] = `[{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"c0ffee","branch":"master"}]`
 	defer subprocess.SetExecRunner(fakeDokku(responses))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestExportMissingAppsRecorded(t *testing.T) {
 	// existing app still exports.
 	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
 
-	res, err := ExportRecipe(ExportOptions{Apps: []string{"app-one", "nope"}})
+	res, err := ExportRecipe(testCtx(), ExportOptions{Apps: []string{"app-one", "nope"}})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -840,7 +840,7 @@ func TestExportGlobalPropertiesReadsGlobalScope(t *testing.T) {
 		"--quiet git:report --global --format json": `{"global-deploy-branch":"main","global-archive-max-files":"100","global-keep-git-dir":""}`,
 	}))()
 
-	bodies, err := exportGlobalProperties(GitPropertyTask{}, func(property, value string) interface{} {
+	bodies, err := exportGlobalProperties(testCtx(), GitPropertyTask{}, func(property, value string) interface{} {
 		return GitPropertyTask{Global: true, Property: property, Value: value}
 	})
 	if err != nil {
@@ -874,7 +874,7 @@ func TestExportLetsencryptDynamicPropertiesFromAppReport(t *testing.T) {
 		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider":"namecheap","dns-provider-NAMECHEAP_API_USER":"deploy-bot","global-dns-provider-NAMECHEAP_API_KEY":"globalkey","computed-dns-provider-NAMECHEAP_API_USER":"deploy-bot"}`,
 	}))()
 
-	bodies, err := exportProperties(LetsencryptPropertyTask{}, "web", func(app, property, value string) interface{} {
+	bodies, err := exportProperties(testCtx(), LetsencryptPropertyTask{}, "web", func(app, property, value string) interface{} {
 		return LetsencryptPropertyTask{App: app, Property: property, Value: value}
 	})
 	if err != nil {
@@ -903,7 +903,7 @@ func TestExportGlobalLetsencryptDynamicProperties(t *testing.T) {
 		"--quiet letsencrypt:report --global --format json": `{"global-email":"","global-dns-provider":"namecheap","global-dns-provider-NAMECHEAP_API_KEY":"globalkey"}`,
 	}))()
 
-	bodies, err := exportGlobalProperties(LetsencryptPropertyTask{}, func(property, value string) interface{} {
+	bodies, err := exportGlobalProperties(testCtx(), LetsencryptPropertyTask{}, func(property, value string) interface{} {
 		return LetsencryptPropertyTask{Global: true, Property: property, Value: value}
 	})
 	if err != nil {
@@ -937,7 +937,7 @@ func TestExportGlobalLetsencryptCredentialLiftedAsSensitiveInput(t *testing.T) {
 		"--quiet letsencrypt:report --global --format json": `{"global-email":"admin@example.com","global-dns-provider":"namecheap","global-dns-provider-NAMECHEAP_API_KEY":"s3cr3tkey"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -975,7 +975,7 @@ func TestExportLetsencryptBenignPropertyNotLifted(t *testing.T) {
 		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"tok3n"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -1001,7 +1001,7 @@ func TestExportGlobalK3sTokenLiftedAsSensitiveInput(t *testing.T) {
 		"--quiet scheduler-k3s:report --global --format json": `{"global-token":"s3cr3ttoken","global-ingress-class":"nginx-ingress"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -1035,7 +1035,7 @@ func TestExportGlobalTraefikPasswordLiftedAsSensitiveInput(t *testing.T) {
 		"--quiet traefik:report --global --format json": `{"global-basic-auth-password":"hunter2"}`,
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -1064,7 +1064,7 @@ func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
 		"--quiet global-cert:report --global --global-cert-enabled": "false",
 	}))()
 
-	res, err := ExportRecipe(ExportOptions{})
+	res, err := ExportRecipe(testCtx(), ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -1085,7 +1085,7 @@ func TestExportPortsUsesStateSet(t *testing.T) {
 
 	// state:set replaces the whole mapping list, so re-applying an export
 	// converges an app that has extra mappings rather than adding to them.
-	bodies, err := PortsTask{}.ExportApp("web")
+	bodies, err := PortsTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -1115,7 +1115,7 @@ func TestExportPortsEmitsNoTaskWithoutMappings(t *testing.T) {
 		"--quiet ports:report web --ports-map": "",
 	}))()
 
-	bodies, err := PortsTask{}.ExportApp("web")
+	bodies, err := PortsTask{}.ExportApp(testCtx(), "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}

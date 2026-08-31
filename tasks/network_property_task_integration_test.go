@@ -8,9 +8,9 @@ func TestIntegrationNetworkPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-network"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		property string
@@ -38,7 +38,7 @@ func TestIntegrationNetworkPropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := NetworkPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "network global " + tc.property,
 					setTask:   NetworkPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

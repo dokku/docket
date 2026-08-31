@@ -8,9 +8,9 @@ func TestIntegrationSchedulerK3sLabelsAll(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-labels"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		name         string
@@ -83,7 +83,7 @@ func TestIntegrationSchedulerK3sLabelsAll(t *testing.T) {
 				Labels:       tc.labels,
 				State:        StateAbsent,
 			}
-			defer unsetTask.Execute()
+			defer unsetTask.Execute(testCtx())
 			runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 				label:     "scheduler-k3s labels " + tc.name,
 				setTask:   setTask,

@@ -61,7 +61,7 @@ func TestIntegrationSchedulerK3sChartAll(t *testing.T) {
 				Values: tc.values,
 				State:  StateAbsent,
 			}
-			defer unsetTask.Execute()
+			defer unsetTask.Execute(testCtx())
 			runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 				label:     "scheduler-k3s chart " + tc.name,
 				setTask:   setTask,

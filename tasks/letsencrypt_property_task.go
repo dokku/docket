@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // LetsencryptPropertyTask manages the letsencrypt configuration for a given dokku application
 type LetsencryptPropertyTask SensitivePropertyFields
 
@@ -83,8 +85,8 @@ func (t LetsencryptPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the letsencrypt property
-func (t LetsencryptPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t LetsencryptPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // letsencryptPropertyTable maps letsencrypt property names to the JSON keys
@@ -115,20 +117,20 @@ func (t LetsencryptPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the LetsencryptPropertyTask would produce.
-func (t LetsencryptPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t LetsencryptPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t LetsencryptPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t LetsencryptPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return LetsencryptPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t LetsencryptPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t LetsencryptPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return LetsencryptPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

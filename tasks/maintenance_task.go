@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/dokku/docket/subprocess"
@@ -11,10 +12,10 @@ import (
 // strips the `maintenance-` prefix from JSON report keys). A probe failure
 // returns an error, which planToggle treats as drift unless it is an SSH
 // transport failure, which surfaces as a plan error.
-func maintenanceEnabled(ctx ToggleContext) (bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func maintenanceEnabled(ctx context.Context, tc ToggleContext) (bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"maintenance:report", ctx.App, "--format", "json"},
+		Args:    []string{"maintenance:report", tc.App, "--format", "json"},
 	})
 	if err != nil {
 		return false, err
@@ -30,8 +31,8 @@ func maintenanceEnabled(ctx ToggleContext) (bool, error) {
 
 // ExportApp emits a dokku_maintenance task only when maintenance mode is on
 // (it is off by default, so a normal app needs no task).
-func (t MaintenanceTask) ExportApp(app string) ([]interface{}, error) {
-	on, err := maintenanceEnabled(ToggleContext{App: app})
+func (t MaintenanceTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	on, err := maintenanceEnabled(ctx, ToggleContext{App: app})
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +99,13 @@ func (t MaintenanceTask) Examples() ([]Doc, error) {
 }
 
 // Execute enables or disables maintenance mode
-func (t MaintenanceTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t MaintenanceTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the MaintenanceTask would produce.
-func (t MaintenanceTask) Plan() PlanResult {
-	return planToggle(t.State, t.App, "maintenance:enable", "maintenance:disable", maintenanceEnabled)
+func (t MaintenanceTask) Plan(ctx context.Context) PlanResult {
+	return planToggle(ctx, t.State, t.App, "maintenance:enable", "maintenance:disable", maintenanceEnabled)
 }
 
 // init registers the MaintenanceTask with the task registry

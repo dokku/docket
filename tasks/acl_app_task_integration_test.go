@@ -11,13 +11,13 @@ func TestIntegrationAclApp(t *testing.T) {
 	skipIfPluginMissingT(t, "acl")
 
 	appName := "docket-test-acl-app"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	assertACL := func(t *testing.T, label string, want []string) {
 		t.Helper()
-		got, err := getAclAppUsers(appName)
+		got, err := getAclAppUsers(testCtx(), appName)
 		if err != nil {
 			t.Fatalf("%s: getAclAppUsers failed: %v", label, err)
 		}
@@ -43,7 +43,7 @@ func TestIntegrationAclApp(t *testing.T) {
 
 	// add two users
 	addTask := AclAppTask{App: appName, Users: []string{"alice", "bob"}, State: StatePresent}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add users: %v", result.Error)
 	}
@@ -56,7 +56,7 @@ func TestIntegrationAclApp(t *testing.T) {
 	assertACL(t, "after add", []string{"alice", "bob"})
 
 	// add same users again - idempotent
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
 	}
@@ -67,7 +67,7 @@ func TestIntegrationAclApp(t *testing.T) {
 
 	// remove one user
 	removeTask := AclAppTask{App: appName, Users: []string{"bob"}, State: StateAbsent}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove user: %v", result.Error)
 	}
@@ -80,7 +80,7 @@ func TestIntegrationAclApp(t *testing.T) {
 	assertACL(t, "after remove bob", []string{"alice"})
 
 	// remove same user again - idempotent
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second remove: %v", result.Error)
 	}
@@ -90,13 +90,13 @@ func TestIntegrationAclApp(t *testing.T) {
 	assertACL(t, "after idempotent remove", []string{"alice"})
 
 	// re-add bob and carol, then clear with empty users
-	if err := (AclAppTask{App: appName, Users: []string{"bob", "carol"}, State: StatePresent}).Execute().Error; err != nil {
+	if err := (AclAppTask{App: appName, Users: []string{"bob", "carol"}, State: StatePresent}).Execute(testCtx()).Error; err != nil {
 		t.Fatalf("failed to re-add users: %v", err)
 	}
 	assertACL(t, "after re-add", []string{"alice", "bob", "carol"})
 
 	clearTask := AclAppTask{App: appName, State: StateAbsent}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear ACL: %v", result.Error)
 	}
@@ -106,7 +106,7 @@ func TestIntegrationAclApp(t *testing.T) {
 	assertACL(t, "after clear", nil)
 
 	// clear again - idempotent
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second clear: %v", result.Error)
 	}

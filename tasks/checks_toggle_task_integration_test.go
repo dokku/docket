@@ -9,13 +9,13 @@ func TestIntegrationChecksToggle(t *testing.T) {
 
 	appName := "docket-test-checks"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// enable checks
 	enableTask := ChecksToggleTask{App: appName, State: StatePresent}
-	result := enableTask.Execute()
+	result := enableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to enable checks: %v", result.Error)
 	}
@@ -25,7 +25,7 @@ func TestIntegrationChecksToggle(t *testing.T) {
 
 	// disable checks
 	disableTask := ChecksToggleTask{App: appName, State: StateAbsent}
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to disable checks: %v", result.Error)
 	}

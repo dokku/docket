@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -29,6 +30,12 @@ const varsFileMode = 0o600
 // `docket apply --vars-file <vars>`.
 type ExportCommand struct {
 	command.Meta
+
+	// Ctx is the run context, populated from main.go with the process signal
+	// context. It carries cancellation down through every task's Plan and
+	// Execute. Nil when the command was constructed directly (tests do this),
+	// in which case Run falls back to context.Background().
+	Ctx context.Context
 
 	output     string
 	varsOutput string
@@ -181,6 +188,7 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 
+	ctx := runContext(c.Ctx)
 	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
 	if resolvedHost != "" {
 		defer subprocess.CloseSshControlMaster(resolvedHost)
@@ -188,7 +196,7 @@ func (c *ExportCommand) Run(args []string) int {
 
 	toStdout := c.output == taskFileStdin
 
-	res, err := tasks.ExportRecipe(tasks.ExportOptions{
+	res, err := tasks.ExportRecipe(ctx, tasks.ExportOptions{
 		Apps:      c.apps,
 		Resources: resources,
 		Redact:    c.redact,

@@ -44,13 +44,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"os/signal"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
 	execute "github.com/alexellis/go-execute/v2"
 	"github.com/fatih/color"
@@ -234,8 +232,8 @@ var (
 // (`apps:exists`, `network:exists`, `<service>:linked`, etc.). Probes
 // that need stdout should call CallExecCommand directly and use
 // `errors.As(err, &*SSHError)` to discriminate.
-func Probe(input ExecCommandInput) (bool, error) {
-	result, err := CallExecCommand(input)
+func Probe(ctx context.Context, input ExecCommandInput) (bool, error) {
+	result, err := CallExecCommand(ctx, input)
 	if err != nil {
 		// Transport-level failure (ssh connect/auth/host-key): propagate
 		// so the caller can render `! ssh: ...`.
@@ -257,7 +255,7 @@ func Probe(input ExecCommandInput) (bool, error) {
 	return result.ExitCode == 0, nil
 }
 
-// SetDefaultHost registers the host that CallExecCommandWithContext
+// SetDefaultHost registers the host that CallExecCommand
 // should use when ExecCommandInput.Host is empty. Pass an empty string
 // to clear the default. Mirrors the SetGlobalSensitive pattern.
 func SetDefaultHost(host string) {
@@ -284,22 +282,16 @@ func ensureSshAvailable() error {
 	return sshLookPathErr
 }
 
-// CallSshCommand executes a remote command over ssh against host using
-// the background context.
-func CallSshCommand(host string, input ExecCommandInput) (ExecCommandResponse, error) {
-	return CallSshCommandWithContext(context.Background(), host, input)
-}
-
-// CallSshCommandWithContext executes a remote command over ssh against
-// host. The execution pipeline mirrors CallExecCommandWithContext (same
-// signal handling, DOKKU_TRACE logging, masking, stdio wiring) so callers
-// see identical behavior aside from the transport.
+// CallSshCommand executes a remote command over ssh against host under
+// ctx. The execution pipeline mirrors CallExecCommand (same DOKKU_TRACE
+// logging, masking, stdio wiring) so callers see identical behavior aside
+// from the transport.
 //
 // On exit code 255 (OpenSSH's transport-failure code), the returned
 // error is `*SSHError`. On any other non-zero exit, the returned error
 // is the plain underlying error so the formatter renders the failure
 // as a remote dokku error.
-func CallSshCommandWithContext(ctx context.Context, host string, input ExecCommandInput) (ExecCommandResponse, error) {
+func CallSshCommand(ctx context.Context, host string, input ExecCommandInput) (ExecCommandResponse, error) {
 	target, err := parseDokkuHost(host)
 	if err != nil {
 		return ExecCommandResponse{}, &SSHError{Host: host, Err: err}
@@ -307,17 +299,6 @@ func CallSshCommandWithContext(ctx context.Context, host string, input ExecComma
 	if err := ensureSshAvailable(); err != nil {
 		return ExecCommandResponse{}, &SSHError{Host: target.UserHost(), Err: err}
 	}
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGQUIT,
-		syscall.SIGTERM)
-	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		<-signals
-		cancel()
-	}()
 
 	// isatty reports whether our own stdout is a terminal, which is the
 	// signal used below to decide whether the child may read the terminal.

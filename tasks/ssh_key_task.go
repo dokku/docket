@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,8 +75,8 @@ func (t SshKeyTask) Examples() ([]Doc, error) {
 }
 
 // Execute adds or removes the SSH key
-func (t SshKeyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SshKeyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the SshKeyTask's inputs without contacting the server.
@@ -95,14 +96,14 @@ func (t SshKeyTask) Validate() error {
 }
 
 // Plan reports the drift the SshKeyTask would produce.
-func (t SshKeyTask) Plan() PlanResult {
+func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			pub, _, _, _, _ := ssh.ParseAuthorizedKey([]byte(t.Key))
-			keys, err := sshKeysList()
+			keys, err := sshKeysList(ctx)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -126,9 +127,9 @@ func (t SshKeyTask) Plan() PlanResult {
 					Status:    PlanStatusModify,
 					Reason:    "key contents changed",
 					Mutations: []string{fmt.Sprintf("rotate ssh key %s", t.Name)},
-					Commands:  resolveCommands(inputs),
-					apply: func() TaskOutputState {
-						return runExecInputs(TaskOutputState{State: StatePresent}, StatePresent, inputs)
+					Commands:  resolveCommands(ctx, inputs),
+					apply: func(ctx context.Context) TaskOutputState {
+						return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
 					},
 				}
 			}
@@ -138,14 +139,14 @@ func (t SshKeyTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "key missing",
 				Mutations: []string{fmt.Sprintf("add ssh key %s", t.Name)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			keys, err := sshKeysList()
+			keys, err := sshKeysList(ctx)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -160,9 +161,9 @@ func (t SshKeyTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "key present",
 				Mutations: []string{fmt.Sprintf("remove ssh key %s", t.Name)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -181,8 +182,8 @@ type sshKeyEntry struct {
 // sshKeysList returns the installed ssh keys keyed by name. A dokku-level
 // non-zero exit (e.g. no keys configured) is treated as an empty set; only a
 // transport-level failure (*subprocess.SSHError) is propagated.
-func sshKeysList() (map[string]sshKeyEntry, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func sshKeysList(ctx context.Context) (map[string]sshKeyEntry, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "ssh-keys:list", "--format", "json"},
 	})
@@ -221,8 +222,8 @@ func sshKeyMatches(entry sshKeyEntry, pub ssh.PublicKey) bool {
 // ExportGlobal reconstructs the server's SSH keys from ssh-keys:list, which
 // exposes both the name and the public-key body, so each key is reproduced
 // faithfully.
-func (t SshKeyTask) ExportGlobal() ([]interface{}, error) {
-	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func (t SshKeyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	response, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "ssh-keys:list", "--format", "json"},
 	})

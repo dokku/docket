@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -78,8 +79,8 @@ func (t StorageEnsureTask) Examples() ([]Doc, error) {
 }
 
 // Execute ensures the storage for a given app
-func (t StorageEnsureTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t StorageEnsureTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the StorageEnsureTask's inputs without contacting the server.
@@ -133,7 +134,7 @@ func (t StorageEnsureTask) ensureArgs() []string {
 // Plan reports the drift the StorageEnsureTask would produce. dokku does
 // not expose a probe for storage:ensure-directory, so the plan reports
 // drift unconditionally.
-func (t StorageEnsureTask) Plan() PlanResult {
+func (t StorageEnsureTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -149,9 +150,9 @@ func (t StorageEnsureTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "directory presence not probed",
 				Mutations: []string{strings.Join(args[1:], " ")},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},

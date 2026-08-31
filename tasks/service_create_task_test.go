@@ -27,7 +27,7 @@ func serviceMissing() func(context.Context, subprocess.ExecCommandInput) (subpro
 // task's service, failing the test if the plan did not reach a create.
 func planCreateCommand(t *testing.T, task ServiceCreateTask) string {
 	t.Helper()
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -39,7 +39,7 @@ func planCreateCommand(t *testing.T, task ServiceCreateTask) string {
 
 func TestServiceCreateTaskInvalidState(t *testing.T) {
 	task := ServiceCreateTask{Service: "redis", Name: "test-service", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -219,7 +219,7 @@ func TestServiceCreateTaskMutationNamesPinnedImage(t *testing.T) {
 			defer subprocess.SetExecRunner(serviceMissing())()
 			task := tc.task
 			task.State = StatePresent
-			plan := task.Plan()
+			plan := task.Plan(testCtx())
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -344,7 +344,7 @@ func TestServiceCreateTaskValidate(t *testing.T) {
 			}
 			// Plan() must report the same message, so plan, apply, and
 			// validate all read alike.
-			if plan := tc.task.Plan(); plan.Error == nil || plan.Error.Error() != tc.wantErr {
+			if plan := tc.task.Plan(testCtx()); plan.Error == nil || plan.Error.Error() != tc.wantErr {
 				t.Errorf("Plan error = %v, want %q", plan.Error, tc.wantErr)
 			}
 		})
@@ -531,7 +531,7 @@ func TestServiceCreateTaskImageDriftDefaultsToWarn(t *testing.T) {
 	if got := task.imageDriftMode(); got != imageDriftWarn {
 		t.Errorf("imageDriftMode() = %q, want %q", got, imageDriftWarn)
 	}
-	planImageWarning(t, task.Plan())
+	planImageWarning(t, task.Plan(testCtx()))
 }
 
 func TestServiceCreateTaskImageDriftInSyncWhenPinsMatch(t *testing.T) {
@@ -560,7 +560,7 @@ func TestServiceCreateTaskImageDriftInSyncWhenPinsMatch(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", tc.running)))()
-			plan := tc.task.Plan()
+			plan := tc.task.Plan(testCtx())
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -579,7 +579,7 @@ func TestServiceCreateTaskImageDriftWarnStaysInSync(t *testing.T) {
 
 	task := driftTask()
 	task.ImageDrift = imageDriftWarn
-	w := planImageWarning(t, task.Plan())
+	w := planImageWarning(t, task.Plan(testCtx()))
 	for _, want := range []string{"redis:7.2.4", "redis:7.2.5", "image_drift: upgrade"} {
 		if !strings.Contains(w.Message, want) {
 			t.Errorf("warning message %q does not mention %q", w.Message, want)
@@ -588,7 +588,7 @@ func TestServiceCreateTaskImageDriftWarnStaysInSync(t *testing.T) {
 
 	// ExecutePlan carries plan warnings out of the in-sync branch, so apply
 	// reports the same diagnostic plan did.
-	state := task.Execute()
+	state := task.Execute(testCtx())
 	if state.Error != nil {
 		t.Fatalf("unexpected execute error: %v", state.Error)
 	}
@@ -610,7 +610,7 @@ func TestServiceCreateTaskImageDriftWarnsOnUnreadableImage(t *testing.T) {
 			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "")))()
 			task := driftTask()
 			task.ImageDrift = mode
-			w := planImageWarning(t, task.Plan())
+			w := planImageWarning(t, task.Plan(testCtx()))
 			if !strings.Contains(w.Message, "no running image") {
 				t.Errorf("warning message %q does not say the image could not be read", w.Message)
 			}
@@ -624,7 +624,7 @@ func TestServiceCreateTaskImageDriftIgnoreSkipsTheProbe(t *testing.T) {
 
 	task := driftTask()
 	task.ImageDrift = imageDriftIgnore
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if !plan.InSync || len(plan.Warnings) != 0 {
 		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
 	}
@@ -643,7 +643,7 @@ func TestServiceCreateTaskImageDriftSkipsTheProbeWithoutAPin(t *testing.T) {
 	defer subprocess.SetExecRunner(recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))()
 
 	task := ServiceCreateTask{Service: "redis", Name: "cache", State: StatePresent}
-	if plan := task.Plan(); !plan.InSync || len(plan.Warnings) != 0 {
+	if plan := task.Plan(testCtx()); !plan.InSync || len(plan.Warnings) != 0 {
 		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
 	}
 	for _, call := range calls {
@@ -658,7 +658,7 @@ func TestServiceCreateTaskImageDriftErrorReportsMismatch(t *testing.T) {
 
 	task := driftTask()
 	task.ImageDrift = imageDriftError
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error == nil {
 		t.Fatal("expected a plan error, got none")
 	}
@@ -750,7 +750,7 @@ func TestServiceCreateTaskImageDriftUpgradeCommand(t *testing.T) {
 			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", tc.running)))()
 			task := tc.task
 			task.ImageDrift = imageDriftUpgrade
-			plan := task.Plan()
+			plan := task.Plan(testCtx())
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -774,7 +774,7 @@ func TestServiceCreateTaskImageDriftUpgradeReportsTheEffectiveTarget(t *testing.
 	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "custom/redis:7.2.4")))()
 
 	task := ServiceCreateTask{Service: "redis", Name: "cache", ImageVersion: "7.2.5", ImageDrift: imageDriftUpgrade, State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if want := "image drift: custom/redis:7.2.4 -> custom/redis:7.2.5"; plan.Reason != want {
 		t.Errorf("reason = %q, want %q", plan.Reason, want)
 	}
@@ -810,7 +810,7 @@ func TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets(t *testing.T) {
 			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))()
 			task := tc.task
 			task.ImageDrift = imageDriftUpgrade
-			plan := task.Plan()
+			plan := task.Plan(testCtx())
 			if len(plan.Mutations) != 2 || plan.Mutations[1] != tc.want {
 				t.Errorf("mutations = %v, want %q as the second entry", plan.Mutations, tc.want)
 			}
@@ -823,7 +823,7 @@ func TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets(t *testing.T) {
 		task.ImageDrift = imageDriftUpgrade
 		task.ConfigOptions = "--cpus 2"
 		task.CustomEnv = map[string]string{"A": "one"}
-		if plan := task.Plan(); len(plan.Mutations) != 1 {
+		if plan := task.Plan(testCtx()); len(plan.Mutations) != 1 {
 			t.Errorf("nothing is reset when the recipe declares both, got %v", plan.Mutations)
 		}
 	})
@@ -849,7 +849,7 @@ func TestServiceCreateTaskImageDriftUpgradeRestartsOnlyLinkedApps(t *testing.T) 
 			task := driftTask()
 			task.ImageDrift = imageDriftUpgrade
 			task.RestartApps = tc.restartApps
-			plan := task.Plan()
+			plan := task.Plan(testCtx())
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -877,7 +877,7 @@ func TestServiceCreateTaskImageDriftUpgradeMasksSecrets(t *testing.T) {
 	subprocess.SetGlobalSensitive(sensitiveValuesFromTask(&task))
 	defer subprocess.SetGlobalSensitive(nil)
 
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if len(plan.Commands) != 1 {
 		t.Fatalf("expected 1 command, got %v", plan.Commands)
 	}
@@ -898,7 +898,7 @@ func TestServiceCreateTaskImageDriftUpgradeRefusesADigestRef(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis@sha256:abc123")))()
 
 	task := ServiceCreateTask{Service: "redis", Name: "cache", ImageVersion: "7.2.5", ImageDrift: imageDriftUpgrade, State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error == nil {
 		t.Fatal("expected a plan error, got none")
 	}
@@ -916,7 +916,7 @@ func TestServiceCreateTaskImageDriftAppliesUpgrade(t *testing.T) {
 
 	task := driftTask()
 	task.ImageDrift = imageDriftUpgrade
-	state := task.Execute()
+	state := task.Execute(testCtx())
 	if state.Error != nil {
 		t.Fatalf("unexpected execute error: %v", state.Error)
 	}
@@ -954,7 +954,7 @@ func TestServiceCreateTaskImageDriftPropagatesSSHErrors(t *testing.T) {
 			task := driftTask()
 			task.ImageDrift = imageDriftUpgrade
 			task.RestartApps = true
-			plan := task.Plan()
+			plan := task.Plan(testCtx())
 			var sshErr *subprocess.SSHError
 			if !errors.As(plan.Error, &sshErr) {
 				t.Fatalf("expected an SSHError, got %v", plan.Error)

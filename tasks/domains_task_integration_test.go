@@ -8,7 +8,7 @@ import (
 
 // getReportedDomains queries dokku domains:report to get the current domain list for an app
 func getReportedDomains(appName string) []string {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"domains:report", appName, "--domains-app-vhosts"},
 	})
@@ -24,9 +24,9 @@ func TestIntegrationDomainsAddAndRemove(t *testing.T) {
 
 	appName := "docket-test-domains-task"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// add domains
 	addTask := DomainsTask{
@@ -34,7 +34,7 @@ func TestIntegrationDomainsAddAndRemove(t *testing.T) {
 		Domains: []string{"example.com", "www.example.com"},
 		State:   StatePresent,
 	}
-	result := addTask.Execute()
+	result := addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to add domains: %v", result.Error)
 	}
@@ -59,7 +59,7 @@ func TestIntegrationDomainsAddAndRemove(t *testing.T) {
 	}
 
 	// add same domains again (idempotent)
-	result = addTask.Execute()
+	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent add failed: %v", result.Error)
 	}
@@ -73,7 +73,7 @@ func TestIntegrationDomainsAddAndRemove(t *testing.T) {
 		Domains: []string{"www.example.com"},
 		State:   StateAbsent,
 	}
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to remove domain: %v", result.Error)
 	}
@@ -98,7 +98,7 @@ func TestIntegrationDomainsAddAndRemove(t *testing.T) {
 	}
 
 	// remove same domain again (idempotent)
-	result = removeTask.Execute()
+	result = removeTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent remove failed: %v", result.Error)
 	}
@@ -112,7 +112,7 @@ func TestIntegrationDomainsAddAndRemove(t *testing.T) {
 		Domains: []string{"new.example.com"},
 		State:   StateSet,
 	}
-	result = setTask.Execute()
+	result = setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to set domains: %v", result.Error)
 	}
@@ -137,7 +137,7 @@ func TestIntegrationDomainsAddAndRemove(t *testing.T) {
 		App:   appName,
 		State: StateClear,
 	}
-	result = clearTask.Execute()
+	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear domains: %v", result.Error)
 	}

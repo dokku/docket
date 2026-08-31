@@ -10,18 +10,18 @@ func TestIntegrationLogsPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-logs-prop"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	networkName := "docket-test-logs-vector-net"
-	if _, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	if _, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"network", "create", networkName},
 	}); err != nil {
 		t.Logf("docker network create %s failed: %v (vector-networks subtest will be skipped)", networkName, err)
 	} else {
-		defer subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		defer subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "docker",
 			Args:    []string{"network", "rm", networkName},
 		})
@@ -52,7 +52,7 @@ func TestIntegrationLogsPropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := LogsPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "logs global " + tc.property,
 					setTask:   LogsPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

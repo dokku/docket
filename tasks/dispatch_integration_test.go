@@ -14,7 +14,7 @@ import (
 func TestIntegrationRunExecInputsPopulatesExitCodeAndStdout(t *testing.T) {
 	skipIfNoDokkuT(t)
 
-	state := runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, []subprocess.ExecCommandInput{{
+	state := runExecInputs(testCtx(), TaskOutputState{State: StateAbsent}, StatePresent, []subprocess.ExecCommandInput{{
 		Command: "dokku",
 		Args:    []string{"version"},
 	}})
@@ -46,7 +46,7 @@ func TestIntegrationRunExecInputsPopulatesExitCodeAndStdout(t *testing.T) {
 func TestIntegrationRunExecInputsCapturesFailureOutput(t *testing.T) {
 	skipIfNoDokkuT(t)
 
-	state := runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, []subprocess.ExecCommandInput{{
+	state := runExecInputs(testCtx(), TaskOutputState{State: StateAbsent}, StatePresent, []subprocess.ExecCommandInput{{
 		Command: "dokku",
 		Args:    []string{"--quiet", "apps:create", ""},
 	}})

@@ -56,7 +56,7 @@ func TestResolveCommandString(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			SetGlobalSensitive(tc.sensitive)
 			t.Cleanup(func() { SetGlobalSensitive(nil) })
-			if got := ResolveCommandString(tc.input); got != tc.want {
+			if got := ResolveCommandString(context.Background(), tc.input); got != tc.want {
 				t.Errorf("ResolveCommandString = %q, want %q", got, tc.want)
 			}
 		})
@@ -66,7 +66,7 @@ func TestResolveCommandString(t *testing.T) {
 func TestResolveCommandStringHonorsDefaultHost(t *testing.T) {
 	t.Cleanup(func() { SetDefaultHost("") })
 	SetDefaultHost("alice@host")
-	got := ResolveCommandString(ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Sudo: true})
+	got := ResolveCommandString(context.Background(), ExecCommandInput{Command: "dokku", Args: []string{"apps:create", "api"}, Sudo: true})
 	want := "dokku apps:create api"
 	if got != want {
 		t.Errorf("ResolveCommandString with default host = %q, want %q", got, want)
@@ -146,7 +146,7 @@ func TestExecCommandResponseStderrBytes(t *testing.T) {
 }
 
 func TestCallExecCommandSuccess(t *testing.T) {
-	resp, err := CallExecCommand(ExecCommandInput{
+	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"hello"},
 	})
@@ -162,7 +162,7 @@ func TestCallExecCommandSuccess(t *testing.T) {
 }
 
 func TestCallExecCommandFailure(t *testing.T) {
-	resp, err := CallExecCommand(ExecCommandInput{
+	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "false",
 	})
 	if err == nil {
@@ -183,7 +183,7 @@ func TestCallExecCommandFailure(t *testing.T) {
 }
 
 func TestCallExecCommandNotFound(t *testing.T) {
-	_, err := CallExecCommand(ExecCommandInput{
+	_, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "nonexistent-binary-docket-test-12345",
 	})
 	if err == nil {
@@ -209,7 +209,7 @@ func TestCallExecCommandNotFound(t *testing.T) {
 func TestCallExecCommandInheritsProcessEnv(t *testing.T) {
 	t.Setenv("DOCKET_TEST_VAR", "test123")
 
-	resp, err := CallExecCommand(ExecCommandInput{Command: "env"})
+	resp, err := CallExecCommand(context.Background(), ExecCommandInput{Command: "env"})
 	if err != nil {
 		t.Fatalf("CallExecCommand failed: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestCallExecCommandWithContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := CallExecCommandWithContext(ctx, ExecCommandInput{
+	_, err := CallExecCommand(ctx, ExecCommandInput{
 		Command: "sleep",
 		Args:    []string{"10"},
 	})
@@ -242,7 +242,7 @@ func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
 
 	// Both entry points route through the swapped runner without spawning a
 	// process (the command below does not exist on PATH).
-	resp, err := CallExecCommand(ExecCommandInput{Command: "dokku", Args: []string{"apps:list"}})
+	resp, err := CallExecCommand(context.Background(), ExecCommandInput{Command: "dokku", Args: []string{"apps:list"}})
 	if err != nil {
 		t.Fatalf("CallExecCommand with fake runner failed: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
 	restore()
 
 	// After restore the real executor runs again: echo succeeds locally.
-	resp, err = CallExecCommand(ExecCommandInput{Command: "echo", Args: []string{"hi"}})
+	resp, err = CallExecCommand(context.Background(), ExecCommandInput{Command: "echo", Args: []string{"hi"}})
 	if err != nil {
 		t.Fatalf("CallExecCommand after restore failed: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
 	SetGlobalSensitive([]string{"topsecret123"})
 	defer SetGlobalSensitive(nil)
 
-	resp, err := CallExecCommand(ExecCommandInput{
+	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"login", "topsecret123"},
 	})
@@ -299,7 +299,7 @@ func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 	log.SetOutput(&buf)
 	defer log.SetOutput(prev)
 
-	if _, err := CallExecCommand(ExecCommandInput{
+	if _, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"login", "topsecret123"},
 	}); err != nil {
@@ -317,7 +317,7 @@ func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 func TestCallExecCommandResponseCommandUnmaskedWhenNoSecrets(t *testing.T) {
 	SetGlobalSensitive(nil)
 
-	resp, err := CallExecCommand(ExecCommandInput{
+	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"hello", "world"},
 	})

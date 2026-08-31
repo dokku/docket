@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,8 +86,8 @@ func (t BuildpacksTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the buildpacks for a given app
-func (t BuildpacksTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t BuildpacksTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the BuildpacksTask's inputs without contacting the server.
@@ -101,18 +102,18 @@ func (t BuildpacksTask) Validate() error {
 }
 
 // Plan reports the drift the BuildpacksTask would produce.
-func (t BuildpacksTask) Plan() PlanResult {
+func (t BuildpacksTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planBuildpacksAdd(t) },
-		StateAbsent:  func() PlanResult { return planBuildpacksRemove(t) },
+		StatePresent: func() PlanResult { return planBuildpacksAdd(ctx, t) },
+		StateAbsent:  func() PlanResult { return planBuildpacksRemove(ctx, t) },
 	})
 }
 
-func planBuildpacksAdd(t BuildpacksTask) PlanResult {
-	current, err := getOrderedBuildpacks(t.App)
+func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
+	current, err := getOrderedBuildpacks(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -140,15 +141,15 @@ func planBuildpacksAdd(t BuildpacksTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("set %d buildpack(s) in order", len(t.Buildpacks)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
 
-func planBuildpacksRemove(t BuildpacksTask) PlanResult {
-	current, err := getBuildpacks(t.App)
+func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
+	current, err := getBuildpacks(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -169,9 +170,9 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 			Status:    PlanStatusDestroy,
 			Reason:    fmt.Sprintf("clear %d buildpack(s)", len(current)),
 			Mutations: mutations,
-			Commands:  resolveCommands(inputs),
-			apply: func() TaskOutputState {
-				return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+			Commands:  resolveCommands(ctx, inputs),
+			apply: func(ctx context.Context) TaskOutputState {
+				return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 			},
 		}
 	}
@@ -198,17 +199,17 @@ func planBuildpacksRemove(t BuildpacksTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d buildpack(s) to remove", len(toRemove)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }
 
 // ExportApp reads the app's buildpacks and returns a dokku_buildpacks task, or
 // nil when none are set.
-func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
-	list, err := getOrderedBuildpacks(app)
+func (t BuildpacksTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	list, err := getOrderedBuildpacks(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -225,8 +226,8 @@ func (t BuildpacksTask) ExportApp(app string) ([]interface{}, error) {
 // getOrderedBuildpacks fetches the app's buildpacks in build-precedence order
 // from the `list` key of buildpacks:report. Unlike getBuildpacks (an unordered
 // set) this preserves order, which the plan probe and export both require.
-func getOrderedBuildpacks(app string) ([]string, error) {
-	response, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getOrderedBuildpacks(ctx context.Context, app string) ([]string, error) {
+	response, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "buildpacks:report", app, "--format", "json"},
 	})
@@ -251,8 +252,8 @@ func getOrderedBuildpacks(app string) ([]string, error) {
 }
 
 // getBuildpacks fetches the current buildpacks list for an app
-func getBuildpacks(app string) (map[string]bool, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func getBuildpacks(ctx context.Context, app string) (map[string]bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "buildpacks:list", app},
 	})

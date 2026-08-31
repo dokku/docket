@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -161,8 +162,8 @@ func (t StorageEntryTask) Examples() ([]Doc, error) {
 }
 
 // Execute creates or destroys the storage entry
-func (t StorageEntryTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t StorageEntryTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // createArgs builds the storage:create command arguments. Every flag is
@@ -413,18 +414,18 @@ func validateKVFlag(name string, values map[string]string) error {
 }
 
 // Plan reports the drift the StorageEntryTask would produce.
-func (t StorageEntryTask) Plan() PlanResult {
+func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			entry, err := lookupStorageEntry(t.Name)
+			entry, err := lookupStorageEntry(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if entry != nil {
-				return planStorageEntryAttributes(t, *entry)
+				return planStorageEntryAttributes(ctx, t, *entry)
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: t.createArgs()}}
 			return PlanResult{
@@ -432,14 +433,14 @@ func (t StorageEntryTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "entry missing",
 				Mutations: []string{fmt.Sprintf("create storage entry %s", t.Name)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			entry, err := lookupStorageEntry(t.Name)
+			entry, err := lookupStorageEntry(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -468,9 +469,9 @@ func (t StorageEntryTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "entry present",
 				Mutations: []string{formatStorageEntryDestroy(t, *entry)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -547,7 +548,7 @@ func mutableStorageEntryAttributes(t StorageEntryTask, e storageEntry) []storage
 // It is a package-level func rather than a method because
 // TestProbeSupportMatchesPlanWiring walks the tasks package for
 // plan-returning methods and allows exactly one per task, Plan itself.
-func planStorageEntryAttributes(t StorageEntryTask, entry storageEntry) PlanResult {
+func planStorageEntryAttributes(ctx context.Context, t StorageEntryTask, entry storageEntry) PlanResult {
 	for _, attr := range immutableStorageEntryAttributes(t, entry) {
 		if !attr.drifted() {
 			continue
@@ -606,9 +607,9 @@ func planStorageEntryAttributes(t StorageEntryTask, entry storageEntry) PlanResu
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d attribute(s) to set", len(inputs)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
 		},
 	}
 }
@@ -659,8 +660,8 @@ func formatStorageEntryDestroy(t StorageEntryTask, entry storageEntry) string {
 // k3s entry the task's own validation rejects. destroy_host_dir is not
 // exported because it is not state - it modifies a destroy the exported
 // recipe does not perform.
-func (t StorageEntryTask) ExportGlobal() ([]interface{}, error) {
-	entries, err := storageEntries()
+func (t StorageEntryTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	entries, err := storageEntries(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -709,8 +710,8 @@ type storageEntry struct {
 // failure (`*subprocess.SSHError`) is propagated; a dokku-level non-zero
 // exit or unparseable output is treated as an empty registry, since a
 // server without the entries directory has none to report.
-func storageEntries() ([]storageEntry, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func storageEntries(ctx context.Context) ([]storageEntry, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "storage:list-entries", "--format", "json"},
 	})
@@ -735,8 +736,8 @@ func storageEntries() ([]storageEntry, error) {
 // compared against what the registry records. A transport-level failure
 // (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit is
 // treated as "no entry."
-func lookupStorageEntry(name string) (*storageEntry, error) {
-	entries, err := storageEntries()
+func lookupStorageEntry(ctx context.Context, name string) (*storageEntry, error) {
+	entries, err := storageEntries(ctx)
 	if err != nil {
 		return nil, err
 	}

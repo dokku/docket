@@ -14,7 +14,7 @@ func TestConfigTaskInvalidState(t *testing.T) {
 		Config: map[string]string{"KEY": "VALUE"},
 		State:  "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -106,7 +106,7 @@ func TestConfigTaskRestartFlag(t *testing.T) {
 				Restart: tc.restart,
 				Config:  map[string]string{"KEY": "val"},
 				State:   tc.state,
-			}.Plan()
+			}.Plan(testCtx())
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -149,7 +149,7 @@ func TestConfigTaskRestartFalseEndToEnd(t *testing.T) {
 	if task == nil {
 		t.Fatal("task 'set config' not found")
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}

@@ -8,9 +8,9 @@ func TestIntegrationChecksPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-checks-prop"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		property string
@@ -33,7 +33,7 @@ func TestIntegrationChecksPropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := ChecksPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "checks global " + tc.property,
 					setTask:   ChecksPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // BuilderRailpackPropertyTask manages the builder-railpack configuration for a given dokku application
 type BuilderRailpackPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t BuilderRailpackPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the builder-railpack property
-func (t BuilderRailpackPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t BuilderRailpackPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // builderRailpackPropertyTable maps builder-railpack property names to the
@@ -88,20 +90,20 @@ func (t BuilderRailpackPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the BuilderRailpackPropertyTask would produce.
-func (t BuilderRailpackPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t BuilderRailpackPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t BuilderRailpackPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t BuilderRailpackPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return BuilderRailpackPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t BuilderRailpackPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t BuilderRailpackPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return BuilderRailpackPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

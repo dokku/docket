@@ -3,6 +3,7 @@ package tasks
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -98,8 +99,8 @@ func (t MaintenanceCustomPageTask) Examples() ([]Doc, error) {
 }
 
 // Execute installs or removes the custom maintenance page
-func (t MaintenanceCustomPageTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t MaintenanceCustomPageTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the MaintenanceCustomPageTask's inputs without contacting the server.
@@ -117,7 +118,7 @@ func (t MaintenanceCustomPageTask) Validate() error {
 }
 
 // Plan reports the drift the MaintenanceCustomPageTask would produce.
-func (t MaintenanceCustomPageTask) Plan() PlanResult {
+func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -132,7 +133,7 @@ func (t MaintenanceCustomPageTask) Plan() PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 
-			current, reported, err := maintenanceCustomPageState(t.App)
+			current, reported, err := maintenanceCustomPageState(ctx, t.App)
 			if err != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(err, &sshErr) {
@@ -168,14 +169,14 @@ func (t MaintenanceCustomPageTask) Plan() PlanResult {
 				Status:    status,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("set custom maintenance page for %s", t.App)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			current, reported, err := maintenanceCustomPageState(t.App)
+			current, reported, err := maintenanceCustomPageState(ctx, t.App)
 			if err != nil {
 				var sshErr *subprocess.SSHError
 				if errors.As(err, &sshErr) {
@@ -200,9 +201,9 @@ func (t MaintenanceCustomPageTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    reason,
 				Mutations: []string{fmt.Sprintf("remove custom maintenance page for %s", t.App)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -329,8 +330,8 @@ func maintenanceTarballChecksum(tarBytes []byte) (string, error) {
 // the key is absent. A transport-level SSH failure is returned as an error so
 // Plan() can short-circuit; a dokku-level failure is also returned so callers
 // can fall back to applying unconditionally.
-func maintenanceCustomPageState(app string) (checksum string, reported bool, err error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func maintenanceCustomPageState(ctx context.Context, app string) (checksum string, reported bool, err error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"maintenance:report", app, "--format", "json"},
 	})
@@ -353,8 +354,8 @@ func maintenanceCustomPageState(app string) (checksum string, reported bool, err
 // callback. The export engine prefers ExportAppReport when present, so the
 // dropped-assets diagnostic reaches ExportReport.Warnings rather than being
 // discarded here.
-func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) {
-	return t.exportApp(app, func(string) {})
+func (t MaintenanceCustomPageTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return t.exportApp(ctx, app, func(string) {})
 }
 
 // ExportAppReport is the diagnostics-aware form of ExportApp (the
@@ -362,8 +363,8 @@ func (t MaintenanceCustomPageTask) ExportApp(app string) ([]interface{}, error) 
 // through the engine's warn callback (wired to ExportReport.Warnings) instead
 // of a raw log line, so the warning is rendered and masked like every other
 // export diagnostic.
-func (t MaintenanceCustomPageTask) ExportAppReport(app string, warn func(msg string)) ([]interface{}, error) {
-	return t.exportApp(app, warn)
+func (t MaintenanceCustomPageTask) ExportAppReport(ctx context.Context, app string, warn func(msg string)) ([]interface{}, error) {
+	return t.exportApp(ctx, app, warn)
 }
 
 // exportApp emits a dokku_maintenance_custom_page task when the app has a custom
@@ -377,8 +378,8 @@ func (t MaintenanceCustomPageTask) ExportAppReport(app string, warn func(msg str
 // transport-level SSH failure propagates as a warning. When the archive carries
 // files beyond maintenance.html (which the single-Content task cannot represent)
 // warn is invoked with the dropped-assets notice.
-func (t MaintenanceCustomPageTask) exportApp(app string, warn func(msg string)) ([]interface{}, error) {
-	checksum, reported, err := maintenanceCustomPageState(app)
+func (t MaintenanceCustomPageTask) exportApp(ctx context.Context, app string, warn func(msg string)) ([]interface{}, error) {
+	checksum, reported, err := maintenanceCustomPageState(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -390,7 +391,7 @@ func (t MaintenanceCustomPageTask) exportApp(app string, warn func(msg string)) 
 		return nil, nil
 	}
 
-	content, extraAssets, err := maintenanceCustomPageExport(app)
+	content, extraAssets, err := maintenanceCustomPageExport(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -410,8 +411,8 @@ func (t MaintenanceCustomPageTask) exportApp(app string, warn func(msg string)) 
 // returns the contents of the root-level maintenance.html and whether the archive
 // carried any additional files (which the single-content task shape cannot
 // represent, so they are dropped - see ExportSupport).
-func maintenanceCustomPageExport(app string) (content string, extraAssets bool, err error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func maintenanceCustomPageExport(ctx context.Context, app string) (content string, extraAssets bool, err error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "maintenance:custom-page-export", app},
 	})

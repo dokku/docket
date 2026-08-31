@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"os"
 
 	"github.com/dokku/docket/subprocess"
@@ -32,4 +33,15 @@ func resolveSshFlags(hostFlag string, sudo, acceptNewHostKeys bool) string {
 		_ = os.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "1")
 	}
 	return host
+}
+
+// runContext returns the context every task in this run is planned and
+// executed under. It is the process signal context when docket was started
+// from main.go, so an interrupt cancels the whole run; a command built
+// directly (as the tests do) gets a background context instead.
+func runContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
 }

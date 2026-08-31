@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // NginxPropertyTask manages the nginx configuration for a given dokku application
 type NginxPropertyTask PropertyFields
 
@@ -71,8 +73,8 @@ func (t NginxPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the nginx property
-func (t NginxPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t NginxPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // nginxPropertyTable maps nginx property names to the JSON keys emitted by
@@ -121,15 +123,15 @@ func (t NginxPropertyTask) PropertyTable() PropertyTable {
 }
 
 // ExportApp reconstructs the app's explicitly-set nginx properties.
-func (t NginxPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t NginxPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return NginxPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t NginxPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t NginxPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return NginxPropertyTask{Global: true, Property: property, Value: value}
 	})
 }
@@ -140,8 +142,8 @@ func (t NginxPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the NginxPropertyTask would produce.
-func (t NginxPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t NginxPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // init registers the NginxPropertyTask with the task registry

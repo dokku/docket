@@ -10,9 +10,9 @@ func TestIntegrationGitFromArchive(t *testing.T) {
 	appName := "docket-test-git-from-archive"
 	archiveURL := "https://github.com/dokku/smoke-test-app/archive/refs/heads/master.tar.gz"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// initial deploy
 	task := GitFromArchiveTask{
@@ -21,7 +21,7 @@ func TestIntegrationGitFromArchive(t *testing.T) {
 		ArchiveType: "tar.gz",
 		State:       "deployed",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to deploy archive: %v", result.Error)
 	}
@@ -33,7 +33,7 @@ func TestIntegrationGitFromArchive(t *testing.T) {
 	}
 
 	// verify deploy-source metadata reflects the archive
-	source, err := getAppDeploySource(appName)
+	source, err := getAppDeploySource(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("getAppDeploySource failed: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestIntegrationGitFromArchive(t *testing.T) {
 	}
 
 	// re-deploy with same archive - should be idempotent
-	result = task.Execute()
+	result = task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second deploy: %v", result.Error)
 	}

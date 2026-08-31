@@ -19,28 +19,28 @@ const (
 
 func TestSshKeyTaskInvalidState(t *testing.T) {
 	task := SshKeyTask{Name: "deploy-bot", Key: testSSHKey1, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
 }
 
 func TestSshKeyTaskRequiresName(t *testing.T) {
-	result := SshKeyTask{Key: testSSHKey1, State: StatePresent}.Plan()
+	result := SshKeyTask{Key: testSSHKey1, State: StatePresent}.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan without 'name' should return an error")
 	}
 }
 
 func TestSshKeyTaskRequiresKeyWhenPresent(t *testing.T) {
-	result := SshKeyTask{Name: "deploy-bot", State: StatePresent}.Plan()
+	result := SshKeyTask{Name: "deploy-bot", State: StatePresent}.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with state 'present' and no 'key' should return an error")
 	}
 }
 
 func TestSshKeyTaskInvalidKey(t *testing.T) {
-	result := SshKeyTask{Name: "deploy-bot", Key: "not-a-key", State: StatePresent}.Plan()
+	result := SshKeyTask{Name: "deploy-bot", Key: "not-a-key", State: StatePresent}.Plan(testCtx())
 	if result.Error == nil {
 		t.Fatal("Plan with an unparseable key should return an error")
 	}

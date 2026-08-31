@@ -200,7 +200,7 @@ func TestPlanResultInSyncImpliesStatusOK(t *testing.T) {
 // planFuncKey identifies a node the static analysis can reach: a package-level
 // func ("planProperty"), a method ("GitAuthTask.Plan"), or one branch of a
 // DispatchPlan map ("GitAuthTask.Plan[present]"). Methods must be keyed by
-// receiver type - every task's Execute() is `return ExecutePlan(t.Plan())`, so
+// receiver type - every task's Execute() is `return ExecutePlan(testCtx(), t.Plan(testCtx()))`, so
 // a bare "Plan" key would merge all 73 method bodies into one node and the
 // invariant would hold vacuously. Branch keys use a spelling no Go identifier
 // can collide with.
@@ -785,7 +785,7 @@ func TestPlanGraphBranchConvergence(t *testing.T) {
 		{
 			name: "every branch converges",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return ` + inSync + ` },
 		StateAbsent:  func() PlanResult { return ` + inSync + ` },
@@ -797,7 +797,7 @@ func (t FooTask) Plan() PlanResult {
 		{
 			name: "one branch never converges",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return ` + inSync + ` },
 		StateAbsent:  func() PlanResult { return ` + drift + ` },
@@ -810,7 +810,7 @@ func (t FooTask) Plan() PlanResult {
 		{
 			name: "no branch converges",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return ` + drift + ` },
 		StateAbsent:  func() PlanResult { return ` + drift + ` },
@@ -825,7 +825,7 @@ func (t FooTask) Plan() PlanResult {
 			// no dispatch map of their own and inherit the helper's branches.
 			name: "branches inherited from a shared helper",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return planShared(t.State)
 }
 
@@ -843,7 +843,7 @@ func planShared(state State) PlanResult {
 			// A branch that delegates converges through the call edge.
 			name: "branch converges through a called plan func",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planFooPresent(t) },
 	})
@@ -861,7 +861,7 @@ func planFooPresent(t FooTask) PlanResult {
 			// edge and blame the branch.
 			name: "branch converges through a multi-result pointer helper",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			_, res := readFooState(t)
@@ -882,7 +882,7 @@ func readFooState(t FooTask) (bool, *PlanResult) {
 		{
 			name: "dispatch map held in a local",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	handlers := map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return ` + inSync + ` },
 		StateAbsent:  func() PlanResult { return ` + drift + ` },
@@ -896,7 +896,7 @@ func (t FooTask) Plan() PlanResult {
 		{
 			name: "dispatch map declared with var",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	var handlers = map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return ` + inSync + ` },
 		StateAbsent:  func() PlanResult { return ` + drift + ` },
@@ -911,7 +911,7 @@ func (t FooTask) Plan() PlanResult {
 			// An unmapped key still names something a reader can act on.
 			name: "keys that are not State constants fall back to their spelling",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		"deployed":   func() PlanResult { return ` + inSync + ` },
 		StateUnknown: func() PlanResult { return ` + drift + ` },
@@ -956,7 +956,7 @@ func TestPlanGraphReachesFunc(t *testing.T) {
 		{
 			name: "calls the helper directly",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return planToggle(t.State, t.App)
 }
 
@@ -968,7 +968,7 @@ func planToggle(state State, app string) PlanResult {
 		{
 			name: "reaches the helper one hop away",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return planFooToggle(t)
 }
 
@@ -984,7 +984,7 @@ func planToggle(state State, app string) PlanResult {
 		{
 			name: "delegates elsewhere",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return planProperty(t.State)
 }
 
@@ -1027,7 +1027,7 @@ func TestPlanGraphReportsUnwalkableShapes(t *testing.T) {
 		{
 			name: "map assembled after its literal",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	handlers := map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return ` + inSync + ` },
 	}
@@ -1039,7 +1039,7 @@ func (t FooTask) Plan() PlanResult {
 		{
 			name: "map reassigned",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	handlers := map[State]func() PlanResult{}
 	handlers = map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return ` + inSync + ` },
@@ -1059,7 +1059,7 @@ func planShared(state State, handlers map[State]func() PlanResult) PlanResult {
 		{
 			name: "branch is not a func literal",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: presentBranch,
 	})
@@ -1069,7 +1069,7 @@ func (t FooTask) Plan() PlanResult {
 		{
 			name: "branch key is computed",
 			src: `
-func (t FooTask) Plan() PlanResult {
+func (t FooTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		State("present"): func() PlanResult { return ` + inSync + ` },
 	})

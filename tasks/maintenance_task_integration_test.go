@@ -10,13 +10,13 @@ func TestIntegrationMaintenance(t *testing.T) {
 
 	appName := "docket-test-maintenance"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// enable maintenance mode
 	enableTask := MaintenanceTask{App: appName, State: StatePresent}
-	result := enableTask.Execute()
+	result := enableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to enable maintenance: %v", result.Error)
 	}
@@ -25,7 +25,7 @@ func TestIntegrationMaintenance(t *testing.T) {
 	}
 
 	// enable again - idempotent
-	result = enableTask.Execute()
+	result = enableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second enable: %v", result.Error)
 	}
@@ -35,7 +35,7 @@ func TestIntegrationMaintenance(t *testing.T) {
 
 	// disable maintenance mode
 	disableTask := MaintenanceTask{App: appName, State: StateAbsent}
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to disable maintenance: %v", result.Error)
 	}
@@ -44,7 +44,7 @@ func TestIntegrationMaintenance(t *testing.T) {
 	}
 
 	// disable again - idempotent
-	result = disableTask.Execute()
+	result = disableTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second disable: %v", result.Error)
 	}

@@ -11,12 +11,12 @@ func TestIntegrationPlanDetectsMissingApp(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-plan-detect"
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	task := AppTask{App: appName, State: StatePresent}
 
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("Plan() errored: %v", plan.Error)
 	}
@@ -35,15 +35,15 @@ func TestIntegrationPlanInSyncAfterApply(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-plan-roundtrip"
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	task := AppTask{App: appName, State: StatePresent}
-	if state := task.Execute(); state.Error != nil {
+	if state := task.Execute(testCtx()); state.Error != nil {
 		t.Fatalf("apply errored: %v", state.Error)
 	}
 
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("plan errored after apply: %v", plan.Error)
 	}
@@ -58,13 +58,13 @@ func TestIntegrationPlanDoesNotMutate(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-plan-no-mutate"
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	task := AppTask{App: appName, State: StatePresent}
-	_ = task.Plan()
+	_ = task.Plan(testCtx())
 
-	exists, _ := appExists(appName)
+	exists, _ := appExists(testCtx(), appName)
 	if exists {
 		t.Errorf("Plan() unexpectedly created %s", appName)
 	}
@@ -76,10 +76,10 @@ func TestIntegrationPlanConfigItemizes(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-plan-config"
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
-	if state := (AppTask{App: appName, State: StatePresent}).Execute(); state.Error != nil {
+	if state := (AppTask{App: appName, State: StatePresent}).Execute(testCtx()); state.Error != nil {
 		t.Fatalf("setup apps:create failed: %v", state.Error)
 	}
 
@@ -90,7 +90,7 @@ func TestIntegrationPlanConfigItemizes(t *testing.T) {
 		State:   StatePresent,
 	}
 
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("plan errored: %v", plan.Error)
 	}
@@ -113,10 +113,10 @@ func TestIntegrationPlanCommandsPopulatedOnDrift(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-plan-commands"
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
-	plan := (AppTask{App: appName, State: StatePresent}).Plan()
+	plan := (AppTask{App: appName, State: StatePresent}).Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("plan errored: %v", plan.Error)
 	}
@@ -139,12 +139,12 @@ func TestIntegrationExecuteIdempotent(t *testing.T) {
 	skipIfNoDokkuT(t)
 
 	appName := "docket-test-plan-idempotent"
-	destroyApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	task := AppTask{App: appName, State: StatePresent}
 
-	first := task.Execute()
+	first := task.Execute(testCtx())
 	if first.Error != nil {
 		t.Fatalf("first apply errored: %v", first.Error)
 	}
@@ -152,7 +152,7 @@ func TestIntegrationExecuteIdempotent(t *testing.T) {
 		t.Error("first apply should report Changed=true (app was missing)")
 	}
 
-	second := task.Execute()
+	second := task.Execute(testCtx())
 	if second.Error != nil {
 		t.Fatalf("second apply errored: %v", second.Error)
 	}

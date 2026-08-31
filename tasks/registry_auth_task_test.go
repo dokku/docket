@@ -7,7 +7,7 @@ import (
 
 func TestRegistryAuthTaskInvalidState(t *testing.T) {
 	task := RegistryAuthTask{App: "test-app", Server: "docker.io", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestRegistryAuthTaskInvalidState(t *testing.T) {
 
 func TestRegistryAuthTaskMissingApp(t *testing.T) {
 	task := RegistryAuthTask{Server: "docker.io", Username: "u", Password: "p", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -26,7 +26,7 @@ func TestRegistryAuthTaskMissingApp(t *testing.T) {
 
 func TestRegistryAuthTaskGlobalWithApp(t *testing.T) {
 	task := RegistryAuthTask{App: "test-app", Global: true, Server: "docker.io", Username: "u", Password: "p", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -38,7 +38,7 @@ func TestRegistryAuthTaskGlobalWithApp(t *testing.T) {
 func TestRegistryAuthTaskMissingServer(t *testing.T) {
 	for _, st := range []State{StatePresent, StateAbsent} {
 		task := RegistryAuthTask{App: "test-app", Username: "u", Password: "p", State: st}
-		result := task.Execute()
+		result := task.Execute(testCtx())
 		if result.Error == nil {
 			t.Fatalf("expected error with empty server (state=%s)", st)
 		}
@@ -50,7 +50,7 @@ func TestRegistryAuthTaskMissingServer(t *testing.T) {
 
 func TestRegistryAuthTaskPresentMissingUsername(t *testing.T) {
 	task := RegistryAuthTask{App: "test-app", Server: "docker.io", Password: "p", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without username should return an error")
 	}
@@ -61,7 +61,7 @@ func TestRegistryAuthTaskPresentMissingUsername(t *testing.T) {
 
 func TestRegistryAuthTaskPresentMissingPassword(t *testing.T) {
 	task := RegistryAuthTask{App: "test-app", Server: "docker.io", Username: "u", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without password should return an error")
 	}

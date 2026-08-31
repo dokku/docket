@@ -7,7 +7,7 @@ import (
 
 func TestAppCloneTaskInvalidState(t *testing.T) {
 	task := AppCloneTask{App: "new-app", SourceApp: "old-app", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestAppCloneTaskInvalidState(t *testing.T) {
 
 func TestAppCloneTaskMissingApp(t *testing.T) {
 	task := AppCloneTask{SourceApp: "old-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -26,7 +26,7 @@ func TestAppCloneTaskMissingApp(t *testing.T) {
 
 func TestAppCloneTaskMissingSourceApp(t *testing.T) {
 	task := AppCloneTask{App: "new-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without source_app should return an error")
 	}

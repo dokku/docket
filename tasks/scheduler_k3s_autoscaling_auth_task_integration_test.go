@@ -8,9 +8,9 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAll(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-autoscaling-auth"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		name     string
@@ -63,7 +63,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAll(t *testing.T) {
 				Metadata: tc.metadata,
 				State:    StateAbsent,
 			}
-			defer unsetTask.Execute()
+			defer unsetTask.Execute(testCtx())
 			runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 				label:     "scheduler-k3s autoscaling-auth " + tc.name,
 				setTask:   setTask,
@@ -79,9 +79,9 @@ func TestIntegrationSchedulerK3sAutoscalingAuthPartialClear(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-autoscaling-auth-partial"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	trigger := "aws-secret-manager"
 
@@ -96,7 +96,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthPartialClear(t *testing.T) {
 		},
 		State: StatePresent,
 	}
-	if result := seed.Execute(); result.Error != nil {
+	if result := seed.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("seed set failed: %v", result.Error)
 	}
 
@@ -110,17 +110,17 @@ func TestIntegrationSchedulerK3sAutoscalingAuthPartialClear(t *testing.T) {
 		},
 		State: StateAbsent,
 	}
-	if result := clear.Execute(); result.Error != nil {
+	if result := clear.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("partial clear failed: %v", result.Error)
 	}
-	if result := clear.Execute(); result.Error != nil {
+	if result := clear.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("re-apply partial clear failed: %v", result.Error)
 	} else if result.Changed {
 		t.Errorf("re-apply partial clear should be a no-op, got Changed=true")
 	}
 
 	// Verify roleArn still exists and the other two are gone.
-	current, err := getSchedulerK3sAutoscalingAuth(schedulerK3sAutoscalingAuthSpec{
+	current, err := getSchedulerK3sAutoscalingAuth(testCtx(), schedulerK3sAutoscalingAuthSpec{
 		App:      appName,
 		Trigger:  trigger,
 		Metadata: map[string]string{},
@@ -147,7 +147,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthPartialClear(t *testing.T) {
 		},
 		State: StateAbsent,
 	}
-	finalClear.Execute()
+	finalClear.Execute(testCtx())
 }
 
 // TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent verifies that
@@ -156,9 +156,9 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-autoscaling-auth-additive"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	trigger := "aws-secret-manager"
 
@@ -172,7 +172,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent(t *testing.T) {
 		},
 		State: StatePresent,
 	}
-	if result := seed.Execute(); result.Error != nil {
+	if result := seed.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("seed set failed: %v", result.Error)
 	}
 	defer SchedulerK3sAutoscalingAuthTask{
@@ -184,7 +184,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent(t *testing.T) {
 			"extraKey":   "",
 		},
 		State: StateAbsent,
-	}.Execute()
+	}.Execute(testCtx())
 
 	// Apply present with only the two original keys; extraKey should be left alone.
 	apply := SchedulerK3sAutoscalingAuthTask{
@@ -196,7 +196,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent(t *testing.T) {
 		},
 		State: StatePresent,
 	}
-	result := apply.Execute()
+	result := apply.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("present re-apply failed: %v", result.Error)
 	}
@@ -204,7 +204,7 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAdditivePresent(t *testing.T) {
 		t.Errorf("present re-apply with no drift should be a no-op, got Changed=true")
 	}
 
-	current, err := getSchedulerK3sAutoscalingAuth(schedulerK3sAutoscalingAuthSpec{
+	current, err := getSchedulerK3sAutoscalingAuth(testCtx(), schedulerK3sAutoscalingAuthSpec{
 		App:      appName,
 		Trigger:  trigger,
 		Metadata: map[string]string{},

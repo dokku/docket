@@ -23,7 +23,7 @@ func TestIntegrationHaproxyPropertyAll(t *testing.T) {
 		if tc.global {
 			t.Run(tc.property+"/global", func(t *testing.T) {
 				unsetTask := HaproxyPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
-				defer unsetTask.Execute()
+				defer unsetTask.Execute(testCtx())
 				runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 					label:     "haproxy global " + tc.property,
 					setTask:   HaproxyPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},

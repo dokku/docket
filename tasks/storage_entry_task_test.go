@@ -10,7 +10,7 @@ import (
 
 func TestStorageEntryTaskInvalidState(t *testing.T) {
 	task := StorageEntryTask{Name: "test-entry", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -21,7 +21,7 @@ func TestStorageEntryAbsentStateAllowed(t *testing.T) {
 	// because dokku isn't reachable, but the failure must not be the
 	// "absent state is not supported" sentinel.
 	task := StorageEntryTask{Name: "test-entry", State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil && result.Error.Error() == "the absent state is not supported for storage:ensure" {
 		t.Errorf("absent should be supported for storage_entry, got: %v", result.Error)
 	}
@@ -471,7 +471,7 @@ func TestStorageEntryPlanReportsValidationError(t *testing.T) {
 	// Validate runs before the probe, so an invalid input never reaches
 	// the server.
 	task := StorageEntryTask{Name: "app-data", Chown: "packeto", State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusError {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 	}
@@ -491,7 +491,7 @@ func TestStorageEntryPlanCreateCarriesEveryFlag(t *testing.T) {
 		Annotations: map[string]string{"team": "platform"},
 		State:       StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusCreate {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusCreate, plan.Status)
 	}
@@ -544,7 +544,7 @@ func storageEntriesFixture() map[string]string {
 func TestStorageEntryExportGlobal(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(storageEntriesFixture()))()
 
-	exported, err := StorageEntryTask{}.ExportGlobal()
+	exported, err := StorageEntryTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal returned an error: %v", err)
 	}
@@ -619,7 +619,7 @@ func TestStorageEntryPlanInSyncWhenEveryDeclaredFieldMatches(t *testing.T) {
 		Chown:     "herokuish",
 		State:     StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q reason %q", plan.Status, plan.Reason)
 	}
@@ -651,7 +651,7 @@ func TestStorageEntryPlanLeavesUndeclaredAttributesAlone(t *testing.T) {
 		Chown:     "herokuish",
 		State:     StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q reason %q mutations %v", plan.Status, plan.Reason, plan.Mutations)
 	}
@@ -661,7 +661,7 @@ func TestStorageEntryPlanConvergesChown(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", Chown: "root", State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusModify, plan.Status)
 	}
@@ -696,7 +696,7 @@ func TestStorageEntryPlanConvergesMode(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", Mode: "0777", State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
 	}
@@ -717,7 +717,7 @@ func TestStorageEntryPlanReadsAThreeDigitModeAsItsFourDigitForm(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", Mode: "755", State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q mutations %v", plan.Status, plan.Mutations)
 	}
@@ -729,7 +729,7 @@ func TestStorageEntryPlanNormalizesAThreeDigitModeItSets(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", Mode: "700", State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	want := []string{"dokku --quiet storage:set app-data mode 0700"}
 	if !equalStrings(plan.Commands, want) {
 		t.Errorf("expected commands %v, got %v", want, plan.Commands)
@@ -743,7 +743,7 @@ func TestStorageEntryPlanConvergesChownBeforeMode(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", Chown: "root", Mode: "0777", State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	want := []string{
 		"dokku --quiet storage:set app-data chown root",
 		"dokku --quiet storage:set app-data mode 0777",
@@ -781,7 +781,7 @@ func TestStorageEntryPlanConvergesEveryMutableAttributeInFieldOrder(t *testing.T
 		Labels:        map[string]string{"tier": "data"},
 		State:         StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
 	}
@@ -831,7 +831,7 @@ func TestStorageEntryPlanConvergesMapKeysWithoutDisturbingSiblings(t *testing.T)
 		Annotations: map[string]string{"team": "data"},
 		State:       StatePresent,
 	}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	want := []string{"dokku --quiet storage:annotations:set app-data team data"}
 	if !equalStrings(plan.Commands, want) {
 		t.Errorf("expected commands %v, got %v", want, plan.Commands)
@@ -884,7 +884,7 @@ func TestStorageEntryPlanRejectsImmutableDrift(t *testing.T) {
 			defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(test.entry)))()
 
 			test.task.State = StatePresent
-			plan := test.task.Plan()
+			plan := test.task.Plan(testCtx())
 			if plan.Status != PlanStatusError {
 				t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 			}
@@ -907,7 +907,7 @@ func TestStorageEntryPlanReadsAnOmittedSchedulerAsDockerLocal(t *testing.T) {
 	)))()
 
 	task := StorageEntryTask{Name: "app-data", State: StatePresent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusError {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 	}
@@ -922,7 +922,7 @@ func TestStorageEntryPlanAbsentIgnoresAttributes(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusDestroy {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusDestroy, plan.Status)
 	}
@@ -936,7 +936,7 @@ func TestStorageEntryPlanAbsentDestroysTheHostDirectoryOnRequest(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusDestroy {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusDestroy, plan.Status, plan.Error)
 	}
@@ -964,7 +964,7 @@ func TestStorageEntryPlanAbsentReportsAReclaimDeleteRemoval(t *testing.T) {
 	}`)))()
 
 	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	want := []string{"dokku --quiet storage:destroy --force app-data"}
 	if !equalStrings(plan.Commands, want) {
 		t.Errorf("expected commands %v, got %v", want, plan.Commands)
@@ -979,7 +979,7 @@ func TestStorageEntryPlanAbsentLeavesTheHostDirectoryAloneByDefault(t *testing.T
 	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
 
 	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	wantMutations := []string{"destroy storage entry app-data"}
 	if !equalStrings(plan.Mutations, wantMutations) {
 		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
@@ -994,7 +994,7 @@ func TestStorageEntryPlanAbsentRejectsDestroyHostDirOnANonDockerLocalEntry(t *te
 	)))()
 
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusError {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 	}
@@ -1012,7 +1012,7 @@ func TestStorageEntryPlanAbsentIgnoresDestroyHostDirWhenTheEntryIsGone(t *testin
 	}))()
 
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q (error %v)", plan.Status, plan.Error)
 	}
@@ -1029,7 +1029,7 @@ func TestStorageEntryExecuteAppliesAttributeDrift(t *testing.T) {
 	})()
 
 	task := StorageEntryTask{Name: "app-data", Chown: "root", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("expected the apply to succeed, got: %v", result.Error)
 	}

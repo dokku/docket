@@ -12,7 +12,7 @@ func TestGitSyncTaskInvalidState(t *testing.T) {
 		Remote: "https://example.com/repo",
 		State:  "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -26,7 +26,7 @@ func TestGitSyncInSyncOnRemoteAndDeployBranch(t *testing.T) {
 		"git:report test-app --format json":  `{"deploy-branch":"main"}`,
 	}))()
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", Build: true, State: StatePresent}.Plan()
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", Build: true, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -41,7 +41,7 @@ func TestGitSyncDriftOnRefChange(t *testing.T) {
 		"git:report test-app --format json":  `{"deploy-branch":"main"}`,
 	}))()
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "develop", Build: true, State: StatePresent}.Plan()
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "develop", Build: true, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -55,7 +55,7 @@ func TestGitSyncDriftOnRemoteChange(t *testing.T) {
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/other.git#abc123"}`,
 	}))()
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan()
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan(testCtx())
 	if plan.InSync {
 		t.Fatal("expected drift when the remote differs")
 	}
@@ -66,7 +66,7 @@ func TestGitSyncInSyncWithoutRef(t *testing.T) {
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/repo.git#abc123"}`,
 	}))()
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", State: StatePresent}.Plan()
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -82,7 +82,7 @@ func TestGitSyncSkipDeployBranchMatchesOnRemote(t *testing.T) {
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/repo.git#abc123"}`,
 	}))()
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", SkipDeployBranch: true, State: StatePresent}.Plan()
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", SkipDeployBranch: true, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -96,7 +96,7 @@ func TestGitSyncDriftWhenNotGitSyncSource(t *testing.T) {
 		"apps:report test-app --format json": `{"app-deploy-source":"","app-deploy-source-metadata":""}`,
 	}))()
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan()
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan(testCtx())
 	if plan.InSync {
 		t.Fatal("expected drift when the app has no git-sync deploy source")
 	}
@@ -108,7 +108,7 @@ func TestGitSyncExportUsesDeployBranchAsRef(t *testing.T) {
 		"git:report test-app --format json":  `{"deploy-branch":"main"}`,
 	}))()
 
-	bodies, err := GitSyncTask{}.ExportApp("test-app")
+	bodies, err := GitSyncTask{}.ExportApp(testCtx(), "test-app")
 	if err != nil {
 		t.Fatalf("ExportApp error: %v", err)
 	}

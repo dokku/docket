@@ -8,7 +8,7 @@ import (
 
 func TestServiceLinkTaskInvalidState(t *testing.T) {
 	task := ServiceLinkTask{App: "test-app", Service: "redis", Name: "test-service", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}

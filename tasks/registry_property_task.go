@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // RegistryPropertyTask manages the registry configuration for a given dokku application
 type RegistryPropertyTask PropertyFields
 
@@ -71,8 +73,8 @@ func (t RegistryPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the registry property
-func (t RegistryPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t RegistryPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // registryPropertyTable maps registry property names to the JSON keys
@@ -100,20 +102,20 @@ func (t RegistryPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the RegistryPropertyTask would produce.
-func (t RegistryPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t RegistryPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t RegistryPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t RegistryPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return RegistryPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t RegistryPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t RegistryPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return RegistryPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

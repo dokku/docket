@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // CaddyPropertyTask manages the caddy configuration for a given dokku application
 type CaddyPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t CaddyPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the caddy property
-func (t CaddyPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t CaddyPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // caddyPropertyTable maps caddy property names to the JSON keys emitted by
@@ -93,20 +95,20 @@ func (t CaddyPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the CaddyPropertyTask would produce.
-func (t CaddyPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t CaddyPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t CaddyPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t CaddyPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return CaddyPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t CaddyPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t CaddyPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return CaddyPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

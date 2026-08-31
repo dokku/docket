@@ -12,9 +12,9 @@ func TestIntegrationPsScale(t *testing.T) {
 	appName := "docket-test-psscale"
 
 	// ensure clean state
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// deploy the smoke test app so we have running containers to scale
 	deployTask := GitFromImageTask{
@@ -22,7 +22,7 @@ func TestIntegrationPsScale(t *testing.T) {
 		Image: "dokku/smoke-test-app:dockerfile",
 		State: StateDeployed,
 	}
-	deployResult := deployTask.Execute()
+	deployResult := deployTask.Execute(testCtx())
 	if deployResult.Error != nil {
 		t.Fatalf("failed to deploy app: %v", deployResult.Error)
 	}
@@ -37,7 +37,7 @@ func TestIntegrationPsScale(t *testing.T) {
 	}
 
 	// verify the initial container is running via docker inspect
-	inspectResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	inspectResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"inspect", "--format", "{{.State.Running}}", initialContainers[0]},
 	})
@@ -54,7 +54,7 @@ func TestIntegrationPsScale(t *testing.T) {
 		Scale: map[string]int{"web": 2},
 		State: StatePresent,
 	}
-	result := scaleTask.Execute()
+	result := scaleTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to scale app: %v", result.Error)
 	}
@@ -76,7 +76,7 @@ func TestIntegrationPsScale(t *testing.T) {
 
 	// verify each container is running via docker inspect
 	for _, containerID := range scaledContainers {
-		inspectResult, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+		inspectResult, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "docker",
 			Args:    []string{"inspect", "--format", "{{.State.Running}}", containerID},
 		})
@@ -89,7 +89,7 @@ func TestIntegrationPsScale(t *testing.T) {
 	}
 
 	// scaling again should be idempotent
-	result = scaleTask.Execute()
+	result = scaleTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent scale failed: %v", result.Error)
 	}
@@ -103,7 +103,7 @@ func TestIntegrationPsScale(t *testing.T) {
 		Scale: map[string]int{"web": 1},
 		State: StatePresent,
 	}
-	result = scaleDownTask.Execute()
+	result = scaleDownTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to scale down: %v", result.Error)
 	}
@@ -121,7 +121,7 @@ func TestIntegrationPsScale(t *testing.T) {
 	}
 
 	// verify the final container is running via docker inspect
-	inspectResult, err = subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	inspectResult, err = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"inspect", "--format", "{{.State.Running}}", finalContainers[0]},
 	})
@@ -138,9 +138,9 @@ func TestIntegrationPsScaleSkipDeploy(t *testing.T) {
 
 	appName := "docket-test-psscale-sd"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// scale with skip_deploy on an undeployed app
 	scaleTask := PsScaleTask{
@@ -149,7 +149,7 @@ func TestIntegrationPsScaleSkipDeploy(t *testing.T) {
 		SkipDeploy: boolPtr(true),
 		State:      StatePresent,
 	}
-	result := scaleTask.Execute()
+	result := scaleTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to scale with skip_deploy: %v", result.Error)
 	}
@@ -158,7 +158,7 @@ func TestIntegrationPsScaleSkipDeploy(t *testing.T) {
 	}
 
 	// verify the scale was set correctly
-	scale, err := getPsScale(appName)
+	scale, err := getPsScale(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("failed to get ps scale: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestIntegrationPsScaleSkipDeploy(t *testing.T) {
 	}
 
 	// idempotent
-	result = scaleTask.Execute()
+	result = scaleTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent scale failed: %v", result.Error)
 	}

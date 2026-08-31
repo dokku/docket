@@ -34,7 +34,7 @@ func assertBuildpacksReplaceInOrder(t *testing.T, plan PlanResult, want []string
 
 func TestBuildpacksTaskInvalidState(t *testing.T) {
 	task := BuildpacksTask{App: "test-app", Buildpacks: []string{"https://example.com/bp.git"}, State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -42,7 +42,7 @@ func TestBuildpacksTaskInvalidState(t *testing.T) {
 
 func TestBuildpacksTaskPresentMissingApp(t *testing.T) {
 	task := BuildpacksTask{Buildpacks: []string{"https://example.com/bp.git"}, State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -53,7 +53,7 @@ func TestBuildpacksTaskPresentMissingApp(t *testing.T) {
 
 func TestBuildpacksTaskAbsentMissingApp(t *testing.T) {
 	task := BuildpacksTask{State: StateAbsent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
 	}
@@ -64,7 +64,7 @@ func TestBuildpacksTaskAbsentMissingApp(t *testing.T) {
 
 func TestBuildpacksTaskPresentEmptyBuildpacks(t *testing.T) {
 	task := BuildpacksTask{App: "test-app", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with empty buildpacks and state=present should return an error")
 	}
@@ -78,7 +78,7 @@ func TestBuildpacksSameOrderInSync(t *testing.T) {
 		"--quiet buildpacks:report test-app --format json": `{"list":"nodejs,nginx"}`,
 	}))()
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan()
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -92,7 +92,7 @@ func TestBuildpacksReorderReportsDrift(t *testing.T) {
 		"--quiet buildpacks:report test-app --format json": `{"list":"nginx,nodejs"}`,
 	}))()
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan()
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -110,7 +110,7 @@ func TestBuildpacksPartialSetUsesReplaceInOrder(t *testing.T) {
 		"--quiet buildpacks:report test-app --format json": `{"list":"nginx"}`,
 	}))()
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan()
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -126,7 +126,7 @@ func TestBuildpacksCreateWhenEmpty(t *testing.T) {
 		"--quiet buildpacks:report test-app --format json": `{"list":""}`,
 	}))()
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs"}, State: StatePresent}.Plan()
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs"}, State: StatePresent}.Plan(testCtx())
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}

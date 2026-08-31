@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // PsPropertyTask manages the ps configuration for a given dokku application
 type PsPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t PsPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the ps property
-func (t PsPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t PsPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // psPropertyTable maps ps property names to the JSON keys emitted by
@@ -94,20 +96,20 @@ func (t PsPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the PsPropertyTask would produce.
-func (t PsPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t PsPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t PsPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t PsPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return PsPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t PsPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t PsPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return PsPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

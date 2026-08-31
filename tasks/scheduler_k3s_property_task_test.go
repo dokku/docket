@@ -7,7 +7,7 @@ import (
 
 func TestSchedulerK3sPropertyTaskInvalidState(t *testing.T) {
 	task := SchedulerK3sPropertyTask{App: "test-app", Property: "deploy-timeout", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestSchedulerK3sPropertyTaskInvalidState(t *testing.T) {
 
 func TestSchedulerK3sPropertyTaskMissingApp(t *testing.T) {
 	task := SchedulerK3sPropertyTask{Property: "deploy-timeout", Value: "300s", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestSchedulerK3sPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "admin@example.com",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestSchedulerK3sPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestSchedulerK3sPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "300s",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}
@@ -77,7 +77,7 @@ func TestSchedulerK3sPropertyTaskRejectsChartProperty(t *testing.T) {
 		Value:    "3",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected chart.* property to be rejected")
 	}
@@ -108,7 +108,7 @@ func TestSchedulerK3sPropertyTaskChartRejectionIsIdenticalOffline(t *testing.T) 
 		t.Fatal("Validate should reject a chart.* property")
 	}
 
-	plan := task.Plan()
+	plan := task.Plan(testCtx())
 	if plan.Status != PlanStatusError || plan.Error == nil {
 		t.Fatalf("Plan should reject a chart.* property, got status %q error %v", plan.Status, plan.Error)
 	}

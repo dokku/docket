@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // BuilderDockerfilePropertyTask manages the builder-dockerfile configuration for a given dokku application
 type BuilderDockerfilePropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t BuilderDockerfilePropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the builder-dockerfile property
-func (t BuilderDockerfilePropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t BuilderDockerfilePropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // builderDockerfilePropertyTable maps builder-dockerfile property names to
@@ -88,20 +90,20 @@ func (t BuilderDockerfilePropertyTask) Validate() error {
 }
 
 // Plan reports the drift the BuilderDockerfilePropertyTask would produce.
-func (t BuilderDockerfilePropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t BuilderDockerfilePropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t BuilderDockerfilePropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t BuilderDockerfilePropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return BuilderDockerfilePropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t BuilderDockerfilePropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t BuilderDockerfilePropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return BuilderDockerfilePropertyTask{Global: true, Property: property, Value: value}
 	})
 }

@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // SchedulerK3sAutoscalingAuthTask manages the KEDA TriggerAuthentication
 // metadata stored under a single trigger for a dokku application or globally.
 type SchedulerK3sAutoscalingAuthTask struct {
@@ -111,8 +113,8 @@ func (t SchedulerK3sAutoscalingAuthTask) SensitiveValues() []string {
 }
 
 // Execute sets or clears the scheduler-k3s autoscaling trigger authentication metadata
-func (t SchedulerK3sAutoscalingAuthTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t SchedulerK3sAutoscalingAuthTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the SchedulerK3sAutoscalingAuthTask's inputs without contacting the server.
@@ -121,14 +123,14 @@ func (t SchedulerK3sAutoscalingAuthTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerK3sAutoscalingAuthTask would produce.
-func (t SchedulerK3sAutoscalingAuthTask) Plan() PlanResult {
+func (t SchedulerK3sAutoscalingAuthTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSchedulerK3sAutoscalingAuthSet(spec) },
-		StateAbsent:  func() PlanResult { return planSchedulerK3sAutoscalingAuthUnset(spec) },
+		StatePresent: func() PlanResult { return planSchedulerK3sAutoscalingAuthSet(ctx, spec) },
+		StateAbsent:  func() PlanResult { return planSchedulerK3sAutoscalingAuthUnset(ctx, spec) },
 	})
 }
 
@@ -145,8 +147,8 @@ func (t SchedulerK3sAutoscalingAuthTask) spec() schedulerK3sAutoscalingAuthSpec 
 // ExportApp reconstructs the app's trigger authentication metadata, one task
 // per trigger, from scheduler-k3s:autoscaling-auth:report. The metadata values
 // are secrets; the export engine lifts them into the companion vars-file.
-func (t SchedulerK3sAutoscalingAuthTask) ExportApp(app string) ([]interface{}, error) {
-	return exportSchedulerK3sAutoscalingAuth(app, false, func(trigger string, metadata map[string]string) interface{} {
+func (t SchedulerK3sAutoscalingAuthTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportSchedulerK3sAutoscalingAuth(ctx, app, false, func(trigger string, metadata map[string]string) interface{} {
 		return SchedulerK3sAutoscalingAuthTask{
 			App:      app,
 			Trigger:  trigger,
@@ -157,8 +159,8 @@ func (t SchedulerK3sAutoscalingAuthTask) ExportApp(app string) ([]interface{}, e
 
 // ExportGlobal reconstructs the global-scope trigger authentication metadata,
 // one task per trigger, from scheduler-k3s:autoscaling-auth:report.
-func (t SchedulerK3sAutoscalingAuthTask) ExportGlobal() ([]interface{}, error) {
-	return exportSchedulerK3sAutoscalingAuth("", true, func(trigger string, metadata map[string]string) interface{} {
+func (t SchedulerK3sAutoscalingAuthTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportSchedulerK3sAutoscalingAuth(ctx, "", true, func(trigger string, metadata map[string]string) interface{} {
 		return SchedulerK3sAutoscalingAuthTask{
 			Global:   true,
 			Trigger:  trigger,

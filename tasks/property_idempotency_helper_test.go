@@ -1,12 +1,13 @@
 package tasks
 
 import (
+	"context"
 	"testing"
 )
 
 // propertyTask is the minimal Task interface used by the idempotency helper.
 type propertyTask interface {
-	Execute() TaskOutputState
+	Execute(ctx context.Context) TaskOutputState
 }
 
 // propertyIdempotencyCase describes the inputs to runPropertyIdempotencyTest.
@@ -21,7 +22,7 @@ type propertyIdempotencyCase struct {
 func runPropertyIdempotencyTest(t *testing.T, c propertyIdempotencyCase) {
 	t.Helper()
 
-	result := c.setTask.Execute()
+	result := c.setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("%s: failed to set: %v", c.label, result.Error)
 	}
@@ -29,7 +30,7 @@ func runPropertyIdempotencyTest(t *testing.T, c propertyIdempotencyCase) {
 		t.Errorf("%s: expected state 'present', got '%s'", c.label, result.State)
 	}
 
-	result = c.setTask.Execute()
+	result = c.setTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("%s: failed to re-apply set: %v", c.label, result.Error)
 	}
@@ -37,7 +38,7 @@ func runPropertyIdempotencyTest(t *testing.T, c propertyIdempotencyCase) {
 		t.Errorf("%s: expected re-apply to report Changed=false", c.label)
 	}
 
-	result = c.unsetTask.Execute()
+	result = c.unsetTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("%s: failed to unset: %v", c.label, result.Error)
 	}
@@ -45,7 +46,7 @@ func runPropertyIdempotencyTest(t *testing.T, c propertyIdempotencyCase) {
 		t.Errorf("%s: expected state 'absent', got '%s'", c.label, result.State)
 	}
 
-	result = c.unsetTask.Execute()
+	result = c.unsetTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("%s: failed to re-apply unset: %v", c.label, result.Error)
 	}

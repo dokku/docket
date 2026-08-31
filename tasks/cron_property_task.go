@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // CronPropertyTask manages the cron configuration for a given dokku application
 type CronPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t CronPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the cron property
-func (t CronPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t CronPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // cronPropertyTable maps cron property names to the JSON keys emitted by
@@ -90,20 +92,20 @@ func (t CronPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the CronPropertyTask would produce.
-func (t CronPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t CronPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t CronPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t CronPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return CronPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t CronPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t CronPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return CronPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

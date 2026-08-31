@@ -7,7 +7,7 @@ import (
 
 func TestBuilderLambdaPropertyTaskInvalidState(t *testing.T) {
 	task := BuilderLambdaPropertyTask{App: "test-app", Property: "lambdayml-path", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestBuilderLambdaPropertyTaskInvalidState(t *testing.T) {
 
 func TestBuilderLambdaPropertyTaskMissingApp(t *testing.T) {
 	task := BuilderLambdaPropertyTask{Property: "lambdayml-path", Value: "lambda.yml", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestBuilderLambdaPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "lambda.yml",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestBuilderLambdaPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestBuilderLambdaPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "lambda.yml",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

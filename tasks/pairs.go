@@ -1,14 +1,18 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/dokku/docket/subprocess"
 )
 
 // pairsCurrentFunc returns the pairs currently stored at the task's scope.
-// A non-nil error short-circuits the plan with PlanStatusError.
-type pairsCurrentFunc func() (map[string]string, error)
+// A non-nil error short-circuits the plan with PlanStatusError. It takes the
+// context rather than capturing one, for the same reason PlanResult.apply
+// does: the probe runs under the caller's context, not one baked in wherever
+// the closure happened to be built.
+type pairsCurrentFunc func(ctx context.Context) (map[string]string, error)
 
 // pairsCommandFunc builds one dokku subprocess invocation that sets or
 // clears a single key. Pass an empty value to clear (dokku interprets a
@@ -19,8 +23,8 @@ type pairsCommandFunc func(key, value string) subprocess.ExecCommandInput
 // PlanResult whose apply runs one command per drifted key. kind is the
 // singular noun the helper substitutes into the user-facing reason
 // ("label", "annotation", "chart value").
-func planPairsSet(kind string, desired map[string]string, currentFn pairsCurrentFunc, commandFn pairsCommandFunc) PlanResult {
-	current, err := currentFn()
+func planPairsSet(ctx context.Context, kind string, desired map[string]string, currentFn pairsCurrentFunc, commandFn pairsCommandFunc) PlanResult {
+	current, err := currentFn(ctx)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -45,9 +49,9 @@ func planPairsSet(kind string, desired map[string]string, currentFn pairsCurrent
 		Status:    status,
 		Reason:    fmt.Sprintf("%d %s(s) to set", len(drifted), kind),
 		Mutations: formatSetMutations(drifted, desired, current),
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
@@ -55,8 +59,8 @@ func planPairsSet(kind string, desired map[string]string, currentFn pairsCurrent
 // planPairsUnset probes current pairs and returns a PlanResult whose apply
 // clears each desired key that exists in current. Keys absent from the
 // server are skipped silently (no-op).
-func planPairsUnset(kind string, desired map[string]string, currentFn pairsCurrentFunc, commandFn pairsCommandFunc) PlanResult {
-	current, err := currentFn()
+func planPairsUnset(ctx context.Context, kind string, desired map[string]string, currentFn pairsCurrentFunc, commandFn pairsCommandFunc) PlanResult {
+	current, err := currentFn(ctx)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -76,9 +80,9 @@ func planPairsUnset(kind string, desired map[string]string, currentFn pairsCurre
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d %s(s) to unset", len(toClear), kind),
 		Mutations: formatClearMutations(toClear, current),
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }

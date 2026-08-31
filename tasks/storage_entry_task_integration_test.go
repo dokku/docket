@@ -20,10 +20,10 @@ func TestIntegrationStorageEntry(t *testing.T) {
 
 	// Start clean.
 	destroy := StorageEntryTask{Name: name, State: StateAbsent}
-	destroy.Execute()
+	destroy.Execute(testCtx())
 
 	create := StorageEntryTask{Name: name, Chown: "herokuish", State: StatePresent}
-	result := create.Execute()
+	result := create.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create entry: %v", result.Error)
 	}
@@ -35,7 +35,7 @@ func TestIntegrationStorageEntry(t *testing.T) {
 	}
 
 	// Re-apply: should be idempotent.
-	result = create.Execute()
+	result = create.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent create failed: %v", result.Error)
 	}
@@ -44,7 +44,7 @@ func TestIntegrationStorageEntry(t *testing.T) {
 	}
 
 	// Destroy.
-	result = destroy.Execute()
+	result = destroy.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to destroy entry: %v", result.Error)
 	}
@@ -56,7 +56,7 @@ func TestIntegrationStorageEntry(t *testing.T) {
 	}
 
 	// Destroy again: idempotent.
-	result = destroy.Execute()
+	result = destroy.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent destroy failed: %v", result.Error)
 	}
@@ -74,11 +74,11 @@ func TestIntegrationStorageEntryNumericChown(t *testing.T) {
 	// dokku_storage_entry passes chown through unrestricted, so numeric uids
 	// already work here (unlike the historically narrower dokku_storage_ensure).
 	destroy := StorageEntryTask{Name: name, State: StateAbsent}
-	destroy.Execute()
-	defer destroy.Execute()
+	destroy.Execute(testCtx())
+	defer destroy.Execute(testCtx())
 
 	create := StorageEntryTask{Name: name, Chown: "32767", State: StatePresent}
-	result := create.Execute()
+	result := create.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create entry with numeric chown: %v", result.Error)
 	}
@@ -100,8 +100,8 @@ func TestIntegrationStorageEntryAnnotationsAndLabels(t *testing.T) {
 	// entry whatever the scheduler, so a docker-local entry is enough to
 	// prove the pairs survive the flag round trip intact.
 	destroy := StorageEntryTask{Name: name, State: StateAbsent}
-	destroy.Execute()
-	defer destroy.Execute()
+	destroy.Execute(testCtx())
+	defer destroy.Execute(testCtx())
 
 	create := StorageEntryTask{
 		Name:        name,
@@ -110,7 +110,7 @@ func TestIntegrationStorageEntryAnnotationsAndLabels(t *testing.T) {
 		Labels:      map[string]string{"docket-managed": "true"},
 		State:       StatePresent,
 	}
-	result := create.Execute()
+	result := create.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to create entry with annotations and labels: %v", result.Error)
 	}
@@ -118,7 +118,7 @@ func TestIntegrationStorageEntryAnnotationsAndLabels(t *testing.T) {
 		t.Error("expected changed=true for new entry")
 	}
 
-	entries, err := storageEntries()
+	entries, err := storageEntries(testCtx())
 	if err != nil {
 		t.Fatalf("failed to read storage entries: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestIntegrationStorageEntryAnnotationsAndLabels(t *testing.T) {
 
 	// ExportGlobal reconstructs the same values, so `docket export`
 	// reproduces the entry rather than a lossy shell of it.
-	exported, err := StorageEntryTask{}.ExportGlobal()
+	exported, err := StorageEntryTask{}.ExportGlobal(testCtx())
 	if err != nil {
 		t.Fatalf("ExportGlobal returned an error: %v", err)
 	}
@@ -176,11 +176,11 @@ func TestIntegrationStorageEntryConvergesChown(t *testing.T) {
 	name := "docket-test-entry-converge-chown"
 
 	destroy := StorageEntryTask{Name: name, State: StateAbsent}
-	destroy.Execute()
-	defer destroy.Execute()
+	destroy.Execute(testCtx())
+	defer destroy.Execute(testCtx())
 
 	create := StorageEntryTask{Name: name, Chown: "herokuish", State: StatePresent}
-	if result := create.Execute(); result.Error != nil {
+	if result := create.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to create entry: %v", result.Error)
 	}
 
@@ -189,12 +189,12 @@ func TestIntegrationStorageEntryConvergesChown(t *testing.T) {
 	// re-runs the chown on the host directory instead of only recording a
 	// new value.
 	converge := StorageEntryTask{Name: name, Chown: "root", State: StatePresent}
-	plan := converge.Plan()
+	plan := converge.Plan(testCtx())
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
 	}
 
-	result := converge.Execute()
+	result := converge.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to converge chown: %v", result.Error)
 	}
@@ -211,7 +211,7 @@ func TestIntegrationStorageEntryConvergesChown(t *testing.T) {
 	}
 
 	// A third run settles: the recipe now matches what the registry holds.
-	result = converge.Execute()
+	result = converge.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("re-applying the converged entry failed: %v", result.Error)
 	}
@@ -226,11 +226,11 @@ func TestIntegrationStorageEntryConvergesMode(t *testing.T) {
 	name := "docket-test-entry-converge-mode"
 
 	destroy := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
-	destroy.Execute()
-	defer destroy.Execute()
+	destroy.Execute(testCtx())
+	defer destroy.Execute(testCtx())
 
 	create := StorageEntryTask{Name: name, Mode: "0750", State: StatePresent}
-	if result := create.Execute(); result.Error != nil {
+	if result := create.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to create entry: %v", result.Error)
 	}
 	hostDir := filepath.Join(dokkuStorageRoot, name)
@@ -240,12 +240,12 @@ func TestIntegrationStorageEntryConvergesMode(t *testing.T) {
 	// storage:set rather than a second storage:create - which is what re-runs
 	// the chmod on the host directory instead of only recording a new value.
 	converge := StorageEntryTask{Name: name, Mode: "0777", State: StatePresent}
-	plan := converge.Plan()
+	plan := converge.Plan(testCtx())
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
 	}
 
-	result := converge.Execute()
+	result := converge.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to converge mode: %v", result.Error)
 	}
@@ -259,7 +259,7 @@ func TestIntegrationStorageEntryConvergesMode(t *testing.T) {
 	assertDirModeT(t, hostDir, 0o777)
 
 	// A third run settles: the recipe now matches what the registry holds.
-	if result := converge.Execute(); result.Changed {
+	if result := converge.Execute(testCtx()); result.Changed {
 		t.Error("expected changed=false once the mode matches")
 	}
 }
@@ -270,14 +270,14 @@ func TestIntegrationStorageEntryNormalizesAThreeDigitMode(t *testing.T) {
 	name := "docket-test-entry-mode-normalize"
 
 	destroy := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
-	destroy.Execute()
-	defer destroy.Execute()
+	destroy.Execute(testCtx())
+	defer destroy.Execute(testCtx())
 
 	// dokku records the 4 digit form whatever the recipe wrote. docket has to
 	// compare the same way, or this recipe would report drift on every run and
 	// re-apply a mode that was already correct.
 	create := StorageEntryTask{Name: name, Mode: "700", State: StatePresent}
-	if result := create.Execute(); result.Error != nil {
+	if result := create.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to create entry: %v", result.Error)
 	}
 	if entry := findStorageEntryT(t, name); entry.Mode != "0700" {
@@ -285,7 +285,7 @@ func TestIntegrationStorageEntryNormalizesAThreeDigitMode(t *testing.T) {
 	}
 	assertDirModeT(t, filepath.Join(dokkuStorageRoot, name), 0o700)
 
-	if result := create.Execute(); result.Changed {
+	if result := create.Execute(testCtx()); result.Changed {
 		t.Error("expected changed=false for a three digit mode that is already applied")
 	}
 }
@@ -297,11 +297,11 @@ func TestIntegrationStorageEntryDestroyHostDir(t *testing.T) {
 	hostDir := filepath.Join(dokkuStorageRoot, name)
 
 	cleanup := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
-	cleanup.Execute()
-	defer cleanup.Execute()
+	cleanup.Execute(testCtx())
+	defer cleanup.Execute(testCtx())
 
 	create := StorageEntryTask{Name: name, State: StatePresent}
-	if result := create.Execute(); result.Error != nil {
+	if result := create.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to create entry: %v", result.Error)
 	}
 	if _, err := os.Stat(hostDir); err != nil {
@@ -310,7 +310,7 @@ func TestIntegrationStorageEntryDestroyHostDir(t *testing.T) {
 
 	// A plain destroy deregisters the entry and leaves the directory, which is
 	// the half dokku_storage_entry has always covered.
-	if result := (StorageEntryTask{Name: name, State: StateAbsent}).Execute(); result.Error != nil {
+	if result := (StorageEntryTask{Name: name, State: StateAbsent}).Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to destroy entry: %v", result.Error)
 	}
 	if _, err := os.Stat(hostDir); err != nil {
@@ -318,12 +318,12 @@ func TestIntegrationStorageEntryDestroyHostDir(t *testing.T) {
 	}
 
 	// The flag is the other half: re-create, then destroy the directory too.
-	if result := create.Execute(); result.Error != nil {
+	if result := create.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to re-create entry: %v", result.Error)
 	}
 
 	destroy := StorageEntryTask{Name: name, DestroyHostDir: true, State: StateAbsent}
-	plan := destroy.Plan()
+	plan := destroy.Plan(testCtx())
 	if plan.Status != PlanStatusDestroy {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusDestroy, plan.Status, plan.Error)
 	}
@@ -331,7 +331,7 @@ func TestIntegrationStorageEntryDestroyHostDir(t *testing.T) {
 		t.Errorf("expected the plan to name %s, got %v", hostDir, plan.Mutations)
 	}
 
-	result := destroy.Execute()
+	result := destroy.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to destroy entry and host directory: %v", result.Error)
 	}
@@ -349,15 +349,15 @@ func TestIntegrationStorageEntryConvergesOneAnnotationKey(t *testing.T) {
 	name := "docket-test-entry-converge-metadata"
 
 	destroy := StorageEntryTask{Name: name, State: StateAbsent}
-	destroy.Execute()
-	defer destroy.Execute()
+	destroy.Execute(testCtx())
+	defer destroy.Execute(testCtx())
 
 	create := StorageEntryTask{
 		Name:        name,
 		Annotations: map[string]string{"docket.io/team": "platform", "docket.io/tier": "data"},
 		State:       StatePresent,
 	}
-	if result := create.Execute(); result.Error != nil {
+	if result := create.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to create entry: %v", result.Error)
 	}
 
@@ -369,7 +369,7 @@ func TestIntegrationStorageEntryConvergesOneAnnotationKey(t *testing.T) {
 		Annotations: map[string]string{"docket.io/team": "sre"},
 		State:       StatePresent,
 	}
-	result := converge.Execute()
+	result := converge.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to converge the annotation: %v", result.Error)
 	}
@@ -385,7 +385,7 @@ func TestIntegrationStorageEntryConvergesOneAnnotationKey(t *testing.T) {
 		t.Errorf("expected the undeclared annotation to survive, got %v", entry.Annotations)
 	}
 
-	if result := converge.Execute(); result.Changed {
+	if result := converge.Execute(testCtx()); result.Changed {
 		t.Error("expected changed=false once the annotation matches")
 	}
 }
@@ -396,18 +396,18 @@ func TestIntegrationStorageEntryRefusesAPathChange(t *testing.T) {
 	name := "docket-test-entry-immutable-path"
 
 	destroy := StorageEntryTask{Name: name, State: StateAbsent}
-	destroy.Execute()
-	defer destroy.Execute()
+	destroy.Execute(testCtx())
+	defer destroy.Execute(testCtx())
 
 	create := StorageEntryTask{Name: name, State: StatePresent}
-	if result := create.Execute(); result.Error != nil {
+	if result := create.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to create entry: %v", result.Error)
 	}
 
 	// dokku has no command that moves an entry's host path, so the plan
 	// says so rather than reporting a change it could never apply.
 	move := StorageEntryTask{Name: name, Path: "/mnt/docket-test-entry-elsewhere", State: StatePresent}
-	plan := move.Plan()
+	plan := move.Plan(testCtx())
 	if plan.Status != PlanStatusError {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 	}
@@ -435,7 +435,7 @@ func assertDirModeT(t *testing.T, dir string, want os.FileMode) {
 // test when the server does not report it.
 func findStorageEntryT(t *testing.T, name string) storageEntry {
 	t.Helper()
-	entry, err := lookupStorageEntry(name)
+	entry, err := lookupStorageEntry(testCtx(), name)
 	if err != nil {
 		t.Fatalf("failed to read storage entries: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 
 func TestHaproxyPropertyTaskInvalidState(t *testing.T) {
 	task := HaproxyPropertyTask{Global: true, Property: "letsencrypt-email", State: "invalid"}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -15,7 +15,7 @@ func TestHaproxyPropertyTaskInvalidState(t *testing.T) {
 
 func TestHaproxyPropertyTaskMissingApp(t *testing.T) {
 	task := HaproxyPropertyTask{Property: "letsencrypt-email", Value: "admin@example.com", State: StatePresent}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -29,7 +29,7 @@ func TestHaproxyPropertyTaskGlobalWithAppSet(t *testing.T) {
 		Value:    "admin@example.com",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -45,7 +45,7 @@ func TestHaproxyPropertyTaskPresentWithoutValue(t *testing.T) {
 		Value:    "",
 		State:    StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no value")
 	}
@@ -61,7 +61,7 @@ func TestHaproxyPropertyTaskAbsentWithValue(t *testing.T) {
 		Value:    "admin@example.com",
 		State:    StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has a value")
 	}

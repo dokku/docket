@@ -14,12 +14,12 @@ func TestIntegrationStorageMount(t *testing.T) {
 	containerDir := "/app/storage"
 	entryName := "docket-test-mount-entry"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// ensure storage directory exists
-	subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "mkdir",
 		Args:    []string{"-p", hostDir},
 	})
@@ -31,7 +31,7 @@ func TestIntegrationStorageMount(t *testing.T) {
 		ContainerDir: containerDir,
 		State:        StatePresent,
 	}
-	result := mountTask.Execute()
+	result := mountTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to mount storage (legacy): %v", result.Error)
 	}
@@ -43,7 +43,7 @@ func TestIntegrationStorageMount(t *testing.T) {
 	}
 
 	// mount again should be idempotent
-	result = mountTask.Execute()
+	result = mountTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent mount failed: %v", result.Error)
 	}
@@ -58,7 +58,7 @@ func TestIntegrationStorageMount(t *testing.T) {
 		ContainerDir: containerDir,
 		State:        StateAbsent,
 	}
-	result = unmountTask.Execute()
+	result = unmountTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to unmount storage (legacy): %v", result.Error)
 	}
@@ -70,7 +70,7 @@ func TestIntegrationStorageMount(t *testing.T) {
 	}
 
 	// unmount again should be idempotent
-	result = unmountTask.Execute()
+	result = unmountTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent unmount failed: %v", result.Error)
 	}
@@ -84,12 +84,12 @@ func TestIntegrationStorageMount(t *testing.T) {
 		Chown: "herokuish",
 		State: StatePresent,
 	}
-	if r := entry.Execute(); r.Error != nil {
+	if r := entry.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to create entry: %v", r.Error)
 	}
 	defer func() {
 		destroy := StorageEntryTask{Name: entryName, State: StateAbsent}
-		destroy.Execute()
+		destroy.Execute(testCtx())
 	}()
 
 	namedMount := StorageMountTask{
@@ -99,7 +99,7 @@ func TestIntegrationStorageMount(t *testing.T) {
 		Phases:       []string{"deploy", "run"},
 		State:        StatePresent,
 	}
-	result = namedMount.Execute()
+	result = namedMount.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to mount named entry: %v", result.Error)
 	}
@@ -108,7 +108,7 @@ func TestIntegrationStorageMount(t *testing.T) {
 	}
 
 	// idempotent re-apply
-	result = namedMount.Execute()
+	result = namedMount.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent named-entry mount failed: %v", result.Error)
 	}
@@ -123,14 +123,14 @@ func TestIntegrationStorageMount(t *testing.T) {
 		ContainerDir: "/app/named",
 		State:        StateAbsent,
 	}
-	result = namedUnmount.Execute()
+	result = namedUnmount.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to unmount named entry: %v", result.Error)
 	}
 	if !result.Changed {
 		t.Error("expected changed=true for named-entry unmount")
 	}
-	result = namedUnmount.Execute()
+	result = namedUnmount.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent named-entry unmount failed: %v", result.Error)
 	}
@@ -147,11 +147,11 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 	containerDir := "/app/storage"
 	entryName := "docket-test-mount-opts-entry"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
-	subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "mkdir",
 		Args:    []string{"-p", hostDir},
 	})
@@ -164,14 +164,14 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 		VolumeOptions: "Z",
 		State:         StatePresent,
 	}
-	result := withOpts.Execute()
+	result := withOpts.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to mount with volume_options=Z: %v", result.Error)
 	}
 	if !result.Changed {
 		t.Error("expected changed=true for new legacy mount with options")
 	}
-	result = withOpts.Execute()
+	result = withOpts.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent mount with volume_options failed: %v", result.Error)
 	}
@@ -187,10 +187,10 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 		ContainerDir: containerDir,
 		State:        StatePresent,
 	}
-	if plan := withoutOpts.Plan(); plan.Status != PlanStatusModify {
+	if plan := withoutOpts.Plan(testCtx()); plan.Status != PlanStatusModify {
 		t.Errorf("expected Modify status for volume_options drift on an existing mount, got %q (reason %q)", plan.Status, plan.Reason)
 	}
-	result = withoutOpts.Execute()
+	result = withoutOpts.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to re-mount without volume_options: %v", result.Error)
 	}
@@ -205,18 +205,18 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 		ContainerDir: containerDir,
 		State:        StateAbsent,
 	}
-	if r := unmount.Execute(); r.Error != nil {
+	if r := unmount.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to unmount legacy with options: %v", r.Error)
 	}
 
 	// named-entry form with multi-option round-trip
 	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
-	if r := entry.Execute(); r.Error != nil {
+	if r := entry.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to create entry: %v", r.Error)
 	}
 	defer func() {
 		destroy := StorageEntryTask{Name: entryName, State: StateAbsent}
-		destroy.Execute()
+		destroy.Execute(testCtx())
 	}()
 
 	namedWithOpts := StorageMountTask{
@@ -226,14 +226,14 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 		VolumeOptions: "noexec,nosuid",
 		State:         StatePresent,
 	}
-	result = namedWithOpts.Execute()
+	result = namedWithOpts.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to mount named entry with options: %v", result.Error)
 	}
 	if !result.Changed {
 		t.Error("expected changed=true for new named-entry mount with options")
 	}
-	result = namedWithOpts.Execute()
+	result = namedWithOpts.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent named-entry mount with options failed: %v", result.Error)
 	}
@@ -247,7 +247,7 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 		ContainerDir: "/app/named",
 		State:        StateAbsent,
 	}
-	if r := namedUnmount.Execute(); r.Error != nil {
+	if r := namedUnmount.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to unmount named entry with options: %v", r.Error)
 	}
 }
@@ -263,17 +263,17 @@ func TestIntegrationStorageMountExportRoundTrip(t *testing.T) {
 	entryName := "docket-test-mount-export-entry"
 	containerDir := "/app/exported"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
-	if r := entry.Execute(); r.Error != nil {
+	if r := entry.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to create entry: %v", r.Error)
 	}
 	defer func() {
 		destroy := StorageEntryTask{Name: entryName, State: StateAbsent}
-		destroy.Execute()
+		destroy.Execute(testCtx())
 	}()
 
 	mount := StorageMountTask{
@@ -285,11 +285,11 @@ func TestIntegrationStorageMountExportRoundTrip(t *testing.T) {
 		Readonly:     true,
 		State:        StatePresent,
 	}
-	if r := mount.Execute(); r.Error != nil {
+	if r := mount.Execute(testCtx()); r.Error != nil {
 		t.Fatalf("failed to mount named entry: %v", r.Error)
 	}
 
-	bodies, err := StorageMountTask{}.ExportApp(appName)
+	bodies, err := StorageMountTask{}.ExportApp(testCtx(), appName)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestIntegrationStorageMountExportRoundTrip(t *testing.T) {
 
 	// The exporter omits state; set it so the body can be planned directly.
 	got.State = StatePresent
-	if plan := got.Plan(); !plan.InSync {
+	if plan := got.Plan(testCtx()); !plan.InSync {
 		t.Errorf("exported mount should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }

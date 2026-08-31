@@ -8,9 +8,9 @@ func TestIntegrationSchedulerK3sAnnotationsAll(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 
 	appName := "docket-test-scheduler-k3s-annotations"
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	cases := []struct {
 		name         string
@@ -90,7 +90,7 @@ func TestIntegrationSchedulerK3sAnnotationsAll(t *testing.T) {
 				Annotations:  tc.annotations,
 				State:        StateAbsent,
 			}
-			defer unsetTask.Execute()
+			defer unsetTask.Execute(testCtx())
 			runPropertyIdempotencyTest(t, propertyIdempotencyCase{
 				label:     "scheduler-k3s annotations " + tc.name,
 				setTask:   setTask,

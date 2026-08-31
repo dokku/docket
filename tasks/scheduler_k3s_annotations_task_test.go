@@ -12,7 +12,7 @@ func TestSchedulerK3sAnnotationsTaskInvalidState(t *testing.T) {
 		Annotations:  map[string]string{"prometheus.io/scrape": "true"},
 		State:        "invalid",
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute with invalid state should return an error")
 	}
@@ -24,7 +24,7 @@ func TestSchedulerK3sAnnotationsTaskMissingApp(t *testing.T) {
 		Annotations:  map[string]string{"prometheus.io/scrape": "true"},
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
@@ -41,7 +41,7 @@ func TestSchedulerK3sAnnotationsTaskGlobalWithAppSet(t *testing.T) {
 		Annotations:  map[string]string{"prometheus.io/scrape": "true"},
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
@@ -56,7 +56,7 @@ func TestSchedulerK3sAnnotationsTaskMissingResourceType(t *testing.T) {
 		Annotations: map[string]string{"prometheus.io/scrape": "true"},
 		State:       StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when resource_type is empty")
 	}
@@ -71,7 +71,7 @@ func TestSchedulerK3sAnnotationsTaskPresentWithoutAnnotations(t *testing.T) {
 		ResourceType: "deployment",
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no annotations")
 	}
@@ -86,7 +86,7 @@ func TestSchedulerK3sAnnotationsTaskAbsentWithoutAnnotations(t *testing.T) {
 		ResourceType: "deployment",
 		State:        StateAbsent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has no annotations")
 	}
@@ -102,7 +102,7 @@ func TestSchedulerK3sAnnotationsTaskEmptyAnnotationKey(t *testing.T) {
 		Annotations:  map[string]string{"": "true"},
 		State:        StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("expected error when an annotation key is empty")
 	}

@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"reflect"
@@ -303,7 +304,12 @@ type PlanResult struct {
 	// server state. nil when InSync. Captures any probed state needed for
 	// the mutation so the apply path does not re-probe. Unexported so
 	// formatters and JSON consumers cannot accidentally invoke it.
-	apply func() TaskOutputState
+	//
+	// It takes the context rather than capturing the one Plan ran under,
+	// because ExecutePlan is invoked separately and could be handed a
+	// different one; capturing would silently apply against a stale target
+	// or an already-cancelled deadline.
+	apply func(ctx context.Context) TaskOutputState
 }
 
 // planErr wraps an input-validation error in a PlanResult. Tasks return it
@@ -324,12 +330,16 @@ type Task interface {
 
 	// Plan reports the drift the task would produce against the live server,
 	// without mutating it. Plan must never call mutating dokku commands.
-	Plan() PlanResult
+	//
+	// ctx carries the per-invocation state a task needs: cancellation, and the
+	// target the dokku commands run against. Pass it to every subprocess call
+	// rather than reaching for context.Background().
+	Plan(ctx context.Context) PlanResult
 
 	// Execute executes the task. Conventionally implemented as
-	// ExecutePlan(t.Plan()) so probing happens once and the per-state
+	// ExecutePlan(ctx, t.Plan(ctx)) so probing happens once and the per-state
 	// mutation logic lives only in Plan().
-	Execute() TaskOutputState
+	Execute(ctx context.Context) TaskOutputState
 }
 
 // InputValidator is an optional interface a task implements to expose

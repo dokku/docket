@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // OpenrestyPropertyTask manages the openresty configuration for a given dokku application
 type OpenrestyPropertyTask PropertyFields
 
@@ -71,8 +73,8 @@ func (t OpenrestyPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the openresty property
-func (t OpenrestyPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t OpenrestyPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // openrestyPropertyTable maps openresty property names to the JSON keys
@@ -129,20 +131,20 @@ func (t OpenrestyPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the OpenrestyPropertyTask would produce.
-func (t OpenrestyPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t OpenrestyPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t OpenrestyPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t OpenrestyPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return OpenrestyPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t OpenrestyPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t OpenrestyPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return OpenrestyPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

@@ -9,9 +9,9 @@ func TestIntegrationGitSync(t *testing.T) {
 
 	appName := "docket-test-gitsync"
 
-	destroyApp(appName)
-	createApp(appName)
-	defer destroyApp(appName)
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
 
 	// Build so dokku records the git-sync deploy source (its metadata is only
 	// written when a build is triggered), which is what the probe reads back.
@@ -21,7 +21,7 @@ func TestIntegrationGitSync(t *testing.T) {
 		Build:  true,
 		State:  StatePresent,
 	}
-	result := task.Execute()
+	result := task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to sync git: %v", result.Error)
 	}
@@ -34,7 +34,7 @@ func TestIntegrationGitSync(t *testing.T) {
 
 	// A second apply with no pinned ref must converge on the matching remote
 	// rather than re-syncing every time (issue #310).
-	result = task.Execute()
+	result = task.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("idempotent git sync failed: %v", result.Error)
 	}

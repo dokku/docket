@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -85,8 +86,8 @@ func (t GitFromArchiveTask) Examples() ([]Doc, error) {
 var validGitFromArchiveTypes = map[string]bool{"tar": true, "tar.gz": true, "zip": true}
 
 // Execute deploys a git repository from an archive URL
-func (t GitFromArchiveTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t GitFromArchiveTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the GitFromArchiveTask's inputs without contacting the server.
@@ -111,7 +112,7 @@ func (t GitFromArchiveTask) Validate() error {
 }
 
 // Plan reports the drift the GitFromArchiveTask would produce.
-func (t GitFromArchiveTask) Plan() PlanResult {
+func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -121,7 +122,7 @@ func (t GitFromArchiveTask) Plan() PlanResult {
 			if archiveType == "" {
 				archiveType = "tar"
 			}
-			match, err := checkAppSourceArchive(t.App, archiveType, t.ArchiveURL)
+			match, err := checkAppSourceArchive(ctx, t.App, archiveType, t.ArchiveURL)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -138,9 +139,9 @@ func (t GitFromArchiveTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "archive source drift",
 				Mutations: []string{fmt.Sprintf("git:from-archive %s %s (%s)", t.App, t.ArchiveURL, archiveType)},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
 				},
 			}
 		},
@@ -153,8 +154,8 @@ func (t GitFromArchiveTask) Plan() PlanResult {
 // deploy reports source "tar.gz". A transport-level failure
 // (`*subprocess.SSHError`) is propagated; any other error is treated
 // as "no match" so the planner proposes a re-deploy.
-func checkAppSourceArchive(app, expectedType, expectedURL string) (bool, error) {
-	source, err := getAppDeploySource(app)
+func checkAppSourceArchive(ctx context.Context, app, expectedType, expectedURL string) (bool, error) {
+	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -168,8 +169,8 @@ func checkAppSourceArchive(app, expectedType, expectedURL string) (bool, error) 
 // ExportApp reconstructs a git-from-archive deploy source from apps:report.
 // dokku records the archive type (tar/tar.gz/zip) as the source and the URL as
 // the metadata; the URL is sensitive, so the engine lifts it into the vars-file.
-func (t GitFromArchiveTask) ExportApp(app string) ([]interface{}, error) {
-	source, err := getAppDeploySource(app)
+func (t GitFromArchiveTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		return nil, err
 	}

@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // BuilderLambdaPropertyTask manages the builder-lambda configuration for a given dokku application
 type BuilderLambdaPropertyTask PropertyFields
 
@@ -63,8 +65,8 @@ func (t BuilderLambdaPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the builder-lambda property
-func (t BuilderLambdaPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t BuilderLambdaPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // builderLambdaPropertyTable maps builder-lambda property names to the JSON
@@ -88,20 +90,20 @@ func (t BuilderLambdaPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the BuilderLambdaPropertyTask would produce.
-func (t BuilderLambdaPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t BuilderLambdaPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t BuilderLambdaPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t BuilderLambdaPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return BuilderLambdaPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t BuilderLambdaPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t BuilderLambdaPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return BuilderLambdaPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

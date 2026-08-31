@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/dokku/docket/subprocess"
@@ -78,8 +79,8 @@ func (t GitAuthTask) Examples() ([]Doc, error) {
 }
 
 // Execute manages the netrc entry for a host
-func (t GitAuthTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t GitAuthTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Validate checks the GitAuthTask's inputs without contacting the server.
@@ -95,7 +96,7 @@ func (t GitAuthTask) Validate() error {
 
 // Plan reports the drift the GitAuthTask would produce. dokku has no public
 // way to query netrc state, so the plan reports drift unconditionally.
-func (t GitAuthTask) Plan() PlanResult {
+func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -110,9 +111,9 @@ func (t GitAuthTask) Plan() PlanResult {
 				Status:    PlanStatusModify,
 				Reason:    "netrc state not probed",
 				Mutations: []string{"git:auth " + t.Host + " " + t.Username + " " + t.Password},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
@@ -126,9 +127,9 @@ func (t GitAuthTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "netrc state not probed",
 				Mutations: []string{"git:auth " + t.Host + " (clear)"},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},

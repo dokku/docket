@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -66,15 +67,15 @@ func (t NetworkTask) Examples() ([]Doc, error) {
 }
 
 // Execute creates or destroys a Docker network
-func (t NetworkTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t NetworkTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // Plan reports the drift the NetworkTask would produce.
-func (t NetworkTask) Plan() PlanResult {
+func (t NetworkTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := networkExists(t.Name)
+			exists, err := networkExists(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -90,14 +91,14 @@ func (t NetworkTask) Plan() PlanResult {
 				Status:    PlanStatusCreate,
 				Reason:    "network missing",
 				Mutations: []string{"create network " + t.Name},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := networkExists(t.Name)
+			exists, err := networkExists(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
@@ -113,9 +114,9 @@ func (t NetworkTask) Plan() PlanResult {
 				Status:    PlanStatusDestroy,
 				Reason:    "network present",
 				Mutations: []string{"destroy network " + t.Name},
-				Commands:  resolveCommands(inputs),
-				apply: func() TaskOutputState {
-					return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				Commands:  resolveCommands(ctx, inputs),
+				apply: func(ctx context.Context) TaskOutputState {
+					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
 			}
 		},
@@ -140,8 +141,8 @@ type networkListEntry struct {
 // dokku predating the DokkuManaged field reports it absent (decoding to false)
 // for every network, so nothing is exported rather than every network being
 // re-emitted.
-func (t NetworkTask) ExportGlobal() ([]interface{}, error) {
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+func (t NetworkTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "network:list", "--format", "json"},
 	})
@@ -173,8 +174,8 @@ func (t NetworkTask) ExportGlobal() ([]interface{}, error) {
 // when the probe could not run - a transport failure, a missing dokku
 // binary, or a cancellation; (false, nil) when dokku reports the network
 // absent; (true, nil) when present.
-func networkExists(name string) (bool, error) {
-	return subprocess.Probe(subprocess.ExecCommandInput{
+func networkExists(ctx context.Context, name string) (bool, error) {
+	return subprocess.Probe(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",
@@ -186,14 +187,14 @@ func networkExists(name string) (bool, error) {
 
 // destroyNetwork is retained as an integration-test helper. It runs the
 // destroy-network apply path synchronously.
-func destroyNetwork(name string) TaskOutputState {
+func destroyNetwork(ctx context.Context, name string) TaskOutputState {
 	state := TaskOutputState{Changed: false, State: StatePresent}
-	exists, _ := networkExists(name)
+	exists, _ := networkExists(ctx, name)
 	if !exists {
 		state.State = StateAbsent
 		return state
 	}
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "--force", "network:destroy", name},
 	})

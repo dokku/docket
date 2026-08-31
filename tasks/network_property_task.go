@@ -1,5 +1,7 @@
 package tasks
 
+import "context"
+
 // NetworkPropertyTask manages the network property for a given dokku application
 type NetworkPropertyTask PropertyFields
 
@@ -71,8 +73,8 @@ func (t NetworkPropertyTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the network property
-func (t NetworkPropertyTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t NetworkPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // networkPropertyTable maps network property names to the JSON keys emitted
@@ -101,20 +103,20 @@ func (t NetworkPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the NetworkPropertyTask would produce.
-func (t NetworkPropertyTask) Plan() PlanResult {
-	return planProperty(t, t.State, t.App, t.Global, t.Property, t.Value)
+func (t NetworkPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
-func (t NetworkPropertyTask) ExportApp(app string) ([]interface{}, error) {
-	return exportProperties(t, app, func(app, property, value string) interface{} {
+func (t NetworkPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return NetworkPropertyTask{App: app, Property: property, Value: value}
 	})
 }
 
 // ExportGlobal reconstructs the globally-set properties.
-func (t NetworkPropertyTask) ExportGlobal() ([]interface{}, error) {
-	return exportGlobalProperties(t, func(property, value string) interface{} {
+func (t NetworkPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
 		return NetworkPropertyTask{Global: true, Property: property, Value: value}
 	})
 }

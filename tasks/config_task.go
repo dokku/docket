@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -84,8 +85,8 @@ func (t ConfigTask) Examples() ([]Doc, error) {
 }
 
 // Execute sets or unsets the configuration for a given dokku application
-func (t ConfigTask) Execute() TaskOutputState {
-	return ExecutePlan(t.Plan())
+func (t ConfigTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
 // SensitiveValues returns every non-empty value in the Config map together
@@ -106,10 +107,10 @@ func (t ConfigTask) SensitiveValues() []string {
 }
 
 // Plan reports the drift the ConfigTask would produce.
-func (t ConfigTask) Plan() PlanResult {
+func (t ConfigTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planConfigSet(t) },
-		StateAbsent:  func() PlanResult { return planConfigUnset(t) },
+		StatePresent: func() PlanResult { return planConfigSet(ctx, t) },
+		StateAbsent:  func() PlanResult { return planConfigUnset(ctx, t) },
 	})
 }
 
@@ -141,8 +142,8 @@ func configKeysToUnset(current, desired map[string]string) []string {
 
 // planConfigSet probes current config once, computes the diff, and embeds
 // an apply closure that runs `dokku config:set` with only the changed keys.
-func planConfigSet(t ConfigTask) PlanResult {
-	currentConfig, err := getConfig(t)
+func planConfigSet(ctx context.Context, t ConfigTask) PlanResult {
+	currentConfig, err := getConfig(ctx, t)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -178,17 +179,17 @@ func planConfigSet(t ConfigTask) PlanResult {
 		Status:    status,
 		Reason:    fmt.Sprintf("%d key(s) to set", len(keys)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
 	}
 }
 
 // planConfigUnset probes current config once, computes the diff, and embeds
 // an apply closure that runs `dokku config:unset` with only existing keys.
-func planConfigUnset(t ConfigTask) PlanResult {
-	currentConfig, err := getConfig(t)
+func planConfigUnset(ctx context.Context, t ConfigTask) PlanResult {
+	currentConfig, err := getConfig(ctx, t)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
@@ -212,9 +213,9 @@ func planConfigUnset(t ConfigTask) PlanResult {
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d key(s) to unset", len(keys)),
 		Mutations: mutations,
-		Commands:  resolveCommands(inputs),
-		apply: func() TaskOutputState {
-			return runExecInputs(TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
 	}
 }
@@ -229,15 +230,15 @@ func planConfigUnset(t ConfigTask) PlanResult {
 // apply with the new server's credentials, so re-exporting the stale value
 // would clobber the fresh one. The exclusion happens here, before the engine
 // lifts values, so those DSNs never reach the vars-file.
-func (t ConfigTask) ExportApp(app string) ([]interface{}, error) {
-	config, err := getConfig(ConfigTask{App: app})
+func (t ConfigTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	config, err := getConfig(ctx, ConfigTask{App: app})
 	if err != nil {
 		return nil, err
 	}
 	if len(config) == 0 {
 		return nil, nil
 	}
-	dsns, err := linkedServiceDSNs(app)
+	dsns, err := linkedServiceDSNs(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -255,9 +256,9 @@ func (t ConfigTask) ExportApp(app string) ([]interface{}, error) {
 }
 
 // getConfig retrieves the current configuration for a given dokku application
-func getConfig(t ConfigTask) (map[string]string, error) {
+func getConfig(ctx context.Context, t ConfigTask) (map[string]string, error) {
 	var config map[string]string
-	result, err := subprocess.CallExecCommand(subprocess.ExecCommandInput{
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args: []string{
 			"--quiet",
