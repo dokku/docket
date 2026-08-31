@@ -110,11 +110,10 @@ func TestControlPathExtension(t *testing.T) {
 }
 
 func TestBuildSshArgvDefault(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
-	t.Setenv("DOKKU_SUDO", "")
+	t.Parallel()
 
-	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, []string{"dokku", "apps:list"})
+	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(parsed, Target{}, []string{"dokku", "apps:list"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -151,16 +150,15 @@ func TestBuildSshArgvDefault(t *testing.T) {
 		t.Errorf("argv should not include -p for default port 22: %v", argv)
 	}
 	if containsExact(argv, "StrictHostKeyChecking=accept-new") {
-		t.Errorf("argv should not include accept-new without env var: %v", argv)
+		t.Errorf("argv should not include accept-new for a target that did not ask for it: %v", argv)
 	}
 }
 
 func TestBuildSshArgvNonStandardPort(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
-	t.Setenv("DOKKU_SUDO", "")
+	t.Parallel()
 
-	target := sshTarget{User: "alice", Host: "host", Port: "2222"}
-	argv, err := buildSshArgv(target, []string{"dokku", "version"})
+	parsed := sshTarget{User: "alice", Host: "host", Port: "2222"}
+	argv, err := buildSshArgv(parsed, Target{}, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -173,11 +171,10 @@ func TestBuildSshArgvNonStandardPort(t *testing.T) {
 }
 
 func TestBuildSshArgvAcceptNewHostKeys(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "1")
-	t.Setenv("DOKKU_SUDO", "")
+	t.Parallel()
 
-	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, []string{"dokku", "version"})
+	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(parsed, Target{AcceptNewHostKeys: true}, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -188,11 +185,10 @@ func TestBuildSshArgvAcceptNewHostKeys(t *testing.T) {
 }
 
 func TestBuildSshArgvDokkuSudo(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
-	t.Setenv("DOKKU_SUDO", "1")
+	t.Parallel()
 
-	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, []string{"dokku", "version"})
+	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(parsed, Target{Sudo: true}, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -213,7 +209,7 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 
 func TestBuildSshArgvDoubleDashSeparator(t *testing.T) {
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, []string{"dokku", "config:set", "--no-restart"})
+	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "--no-restart"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -232,7 +228,7 @@ func TestBuildSshArgvQuotesRemoteArgs(t *testing.T) {
 	t.Setenv("DOKKU_SUDO", "")
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
+	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -255,7 +251,7 @@ func TestBuildSshArgvQuotesInjection(t *testing.T) {
 	t.Setenv("DOKKU_SUDO", "")
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
+	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -284,7 +280,7 @@ func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
 	t.Setenv("DOKKU_SUDO", "")
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, []string{
+	argv, err := buildSshArgv(target, Target{}, []string{
 		"dokku", "--quiet", "postgres:create", "my-db",
 		"--image", "postgis/postgis",
 		"--image-version", "13-master",
@@ -316,13 +312,13 @@ func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	// A newline has no POSIX-shell escape, so we refuse to build the remote
 	// command rather than corrupt it.
-	if _, err := buildSshArgv(target, []string{"dokku", "config:set", "app", "a\nb"}); err == nil {
+	if _, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "app", "a\nb"}); err == nil {
 		t.Fatal("expected error for argument containing a newline")
 	}
 
 	// The same failure surfaces through the dispatcher as a transport-level
 	// *SSHError so plan/apply render it with the `ssh:` prefix.
-	_, err := CallSshCommand(context.Background(), "alice@host", ExecCommandInput{
+	_, err := CallSshCommand(context.Background(), Target{Host: "alice@host"}, ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"config:set", "app", "a\nb"},
 	})
@@ -418,7 +414,7 @@ func TestClassifySshResultSuccess(t *testing.T) {
 }
 
 func TestCallSshCommandReturnsSshErrorOnEmptyHost(t *testing.T) {
-	_, err := CallSshCommand(context.Background(), "", ExecCommandInput{Command: "dokku", Args: []string{"version"}})
+	_, err := CallSshCommand(context.Background(), Target{}, ExecCommandInput{Command: "dokku", Args: []string{"version"}})
 	if err == nil {
 		t.Fatal("expected error for empty host")
 	}
@@ -449,13 +445,15 @@ func TestProbeDokkuLevelFailure(t *testing.T) {
 }
 
 func TestProbeSshTransportErrorPropagates(t *testing.T) {
-	// Inject a default host that points at a closed port so the SSH
-	// dispatcher routes the probe and OpenSSH exits 255 (transport
-	// failure). Dispatch only triggers for input.Command=="dokku".
-	t.Cleanup(func() { SetDefaultHost("") })
-	SetDefaultHost("docket-test@127.0.0.1:1")
+	t.Parallel()
 
-	matched, err := Probe(context.Background(), ExecCommandInput{
+	// A target pointing at a closed port routes the probe through SSH and
+	// OpenSSH exits 255 (transport failure). Dispatch only triggers for
+	// input.Command=="dokku". The target rides on this call's context, so the
+	// test needs nothing process-wide and can run alongside the others.
+	ctx := ContextWithTarget(context.Background(), Target{Host: "docket-test@127.0.0.1:1"})
+
+	matched, err := Probe(ctx, ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "apps:exists", "anything"},
 	})
@@ -525,18 +523,6 @@ func TestProbeExecRanFlagControlsAbsence(t *testing.T) {
 			t.Errorf("propagated error should wrap context.Canceled, got %v", err)
 		}
 	})
-}
-
-func TestSetAndGetDefaultHost(t *testing.T) {
-	t.Cleanup(func() { SetDefaultHost("") })
-	SetDefaultHost("alice@host:2222")
-	if got := GetDefaultHost(); got != "alice@host:2222" {
-		t.Errorf("GetDefaultHost() = %q, want %q", got, "alice@host:2222")
-	}
-	SetDefaultHost("")
-	if got := GetDefaultHost(); got != "" {
-		t.Errorf("GetDefaultHost() = %q, want empty after clear", got)
-	}
 }
 
 // helpers

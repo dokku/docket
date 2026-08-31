@@ -32,6 +32,14 @@ var (
 // Callers (typically commands/apply.go and commands/plan.go) collect this set
 // from input values declared `sensitive: true` and from task struct fields
 // tagged `sensitive:"true"` before any subprocess runs, then defer a clear.
+// Note on scope: this registry is process-wide, and SetGlobalSensitive
+// *replaces* it, which is the one part of masking that does not survive two
+// runs sharing a process - the first run's deferred clear would blank the
+// second run's secrets while it is still writing output. AddGlobalSensitive
+// has no such problem. Masking stayed global when the target moved onto the
+// context because it is output rendering rather than routing: a shared
+// registry over-masks, which is fail-closed, and sensitiveMu already makes it
+// race-safe. Making it per-invocation is #501.
 func SetGlobalSensitive(values []string) {
 	cleaned := cleanSensitive(values)
 

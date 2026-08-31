@@ -97,7 +97,7 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.verbose, "verbose", false, "echo the resolved dokku command for each task as a continuation line. Values from inputs declared `sensitive: true` and from task struct fields tagged `sensitive:\"true\"` are masked as `***`. Ignored when --json is set; the JSON output already includes the resolved commands.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
-	f.BoolVar(&c.sudo, "sudo", false, "wrap remote dokku invocations with `sudo -n`; equivalent to DOKKU_SUDO=1")
+	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via `sudo -n` - remotely with --host, locally without. Covers dokku only, not the local helper commands some tasks run. Equivalent to DOKKU_SUDO=1.")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list run")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
@@ -191,7 +191,11 @@ func (c *ApplyCommand) Run(args []string) int {
 	}
 
 	ctx := runContext(c.Ctx)
-	resolvedHost := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
+	// The target rides on the run context, so every task planned or executed
+	// below routes to the same server without any of them holding a reference
+	// to it - and a second run in the same process can carry a different one.
+	target := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
+	ctx = subprocess.ContextWithTarget(ctx, target)
 
 	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
 	if err != nil {
@@ -291,8 +295,8 @@ func (c *ApplyCommand) Run(args []string) int {
 		})
 	}
 
-	if resolvedHost != "" {
-		defer subprocess.CloseSshControlMaster(resolvedHost)
+	if target.Host != "" {
+		defer subprocess.CloseSshControlMaster(target.Host)
 	}
 
 	emitter := c.newEmitter()
@@ -345,7 +349,7 @@ playLoop:
 			}
 		}
 
-		emitter.PlayStart(play.Name, resolvedHost)
+		emitter.PlayStart(play.Name, target.Host)
 
 		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(inputCtx, play.Inputs, userSet))
 

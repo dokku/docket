@@ -264,8 +264,11 @@ type PlanResult struct {
 	Mutations []string
 
 	// Commands is the resolved dokku command line(s) that ExecutePlan
-	// would invoke if Plan reported drift, in invocation order. Tasks
-	// populate it via subprocess.ResolveCommandString from the same
+	// would invoke if Plan reported drift, in invocation order. They are
+	// rendered against the target the planning context carried, which is the
+	// same one Execute applies under today; a plan carried across hosts would
+	// have to re-render them. Tasks populate it via
+	// subprocess.ResolveCommandString from the same
 	// ExecCommandInput values the apply closure executes, so plan and
 	// apply render byte-identical strings for the same operation.
 	//

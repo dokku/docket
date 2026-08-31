@@ -237,7 +237,7 @@ optimistically predicting `[+] create` for state it never actually read.
 | `--skip-tags <list>` | Skip tasks whose tags intersect the list. See [task envelope](task-envelope.md#tags). |
 | `--list-tasks` | Print the resolved plan and exit without contacting the server. See [inspecting and resuming](#inspecting-and-resuming). |
 | `--host <user@host:port>` | Plan against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
-| `--sudo` | Wrap the remote `dokku` call in `sudo -n`. See [remote execution](remote-execution.md). |
+| `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
 
 ```bash
@@ -298,7 +298,7 @@ recipe cannot be loaded or a `when:` fails to evaluate, and `0` otherwise.
 | `--list-tasks` | Print the resolved plan and exit without running. See [inspecting and resuming](#inspecting-and-resuming). |
 | `--start-at-task <name>` | Skip every task before the named one, then run from there. See [inspecting and resuming](#inspecting-and-resuming). |
 | `--host <user@host:port>` | Apply against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
-| `--sudo` | Wrap the remote `dokku` call in `sudo -n`. See [remote execution](remote-execution.md). |
+| `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
 
 A multi-command task renders one continuation line per invocation under `--verbose`:
@@ -525,7 +525,7 @@ matches nothing on the server is reported by name and exits non-zero, the same w
 | `--app <name>` | Restrict the export to the named app. Repeatable. |
 | `--resource <address>` | Restrict the export to a [resource address](task-envelope.md#names-and-resource-addresses), e.g. `dokku_config[app=api]`. A bare task type takes every resource of that type. Repeatable; not valid with `--app`. See [exporting one resource](#exporting-one-resource). |
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
-| `--sudo` | Wrap the remote `dokku` call in `sudo -n`. |
+| `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
 
 The output format follows `--format` when given, otherwise the `--output` extension (`.json` /

@@ -213,6 +213,10 @@ docs:
 test:
 	go test -v -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
 
+.PHONY: test-race
+test-race:
+	go test -race -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
+
 .PHONY: test-integration
 test-integration:
 	go test -v -count=1 -timeout 20m -run TestIntegration ./tasks/
