@@ -298,6 +298,14 @@ func TestFmtColorNeverProducesPlainOutput(t *testing.T) {
 }
 
 func TestFmtColorAlwaysProducesAnsiEvenInPipe(t *testing.T) {
+	// `--color always` turns color.NoColor off process-wide, so the previous
+	// value is saved and put back rather than assumed. Restoring a hardcoded
+	// `true` is right only for as long as nothing else can have changed it,
+	// which stops being true the moment tests run in parallel. Same shape as
+	// TestFormatterColorOnEmitsAnsi in output_test.go.
+	prev := color.NoColor
+	t.Cleanup(func() { color.NoColor = prev })
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -311,8 +319,6 @@ func TestFmtColorAlwaysProducesAnsiEvenInPipe(t *testing.T) {
 	if !strings.Contains(captured, "\x1b[") {
 		t.Errorf("--color always should force ANSI escapes:\n%q", captured)
 	}
-	// Restore default so other tests are not affected.
-	color.NoColor = true
 }
 
 func TestFmtColorInvalidValueFails(t *testing.T) {

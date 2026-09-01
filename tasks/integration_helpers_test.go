@@ -10,7 +10,33 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+	code := m.Run()
+
+	// Production code in this package registers sensitive values into a
+	// process-wide registry and never clears it: tasks/properties.go does it
+	// for a property the plugin marks sensitive, and registerSensitiveMapValues
+	// does it for a map field. Harmless in a CLI that exits afterwards; in a
+	// test binary the residue outlives the test that created it and masks any
+	// literal a later test expects to read back in the clear.
+	//
+	// Four property tests were doing exactly that, each leaving its secret
+	// registered for every test that ran after it. It went unnoticed because
+	// the tests that set the registry directly cleared it to nil on the way
+	// out, wiping the evidence before anything could observe it - so this
+	// check is only sound because isolateMaskRegistry restores the previous
+	// set instead. Nothing wipes residue any more, so anything a test
+	// registers survives to here.
+	if leaked := subprocess.GlobalSensitive(); len(leaked) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"mask registry is not empty after the package run: %q\n"+
+				"a test registered a sensitive value without restoring the previous set; "+
+				"use isolateMaskRegistry\n", leaked)
+		if code == 0 {
+			code = 1
+		}
+	}
+
+	os.Exit(code)
 }
 
 func dokkuAvailable() bool {
@@ -27,6 +53,14 @@ func skipIfNoDokkuT(t *testing.T) {
 	if !dokkuAvailable() {
 		t.Skip("skipping integration test: dokku not available")
 	}
+	// Applying a task for real is exactly what makes production register a
+	// sensitive value - the documented dokku_letsencrypt_property example sets
+	// a dns-provider-* credential, and planProperty registers it. That is the
+	// behaviour under test, not a leak, but the residue would still outlive the
+	// test and trip TestMain's end-of-run check. Isolating at the one gate every
+	// integration test already passes through covers all of them without each
+	// having to know whether the task it applies happens to be sensitive.
+	isolateMaskRegistry(t)
 }
 
 func dokkuPluginInstalled(plugin string) bool {
