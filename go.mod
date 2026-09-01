@@ -1,6 +1,6 @@
 module github.com/dokku/docket
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/alexellis/go-execute/v2 v2.2.1
@@ -19,7 +19,7 @@ require (
 	github.com/titanous/json5 v1.0.0
 	golang.org/x/crypto v0.55.0
 	gopkg.in/yaml.v3 v3.0.1
-	mvdan.cc/sh/v3 v3.13.1
+	mvdan.cc/sh/v3 v3.14.0
 )
 
 require (
