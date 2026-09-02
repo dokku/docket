@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,7 +24,10 @@ func runSchema(t *testing.T, args ...string) (string, string, int) {
 	t.Helper()
 	c := &SchemaCommand{}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
-	out, exit := captureStdout(t, func() int { return c.Run(args) })
+	out, exit := captureStdout(t, func(w io.Writer) int {
+		c.Stdout = w
+		return c.Run(args)
+	})
 	return out, c.Ui.(*cli.MockUi).ErrorWriter.String(), exit
 }
 

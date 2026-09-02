@@ -56,19 +56,19 @@ func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFact
 			return &commands.ApplyCommand{Meta: meta, Ctx: ctx, Argv: os.Args}, nil
 		},
 		"export": func() (cli.Command, error) {
-			return &commands.ExportCommand{Meta: meta, Ctx: ctx}, nil
+			return &commands.ExportCommand{Meta: meta, Ctx: ctx, Stdout: os.Stdout}, nil
 		},
 		"fmt": func() (cli.Command, error) {
-			return &commands.FmtCommand{Meta: meta}, nil
+			return &commands.FmtCommand{Meta: meta, Stdout: os.Stdout}, nil
 		},
 		"init": func() (cli.Command, error) {
-			return &commands.InitCommand{Meta: meta}, nil
+			return &commands.InitCommand{Meta: meta, Stdout: os.Stdout}, nil
 		},
 		"plan": func() (cli.Command, error) {
 			return &commands.PlanCommand{Meta: meta, Ctx: ctx, Argv: os.Args}, nil
 		},
 		"schema": func() (cli.Command, error) {
-			return &commands.SchemaCommand{Meta: meta}, nil
+			return &commands.SchemaCommand{Meta: meta, Stdout: os.Stdout}, nil
 		},
 		"validate": func() (cli.Command, error) {
 			return &commands.ValidateCommand{Meta: meta, Argv: os.Args}, nil

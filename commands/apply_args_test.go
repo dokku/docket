@@ -127,7 +127,7 @@ func TestGetTaskYamlFilename(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getTaskYamlFilename(tt.args)
+			result := getTaskYamlFilename("", tt.args)
 			if result != tt.expected {
 				t.Errorf("getTaskYamlFilename(%v) = %q, want %q", tt.args, result, tt.expected)
 			}

@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -199,7 +200,7 @@ type Formatter struct {
 // controls whether `→`-prefixed continuation lines are emitted under
 // each task line in apply mode.
 func NewFormatter(ui cli.Ui, verbose bool, masker *subprocess.Masker) *Formatter {
-	useColor := !noColorDefault()
+	useColor := !noColorDefault(os.Stdout)
 	return &Formatter{
 		ui:      ui,
 		verbose: verbose,

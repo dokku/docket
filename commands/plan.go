@@ -21,6 +21,16 @@ import (
 type PlanCommand struct {
 	command.Meta
 
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
 	// Stdin is where a `--tasks -` recipe is read from. Populated from
 	// main.go; nil reads the process's standard input. A test hands over its
 	// own pipe instead of swapping os.Stdin, which no two tests can do at
@@ -119,7 +129,7 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.play, "play", "", "plan only the play with this name (matches the play's `name:` field; auto-named plays use `play #N`)")
 	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without contacting the server. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
 
-	data, format, source := preloadRecipeForFlags(c.argv(), true, c.stdinSource())
+	data, format, source := preloadRecipeForFlags(c.baseDir(), c.argv(), true, c.stdinSource())
 	if data == nil {
 		return f
 	}
@@ -217,7 +227,7 @@ func (c *PlanCommand) Run(args []string) int {
 	// The cached bytes are the ones FlagSet already read for this source
 	// (see tasksData); for a --tasks URL this avoids a second HTTP fetch
 	// of the same recipe.
-	recipe, err := loadRecipe(taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
+	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1
@@ -756,3 +766,6 @@ func (c *PlanCommand) stdinSource() *stdinRecipeSource {
 	}
 	return c.stdin
 }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *PlanCommand) baseDir() string { return c.BaseDir }

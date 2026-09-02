@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -30,6 +31,22 @@ const varsFileMode = 0o600
 // `docket apply --vars-file <vars>`.
 type ExportCommand struct {
 	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdout is where a streamed recipe, diff or catalog is written. Populated
+	// from main.go; nil writes to the process's standard output. These writes
+	// bypass Ui on purpose - it is wrapped in a log formatter - so a test that
+	// asserts on them needs somewhere of its own to capture.
+	Stdout io.Writer
 
 	// Ctx is the run context, populated from main.go with the process signal
 	// context. It carries cancellation down through every task's Plan and
@@ -257,7 +274,7 @@ func (c *ExportCommand) Run(args []string) int {
 	}
 
 	if toStdout {
-		if _, err := os.Stdout.Write(recipeBytes); err != nil {
+		if _, err := c.stdout().Write(recipeBytes); err != nil {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
 			return 1
 		}
@@ -286,7 +303,7 @@ func (c *ExportCommand) Run(args []string) int {
 			targets = append(targets, varsOutput)
 		}
 		for _, path := range targets {
-			exists, err := pathExists(path)
+			exists, err := pathExists(c.baseDir(), path)
 			if err != nil {
 				c.Ui.Error(fmt.Sprintf("stat error: %v", err))
 				return 1
@@ -306,7 +323,7 @@ func (c *ExportCommand) Run(args []string) int {
 		}
 	}
 
-	if err := os.WriteFile(c.output, recipeBytes, 0o644); err != nil {
+	if err := os.WriteFile(inDir(c.baseDir(), c.output), recipeBytes, 0o644); err != nil {
 		c.Ui.Error(fmt.Sprintf("write error: %v", err))
 		return 1
 	}
@@ -408,7 +425,7 @@ func (c *ExportCommand) chmodVarsFile() chmodFunc {
 // operator just has to know this half is exposed. The message names the path
 // unmasked for the reason exitForMissingApps gives.
 func (c *ExportCommand) writeVarsFile(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, varsFileMode)
+	f, err := os.OpenFile(inDir(c.baseDir(), path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, varsFileMode)
 	if err != nil {
 		return err
 	}
@@ -434,8 +451,8 @@ func deriveVarsOutput(output string) string {
 
 // pathExists reports whether path exists, distinguishing a genuine stat error
 // from a not-found.
-func pathExists(path string) (bool, error) {
-	if _, err := os.Stat(path); err == nil {
+func pathExists(baseDir, path string) (bool, error) {
+	if _, err := os.Stat(inDir(baseDir, path)); err == nil {
 		return true, nil
 	} else if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
@@ -443,3 +460,9 @@ func pathExists(path string) (bool, error) {
 		return false, err
 	}
 }
+
+// stdout returns the writer this command streams bytes to.
+func (c *ExportCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *ExportCommand) baseDir() string { return c.BaseDir }

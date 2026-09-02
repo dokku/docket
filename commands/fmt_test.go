@@ -213,8 +213,9 @@ func TestFmtCheckAloneEmitsNoDiff(t *testing.T) {
 		t.Fatalf("seed write: %v", err)
 	}
 
-	captured, exit := captureStdout(t, func() int {
+	captured, exit := captureStdout(t, func(out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdout = out
 		return c.Run([]string{"--check", "--color", "never", path})
 	})
 	if exit != 1 {
@@ -232,8 +233,9 @@ func TestFmtDiffPrintsDiffAndDoesNotWrite(t *testing.T) {
 		t.Fatalf("seed write: %v", err)
 	}
 
-	captured, exit := captureStdout(t, func() int {
+	captured, exit := captureStdout(t, func(out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdout = out
 		return c.Run([]string{"--diff", "--color", "never", path})
 	})
 	if exit != 0 {
@@ -261,8 +263,9 @@ func TestFmtCheckDiffComposes(t *testing.T) {
 		t.Fatalf("seed write: %v", err)
 	}
 
-	captured, exit := captureStdout(t, func() int {
+	captured, exit := captureStdout(t, func(out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdout = out
 		return c.Run([]string{"--check", "--diff", "--color", "never", path})
 	})
 	if exit != 1 {
@@ -288,8 +291,9 @@ func TestFmtColorNeverProducesPlainOutput(t *testing.T) {
 		t.Fatalf("seed write: %v", err)
 	}
 
-	captured, _ := captureStdout(t, func() int {
+	captured, _ := captureStdout(t, func(out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdout = out
 		return c.Run([]string{"--diff", "--color", "never", path})
 	})
 	if strings.Contains(captured, "\x1b[") {
@@ -312,8 +316,9 @@ func TestFmtColorAlwaysProducesAnsiEvenInPipe(t *testing.T) {
 		t.Fatalf("seed write: %v", err)
 	}
 
-	captured, _ := captureStdout(t, func() int {
+	captured, _ := captureStdout(t, func(out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdout = out
 		return c.Run([]string{"--diff", "--color", "always", path})
 	})
 	if !strings.Contains(captured, "\x1b[") {
@@ -329,8 +334,10 @@ func TestFmtColorInvalidValueFails(t *testing.T) {
 }
 
 func TestFmtStdinReadsAndWritesStdout(t *testing.T) {
-	captured, exit := withStdinAndStdout(t, messyTasksYAML, func() int {
+	captured, exit := withStdinAndStdout(t, messyTasksYAML, func(in io.Reader, out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdin = in
+		c.Stdout = out
 		return c.Run([]string{"-"})
 	})
 	if exit != 0 {
@@ -342,8 +349,10 @@ func TestFmtStdinReadsAndWritesStdout(t *testing.T) {
 }
 
 func TestFmtStdinInvalidTasksFormatFails(t *testing.T) {
-	captured, exit := withStdinAndStdout(t, messyTasksYAML, func() int {
+	captured, exit := withStdinAndStdout(t, messyTasksYAML, func(in io.Reader, out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdin = in
+		c.Stdout = out
 		return c.Run([]string{"--tasks-format", "toml", "-"})
 	})
 	if exit != 1 {
@@ -361,8 +370,10 @@ func TestFmtStdinInvalidTasksFormatFails(t *testing.T) {
 func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
 	const flowYAML = "[{tasks: [{name: flow, dokku_app: {app: api}}]}]\n"
 
-	sniffed, exit := withStdinAndStdout(t, flowYAML, func() int {
+	sniffed, exit := withStdinAndStdout(t, flowYAML, func(in io.Reader, out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdin = in
+		c.Stdout = out
 		return c.Run([]string{"-"})
 	})
 	if exit != 0 {
@@ -372,8 +383,10 @@ func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
 		t.Errorf("without an override the sniff should pick JSON5, got:\n%s", sniffed)
 	}
 
-	forced, exit := withStdinAndStdout(t, flowYAML, func() int {
+	forced, exit := withStdinAndStdout(t, flowYAML, func(in io.Reader, out io.Writer) int {
 		c := newTestFmtCommand()
+		c.Stdin = in
+		c.Stdout = out
 		return c.Run([]string{"--tasks-format", "yaml", "-"})
 	})
 	if exit != 0 {
@@ -431,7 +444,6 @@ func TestFmtRejectsStdinMixedWithPaths(t *testing.T) {
 // picked.
 func TestFmtWarnsOnAmbiguousDefaultProbe(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(canonicalTasksYAML), 0o644); err != nil {
 		t.Fatalf("write tasks.yml: %v", err)
 	}
@@ -439,7 +451,7 @@ func TestFmtWarnsOnAmbiguousDefaultProbe(t *testing.T) {
 		t.Fatalf("write tasks.json: %v", err)
 	}
 
-	c := newTestFmtCommand()
+	c := newTestFmtCommand(dir)
 	if exit := c.Run([]string{"--check"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
 	}
@@ -455,7 +467,6 @@ func TestFmtWarnsOnAmbiguousDefaultProbe(t *testing.T) {
 // files, so there is no probe to be ambiguous about.
 func TestFmtDoesNotWarnForNamedPaths(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(canonicalTasksYAML), 0o644); err != nil {
 		t.Fatalf("write tasks.yml: %v", err)
 	}
@@ -463,7 +474,7 @@ func TestFmtDoesNotWarnForNamedPaths(t *testing.T) {
 		t.Fatalf("write tasks.json: %v", err)
 	}
 
-	c := newTestFmtCommand()
+	c := newTestFmtCommand(dir)
 	if exit := c.Run([]string{"--check", "tasks.json"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
 	}
@@ -540,60 +551,35 @@ func TestFmtParseErrorReturnsExit1(t *testing.T) {
 // don't nil-panic during Run. Tests assert via the file system or
 // captured stdout; the MockUi error/output buffers are inspected only
 // when needed.
-func newTestFmtCommand() *FmtCommand {
+func newTestFmtCommand(baseDir ...string) *FmtCommand {
 	c := &FmtCommand{}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
+	if len(baseDir) > 0 {
+		c.BaseDir = baseDir[0]
+	}
 	return c
 }
 
-// captureStdout swaps os.Stdout for a pipe, runs fn, and returns the
-// captured output. Used to assert on diff output.
-func captureStdout(t *testing.T, fn func() int) (string, int) {
+// captureStdout gives fn a buffer to write to and returns what it wrote plus
+// the exit code. The commands stream a recipe, diff or catalog straight to
+// their Stdout rather than through the Ui, which is wrapped in a log formatter,
+// so fn hands the buffer to whichever command it builds.
+//
+// It used to swap the os.Stdout package variable for a pipe - process state no
+// two tests can hold at once.
+func captureStdout(t *testing.T, fn func(out io.Writer) int) (string, int) {
 	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	origStdout := os.Stdout
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = origStdout })
-
-	exitCh := make(chan int, 1)
-	go func() {
-		exit := fn()
-		w.Close()
-		exitCh <- exit
-	}()
-
 	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatalf("read pipe: %v", err)
-	}
-	return buf.String(), <-exitCh
+	exit := fn(&buf)
+	return buf.String(), exit
 }
 
-// withStdinAndStdout pipes the given input to os.Stdin and captures
-// os.Stdout while fn runs. Returns the captured stdout.
-func withStdinAndStdout(t *testing.T, input string, fn func() int) (string, int) {
+// withStdinAndStdout gives fn a reader holding input and a buffer to write to,
+// and returns what it wrote plus the exit code. fn hands both to the command it
+// builds, so neither os.Stdin nor os.Stdout is touched.
+func withStdinAndStdout(t *testing.T, input string, fn func(in io.Reader, out io.Writer) int) (string, int) {
 	t.Helper()
-
-	stdinR, stdinW, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("stdin pipe: %v", err)
-	}
-	origStdin := os.Stdin
-	os.Stdin = stdinR
-	// readStdinRecipe memoizes the one read a process gets, so the memo
-	// has to be dropped around every test that swaps os.Stdin -
-	// otherwise the second such test is served the first one's bytes.
-	t.Cleanup(func() {
-		os.Stdin = origStdin
-	})
-
-	go func() {
-		_, _ = stdinW.WriteString(input)
-		stdinW.Close()
-	}()
-
-	return captureStdout(t, fn)
+	var buf bytes.Buffer
+	exit := fn(strings.NewReader(input), &buf)
+	return buf.String(), exit
 }

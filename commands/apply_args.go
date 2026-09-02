@@ -154,8 +154,8 @@ func (c *Argument) SetStringValue(ptr *string) {
 	c.stringValue = ptr
 }
 
-func getTaskYamlFilename(s []string) string {
-	path, _ := resolveTaskFileFromArgs(s)
+func getTaskYamlFilename(baseDir string, s []string) string {
+	path, _ := resolveTaskFileFromArgs(baseDir, s)
 	return path
 }
 
@@ -167,7 +167,7 @@ func getTaskYamlFilename(s []string) string {
 // path still fires with the familiar message. Format is keyed by file
 // extension; see detectTaskFileFormat. The format is empty for stdin,
 // which has no name - taskFileFormatFor sniffs the bytes instead.
-func resolveTaskFileFromArgs(s []string) (string, string) {
+func resolveTaskFileFromArgs(baseDir string, s []string) (string, string) {
 	positional := ""
 	skipNext := false
 	for i, arg := range s {
@@ -224,7 +224,7 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 		return taskFileStdin, ""
 	}
 	if positional != "" {
-		if _, err := os.Stat(positional); err == nil {
+		if _, err := os.Stat(inDir(baseDir, positional)); err == nil {
 			return positional, detectTaskFileFormat(positional)
 		}
 	}
@@ -235,7 +235,7 @@ func resolveTaskFileFromArgs(s []string) (string, string) {
 	// times before the command started. Run warns once, off recipeSource.
 	// A stat error likewise belongs to Run, which re-resolves the recipe
 	// and reports it properly.
-	chosen, _, _ := probeDefaultTaskFile()
+	chosen, _, _ := probeDefaultTaskFile(baseDir)
 	if chosen != "" {
 		return chosen, detectTaskFileFormat(chosen)
 	}

@@ -265,8 +265,8 @@ func isTaskFileURL(path string) bool {
 // readTaskFileData returns the bytes of the recipe at path, allowing an
 // http(s) URL. Kept as the name apply and plan already call, now a thin
 // wrapper so there is only one read path to reason about.
-func readTaskFileData(path string, stdin *stdinRecipeSource) ([]byte, error) {
-	return readRecipeBytes(path, true, stdin)
+func readTaskFileData(baseDir, path string, stdin *stdinRecipeSource) ([]byte, error) {
+	return readRecipeBytes(baseDir, path, true, stdin)
 }
 
 // readRecipeBytes returns the bytes of the recipe at path.
@@ -278,14 +278,14 @@ func readTaskFileData(path string, stdin *stdinRecipeSource) ([]byte, error) {
 // rather than hidden in a function name. Any other value is read from
 // disk so the familiar os.ReadFile "no such file" error still surfaces
 // for a mistyped path.
-func readRecipeBytes(path string, allowURL bool, stdin *stdinRecipeSource) ([]byte, error) {
+func readRecipeBytes(baseDir, path string, allowURL bool, stdin *stdinRecipeSource) ([]byte, error) {
 	if path == taskFileStdin {
 		return stdin.recipe()
 	}
 	if allowURL && isTaskFileURL(path) {
 		return fetchTaskFileURL(path)
 	}
-	return os.ReadFile(path)
+	return os.ReadFile(inDir(baseDir, path))
 }
 
 // stdinRecipeSource memoizes the one read of standard input a command gets.
@@ -383,10 +383,10 @@ func hasTaskFileExtension(path string) bool {
 // always done by returning on its first hit: an unreadable tasks.json
 // sitting next to a perfectly good tasks.yml has never been fatal, and
 // collecting others must not make it so.
-func probeDefaultTaskFile() (string, []string, error) {
+func probeDefaultTaskFile(baseDir string) (string, []string, error) {
 	var existing []string
 	for _, candidate := range defaultTaskFileCandidates {
-		_, err := os.Stat(candidate)
+		_, err := os.Stat(inDir(baseDir, candidate))
 		if err == nil {
 			existing = append(existing, candidate)
 			continue
@@ -434,7 +434,7 @@ func ambiguousTaskFileWarning(chosen string, others []string) string {
 //
 // The third return value carries the other candidates the probe found,
 // for ambiguousTaskFileWarning; it is nil whenever the probe did not run.
-func resolveTaskFilePath(explicit string) (string, string, []string, error) {
+func resolveTaskFilePath(baseDir string, explicit string) (string, string, []string, error) {
 	if explicit == taskFileStdin {
 		// stdin has no name to detect a format from; the empty format
 		// tells taskFileFormatFor to sniff the bytes instead. Probing
@@ -445,7 +445,7 @@ func resolveTaskFilePath(explicit string) (string, string, []string, error) {
 	if explicit != "" {
 		return explicit, detectTaskFileFormat(explicit), nil, nil
 	}
-	chosen, others, err := probeDefaultTaskFile()
+	chosen, others, err := probeDefaultTaskFile(baseDir)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -507,15 +507,15 @@ type recipeSource struct {
 // and would otherwise hit the network again.
 //
 // allowURL is threaded through to readRecipeBytes; see its doc comment.
-func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, cachedSource string, stdin *stdinRecipeSource) (recipeSource, error) {
-	path, detected, ambiguous, err := resolveTaskFilePath(taskFile)
+func loadRecipe(baseDir, taskFile, formatOverride string, allowURL bool, cached []byte, cachedSource string, stdin *stdinRecipeSource) (recipeSource, error) {
+	path, detected, ambiguous, err := resolveTaskFilePath(baseDir, taskFile)
 	if err != nil {
 		return recipeSource{}, err
 	}
 
 	data := cached
 	if data == nil || cachedSource != path {
-		data, err = readRecipeBytes(path, allowURL, stdin)
+		data, err = readRecipeBytes(baseDir, path, allowURL, stdin)
 		if err != nil {
 			return recipeSource{}, err
 		}
@@ -555,12 +555,12 @@ func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, c
 // commandHelp, which calls FlagSet twice), so reading an interactive
 // terminal here would hang instead of printing the message the user
 // asked for. Only Run may block on stdin.
-func preloadRecipeForFlags(argv []string, allowURL bool, stdin *stdinRecipeSource) (data []byte, format string, source string) {
-	path, detected := resolveTaskFileFromArgs(argv)
+func preloadRecipeForFlags(baseDir string, argv []string, allowURL bool, stdin *stdinRecipeSource) (data []byte, format string, source string) {
+	path, detected := resolveTaskFileFromArgs(baseDir, argv)
 	if path == taskFileStdin && isatty.IsTerminal(os.Stdin.Fd()) {
 		return nil, "", path
 	}
-	data, err := readRecipeBytes(path, allowURL, stdin)
+	data, err := readRecipeBytes(baseDir, path, allowURL, stdin)
 	if err != nil {
 		return nil, "", path
 	}
@@ -628,4 +628,34 @@ func commandArgv(argv []string) []string {
 		return argv
 	}
 	return os.Args
+}
+
+// commandStdout returns the writer a command streams a recipe, diff or catalog
+// to: the one it was given, or the process's standard output when it was given
+// none.
+//
+// These writes deliberately bypass c.Ui, which is wrapped in a human log
+// formatter that would decorate bytes meant to be piped. Reading os.Stdout
+// directly is what forced every test asserting on them to swap the process
+// global and put it back.
+func commandStdout(w io.Writer) io.Writer {
+	if w != nil {
+		return w
+	}
+	return os.Stdout
+}
+
+// inDir resolves path against baseDir: unchanged when baseDir is empty (the
+// command was given none, so the process working directory applies as it
+// always has) or when path is already absolute.
+//
+// It is the one place relative paths become concrete, so a command can be
+// pointed at a directory without the process having to chdir into it - which
+// is what let every test that seeds a recipe or checks an output file stop
+// moving the working directory out from under everything else.
+func inDir(baseDir, path string) string {
+	if baseDir == "" || path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(baseDir, path)
 }

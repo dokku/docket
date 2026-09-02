@@ -96,7 +96,7 @@ func TestInitRefusesToOverwriteWithoutForce(t *testing.T) {
 		t.Fatalf("seed write: %v", err)
 	}
 
-	c := newTestInitCommand()
+	c := newTestInitCommand(dir)
 	if exit := c.Run([]string{"--output", path, "--name", "demo"}); exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
 	}
@@ -116,7 +116,7 @@ func TestInitForceOverwrites(t *testing.T) {
 		t.Fatalf("seed write: %v", err)
 	}
 
-	c := newTestInitCommand()
+	c := newTestInitCommand(dir)
 	if exit := c.Run([]string{"--output", path, "--force", "--name", "demo"}); exit != 0 {
 		t.Errorf("exit = %d, want 0", exit)
 	}
@@ -133,7 +133,7 @@ func TestInitWritesDefaultTemplateToDisk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 
-	c := newTestInitCommand()
+	c := newTestInitCommand(dir)
 	if exit := c.Run([]string{"--output", path, "--name", "demo"}); exit != 0 {
 		t.Errorf("exit = %d, want 0", exit)
 	}
@@ -222,10 +222,9 @@ func TestInitDefaultNameFromCwd(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	t.Chdir(dir)
 
-	if got := defaultName(); got != "widget-svc" {
-		t.Errorf("defaultName() = %q, want %q", got, "widget-svc")
+	if got := defaultName(dir); got != "widget-svc" {
+		t.Errorf("defaultName(dir) = %q, want %q", got, "widget-svc")
 	}
 }
 
@@ -242,18 +241,16 @@ func TestInitDefaultRepoFromGitConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".git", "config"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write git config: %v", err)
 	}
-	t.Chdir(dir)
 
-	if got := defaultRepo(); got != "git@example.com:owner/repo.git" {
-		t.Errorf("defaultRepo() = %q, want git@example.com:owner/repo.git", got)
+	if got := defaultRepo(dir); got != "git@example.com:owner/repo.git" {
+		t.Errorf("defaultRepo(dir) = %q, want git@example.com:owner/repo.git", got)
 	}
 }
 
 func TestInitNoGitConfigYieldsEmptyRepo(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
-	if got := defaultRepo(); got != "" {
-		t.Errorf("defaultRepo() with no .git/config = %q, want empty", got)
+	if got := defaultRepo(dir); got != "" {
+		t.Errorf("defaultRepo(dir) with no .git/config = %q, want empty", got)
 	}
 }
 
@@ -266,10 +263,9 @@ func TestInitGitConfigWithoutOriginYieldsEmptyRepo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".git", "config"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write git config: %v", err)
 	}
-	t.Chdir(dir)
 
-	if got := defaultRepo(); got != "" {
-		t.Errorf("defaultRepo() with no origin = %q, want empty", got)
+	if got := defaultRepo(dir); got != "" {
+		t.Errorf("defaultRepo(dir) with no origin = %q, want empty", got)
 	}
 }
 
@@ -357,7 +353,7 @@ func TestInitSpecialCharacterNameWritesValidFile(t *testing.T) {
 	// write) does not reject it (#355).
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
-	c := newTestInitCommand()
+	c := newTestInitCommand(dir)
 	if exit := c.Run([]string{"--output", path, "--name", "@web", "--repo", "https://example.com/r.git"}); exit != 0 {
 		t.Fatalf("init --name @web exit = %d, want 0", exit)
 	}
@@ -511,10 +507,11 @@ func TestInitDefaultRecipeShape(t *testing.T) {
 
 func TestInitOutputDashWritesToStdout(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	captured, exit := captureStdout(t, func() int {
-		return newTestInitCommand().Run([]string{"--output", "-", "--name", "demo"})
+	captured, exit := captureStdout(t, func(out io.Writer) int {
+		c := newTestInitCommand(dir)
+		c.Stdout = out
+		return c.Run([]string{"--output", "-", "--name", "demo"})
 	})
 	if exit != 0 {
 		t.Errorf("exit = %d, want 0", exit)
@@ -539,9 +536,8 @@ func TestInitOutputDashWritesToStdout(t *testing.T) {
 // otherwise be read off the flag set and dropped.
 func TestInitRejectsForceWithStdout(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(dir)
 	if exit := c.Run([]string{"--output", "-", "--force", "--name", "demo"}); exit != 1 {
 		t.Fatalf("exit = %d, want 1", exit)
 	}
@@ -564,9 +560,8 @@ func TestInitRejectsForceWithStdout(t *testing.T) {
 // JSON5 document under a .yml name.
 func TestInitFormatJSON5WritesTasksJSON(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(dir)
 	if exit := c.Run([]string{"--format", "json5", "--name", "demo"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 	}
@@ -600,9 +595,8 @@ func TestInitFormatJSON5WritesTasksJSON(t *testing.T) {
 // so it drives the default-path swap too.
 func TestInitFormatJSONAliasWritesTasksJSON(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	if exit := newTestInitCommand().Run([]string{"--format", "json"}); exit != 0 {
+	if exit := newTestInitCommand(dir).Run([]string{"--format", "json"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "tasks.json")); err != nil {
@@ -614,9 +608,8 @@ func TestInitFormatJSONAliasWritesTasksJSON(t *testing.T) {
 // json5 moves the path.
 func TestInitFormatYAMLKeepsDefaultPath(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	if exit := newTestInitCommand().Run([]string{"--format", "yaml"}); exit != 0 {
+	if exit := newTestInitCommand(dir).Run([]string{"--format", "yaml"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "tasks.json")); err == nil {
@@ -637,9 +630,8 @@ func TestInitFormatYAMLKeepsDefaultPath(t *testing.T) {
 // which is legal and warned about.
 func TestInitExplicitOutputWinsOverFormatDefault(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(dir)
 	if exit := c.Run([]string{"--output", "recipe.yml", "--format", "json5"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 	}
@@ -664,7 +656,7 @@ func TestInitFormatOverridesOutputExtension(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.json")
 
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(dir)
 	if exit := c.Run([]string{"--output", path, "--format", "yaml"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 	}
@@ -689,7 +681,6 @@ func TestInitFormatOverridesOutputExtension(t *testing.T) {
 // an unrelated file, then clobbering the relevant one.
 func TestInitFormatJSON5ChecksForceOnAdjustedPath(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
 	jsonPath := filepath.Join(dir, "tasks.json")
 	yamlPath := filepath.Join(dir, "tasks.yml")
@@ -700,7 +691,7 @@ func TestInitFormatJSON5ChecksForceOnAdjustedPath(t *testing.T) {
 		t.Fatalf("seed tasks.yml: %v", err)
 	}
 
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(dir)
 	if exit := c.Run([]string{"--format", "json5"}); exit != 1 {
 		t.Fatalf("exit = %d, want 1", exit)
 	}
@@ -711,7 +702,7 @@ func TestInitFormatJSON5ChecksForceOnAdjustedPath(t *testing.T) {
 		t.Errorf("tasks.json was overwritten without --force: %q", body)
 	}
 
-	if exit := newTestInitCommand().Run([]string{"--format", "json5", "--force"}); exit != 0 {
+	if exit := newTestInitCommand(dir).Run([]string{"--format", "json5", "--force"}); exit != 0 {
 		t.Fatalf("--force exit = %d, want 0", exit)
 	}
 	body, err := os.ReadFile(jsonPath)
@@ -730,10 +721,11 @@ func TestInitFormatJSON5ChecksForceOnAdjustedPath(t *testing.T) {
 // --format, `--output -` could only ever emit YAML.
 func TestInitFormatJSON5ToStdout(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	captured, exit := captureStdout(t, func() int {
-		return newTestInitCommand().Run([]string{"--output", "-", "--format", "json5", "--name", "demo"})
+	captured, exit := captureStdout(t, func(out io.Writer) int {
+		c := newTestInitCommand(dir)
+		c.Stdout = out
+		return c.Run([]string{"--output", "-", "--format", "json5", "--name", "demo"})
 	})
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
@@ -764,9 +756,8 @@ func TestInitFormatJSON5ToStdout(t *testing.T) {
 // user actually typed, not the --tasks-format it shares a parser with.
 func TestInitRejectsUnknownFormat(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(dir)
 	if exit := c.Run([]string{"--format", "toml"}); exit != 1 {
 		t.Fatalf("exit = %d, want 1", exit)
 	}
@@ -790,9 +781,7 @@ func TestInitRejectsUnknownFormat(t *testing.T) {
 // would be noise. The literal lines are asserted because the padding is
 // what keeps the three comments in one column.
 func TestInitNextStepsDefaultOutputStaysBare(t *testing.T) {
-	t.Chdir(t.TempDir())
-
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(t.TempDir())
 	if exit := c.Run(nil); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 	}
@@ -832,12 +821,11 @@ func TestInitNextStepsNameNonDefaultOutput(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			t.Chdir(dir)
 			if err := os.MkdirAll(filepath.Join(dir, "staging"), 0o755); err != nil {
 				t.Fatalf("mkdir staging: %v", err)
 			}
 
-			c, ui := newTestInitCommandUi()
+			c, ui := newTestInitCommandUi(dir)
 			if exit := c.Run(tc.args); exit != 0 {
 				t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 			}
@@ -856,9 +844,7 @@ func TestInitNextStepsNameNonDefaultOutput(t *testing.T) {
 // TestInitNextStepsCleansRelativeDefault: "./tasks.yml" is the first
 // probe candidate spelled differently, so it stays on the bare path.
 func TestInitNextStepsCleansRelativeDefault(t *testing.T) {
-	t.Chdir(t.TempDir())
-
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(t.TempDir())
 	if exit := c.Run([]string{"--output", "./tasks.yml"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 	}
@@ -871,9 +857,7 @@ func TestInitNextStepsCleansRelativeDefault(t *testing.T) {
 // the three comments share a column, and the --tasks suffix must not
 // break that.
 func TestInitNextStepsCommentsStayAligned(t *testing.T) {
-	t.Chdir(t.TempDir())
-
-	c, ui := newTestInitCommandUi()
+	c, ui := newTestInitCommandUi(t.TempDir())
 	if exit := c.Run([]string{"--format", "json5"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 	}
@@ -903,18 +887,21 @@ func TestInitNextStepsCommentsStayAligned(t *testing.T) {
 // newTestInitCommand wires up a Meta backed by cli.MockUi so c.Ui.* calls
 // don't nil-panic during Run. Tests assert via the file system or stdout
 // capture; MockUi's buffers are ignored.
-func newTestInitCommand() *InitCommand {
-	c, _ := newTestInitCommandUi()
+func newTestInitCommand(baseDir ...string) *InitCommand {
+	c, _ := newTestInitCommandUi(baseDir...)
 	return c
 }
 
 // newTestInitCommandUi is newTestInitCommand for tests that also need to
 // read what the command said - the mismatch warning lands on the UI's
 // error buffer, not on stdout.
-func newTestInitCommandUi() (*InitCommand, *cli.MockUi) {
+func newTestInitCommandUi(baseDir ...string) (*InitCommand, *cli.MockUi) {
 	ui := cli.NewMockUi()
 	c := &InitCommand{}
 	c.Meta = command.Meta{Ui: ui}
+	if len(baseDir) > 0 {
+		c.BaseDir = baseDir[0]
+	}
 	return c, ui
 }
 

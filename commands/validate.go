@@ -21,6 +21,16 @@ import (
 type ValidateCommand struct {
 	command.Meta
 
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
 	// Stdin is where a `--tasks -` recipe is read from. Populated from
 	// main.go; nil reads the process's standard input. A test hands over its
 	// own pipe instead of swapping os.Stdin, which no two tests can do at
@@ -107,7 +117,7 @@ func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	// validate is offline by contract, so its recipe read never fetches
 	// a URL - unlike apply and plan, its --tasks help has never
 	// advertised one.
-	data, format, _ := preloadRecipeForFlags(c.argv(), false, c.stdinSource())
+	data, format, _ := preloadRecipeForFlags(c.baseDir(), c.argv(), false, c.stdinSource())
 	if data == nil {
 		return f
 	}
@@ -203,7 +213,7 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	recipe, err := loadRecipe(taskFile, formatOverride, false, nil, "", c.stdinSource())
+	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, false, nil, "", c.stdinSource())
 	if err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{
@@ -382,3 +392,6 @@ func (c *ValidateCommand) stdinSource() *stdinRecipeSource {
 	}
 	return c.stdin
 }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *ValidateCommand) baseDir() string { return c.BaseDir }

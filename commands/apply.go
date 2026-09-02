@@ -20,6 +20,16 @@ import (
 type ApplyCommand struct {
 	command.Meta
 
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
 	// Stdin is where a `--tasks -` recipe is read from. Populated from
 	// main.go; nil reads the process's standard input. A test hands over its
 	// own pipe instead of swapping os.Stdin, which no two tests can do at
@@ -124,7 +134,7 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.startAtTask, "start-at-task", "", "skip every task before the matched name; the matched task and successors run normally. Filter order: --start-at-task -> --tags/--skip-tags -> per-task when: at execution. The name search walks every play in source order, narrowed by --play.")
 	f.BoolVar(&c.detailedExitCode, "detailed-exitcode", false, "exit 0 when nothing changed, 2 when at least one task changed, 1 on error. Without this flag apply exits 0 whether or not anything changed.")
 
-	data, format, source := preloadRecipeForFlags(c.argv(), true, c.stdinSource())
+	data, format, source := preloadRecipeForFlags(c.baseDir(), c.argv(), true, c.stdinSource())
 	if data == nil {
 		return f
 	}
@@ -227,7 +237,7 @@ func (c *ApplyCommand) Run(args []string) int {
 	// The cached bytes are the ones FlagSet already read for this source
 	// (see tasksData); for a --tasks URL this avoids a second HTTP fetch
 	// of the same recipe.
-	recipe, err := loadRecipe(taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
+	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1
@@ -1073,3 +1083,6 @@ func (c *ApplyCommand) stdinSource() *stdinRecipeSource {
 	}
 	return c.stdin
 }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *ApplyCommand) baseDir() string { return c.BaseDir }

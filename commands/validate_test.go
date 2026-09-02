@@ -216,11 +216,10 @@ func TestValidateJSONEmitsNothingOnSuccess(t *testing.T) {
 // to stderr, so a --json consumer reading stdout is unaffected.
 func TestValidateWarnsOnAmbiguousDefaultProbe(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir)
 	writeAmbiguousRecipes(t, dir)
 
 	ui := cli.NewMockUi()
-	c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+	c := &ValidateCommand{Meta: command.Meta{Ui: ui}, BaseDir: dir}
 	if exit := c.Run(nil); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 	}
@@ -242,11 +241,10 @@ func TestValidateWarnsOnAmbiguousDefaultProbe(t *testing.T) {
 func TestValidateDoesNotWarnWhenTasksIsExplicit(t *testing.T) {
 	t.Run("explicit --tasks", func(t *testing.T) {
 		dir := t.TempDir()
-		t.Chdir(dir)
 		writeAmbiguousRecipes(t, dir)
 
 		ui := cli.NewMockUi()
-		c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+		c := &ValidateCommand{Meta: command.Meta{Ui: ui}, BaseDir: dir}
 		if exit := c.Run([]string{"--tasks", "tasks.json"}); exit != 0 {
 			t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 		}
@@ -257,13 +255,12 @@ func TestValidateDoesNotWarnWhenTasksIsExplicit(t *testing.T) {
 
 	t.Run("single candidate", func(t *testing.T) {
 		dir := t.TempDir()
-		t.Chdir(dir)
 		if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(stdinYAMLRecipe), 0o644); err != nil {
 			t.Fatalf("write tasks.yml: %v", err)
 		}
 
 		ui := cli.NewMockUi()
-		c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+		c := &ValidateCommand{Meta: command.Meta{Ui: ui}, BaseDir: dir}
 		if exit := c.Run(nil); exit != 0 {
 			t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
 		}

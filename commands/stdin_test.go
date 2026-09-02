@@ -171,16 +171,14 @@ func TestValidateStdinRegistersRecipeInputs(t *testing.T) {
 // reports the real error there.
 func TestPreloadRecipeForFlagsSkipsMissingFile(t *testing.T) {
 	dir := t.TempDir()
-	withCwd(t, dir, func() {
-		data, format, source := preloadRecipeForFlags([]string{"docket", "validate"}, false, newStdinRecipeSource(nil))
-		if data != nil {
-			t.Errorf("data = %q, want nil when no recipe exists", data)
-		}
-		if format != "" {
-			t.Errorf("format = %q, want empty when no recipe exists", format)
-		}
-		if source != defaultTaskFileCandidates[0] {
-			t.Errorf("source = %q, want the probed default %q", source, defaultTaskFileCandidates[0])
-		}
-	})
+	data, format, source := preloadRecipeForFlags(dir, []string{"docket", "validate"}, false, newStdinRecipeSource(nil))
+	if data != nil {
+		t.Errorf("data = %q, want nil when no recipe exists", data)
+	}
+	if format != "" {
+		t.Errorf("format = %q, want empty when no recipe exists", format)
+	}
+	if source != defaultTaskFileCandidates[0] {
+		t.Errorf("source = %q, want the probed default %q", source, defaultTaskFileCandidates[0])
+	}
 }
