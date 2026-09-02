@@ -586,10 +586,8 @@ func withStdinAndStdout(t *testing.T, input string, fn func() int) (string, int)
 	// readStdinRecipe memoizes the one read a process gets, so the memo
 	// has to be dropped around every test that swaps os.Stdin -
 	// otherwise the second such test is served the first one's bytes.
-	resetStdinRecipe()
 	t.Cleanup(func() {
 		os.Stdin = origStdin
-		resetStdinRecipe()
 	})
 
 	go func() {

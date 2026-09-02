@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -16,19 +15,17 @@ import (
 // helpers leave Ctx nil, which is the "constructed directly" path.
 func runWithCtx(t *testing.T, ctx context.Context, sub, path string, args ...string) (string, string, int) {
 	t.Helper()
-	origArgs := os.Args
-	os.Args = []string{"docket-test", sub, "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", sub, "--tasks", path}
 
 	ui := cli.NewMockUi()
 	all := append([]string{"--tasks", path}, args...)
 	var exit int
 	switch sub {
 	case "apply":
-		c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Ctx: ctx}
+		c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
 		exit = c.Run(all)
 	case "plan":
-		c := &PlanCommand{Meta: command.Meta{Ui: ui}, Ctx: ctx}
+		c := &PlanCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
 		exit = c.Run(all)
 	default:
 		t.Fatalf("unknown subcommand %q", sub)

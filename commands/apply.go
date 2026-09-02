@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,21 @@ import (
 
 type ApplyCommand struct {
 	command.Meta
+
+	// Stdin is where a `--tasks -` recipe is read from. Populated from
+	// main.go; nil reads the process's standard input. A test hands over its
+	// own pipe instead of swapping os.Stdin, which no two tests can do at
+	// once.
+	Stdin io.Reader
+
+	stdin *stdinRecipeSource
+
+	// Argv is the process argv this command resolves its --tasks and
+	// --tasks-format from, before pflag has parsed anything. Populated from
+	// main.go; nil falls back to os.Args, which is what a command built
+	// directly gets. It exists so a test can hand the command its own argv
+	// instead of assigning to the process global and putting it back.
+	Argv []string
 
 	// Ctx is the run context, populated from main.go with the process signal
 	// context. It carries cancellation down through every task's Plan and
@@ -108,7 +124,7 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.startAtTask, "start-at-task", "", "skip every task before the matched name; the matched task and successors run normally. Filter order: --start-at-task -> --tags/--skip-tags -> per-task when: at execution. The name search walks every play in source order, narrowed by --play.")
 	f.BoolVar(&c.detailedExitCode, "detailed-exitcode", false, "exit 0 when nothing changed, 2 when at least one task changed, 1 on error. Without this flag apply exits 0 whether or not anything changed.")
 
-	data, format, source := preloadRecipeForFlags(os.Args, true)
+	data, format, source := preloadRecipeForFlags(c.argv(), true, c.stdinSource())
 	if data == nil {
 		return f
 	}
@@ -211,7 +227,7 @@ func (c *ApplyCommand) Run(args []string) int {
 	// The cached bytes are the ones FlagSet already read for this source
 	// (see tasksData); for a --tasks URL this avoids a second HTTP fetch
 	// of the same recipe.
-	recipe, err := loadRecipe(taskFile, formatOverride, true, c.tasksData, c.tasksDataSource)
+	recipe, err := loadRecipe(taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1
@@ -1042,4 +1058,18 @@ func (c *ApplyCommand) newEmitter(masker *subprocess.Masker) EventEmitter {
 		return NewJSONEmitter(c.Ui, masker)
 	}
 	return NewFormatter(c.Ui, c.verbose, masker)
+}
+
+// argv returns the argv this command resolves its pre-parse flags from.
+func (c *ApplyCommand) argv() []string { return commandArgv(c.Argv) }
+
+// stdinSource returns this command's memoized standard-input reader, creating
+// it on first use. One per command: the recipe is read more than once per
+// invocation (FlagSet, Run, and Help on a flag error) but standard input only
+// yields its bytes once.
+func (c *ApplyCommand) stdinSource() *stdinRecipeSource {
+	if c.stdin == nil {
+		c.stdin = newStdinRecipeSource(c.Stdin)
+	}
+	return c.stdin
 }

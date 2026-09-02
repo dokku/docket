@@ -152,14 +152,11 @@ func TestExportOutputValidates(t *testing.T) {
 	// and the required inputs resolve from the vars-file. This is the
 	// offline stand-in for the apply round-trip contract.
 	// ValidateCommand.FlagSet loads the recipe's inputs from the --tasks path
-	// in os.Args (before flag parsing), so set os.Args as the real CLI would.
+	// in its argv (before flag parsing), so hand it one as the real CLI would.
 	valArgs := []string{"--tasks", recipe, "--vars-file", vars, "--strict"}
-	oldArgs := os.Args
-	os.Args = append([]string{"docket", "validate"}, valArgs...)
-	defer func() { os.Args = oldArgs }()
 
 	vui := cli.NewMockUi()
-	v := &ValidateCommand{Meta: command.Meta{Ui: vui}}
+	v := &ValidateCommand{Meta: command.Meta{Ui: vui}, Argv: append([]string{"docket", "validate"}, valArgs...)}
 	if code := v.Run(valArgs); code != 0 {
 		rb, _ := os.ReadFile(recipe)
 		vb, _ := os.ReadFile(vars)
@@ -185,12 +182,9 @@ func TestExportOutputValidatesJSON5(t *testing.T) {
 	}
 
 	valArgs := []string{"--tasks", recipe, "--vars-file", vars, "--strict"}
-	oldArgs := os.Args
-	os.Args = append([]string{"docket", "validate"}, valArgs...)
-	defer func() { os.Args = oldArgs }()
 
 	vui := cli.NewMockUi()
-	v := &ValidateCommand{Meta: command.Meta{Ui: vui}}
+	v := &ValidateCommand{Meta: command.Meta{Ui: vui}, Argv: append([]string{"docket", "validate"}, valArgs...)}
 	if code := v.Run(valArgs); code != 0 {
 		rb, _ := os.ReadFile(recipe)
 		vb, _ := os.ReadFile(vars)
@@ -724,12 +718,9 @@ func TestExportOutputValidatesWithUnappliableK3sProfile(t *testing.T) {
 	}
 
 	valArgs := []string{"--tasks", recipe, "--vars-file", vars, "--strict"}
-	oldArgs := os.Args
-	os.Args = append([]string{"docket", "validate"}, valArgs...)
-	defer func() { os.Args = oldArgs }()
 
 	vui := cli.NewMockUi()
-	v := &ValidateCommand{Meta: command.Meta{Ui: vui}}
+	v := &ValidateCommand{Meta: command.Meta{Ui: vui}, Argv: append([]string{"docket", "validate"}, valArgs...)}
 	if code := v.Run(valArgs); code != 0 {
 		t.Fatalf("docket validate --strict exit = %d, want 0\n--- validate stderr ---\n%s\n--- recipe ---\n%s",
 			code, vui.ErrorWriter.String(), recipeBytes)

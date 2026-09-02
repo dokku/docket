@@ -265,8 +265,8 @@ func isTaskFileURL(path string) bool {
 // readTaskFileData returns the bytes of the recipe at path, allowing an
 // http(s) URL. Kept as the name apply and plan already call, now a thin
 // wrapper so there is only one read path to reason about.
-func readTaskFileData(path string) ([]byte, error) {
-	return readRecipeBytes(path, true)
+func readTaskFileData(path string, stdin *stdinRecipeSource) ([]byte, error) {
+	return readRecipeBytes(path, true, stdin)
 }
 
 // readRecipeBytes returns the bytes of the recipe at path.
@@ -278,9 +278,9 @@ func readTaskFileData(path string) ([]byte, error) {
 // rather than hidden in a function name. Any other value is read from
 // disk so the familiar os.ReadFile "no such file" error still surfaces
 // for a mistyped path.
-func readRecipeBytes(path string, allowURL bool) ([]byte, error) {
+func readRecipeBytes(path string, allowURL bool, stdin *stdinRecipeSource) ([]byte, error) {
 	if path == taskFileStdin {
-		return readStdinRecipe()
+		return stdin.recipe()
 	}
 	if allowURL && isTaskFileURL(path) {
 		return fetchTaskFileURL(path)
@@ -288,44 +288,44 @@ func readRecipeBytes(path string, allowURL bool) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-// stdinRecipe memoizes the one read of os.Stdin a process gets. Each of
-// apply, plan, and validate touches the recipe at least twice - once in
-// FlagSet() to pre-register the recipe's own inputs as flags, once in
-// Run() - and a flag-parse error adds two more reads via Help(). Only
-// the first read can return data, so every later caller is served from
-// here.
+// stdinRecipeSource memoizes the one read of standard input a command gets.
+// Each of apply, plan, and validate touches the recipe at least twice - once in
+// FlagSet() to pre-register the recipe's own inputs as flags, once in Run() -
+// and a flag-parse error adds two more reads via Help(). Only the first read
+// can return data, so every later caller is served from here.
 //
-// The error is memoized alongside the data on purpose. Without it a
-// second call would see an empty, successful read and turn a real stdin
-// failure into a misleading "no recipe found in tasks file".
+// The error is memoized alongside the data on purpose. Without it a second call
+// would see an empty, successful read and turn a real stdin failure into a
+// misleading "no recipe found in tasks file".
 //
-// A plain sentinel rather than sync.Once: the command path is
-// single-goroutine, and a Once paired with a test reset hook reads like
-// a concurrency bug that isn't there.
-var stdinRecipe struct {
+// One source belongs to one command. It used to be a package variable with a
+// test-only reset hook, which meant a test exercising a piped recipe had to
+// swap os.Stdin and put it back - process state no two tests can hold at once.
+type stdinRecipeSource struct {
+	in   io.Reader
 	read bool
 	data []byte
 	err  error
 }
 
-// readStdinRecipe returns the recipe piped into standard input, reading
-// it at most once per process.
-func readStdinRecipe() ([]byte, error) {
-	if !stdinRecipe.read {
-		stdinRecipe.read = true
-		stdinRecipe.data, stdinRecipe.err = io.ReadAll(os.Stdin)
+// newStdinRecipeSource returns a source reading from in, or from the process's
+// standard input when in is nil.
+func newStdinRecipeSource(in io.Reader) *stdinRecipeSource {
+	if in == nil {
+		in = os.Stdin
 	}
-	return stdinRecipe.data, stdinRecipe.err
+	return &stdinRecipeSource{in: in}
 }
 
-// resetStdinRecipe clears the memo so a test can swap os.Stdin and read
-// again. Production code never calls it - a process only ever has one
-// stdin.
-func resetStdinRecipe() {
-	stdinRecipe.read = false
-	stdinRecipe.data = nil
-	stdinRecipe.err = nil
+// recipe returns the recipe piped in, reading it at most once.
+func (s *stdinRecipeSource) recipe() ([]byte, error) {
+	if !s.read {
+		s.read = true
+		s.data, s.err = io.ReadAll(s.in)
+	}
+	return s.data, s.err
 }
+
 
 // fetchTaskFileURL GETs a recipe from an http(s) URL. A transport error, a
 // non-2xx response, or a body larger than maxTaskFileBytes is reported as
@@ -503,11 +503,11 @@ type recipeSource struct {
 // cached / cachedSource carry bytes an earlier phase already read for
 // the same source, so a --tasks URL is not fetched over HTTP twice; pass
 // nil / "" when there is nothing to reuse. stdin needs no help here -
-// readStdinRecipe memoizes it globally - but a URL fetch is not memoized
+// stdinRecipeSource memoizes it - but a URL fetch is not memoized
 // and would otherwise hit the network again.
 //
 // allowURL is threaded through to readRecipeBytes; see its doc comment.
-func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, cachedSource string) (recipeSource, error) {
+func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, cachedSource string, stdin *stdinRecipeSource) (recipeSource, error) {
 	path, detected, ambiguous, err := resolveTaskFilePath(taskFile)
 	if err != nil {
 		return recipeSource{}, err
@@ -515,7 +515,7 @@ func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, c
 
 	data := cached
 	if data == nil || cachedSource != path {
-		data, err = readRecipeBytes(path, allowURL)
+		data, err = readRecipeBytes(path, allowURL, stdin)
 		if err != nil {
 			return recipeSource{}, err
 		}
@@ -555,12 +555,12 @@ func loadRecipe(taskFile, formatOverride string, allowURL bool, cached []byte, c
 // commandHelp, which calls FlagSet twice), so reading an interactive
 // terminal here would hang instead of printing the message the user
 // asked for. Only Run may block on stdin.
-func preloadRecipeForFlags(argv []string, allowURL bool) (data []byte, format string, source string) {
+func preloadRecipeForFlags(argv []string, allowURL bool, stdin *stdinRecipeSource) (data []byte, format string, source string) {
 	path, detected := resolveTaskFileFromArgs(argv)
 	if path == taskFileStdin && isatty.IsTerminal(os.Stdin.Fd()) {
 		return nil, "", path
 	}
-	data, err := readRecipeBytes(path, allowURL)
+	data, err := readRecipeBytes(path, allowURL, stdin)
 	if err != nil {
 		return nil, "", path
 	}
@@ -615,4 +615,17 @@ func recipeFormatAutocomplete() complete.Predictor {
 // argument across apply / plan / validate / fmt / init / export.
 func taskFileAutocomplete() complete.Predictor {
 	return predictFilesByExtension(taskFileExtensions)
+}
+
+// commandArgv returns the argv a command should resolve its pre-parse flags
+// from: the one it was given, or the process's when it was given none.
+//
+// Reading os.Args directly is what forced every test that exercises FlagSet to
+// assign to the process global and restore it afterwards, which is a thing
+// t.Parallel() makes unsafe.
+func commandArgv(argv []string) []string {
+	if argv != nil {
+		return argv
+	}
+	return os.Args
 }

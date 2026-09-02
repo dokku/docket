@@ -37,6 +37,10 @@ type ExportCommand struct {
 	// in which case Run falls back to context.Background().
 	Ctx context.Context
 
+	// ChmodVarsFile overrides how the companion vars-file's mode is set. Only
+	// a test sets it, to force the failure path; nil uses os.File.Chmod.
+	ChmodVarsFile chmodFunc
+
 	output     string
 	varsOutput string
 	// formatFlag is the raw --format value; it is normalised by
@@ -373,11 +377,22 @@ func (c *ExportCommand) confirmOverwrite(path string) (bool, error) {
 	return answer == "y" || answer == "yes", nil
 }
 
-// chmodVarsFile is os.File.Chmod, indirected so the warning below can be
-// tested: no filesystem a test can portably create rejects fchmod, and a
-// fallback that tells the operator their secrets are exposed is worth more
-// than an untested one.
-var chmodVarsFile = func(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }
+// chmodFile is os.File.Chmod, indirected so the warning below can be tested:
+// no filesystem a test can portably create rejects fchmod, and a fallback that
+// tells the operator their secrets are exposed is worth more than an untested
+// one.
+//
+// It lives on the command rather than in a package variable so a test that
+// forces the failure does not have to swap process state and put it back.
+type chmodFunc func(f *os.File, mode os.FileMode) error
+
+// chmodVarsFile returns the chmod this command writes its vars-file with.
+func (c *ExportCommand) chmodVarsFile() chmodFunc {
+	if c.ChmodVarsFile != nil {
+		return c.ChmodVarsFile
+	}
+	return func(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }
+}
 
 // writeVarsFile writes the companion vars-file at varsFileMode. os.WriteFile
 // is not enough on its own: O_CREATE's mode applies only to a file the call
@@ -397,7 +412,7 @@ func (c *ExportCommand) writeVarsFile(path string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := chmodVarsFile(f, varsFileMode); err != nil {
+	if err := c.chmodVarsFile()(f, varsFileMode); err != nil {
 		c.Ui.Warn(fmt.Sprintf("warning: could not set mode %#o on %s: %v; it holds secrets in the clear", varsFileMode, path, err))
 	}
 	if _, err := f.Write(data); err != nil {

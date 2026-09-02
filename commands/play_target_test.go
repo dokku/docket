@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -17,9 +16,7 @@ import (
 // type and lets the runner answer for it.
 func runApplyWithTarget(t *testing.T, path string, args ...string) (map[string][]string, string) {
 	t.Helper()
-	origArgs := os.Args
-	os.Args = []string{"docket-test", "apply", "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", "apply", "--tasks", path}
 
 	seen := map[string][]string{}
 	ctx := subprocess.ContextWithRunner(context.Background(),
@@ -30,7 +27,7 @@ func runApplyWithTarget(t *testing.T, path string, args ...string) (map[string][
 		})
 
 	ui := cli.NewMockUi()
-	c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Ctx: ctx}
+	c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
 	c.Run(append([]string{"--tasks", path}, args...))
 	return seen, ui.OutputWriter.String()
 }
@@ -119,9 +116,7 @@ func TestApplyPlaySudoInheritsAndDeclines(t *testing.T) {
       dokku_app: { app: b }
 `)
 
-	origArgs := os.Args
-	os.Args = []string{"docket-test", "apply", "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", "apply", "--tasks", path}
 
 	sudoByHost := map[string]bool{}
 	ctx := subprocess.ContextWithRunner(context.Background(),
@@ -131,7 +126,7 @@ func TestApplyPlaySudoInheritsAndDeclines(t *testing.T) {
 			return subprocess.ExecCommandResponse{}, nil
 		})
 
-	c := &ApplyCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Ctx: ctx}
+	c := &ApplyCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv, Ctx: ctx}
 	c.Run([]string{"--tasks", path, "--sudo"})
 
 	if !sudoByHost["deploy@one.example.com"] {
@@ -148,9 +143,7 @@ func TestApplyPlaySudoInheritsAndDeclines(t *testing.T) {
 func TestPlanRoutesEachPlayToItsOwnHost(t *testing.T) {
 	path := writeTasksFile(t, twoHostRecipe)
 
-	origArgs := os.Args
-	os.Args = []string{"docket-test", "plan", "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", "plan", "--tasks", path}
 
 	seen := map[string]bool{}
 	ctx := subprocess.ContextWithRunner(context.Background(),
@@ -160,7 +153,7 @@ func TestPlanRoutesEachPlayToItsOwnHost(t *testing.T) {
 		})
 
 	ui := cli.NewMockUi()
-	c := &PlanCommand{Meta: command.Meta{Ui: ui}, Ctx: ctx}
+	c := &PlanCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
 	c.Run([]string{"--tasks", path})
 
 	if !seen[""] || !seen["deploy@remote.example.com"] {

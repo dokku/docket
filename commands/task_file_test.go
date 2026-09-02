@@ -302,10 +302,10 @@ func TestResolveTaskFilePathStdin(t *testing.T) {
 // it passes allowURL=false and an http(s) --tasks must not be fetched.
 func TestReadRecipeBytesURLPermission(t *testing.T) {
 	const url = "https://example.invalid/tasks.yml"
-	if _, err := readRecipeBytes(url, false); err == nil {
-		t.Fatal("readRecipeBytes(url, false) = nil error, want a local-read failure")
+	if _, err := readRecipeBytes(url, false, newStdinRecipeSource(nil)); err == nil {
+		t.Fatal("readRecipeBytes(url, false, newStdinRecipeSource(nil)) = nil error, want a local-read failure")
 	} else if strings.Contains(err.Error(), "fetch") {
-		t.Errorf("readRecipeBytes(url, false) attempted a fetch: %v", err)
+		t.Errorf("readRecipeBytes(url, false, newStdinRecipeSource(nil)) attempted a fetch: %v", err)
 	}
 }
 

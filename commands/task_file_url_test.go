@@ -30,9 +30,9 @@ func TestReadTaskFileDataFetchesURL(t *testing.T) {
 	const recipe = "---\n- tasks:\n    - name: x\n      dokku_app: { app: demo }\n"
 	srv := serveRecipe(t, recipe)
 
-	data, err := readTaskFileData(srv.URL + "/tasks.yml")
+	data, err := readTaskFileData(srv.URL+"/tasks.yml", newStdinRecipeSource(nil))
 	if err != nil {
-		t.Fatalf("readTaskFileData(url) error: %v", err)
+		t.Fatalf("readTaskFileData(url, newStdinRecipeSource(nil)) error: %v", err)
 	}
 	if string(data) != recipe {
 		t.Errorf("fetched body = %q, want %q", string(data), recipe)
@@ -48,7 +48,7 @@ func TestReadTaskFileDataURLNon2xx(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	url := srv.URL + "/missing.yml"
-	_, err := readTaskFileData(url)
+	_, err := readTaskFileData(url, newStdinRecipeSource(nil))
 	if err == nil {
 		t.Fatal("expected an error for a 404 response")
 	}
@@ -68,9 +68,9 @@ func TestReadTaskFileDataLocalFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	data, err := readTaskFileData(path)
+	data, err := readTaskFileData(path, newStdinRecipeSource(nil))
 	if err != nil {
-		t.Fatalf("readTaskFileData(path) error: %v", err)
+		t.Fatalf("readTaskFileData(path, newStdinRecipeSource(nil)) error: %v", err)
 	}
 	if string(data) != body {
 		t.Errorf("read body = %q, want %q", string(data), body)
@@ -80,7 +80,7 @@ func TestReadTaskFileDataLocalFile(t *testing.T) {
 // TestReadTaskFileDataLocalMissing: a missing local path surfaces the
 // familiar os.ReadFile error (not a URL fetch error).
 func TestReadTaskFileDataLocalMissing(t *testing.T) {
-	_, err := readTaskFileData(filepath.Join(t.TempDir(), "nope.yml"))
+	_, err := readTaskFileData(filepath.Join(t.TempDir(), "nope.yml"), newStdinRecipeSource(nil))
 	if err == nil {
 		t.Fatal("expected an error for a missing local file")
 	}

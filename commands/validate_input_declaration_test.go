@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -21,11 +20,9 @@ import (
 // rather than from the parsed flags, so the argv is staged first.
 func runValidate(t *testing.T, path string, args ...string) (string, string, int) {
 	t.Helper()
-	origArgs := os.Args
-	os.Args = []string{"docket-test", "validate", "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", "validate", "--tasks", path}
 
-	c := &ValidateCommand{Meta: command.Meta{Ui: cli.NewMockUi()}}
+	c := &ValidateCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv}
 	all := append([]string{"--tasks", path}, args...)
 	exit := c.Run(all)
 	ui := c.Ui.(*cli.MockUi)

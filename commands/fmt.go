@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +27,14 @@ import (
 // contacts the Dokku server.
 type FmtCommand struct {
 	command.Meta
+
+	// Stdin is where a `--tasks -` recipe is read from. Populated from
+	// main.go; nil reads the process's standard input. A test hands over its
+	// own pipe instead of swapping os.Stdin, which no two tests can do at
+	// once.
+	Stdin io.Reader
+
+	stdin *stdinRecipeSource
 
 	check bool
 	diff  bool
@@ -168,7 +177,7 @@ func (c *FmtCommand) Run(args []string) int {
 // --tasks-format, wins over the sniff - a flow-style YAML recipe starts
 // with [ and would otherwise be reformatted as JSON5.
 func (c *FmtCommand) runStdin(formatOverride string) int {
-	src, err := readStdinRecipe()
+	src, err := c.stdinSource().recipe()
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read stdin: %v", err))
 		return 1
@@ -423,4 +432,15 @@ func bytesEqual(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+// stdinSource returns this command's memoized standard-input reader, creating
+// it on first use. One per command: the recipe is read more than once per
+// invocation (FlagSet, Run, and Help on a flag error) but standard input only
+// yields its bytes once.
+func (c *FmtCommand) stdinSource() *stdinRecipeSource {
+	if c.stdin == nil {
+		c.stdin = newStdinRecipeSource(c.Stdin)
+	}
+	return c.stdin
 }

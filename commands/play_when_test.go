@@ -23,24 +23,22 @@ import (
 // outcome we want to assert. With `!=`, `nil != "x"` is true and the
 // play would run regardless of whether the variable was visible.
 
-func newTestPlanCommand() *PlanCommand {
-	c := &PlanCommand{}
+func newTestPlanCommand(argv []string) *PlanCommand {
+	c := &PlanCommand{Argv: argv}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
 	return c
 }
 
 // playOutput drives plan with the given args against the tasks file at
-// path and returns the captured stdout / stderr / exit code. It also
-// stages os.Args because PlanCommand.FlagSet() reads --tasks from
-// os.Args (not from the args slice) so it can pre-register input flags
-// before flag.Parse runs against the per-call args.
+// path and returns the captured stdout / stderr / exit code. It hands the
+// command its own argv because PlanCommand.FlagSet() reads --tasks from argv
+// (not from the args slice) so it can pre-register input flags before
+// flag.Parse runs against the per-call args.
 func playOutput(t *testing.T, path string, args ...string) (string, string, int) {
 	t.Helper()
-	origArgs := os.Args
-	os.Args = []string{"docket-test", "plan", "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", "plan", "--tasks", path}
 
-	c := newTestPlanCommand()
+	c := newTestPlanCommand(argv)
 	all := append([]string{"--tasks", path}, args...)
 	exit := c.Run(all)
 	ui := c.Ui.(*cli.MockUi)

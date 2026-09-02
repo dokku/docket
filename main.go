@@ -53,7 +53,7 @@ func Run(args []string) int {
 func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFactory {
 	return map[string]cli.CommandFactory{
 		"apply": func() (cli.Command, error) {
-			return &commands.ApplyCommand{Meta: meta, Ctx: ctx}, nil
+			return &commands.ApplyCommand{Meta: meta, Ctx: ctx, Argv: os.Args}, nil
 		},
 		"export": func() (cli.Command, error) {
 			return &commands.ExportCommand{Meta: meta, Ctx: ctx}, nil
@@ -65,13 +65,13 @@ func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFact
 			return &commands.InitCommand{Meta: meta}, nil
 		},
 		"plan": func() (cli.Command, error) {
-			return &commands.PlanCommand{Meta: meta, Ctx: ctx}, nil
+			return &commands.PlanCommand{Meta: meta, Ctx: ctx, Argv: os.Args}, nil
 		},
 		"schema": func() (cli.Command, error) {
 			return &commands.SchemaCommand{Meta: meta}, nil
 		},
 		"validate": func() (cli.Command, error) {
-			return &commands.ValidateCommand{Meta: meta}, nil
+			return &commands.ValidateCommand{Meta: meta, Argv: os.Args}, nil
 		},
 		"version": func() (cli.Command, error) {
 			return &command.VersionCommand{Meta: meta}, nil

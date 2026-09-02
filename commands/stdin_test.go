@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -15,30 +16,23 @@ import (
 // recipe. Returns the MockUi so callers can assert on output.
 //
 // resetStdinRecipe bookends the swap because readStdinRecipe memoizes
-// the single read a process gets; without it the second test here would
-// be served the first one's bytes.
-func withStdinArgs(t *testing.T, recipe string, args []string, fn func()) {
+// its own pipe and argv, so two of these can no longer serve each other the
+// wrong bytes through a process-wide memo.
+func withStdinArgs(t *testing.T, recipe string, args []string, fn func(stdin io.Reader, argv []string)) {
 	t.Helper()
 
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	origStdin, origArgs := os.Stdin, os.Args
-	os.Stdin = r
-	os.Args = append([]string{"docket", "validate"}, args...)
-	resetStdinRecipe()
-	t.Cleanup(func() {
-		os.Stdin, os.Args = origStdin, origArgs
-		resetStdinRecipe()
-	})
+	t.Cleanup(func() { r.Close() })
 
 	go func() {
 		_, _ = w.WriteString(recipe)
 		w.Close()
 	}()
 
-	fn()
+	fn(r, append([]string{"docket", "validate"}, args...))
 }
 
 // runValidateOverStdin pipes recipe into `docket validate <args>` and
@@ -48,9 +42,9 @@ func runValidateOverStdin(t *testing.T, recipe string, args []string) (int, stri
 
 	var exit int
 	var out string
-	withStdinArgs(t, recipe, args, func() {
+	withStdinArgs(t, recipe, args, func(stdin io.Reader, argv []string) {
 		ui := cli.NewMockUi()
-		c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+		c := &ValidateCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Stdin: stdin}
 		exit = c.Run(args)
 		out = ui.OutputWriter.String() + ui.ErrorWriter.String()
 	})
@@ -178,7 +172,7 @@ func TestValidateStdinRegistersRecipeInputs(t *testing.T) {
 func TestPreloadRecipeForFlagsSkipsMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	withCwd(t, dir, func() {
-		data, format, source := preloadRecipeForFlags([]string{"docket", "validate"}, false)
+		data, format, source := preloadRecipeForFlags([]string{"docket", "validate"}, false, newStdinRecipeSource(nil))
 		if data != nil {
 			t.Errorf("data = %q, want nil when no recipe exists", data)
 		}
