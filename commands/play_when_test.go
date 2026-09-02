@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,8 +24,8 @@ import (
 // outcome we want to assert. With `!=`, `nil != "x"` is true and the
 // play would run regardless of whether the variable was visible.
 
-func newTestPlanCommand(argv []string) *PlanCommand {
-	c := &PlanCommand{Argv: argv}
+func newTestPlanCommand(t *testing.T, argv []string) *PlanCommand {
+	c := &PlanCommand{Argv: argv, Ctx: withStubFixtures(context.Background(), stubsFor(t))}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
 	return c
 }
@@ -38,7 +39,7 @@ func playOutput(t *testing.T, path string, args ...string) (string, string, int)
 	t.Helper()
 	argv := []string{"docket-test", "plan", "--tasks", path}
 
-	c := newTestPlanCommand(argv)
+	c := newTestPlanCommand(t, argv)
 	all := append([]string{"--tasks", path}, args...)
 	exit := c.Run(all)
 	ui := c.Ui.(*cli.MockUi)
@@ -259,7 +260,6 @@ func playLines(out string) []string {
 // play names and --list-tasks does not, so a sensitive name would make
 // the two differ by design rather than by drift.
 func TestPlayWhenListTasksMatchesPlan(t *testing.T) {
-	defer stubReset()
 	path := writePlayTasks(t, `---
 - inputs:
     - name: env

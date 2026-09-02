@@ -22,10 +22,10 @@ func runWithCtx(t *testing.T, ctx context.Context, sub, path string, args ...str
 	var exit int
 	switch sub {
 	case "apply":
-		c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
+		c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: withStubFixtures(ctx, stubsFor(t))}
 		exit = c.Run(all)
 	case "plan":
-		c := &PlanCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
+		c := &PlanCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: withStubFixtures(ctx, stubsFor(t))}
 		exit = c.Run(all)
 	default:
 		t.Fatalf("unknown subcommand %q", sub)
@@ -47,14 +47,13 @@ const twoTaskRecipe = `---
 // interrupt could only kill the child process of whichever task was in flight
 // and the loop marched on to the next one.
 func TestApplyStopsAtCancelledContext(t *testing.T) {
-	defer stubReset()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	secondRan := false
-	stubSet("first", StubFixture{Changed: true, Hook: cancel})
-	stubSet("second", StubFixture{Changed: true, Hook: func() { secondRan = true }})
+	stubSet(t, "first", StubFixture{Changed: true, Hook: cancel})
+	stubSet(t, "second", StubFixture{Changed: true, Hook: func() { secondRan = true }})
 
 	path := writeTasksFile(t, twoTaskRecipe)
 	stdout, stderr, exit := runWithCtx(t, ctx, "apply", path)
@@ -76,14 +75,13 @@ func TestApplyStopsAtCancelledContext(t *testing.T) {
 // TestPlanStopsAtCancelledContext is the plan-side mirror. plan probes the
 // server for every task, so it needs the same escape hatch as apply.
 func TestPlanStopsAtCancelledContext(t *testing.T) {
-	defer stubReset()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	secondRan := false
-	stubSet("first", StubFixture{Changed: true, Hook: cancel})
-	stubSet("second", StubFixture{Changed: true, Hook: func() { secondRan = true }})
+	stubSet(t, "first", StubFixture{Changed: true, Hook: cancel})
+	stubSet(t, "second", StubFixture{Changed: true, Hook: func() { secondRan = true }})
 
 	path := writeTasksFile(t, twoTaskRecipe)
 	_, stderr, exit := runWithCtx(t, ctx, "plan", path)
@@ -104,13 +102,12 @@ func TestPlanStopsAtCancelledContext(t *testing.T) {
 // interrupt. A wrapper reads 2 as "the run completed and changed something";
 // an interrupted run completed nothing.
 func TestApplyCancelledRunNeverReportsChanged(t *testing.T) {
-	defer stubReset()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stubSet("first", StubFixture{Changed: true, Hook: cancel})
-	stubSet("second", StubFixture{Changed: true})
+	stubSet(t, "first", StubFixture{Changed: true, Hook: cancel})
+	stubSet(t, "second", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, twoTaskRecipe)
 	if _, _, exit := runWithCtx(t, ctx, "apply", path, "--detailed-exitcode"); exit != 1 {
@@ -124,17 +121,16 @@ func TestApplyCancelledRunNeverReportsChanged(t *testing.T) {
 // through the error path and never reaches its own cancellation check. Asking
 // about the context once at the exit is what keeps the report honest.
 func TestApplyReportsCancellationWhenTheInterruptedTaskAlsoFails(t *testing.T) {
-	defer stubReset()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	secondRan := false
-	stubSet("first", StubFixture{
+	stubSet(t, "first", StubFixture{
 		ExecuteError: errors.New("interrupted"),
 		Hook:         cancel,
 	})
-	stubSet("second", StubFixture{Changed: true, Hook: func() { secondRan = true }})
+	stubSet(t, "second", StubFixture{Changed: true, Hook: func() { secondRan = true }})
 
 	path := writeTasksFile(t, twoTaskRecipe)
 	_, stderr, exit := runWithCtx(t, ctx, "apply", path)
@@ -156,14 +152,13 @@ func TestApplyReportsCancellationWhenTheInterruptedTaskAlsoFails(t *testing.T) {
 // need interrupting again. This is the behaviour the bats interrupt test
 // exercises end to end against a host that never answers.
 func TestApplyCancellationStopsLaterPlays(t *testing.T) {
-	defer stubReset()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	secondPlayRan := false
-	stubSet("first", StubFixture{ExecuteError: errors.New("interrupted"), Hook: cancel})
-	stubSet("second", StubFixture{Changed: true, Hook: func() { secondPlayRan = true }})
+	stubSet(t, "first", StubFixture{ExecuteError: errors.New("interrupted"), Hook: cancel})
+	stubSet(t, "second", StubFixture{Changed: true, Hook: func() { secondPlayRan = true }})
 
 	path := writeTasksFile(t, `---
 - name: one
@@ -195,9 +190,8 @@ func TestApplyCancellationStopsLaterPlays(t *testing.T) {
 // bare struct literal, as most of these tests and any embedding caller that
 // does not set Ctx do, still runs instead of panicking on a nil context.
 func TestApplyWithoutCtxUsesBackground(t *testing.T) {
-	defer stubReset()
-	stubSet("first", StubFixture{Changed: true})
-	stubSet("second", StubFixture{Changed: true})
+	stubSet(t, "first", StubFixture{Changed: true})
+	stubSet(t, "second", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, twoTaskRecipe)
 	if _, stderr, exit := runApply(t, path); exit != 0 {

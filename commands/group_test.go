@@ -10,9 +10,8 @@ import (
 // children and no rescue/always reports OK at the group level and
 // each child renders its own line.
 func TestApplyGroupAllChildrenSucceed(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -41,9 +40,8 @@ func TestApplyGroupAllChildrenSucceed(t *testing.T) {
 // TestApplyGroupBlockErrorTriggersRescue: the first block child errors,
 // rescue runs and clears the failure, group reports OK.
 func TestApplyGroupBlockErrorTriggersRescue(t *testing.T) {
-	defer stubReset()
-	stubSet("bad", StubFixture{ExecuteError: errors.New("block boom")})
-	stubSet("rescue", StubFixture{Changed: true})
+	stubSet(t, "bad", StubFixture{ExecuteError: errors.New("block boom")})
+	stubSet(t, "rescue", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -76,9 +74,8 @@ func TestApplyGroupBlockErrorTriggersRescue(t *testing.T) {
 // TestApplyGroupRescueFailureFailsGroup: when rescue itself errors,
 // the group's verdict is failed and the run exits non-zero.
 func TestApplyGroupRescueFailureFailsGroup(t *testing.T) {
-	defer stubReset()
-	stubSet("blockboom", StubFixture{ExecuteError: errors.New("block boom")})
-	stubSet("rescueboom", StubFixture{ExecuteError: errors.New("rescue boom")})
+	stubSet(t, "blockboom", StubFixture{ExecuteError: errors.New("block boom")})
+	stubSet(t, "rescueboom", StubFixture{ExecuteError: errors.New("rescue boom")})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -97,9 +94,8 @@ func TestApplyGroupRescueFailureFailsGroup(t *testing.T) {
 // TestApplyGroupAlwaysRunsAfterSuccessAndRescue: always children run
 // regardless of block success or rescue failure paths.
 func TestApplyGroupAlwaysRunsAfterSuccess(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("marker", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "marker", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -120,10 +116,9 @@ func TestApplyGroupAlwaysRunsAfterSuccess(t *testing.T) {
 }
 
 func TestApplyGroupAlwaysRunsAfterRescue(t *testing.T) {
-	defer stubReset()
-	stubSet("blockboom", StubFixture{ExecuteError: errors.New("block boom")})
-	stubSet("rescue", StubFixture{Changed: true})
-	stubSet("marker", StubFixture{Changed: true})
+	stubSet(t, "blockboom", StubFixture{ExecuteError: errors.New("block boom")})
+	stubSet(t, "rescue", StubFixture{Changed: true})
+	stubSet(t, "marker", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -149,10 +144,9 @@ func TestApplyGroupAlwaysRunsAfterRescue(t *testing.T) {
 // #210 rule: ignore_errors swallows a child's error and does NOT
 // trigger rescue. The next block child still runs; rescue stays cold.
 func TestApplyGroupIgnoreErrorsOnChildDoesNotTriggerRescue(t *testing.T) {
-	defer stubReset()
-	stubSet("bad", StubFixture{ExecuteError: errors.New("ignored boom")})
-	stubSet("after", StubFixture{Changed: true})
-	stubSet("rescue", StubFixture{Changed: true})
+	stubSet(t, "bad", StubFixture{ExecuteError: errors.New("ignored boom")})
+	stubSet(t, "after", StubFixture{Changed: true})
+	stubSet(t, "rescue", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -184,9 +178,8 @@ func TestApplyGroupIgnoreErrorsOnChildDoesNotTriggerRescue(t *testing.T) {
 // should run because the predicate sees the failing block child's
 // state.
 func TestApplyGroupFailedTaskBoundInRescue(t *testing.T) {
-	defer stubReset()
-	stubSet("bad", StubFixture{ExecuteError: errors.New("triggered boom")})
-	stubSet("cleanup", StubFixture{Changed: true})
+	stubSet(t, "bad", StubFixture{ExecuteError: errors.New("triggered boom")})
+	stubSet(t, "cleanup", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -210,8 +203,7 @@ func TestApplyGroupFailedTaskBoundInRescue(t *testing.T) {
 // TestApplyGroupIgnoreErrorsOnGroup: a residual error after rescue +
 // always is suppressed when the group itself carries ignore_errors.
 func TestApplyGroupIgnoreErrorsOnGroup(t *testing.T) {
-	defer stubReset()
-	stubSet("blockboom", StubFixture{ExecuteError: errors.New("block boom")})
+	stubSet(t, "blockboom", StubFixture{ExecuteError: errors.New("block boom")})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -230,9 +222,8 @@ func TestApplyGroupIgnoreErrorsOnGroup(t *testing.T) {
 // captures the synthesized post-override outcome and exposes it to a
 // later task's predicate.
 func TestApplyGroupRegisterSnapshotsAggregateState(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -259,9 +250,8 @@ func TestApplyGroupRegisterSnapshotsAggregateState(t *testing.T) {
 // TestApplyGroupNestedFailureReachesOuterRescue: an inner block's
 // error bubbles up and triggers the outer block's rescue.
 func TestApplyGroupNestedFailureReachesOuterRescue(t *testing.T) {
-	defer stubReset()
-	stubSet("inner-boom", StubFixture{ExecuteError: errors.New("inner boom")})
-	stubSet("outer-rescue", StubFixture{Changed: true})
+	stubSet(t, "inner-boom", StubFixture{ExecuteError: errors.New("inner boom")})
+	stubSet(t, "outer-rescue", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -289,9 +279,8 @@ func TestApplyGroupNestedFailureReachesOuterRescue(t *testing.T) {
 // abort the rest of the play, and exit non-zero -- matching the verdict
 // the identical task gets at the top level.
 func TestApplyGroupBlockStateMismatchFailsGroup(t *testing.T) {
-	defer stubReset()
-	stubSet("mismatch", StubFixture{MismatchState: true})
-	stubSet("after", StubFixture{Changed: true})
+	stubSet(t, "mismatch", StubFixture{MismatchState: true})
+	stubSet(t, "after", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -323,8 +312,7 @@ func TestApplyGroupBlockStateMismatchFailsGroup(t *testing.T) {
 // zero-value state (nil error, empty State/DesiredState). A rescue-less
 // group must still surface that as a failure rather than swallowing it.
 func TestApplyGroupBlockRuntimeFailedWhenErrorFailsGroup(t *testing.T) {
-	defer stubReset()
-	stubSet("ok", StubFixture{})
+	stubSet(t, "ok", StubFixture{})
 
 	path := writeTasksFile(t, `---
 - tasks:

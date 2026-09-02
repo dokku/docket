@@ -114,8 +114,7 @@ func TestDetectTaskFileFormatURL(t *testing.T) {
 // TestPlanFetchesRecipeFromURL: plan reads a recipe served over HTTP and
 // runs it to completion (a read failure would exit 1 with "read error").
 func TestPlanFetchesRecipeFromURL(t *testing.T) {
-	defer stubReset()
-	stubSet("url-plan", StubFixture{})
+	stubSet(t, "url-plan", StubFixture{})
 
 	srv := serveRecipe(t, `---
 - tasks:
@@ -139,8 +138,7 @@ func TestPlanFetchesRecipeFromURL(t *testing.T) {
 // The stub key resolves to the overridden app value; only the "override"
 // key carries a changed fixture, so a propagated override yields 1 changed.
 func TestApplyURLRecipePreregistersInputFlags(t *testing.T) {
-	defer stubReset()
-	stubSet("override", StubFixture{Changed: true})
+	stubSet(t, "override", StubFixture{Changed: true})
 
 	srv := serveRecipe(t, `---
 - inputs:
@@ -164,8 +162,7 @@ func TestApplyURLRecipePreregistersInputFlags(t *testing.T) {
 // share a single fetch of a --tasks URL, so the recipe is requested once
 // per command rather than twice.
 func TestURLRecipeFetchedOncePerInvocation(t *testing.T) {
-	defer stubReset()
-	stubSet("cache-key", StubFixture{})
+	stubSet(t, "cache-key", StubFixture{})
 
 	var mu sync.Mutex
 	hits := 0

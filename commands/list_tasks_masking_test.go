@@ -26,7 +26,6 @@ const listMasksIdentityRecipe = `---
 `
 
 func TestListTasksMasksSensitiveInputInGeneratedName(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, listMasksIdentityRecipe)
 
 	stdout, _, exit := runApply(t, path, "--secret_value=identityzzz", "--list-tasks")
@@ -42,7 +41,6 @@ func TestListTasksMasksSensitiveInputInGeneratedName(t *testing.T) {
 }
 
 func TestListTasksJSONMasksSensitiveInputInGeneratedName(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, listMasksIdentityRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value=identityzzz", "--list-tasks", "--json")
@@ -62,7 +60,6 @@ func TestListTasksJSONMasksSensitiveInputInGeneratedName(t *testing.T) {
 // same treatment as apply's - they are separate call sites for the same
 // renderer, and only apply's was covered above.
 func TestPlanListTasksMasksSensitiveInput(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, listMasksIdentityRecipe)
 
 	stdout, _, exit := runPlan(t, path, "--secret_value=identityzzz", "--list-tasks")
@@ -81,7 +78,6 @@ func TestPlanListTasksMasksSensitiveInput(t *testing.T) {
 // sigil-interpolates a secret: the rendered source is what the [skipped] line
 // and the `when` field carry.
 func TestListTasksMasksSensitiveInputInWhen(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, required: true, sensitive: true }
@@ -108,7 +104,6 @@ func TestListTasksMasksSensitiveInputInWhen(t *testing.T) {
 // play / when / reason fields are emitted by a different branch than the
 // per-task ones.
 func TestListTasksMasksSensitivePlayWhen(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - name: play {{ .secret_value }}
   inputs:
@@ -146,7 +141,6 @@ func TestListTasksMasksSensitivePlayWhen(t *testing.T) {
 // contributes: the `(item=<value>)` suffix on the name, and loop_item itself,
 // which is the one listing field that is not a string.
 func TestListTasksMasksSensitiveLoopItem(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, required: true, sensitive: true }
@@ -175,7 +169,6 @@ func TestListTasksMasksSensitiveLoopItem(t *testing.T) {
 // TestListTasksMasksSensitiveTags covers the tags array, which is rendered
 // from the same whole-file template pass as the rest of the recipe.
 func TestListTasksMasksSensitiveTags(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, required: true, sensitive: true }
@@ -215,7 +208,6 @@ func TestListTasksMasksSensitiveTags(t *testing.T) {
 // CollectPlaySensitiveValues. Fails if that call moves back below the
 // --list-tasks branch.
 func TestListTasksMasksTaskDeclaredSensitiveValue(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: configure
@@ -244,7 +236,6 @@ func TestListTasksMasksTaskDeclaredSensitiveValue(t *testing.T) {
 // and already calls MaskString, but before #455 the task-declared values were
 // not registered yet when it ran.
 func TestApplyStartAtTaskUnknownMasksTaskDeclaredSecret(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: configure taskdeclaredzzz
@@ -271,7 +262,6 @@ func TestApplyStartAtTaskUnknownMasksTaskDeclaredSecret(t *testing.T) {
 // its `| <source>` frame, so the formatted error echoes the recipe line - the
 // play name alone is not enough to mask.
 func TestListTasksMasksSensitiveInputInPlayWhenError(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - name: broken
   inputs:
@@ -314,7 +304,6 @@ func TestListTasksMasksSensitiveInputInPlayWhenError(t *testing.T) {
 // end: loop_item is the one listing field that is not a string, and a loop
 // over mappings puts a secret one level down from where MaskString reaches.
 func TestListTasksJSONMasksLoopItemStructure(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, required: true, sensitive: true }
@@ -349,7 +338,6 @@ func TestListTasksJSONMasksLoopItemStructure(t *testing.T) {
 //
 // The secret is chosen to be a substring of every decoration under test.
 func TestListTasksDoesNotMaskStructuralDecorations(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, required: true, sensitive: true }

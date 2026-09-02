@@ -32,7 +32,6 @@ const whitespaceLoopItemRecipe = `---
 const whitespacePaddedSecret = " whitespacezzz "
 
 func TestListTasksMasksWhitespacePaddedLoopItemInName(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, whitespaceLoopItemRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+whitespacePaddedSecret, "--list-tasks")
@@ -48,7 +47,6 @@ func TestListTasksMasksWhitespacePaddedLoopItemInName(t *testing.T) {
 }
 
 func TestListTasksJSONMasksWhitespacePaddedLoopItemInName(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, whitespaceLoopItemRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+whitespacePaddedSecret, "--list-tasks", "--json")
@@ -65,8 +63,7 @@ func TestListTasksJSONMasksWhitespacePaddedLoopItemInName(t *testing.T) {
 }
 
 func TestApplyMasksWhitespacePaddedLoopItemInName(t *testing.T) {
-	defer stubReset()
-	stubSet(whitespacePaddedSecret, StubFixture{Changed: true})
+	stubSet(t, whitespacePaddedSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, whitespaceLoopItemRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+whitespacePaddedSecret)
@@ -82,8 +79,7 @@ func TestApplyMasksWhitespacePaddedLoopItemInName(t *testing.T) {
 }
 
 func TestApplyJSONMasksWhitespacePaddedLoopItemInName(t *testing.T) {
-	defer stubReset()
-	stubSet(whitespacePaddedSecret, StubFixture{Changed: true})
+	stubSet(t, whitespacePaddedSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, whitespaceLoopItemRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+whitespacePaddedSecret, "--json")
@@ -99,8 +95,7 @@ func TestApplyJSONMasksWhitespacePaddedLoopItemInName(t *testing.T) {
 }
 
 func TestPlanMasksWhitespacePaddedLoopItemInName(t *testing.T) {
-	defer stubReset()
-	stubSet(whitespacePaddedSecret, StubFixture{Changed: true})
+	stubSet(t, whitespacePaddedSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, whitespaceLoopItemRecipe)
 
 	stdout, stderr, exit := runPlan(t, path, "--secret_value="+whitespacePaddedSecret)
@@ -116,8 +111,7 @@ func TestPlanMasksWhitespacePaddedLoopItemInName(t *testing.T) {
 }
 
 func TestPlanJSONMasksWhitespacePaddedLoopItemInName(t *testing.T) {
-	defer stubReset()
-	stubSet(whitespacePaddedSecret, StubFixture{Changed: true})
+	stubSet(t, whitespacePaddedSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, whitespaceLoopItemRecipe)
 
 	stdout, stderr, exit := runPlan(t, path, "--secret_value="+whitespacePaddedSecret, "--json")
@@ -139,7 +133,6 @@ func TestPlanJSONMasksWhitespacePaddedLoopItemInName(t *testing.T) {
 // CollectPlaySensitiveValues - after the recipe has parsed and already named
 // its expansions. A fix that trimmed at expansion time would still leak here.
 func TestListTasksMasksWhitespacePaddedTaskDeclaredLoopItem(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: configure
@@ -168,7 +161,6 @@ func TestListTasksMasksWhitespacePaddedTaskDeclaredLoopItem(t *testing.T) {
 // secret. `keepzzz` is not registered, so it prints in full even though the
 // registered secret trims to a different value entirely.
 func TestListTasksLeavesUnpaddedLoopItemsAlone(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, required: true, sensitive: true }
