@@ -48,6 +48,7 @@ const twoHostRecipe = `---
 // recipe, two servers. Before the target was per-invocation this was not
 // expressible at all.
 func TestApplyRoutesEachPlayToItsOwnHost(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, twoHostRecipe)
 	seen, stdout := runApplyWithTarget(t, path)
 
@@ -82,6 +83,7 @@ func TestApplyRoutesEachPlayToItsOwnHost(t *testing.T) {
 // --host for its own tasks, and the plays that declare nothing still follow
 // the flag.
 func TestApplyPlayHostOverridesTheRunWideFlag(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, twoHostRecipe)
 	seen, _ := runApplyWithTarget(t, path, "--host", "run@cli.example.com")
 
@@ -102,6 +104,7 @@ func TestApplyPlayHostOverridesTheRunWideFlag(t *testing.T) {
 // "ignore everything the run was given" - would make a two-server migration
 // restate the run's flags on every play.
 func TestApplyPlaySudoInheritsAndDeclines(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - name: inherits
   host: deploy@one.example.com
@@ -141,6 +144,7 @@ func TestApplyPlaySudoInheritsAndDeclines(t *testing.T) {
 // server for every task, so it needs the same per-play routing or it would
 // report drift read off the wrong machine.
 func TestPlanRoutesEachPlayToItsOwnHost(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, twoHostRecipe)
 
 	argv := []string{"docket-test", "plan", "--tasks", path}

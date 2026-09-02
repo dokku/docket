@@ -50,6 +50,7 @@ func decodeLines(t *testing.T, out string) []map[string]interface{} {
 }
 
 func TestJSONEmitterPlayStart(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlayStart("tasks", "")
 	ev := decodeOnly(t, ui.OutputWriter.String())
@@ -72,6 +73,7 @@ func TestJSONEmitterPlayStart(t *testing.T) {
 }
 
 func TestJSONEmitterPlayStartIncludesHostWhenSet(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlayStart("tasks", "alice@host:2222")
 	ev := decodeOnly(t, ui.OutputWriter.String())
@@ -81,6 +83,7 @@ func TestJSONEmitterPlayStartIncludesHostWhenSet(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskOK(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "tasks",
@@ -119,6 +122,7 @@ func TestJSONEmitterApplyTaskOK(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskChangedIncludesCommands(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "tasks",
@@ -148,6 +152,7 @@ func TestJSONEmitterApplyTaskChangedIncludesCommands(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskError(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "tasks",
@@ -168,6 +173,7 @@ func TestJSONEmitterApplyTaskError(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskErrorIncludesExecOutput(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "tasks",
@@ -193,6 +199,7 @@ func TestJSONEmitterApplyTaskErrorIncludesExecOutput(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskOKOmitsExecOutput(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "tasks",
@@ -219,6 +226,7 @@ func TestJSONEmitterApplyTaskOKOmitsExecOutput(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskWhenError(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{
 		Play:      "tasks",
@@ -235,6 +243,7 @@ func TestJSONEmitterApplyTaskWhenError(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskSkipped(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{Play: "tasks", Name: "skipped", Skipped: true})
 	ev := decodeOnly(t, ui.OutputWriter.String())
@@ -244,6 +253,7 @@ func TestJSONEmitterApplyTaskSkipped(t *testing.T) {
 }
 
 func TestJSONEmitterApplyTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "tasks",
@@ -265,6 +275,7 @@ func TestJSONEmitterApplyTaskInvalidState(t *testing.T) {
 }
 
 func TestJSONEmitterPlanTaskInSync(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlanTask(PlanTaskEvent{
 		Play:   "tasks",
@@ -281,6 +292,7 @@ func TestJSONEmitterPlanTaskInSync(t *testing.T) {
 }
 
 func TestJSONEmitterPlanTaskWouldChange(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlanTask(PlanTaskEvent{
 		Play: "tasks",
@@ -314,6 +326,7 @@ func TestJSONEmitterPlanTaskWouldChange(t *testing.T) {
 }
 
 func TestJSONEmitterPlanTaskProbeError(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlanTask(PlanTaskEvent{
 		Play:   "tasks",
@@ -330,6 +343,7 @@ func TestJSONEmitterPlanTaskProbeError(t *testing.T) {
 }
 
 func TestJSONEmitterApplySummary(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.ApplySummary(ApplyCounts{Tasks: 3, Changed: 1, OK: 2, Skipped: 0, Errors: 0}, 1234*time.Millisecond)
 	ev := decodeOnly(t, ui.OutputWriter.String())
@@ -348,6 +362,7 @@ func TestJSONEmitterApplySummary(t *testing.T) {
 }
 
 func TestJSONEmitterPlanSummary(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlanSummary(PlanCounts{Tasks: 3, WouldChange: 2, InSync: 1, Skipped: 0, Errors: 0}, 500*time.Millisecond)
 	ev := decodeOnly(t, ui.OutputWriter.String())
@@ -366,6 +381,7 @@ func TestJSONEmitterPlanSummary(t *testing.T) {
 }
 
 func TestJSONEmitterMasksSensitiveValues(t *testing.T) {
+	t.Parallel()
 
 	e, ui := emitterTestUI("topsecret")
 	e.ApplyTask(ApplyTaskEvent{
@@ -388,6 +404,7 @@ func TestJSONEmitterMasksSensitiveValues(t *testing.T) {
 }
 
 func TestJSONEmitterMasksTaskNameAndPlay(t *testing.T) {
+	t.Parallel()
 	// A loop over a sensitive value expands the task name; the name and play
 	// fields must be masked in JSON too (#312).
 
@@ -411,6 +428,7 @@ func TestJSONEmitterMasksTaskNameAndPlay(t *testing.T) {
 }
 
 func TestJSONEmitterPlaySkippedMasksWhen(t *testing.T) {
+	t.Parallel()
 	// The play_skipped when/reason fields carry the raw predicate source; a
 	// secret interpolated into it must be masked (#335).
 
@@ -429,6 +447,7 @@ func TestJSONEmitterPlaySkippedMasksWhen(t *testing.T) {
 }
 
 func TestJSONEmitterEveryEventHasVersion1(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlayStart("tasks", "")
 	e.ApplyTask(ApplyTaskEvent{Play: "tasks", Name: "x", State: tasks.TaskOutputState{Changed: true, State: tasks.StatePresent, DesiredState: tasks.StatePresent}})
@@ -445,6 +464,7 @@ func TestJSONEmitterEveryEventHasVersion1(t *testing.T) {
 
 // TestEmitterInterfaceSatisfied compiles iff Formatter and JSONEmitter both
 func TestJSONEmitterTaskWarning(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.TaskWarning("tasks", "ensure storage", "deprecated", "use dokku_storage_entry instead")
 	ev := decodeOnly(t, ui.OutputWriter.String())
@@ -473,6 +493,7 @@ func TestJSONEmitterTaskWarning(t *testing.T) {
 }
 
 func TestJSONEmitterTaskWarningEmptyIsNoOp(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.TaskWarning("tasks", "ensure storage", "deprecated", "")
 	if ui.OutputWriter.String() != "" {
@@ -483,6 +504,7 @@ func TestJSONEmitterTaskWarningEmptyIsNoOp(t *testing.T) {
 // TestJSONEmitterTaskWarningProbeReason pins that a non-deprecation warning
 // carries its own reason through the event and that the message is masked. (#353)
 func TestJSONEmitterTaskWarningProbeReason(t *testing.T) {
+	t.Parallel()
 
 	e, ui := emitterTestUI("s3cr3t")
 	e.TaskWarning("tasks", "set token", "probe_rejected", "rejected probe near value s3cr3t")
@@ -501,6 +523,7 @@ func TestJSONEmitterTaskWarningProbeReason(t *testing.T) {
 
 // satisfy the EventEmitter contract. Catches signature drift at build time.
 func TestEmitterInterfaceSatisfied(t *testing.T) {
+	t.Parallel()
 	var _ EventEmitter = (*Formatter)(nil)
 	var _ EventEmitter = (*JSONEmitter)(nil)
 }

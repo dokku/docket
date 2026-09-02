@@ -36,6 +36,7 @@ const quoteBearingSecret = `quo"tedzzz`
 const maskedStubAddress = `dokku_stub[key="***"]`
 
 func TestListTasksMasksQuotedIdentityValueInName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, quotedIdentityRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+quoteBearingSecret, "--list-tasks")
@@ -51,6 +52,7 @@ func TestListTasksMasksQuotedIdentityValueInName(t *testing.T) {
 }
 
 func TestListTasksJSONMasksQuotedIdentityValueInName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, quotedIdentityRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+quoteBearingSecret, "--list-tasks", "--json")
@@ -67,6 +69,7 @@ func TestListTasksJSONMasksQuotedIdentityValueInName(t *testing.T) {
 }
 
 func TestApplyMasksQuotedIdentityValueInName(t *testing.T) {
+	t.Parallel()
 	stubSet(t, quoteBearingSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, quotedIdentityRecipe)
 
@@ -83,6 +86,7 @@ func TestApplyMasksQuotedIdentityValueInName(t *testing.T) {
 }
 
 func TestApplyJSONMasksQuotedIdentityValueInName(t *testing.T) {
+	t.Parallel()
 	stubSet(t, quoteBearingSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, quotedIdentityRecipe)
 
@@ -99,6 +103,7 @@ func TestApplyJSONMasksQuotedIdentityValueInName(t *testing.T) {
 }
 
 func TestPlanMasksQuotedIdentityValueInName(t *testing.T) {
+	t.Parallel()
 	stubSet(t, quoteBearingSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, quotedIdentityRecipe)
 
@@ -115,6 +120,7 @@ func TestPlanMasksQuotedIdentityValueInName(t *testing.T) {
 }
 
 func TestPlanJSONMasksQuotedIdentityValueInName(t *testing.T) {
+	t.Parallel()
 	stubSet(t, quoteBearingSecret, StubFixture{Changed: true})
 	path := writeTasksFile(t, quotedIdentityRecipe)
 
@@ -136,6 +142,7 @@ func TestPlanJSONMasksQuotedIdentityValueInName(t *testing.T) {
 // generated address already carries, so no registered spelling can match the
 // finished message. The hint masks each name before quoting it instead.
 func TestStartAtTaskHintMasksQuotedIdentityValueInName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, quotedIdentityRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+quoteBearingSecret, "--start-at-task", "nozzz")
@@ -158,6 +165,7 @@ func TestStartAtTaskHintMasksQuotedIdentityValueInName(t *testing.T) {
 // address cannot escape-and-mask at generation time, because the registry is
 // not populated yet.
 func TestListTasksMasksQuotedTaskDeclaredIdentityValue(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - tasks:
     - dokku_config:
@@ -188,6 +196,7 @@ func TestListTasksMasksQuotedTaskDeclaredIdentityValue(t *testing.T) {
 // merely resemble a secret. `keepzzz` is not registered, so it prints in full
 // alongside the masked task.
 func TestListTasksLeavesUnquotedIdentityValuesAlone(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, required: true, sensitive: true }

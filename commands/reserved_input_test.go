@@ -21,6 +21,7 @@ type flagSetter interface {
 // redefined" (#302). Adding a new built-in flag without reserving it
 // fails this test.
 func TestReservedInputNamesCoversBuiltinFlags(t *testing.T) {
+	t.Parallel()
 	cmds := map[string]flagSetter{
 		"apply":    &ApplyCommand{},
 		"plan":     &PlanCommand{},
@@ -40,6 +41,7 @@ func TestReservedInputNamesCoversBuiltinFlags(t *testing.T) {
 // would otherwise abort with "flag redefined") - the input is silently
 // skipped and the offline validator is left to report it.
 func TestRegisterInputFlagsSkipsReservedNames(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - inputs:
     - name: verbose

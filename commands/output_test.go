@@ -8,7 +8,6 @@ import (
 
 	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
-	"github.com/fatih/color"
 	"github.com/mitchellh/cli"
 )
 
@@ -23,6 +22,7 @@ func newTestFormatter(verbose bool, sensitive ...string) (*Formatter, *cli.MockU
 }
 
 func TestFormatterPlayHeader(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.PlayHeader("tasks")
 	got := ui.OutputWriter.String()
@@ -33,6 +33,7 @@ func TestFormatterPlayHeader(t *testing.T) {
 }
 
 func TestFormatterPlayHeaderWithHost(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.PlayHeaderWithHost("tasks", "alice@host:2222")
 	got := ui.OutputWriter.String()
@@ -43,6 +44,7 @@ func TestFormatterPlayHeaderWithHost(t *testing.T) {
 }
 
 func TestFormatterPlayHeaderWithHostEmptyDelegates(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.PlayHeaderWithHost("tasks", "")
 	got := ui.OutputWriter.String()
@@ -53,6 +55,7 @@ func TestFormatterPlayHeaderWithHostEmptyDelegates(t *testing.T) {
 }
 
 func TestFormatterTaskLineMasksSensitiveName(t *testing.T) {
+	t.Parallel()
 	// A loop over a sensitive value expands the task name to
 	// `<name> (item=<secret>)`; the name must be masked (#312).
 
@@ -68,6 +71,7 @@ func TestFormatterTaskLineMasksSensitiveName(t *testing.T) {
 }
 
 func TestFormatterPlaySkippedMasksWhenSource(t *testing.T) {
+	t.Parallel()
 	// A play predicate that interpolates a sensitive input has the secret
 	// substituted into the recipe text; the echoed when: source must be
 	// masked (#335).
@@ -84,6 +88,7 @@ func TestFormatterPlaySkippedMasksWhenSource(t *testing.T) {
 }
 
 func TestFormatterPlaySkippedMasksWhenEvalError(t *testing.T) {
+	t.Parallel()
 	// apply/plan route play-level when-eval errors through PlaySkipped as
 	// `<when> (error: <err>)`; the same masking must cover them (#335).
 
@@ -96,6 +101,7 @@ func TestFormatterPlaySkippedMasksWhenEvalError(t *testing.T) {
 }
 
 func TestFormatterErrorContinuationDokkuPrefix(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.ErrorContinuation(errors.New("app foo does not exist"))
 	got := ui.OutputWriter.String()
@@ -106,6 +112,7 @@ func TestFormatterErrorContinuationDokkuPrefix(t *testing.T) {
 }
 
 func TestFormatterErrorContinuationSshPrefix(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.ErrorContinuation(&subprocess.SSHError{Host: "alice@host", Stderr: "Permission denied (publickey)."})
 	got := ui.OutputWriter.String()
@@ -116,6 +123,7 @@ func TestFormatterErrorContinuationSshPrefix(t *testing.T) {
 }
 
 func TestFormatterErrorContinuationSshWrappedPrefix(t *testing.T) {
+	t.Parallel()
 	wrapped := &subprocess.SSHError{Host: "host", Err: errors.New("connect refused")}
 	f, ui := newTestFormatter(false)
 	f.ErrorContinuation(wrapped)
@@ -126,6 +134,7 @@ func TestFormatterErrorContinuationSshWrappedPrefix(t *testing.T) {
 }
 
 func TestFormatterErrorContinuationNilNoOp(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.ErrorContinuation(nil)
 	if got := ui.OutputWriter.String(); got != "" {
@@ -134,6 +143,7 @@ func TestFormatterErrorContinuationNilNoOp(t *testing.T) {
 }
 
 func TestPrefixErrorMessage(t *testing.T) {
+	t.Parallel()
 	if got := PrefixErrorMessage(nil); got != "" {
 		t.Errorf("nil should return empty, got %q", got)
 	}
@@ -147,6 +157,7 @@ func TestPrefixErrorMessage(t *testing.T) {
 }
 
 func TestFormatterTaskLineMarkerPadding(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		marker Marker
 		want   string
@@ -171,6 +182,7 @@ func TestFormatterTaskLineMarkerPadding(t *testing.T) {
 }
 
 func TestFormatterTaskLineWithSuffix(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.TaskLine(MarkerOK, "configure", "(in sync)")
 	got := ui.OutputWriter.String()
@@ -181,6 +193,7 @@ func TestFormatterTaskLineWithSuffix(t *testing.T) {
 }
 
 func TestFormatterTaskLineErrorRoutesToStderr(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.TaskLine(MarkerError, "task-name", "")
 	if got := ui.OutputWriter.String(); got != "" {
@@ -193,6 +206,7 @@ func TestFormatterTaskLineErrorRoutesToStderr(t *testing.T) {
 }
 
 func TestFormatterTaskLineProbeErrorRoutesToStderr(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.TaskLine(MarkerProbeError, "task-name", "(probe failed)")
 	if got := ui.OutputWriter.String(); got != "" {
@@ -205,6 +219,7 @@ func TestFormatterTaskLineProbeErrorRoutesToStderr(t *testing.T) {
 }
 
 func TestFormatterContinuationBangPrefix(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.Continuation('!', "app foo does not exist")
 	got := ui.OutputWriter.String()
@@ -215,6 +230,7 @@ func TestFormatterContinuationBangPrefix(t *testing.T) {
 }
 
 func TestFormatterContinuationVerboseArrow(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(true)
 	f.Continuation('\u2192', "dokku --quiet apps:create foo")
 	got := ui.OutputWriter.String()
@@ -225,6 +241,7 @@ func TestFormatterContinuationVerboseArrow(t *testing.T) {
 }
 
 func TestFormatterContinuationSkipsEmpty(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.Continuation('!', "")
 	if got := ui.OutputWriter.String(); got != "" {
@@ -233,6 +250,7 @@ func TestFormatterContinuationSkipsEmpty(t *testing.T) {
 }
 
 func TestFormatterContinuationMultiLine(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.Continuation('!', "line one\nline two")
 	got := ui.OutputWriter.String()
@@ -243,6 +261,7 @@ func TestFormatterContinuationMultiLine(t *testing.T) {
 }
 
 func TestFormatterApplySummary(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.ApplySummary(ApplyCounts{Tasks: 3, Changed: 1, OK: 2}, 3200*time.Millisecond)
 	got := ui.OutputWriter.String()
@@ -261,6 +280,7 @@ func TestFormatterApplySummary(t *testing.T) {
 }
 
 func TestFormatterApplySummaryErrorWord(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.ApplySummary(ApplyCounts{Tasks: 1, Errors: 1}, time.Second)
 	got := ui.OutputWriter.String()
@@ -277,6 +297,7 @@ func TestFormatterApplySummaryErrorWord(t *testing.T) {
 }
 
 func TestFormatterPlanSummary(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.PlanSummary(PlanCounts{Tasks: 3, WouldChange: 2, InSync: 1, Errors: 0}, 0)
 	got := ui.OutputWriter.String()
@@ -287,6 +308,7 @@ func TestFormatterPlanSummary(t *testing.T) {
 }
 
 func TestFormatterPlanSummaryWithSkipped(t *testing.T) {
+	t.Parallel()
 	// The skipped count is appended only when at least one task was
 	// skipped by `when:` so recipes that do not exercise envelope
 	// predicates keep the legacy summary shape (covered above).
@@ -300,6 +322,7 @@ func TestFormatterPlanSummaryWithSkipped(t *testing.T) {
 }
 
 func TestFormatterColorOffProducesPlainOutput(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false) // color forced off
 	f.TaskLine(MarkerChanged, "task", "")
 	got := ui.OutputWriter.String()
@@ -309,11 +332,9 @@ func TestFormatterColorOffProducesPlainOutput(t *testing.T) {
 }
 
 func TestFormatterColorOnEmitsAnsi(t *testing.T) {
-	// Force color on regardless of TTY/NO_COLOR detection.
-	prev := color.NoColor
-	color.NoColor = false
-	t.Cleanup(func() { color.NoColor = prev })
-
+	t.Parallel()
+	// Force color on regardless of TTY/NO_COLOR detection. `f.color` is
+	// the whole switch, so this needs no process-wide global.
 	ui := cli.NewMockUi()
 	f := NewFormatter(ui, false, nil)
 	f.color = true
@@ -328,6 +349,7 @@ func TestFormatterColorOnEmitsAnsi(t *testing.T) {
 }
 
 func TestApplyTaskErrorRendersStdout(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.ApplyTask(ApplyTaskEvent{
 		Name: "create boom",
@@ -351,6 +373,7 @@ func TestApplyTaskErrorRendersStdout(t *testing.T) {
 }
 
 func TestApplyTaskErrorOmitsEmptyStdout(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.ApplyTask(ApplyTaskEvent{
 		Name: "create boom",
@@ -375,6 +398,7 @@ func TestApplyTaskErrorOmitsEmptyStdout(t *testing.T) {
 }
 
 func TestFormatterTaskWarningRendersDeprecatedMarker(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.TaskWarning("tasks", "ensure storage", "deprecated", "use dokku_storage_entry instead")
 	got := ui.OutputWriter.String()
@@ -396,6 +420,7 @@ func TestFormatterTaskWarningRendersDeprecatedMarker(t *testing.T) {
 // reason renders the [warning] marker (not [deprecated]) on stdout, and masks
 // the message. (#353)
 func TestFormatterTaskWarningRendersWarningMarker(t *testing.T) {
+	t.Parallel()
 
 	f, ui := newTestFormatter(false, "s3cr3t")
 	f.TaskWarning("tasks", "set token", "probe_rejected", "rejected probe near value s3cr3t")
@@ -418,6 +443,7 @@ func TestFormatterTaskWarningRendersWarningMarker(t *testing.T) {
 }
 
 func TestFormatterTaskWarningEmptyMessageIsNoOp(t *testing.T) {
+	t.Parallel()
 	f, ui := newTestFormatter(false)
 	f.TaskWarning("tasks", "ensure storage", "deprecated", "")
 	if ui.OutputWriter.String() != "" {
@@ -426,6 +452,7 @@ func TestFormatterTaskWarningEmptyMessageIsNoOp(t *testing.T) {
 }
 
 func TestFormatterVerboseAccessor(t *testing.T) {
+	t.Parallel()
 	f, _ := newTestFormatter(true)
 	if !f.Verbose() {
 		t.Error("Verbose() should be true when constructed with verbose=true")

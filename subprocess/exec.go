@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	execute "github.com/alexellis/go-execute/v2"
-	"github.com/fatih/color"
+	"github.com/mattn/go-isatty"
 )
 
 // ExecCommandInput is the input for the ExecCommand function
@@ -271,9 +271,9 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 	}
 	masker := MaskerFromContext(ctx)
 
-	// isatty reports whether our own stdout is a terminal, which is the
-	// signal used below to decide whether the child may read the terminal.
-	isatty := !color.NoColor
+	// Whether our own stdout is a terminal is the signal used below to decide
+	// whether the child may read ours.
+	interactive := stdoutIsTerminal()
 
 	command := input.Command
 	commandArgs := input.Args
@@ -306,7 +306,7 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 
 	if input.Stdin != nil {
 		cmd.Stdin = input.Stdin
-	} else if isatty {
+	} else if interactive {
 		cmd.Stdin = os.Stdin
 	}
 
@@ -362,4 +362,17 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		ExitCode:  res.ExitCode,
 		Cancelled: res.Cancelled,
 	}, nil
+}
+
+// stdoutIsTerminal reports whether this process's standard output is a
+// terminal. It decides whether a child may inherit our stdin: a run driven
+// from a terminal can let a subprocess read it, a piped one must not.
+//
+// It used to be spelled `!color.NoColor`, borrowing a colouring decision to
+// answer a terminal question. That coupled two unrelated things - NO_COLOR=1
+// silently stopped a child inheriting stdin, and `docket fmt --color never`
+// changed how a concurrent apply dispatched, because fatih/color's flag is
+// process-wide and this package read it.
+func stdoutIsTerminal() bool {
+	return isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
 }

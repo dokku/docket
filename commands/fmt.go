@@ -52,6 +52,12 @@ type FmtCommand struct {
 
 	stdin *stdinRecipeSource
 
+	// useColor is this run's answer to --color, resolved in Run. A value
+	// rather than fatih/color's process-wide flag, so one run's setting
+	// cannot reach another's output - or, as it once did, anything that is
+	// not about colour at all.
+	useColor bool
+
 	check bool
 	diff  bool
 	color string
@@ -136,10 +142,12 @@ func (c *FmtCommand) Run(args []string) int {
 		return 1
 	}
 
-	if err := applyColorMode(c.color, c.stdout()); err != nil {
+	useColor, err := resolveColorMode(c.color, c.stdout())
+	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
 	}
+	c.useColor = useColor
 
 	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
 	if err != nil {
@@ -207,7 +215,7 @@ func (c *FmtCommand) runStdin(formatOverride string) int {
 	changed := !bytesEqual(src, formatted)
 
 	if c.diff && changed {
-		_, _ = io.WriteString(c.stdout(), renderDiff("<stdin>", string(src), string(formatted)))
+		_, _ = io.WriteString(c.stdout(), renderDiff("<stdin>", string(src), string(formatted), c.useColor))
 	}
 
 	if c.check {
@@ -249,7 +257,7 @@ func (c *FmtCommand) formatPath(path, formatOverride string) int {
 	changed := !bytesEqual(src, formatted)
 
 	if c.diff && changed {
-		_, _ = io.WriteString(c.stdout(), renderDiff(path, string(src), string(formatted)))
+		_, _ = io.WriteString(c.stdout(), renderDiff(path, string(src), string(formatted), c.useColor))
 	}
 
 	if c.check {
@@ -362,36 +370,39 @@ func expandPaths(baseDir string, args []string) ([]string, []string, error) {
 	return paths, nil, nil
 }
 
-// applyColorMode resolves the --color flag value into the global
-// fatih/color state. auto delegates to the library's TTY / NO_COLOR
-// detection; always forces colors on; never forces colors off.
-func applyColorMode(mode string, out io.Writer) error {
+// resolveColorMode turns the --color flag value into this run's answer. auto
+// respects TTY and NO_COLOR; always forces colours on; never forces them off.
+//
+// It returns the decision rather than writing fatih/color's process-wide
+// NoColor, which is what it used to do. That global is read by more than the
+// diff renderer - subprocess used it to decide whether a child could inherit
+// our stdin - so one command's --color setting reached places that had nothing
+// to do with colour, and no two runs in a process could disagree.
+func resolveColorMode(mode string, out io.Writer) (bool, error) {
 	switch mode {
 	case "auto":
-		// Default behaviour: respect TTY and NO_COLOR. fatih/color
-		// already does this when color.NoColor is left at its
-		// package-default value. Re-derive the default explicitly
-		// so a previous --color always/never invocation in the same
-		// process (i.e. tests) does not leak state.
-		color.NoColor = noColorDefault(out)
+		return !noColorDefault(out), nil
 	case "always":
-		color.NoColor = false
+		return true, nil
 	case "never":
-		color.NoColor = true
-	default:
-		return fmt.Errorf("invalid --color value %q (allowed: auto, always, never)", mode)
+		return false, nil
 	}
-	return nil
+	return false, fmt.Errorf("invalid --color value %q (allowed: auto, always, never)", mode)
 }
 
-// noColorDefault matches fatih/color's own default detection: colors
-// on when stdout is a terminal AND NO_COLOR is unset.
+// noColorDefault matches fatih/color's own default detection: colors on
+// when stdout is a terminal, NO_COLOR is unset and TERM is not `dumb`.
+//
+// Matching it in full is load-bearing now that nothing consults the
+// `color.NoColor` global any more. While both switches were in play a color
+// needed each to agree, so anything fatih/color suppressed stayed suppressed
+// whatever this function said; this is the only answer left.
 //
 // A writer that is not the process's own stdout has no file descriptor to ask,
 // and is not a terminal by definition - it is a buffer a test or a caller is
 // collecting bytes in - so it answers "no color" without consulting isatty.
 func noColorDefault(w io.Writer) bool {
-	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+	if noColorEnv() {
 		return true
 	}
 	f, ok := w.(*os.File)
@@ -405,7 +416,7 @@ func noColorDefault(w io.Writer) bool {
 // and formatted with file path on both header lines (no a/ b/ prefix,
 // matching gofmt / black). The output round-trips through patch -p0
 // once colors are stripped.
-func renderDiff(path, original, formatted string) string {
+func renderDiff(path, original, formatted string, useColor bool) string {
 	raw, err := udiff.ToUnified(path, path, original, udiff.Strings(original, formatted), udiff.DefaultContextLines)
 	if err != nil {
 		return fmt.Sprintf("[error]   diff failed for %s: %v\n", path, err)
@@ -413,21 +424,28 @@ func renderDiff(path, original, formatted string) string {
 	if raw == "" {
 		return ""
 	}
-	return colorizeDiff(raw)
+	return colorizeDiff(raw, useColor)
 }
 
-var (
-	diffRemoveLine = color.New(color.FgRed)
-	diffAddLine    = color.New(color.FgGreen)
-	diffHunk       = color.New(color.FgCyan)
-	diffFileHeader = color.New(color.Bold)
-)
-
-// colorizeDiff walks the unified diff output line by line and applies
-// ANSI colors. fatih/color is a no-op when color.NoColor is true (set
-// by --color never, NO_COLOR, or non-TTY auto), so the same code
-// produces plain output in CI / pipes.
-func colorizeDiff(raw string) string {
+// colorizeDiff walks the unified diff output line by line and applies ANSI
+// colors when useColor says to. Passing the decision in rather than consulting
+// fatih/color's global is what lets two runs in one process disagree about it.
+func colorizeDiff(raw string, useColor bool) string {
+	if !useColor {
+		return raw
+	}
+	// Built here and forced on rather than shared package values, because a
+	// color.Color with no setting of its own falls back to fatih/color's
+	// process-wide flag - which is the global this stopped consulting.
+	var (
+		removeLine = color.New(color.FgRed)
+		addLine    = color.New(color.FgGreen)
+		hunk       = color.New(color.FgCyan)
+		fileHeader = color.New(color.Bold)
+	)
+	for _, c := range []*color.Color{removeLine, addLine, hunk, fileHeader} {
+		c.EnableColor()
+	}
 	var b strings.Builder
 	for _, line := range strings.SplitAfter(raw, "\n") {
 		if line == "" {
@@ -435,13 +453,13 @@ func colorizeDiff(raw string) string {
 		}
 		switch {
 		case strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ "):
-			b.WriteString(diffFileHeader.Sprint(line))
+			b.WriteString(fileHeader.Sprint(line))
 		case strings.HasPrefix(line, "@@"):
-			b.WriteString(diffHunk.Sprint(line))
+			b.WriteString(hunk.Sprint(line))
 		case strings.HasPrefix(line, "-"):
-			b.WriteString(diffRemoveLine.Sprint(line))
+			b.WriteString(removeLine.Sprint(line))
 		case strings.HasPrefix(line, "+"):
-			b.WriteString(diffAddLine.Sprint(line))
+			b.WriteString(addLine.Sprint(line))
 		default:
 			b.WriteString(line)
 		}
@@ -477,3 +495,14 @@ func (c *FmtCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
 
 // baseDir returns the directory this command resolves relative paths against.
 func (c *FmtCommand) baseDir() string { return c.BaseDir }
+
+// noColorEnv is the half of noColorDefault that asks the environment rather
+// than the writer. It is split out so a test can assert on it without needing
+// a terminal: under `go test` stdout is a pipe, so noColorDefault answers "no
+// color" whatever the environment says and would pass either way.
+func noColorEnv() bool {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return true
+	}
+	return os.Getenv("TERM") == "dumb"
+}

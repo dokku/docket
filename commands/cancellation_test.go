@@ -47,6 +47,7 @@ const twoTaskRecipe = `---
 // interrupt could only kill the child process of whichever task was in flight
 // and the loop marched on to the next one.
 func TestApplyStopsAtCancelledContext(t *testing.T) {
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -75,6 +76,7 @@ func TestApplyStopsAtCancelledContext(t *testing.T) {
 // TestPlanStopsAtCancelledContext is the plan-side mirror. plan probes the
 // server for every task, so it needs the same escape hatch as apply.
 func TestPlanStopsAtCancelledContext(t *testing.T) {
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -102,6 +104,7 @@ func TestPlanStopsAtCancelledContext(t *testing.T) {
 // interrupt. A wrapper reads 2 as "the run completed and changed something";
 // an interrupted run completed nothing.
 func TestApplyCancelledRunNeverReportsChanged(t *testing.T) {
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -121,6 +124,7 @@ func TestApplyCancelledRunNeverReportsChanged(t *testing.T) {
 // through the error path and never reaches its own cancellation check. Asking
 // about the context once at the exit is what keeps the report honest.
 func TestApplyReportsCancellationWhenTheInterruptedTaskAlsoFails(t *testing.T) {
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -152,6 +156,7 @@ func TestApplyReportsCancellationWhenTheInterruptedTaskAlsoFails(t *testing.T) {
 // need interrupting again. This is the behaviour the bats interrupt test
 // exercises end to end against a host that never answers.
 func TestApplyCancellationStopsLaterPlays(t *testing.T) {
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -190,6 +195,7 @@ func TestApplyCancellationStopsLaterPlays(t *testing.T) {
 // bare struct literal, as most of these tests and any embedding caller that
 // does not set Ctx do, still runs instead of panicking on a nil context.
 func TestApplyWithoutCtxUsesBackground(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "first", StubFixture{Changed: true})
 	stubSet(t, "second", StubFixture{Changed: true})
 

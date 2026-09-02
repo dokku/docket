@@ -35,6 +35,7 @@ const playNameRecipe = `---
 const playNameSecret = "playleakzzz"
 
 func TestApplyPlayHintMasksSensitiveInputInPlayName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, playNameRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+playNameSecret, "--play", "nozzz")
@@ -50,6 +51,7 @@ func TestApplyPlayHintMasksSensitiveInputInPlayName(t *testing.T) {
 }
 
 func TestPlanPlayHintMasksSensitiveInputInPlayName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, playNameRecipe)
 
 	stdout, stderr, exit := runPlan(t, path, "--secret_value="+playNameSecret, "--play", "nozzz")
@@ -68,6 +70,7 @@ func TestPlanPlayHintMasksSensitiveInputInPlayName(t *testing.T) {
 // play in the recipe carries no secret and must still print in full, so the
 // fix cannot be passed by masking the whole message.
 func TestPlayHintLeavesNonSensitivePlayNamesAlone(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, playNameRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--secret_value="+playNameSecret, "--play", "nozzz")
@@ -87,6 +90,7 @@ func TestPlayHintLeavesNonSensitivePlayNamesAlone(t *testing.T) {
 // reaches the message escaped; masking each name before quoting it means the
 // hint never depends on the escaped spelling being registered too.
 func TestPlayHintMasksQuoteBearingSensitivePlayName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - name: "play-{{ .secret_value | dq }}"
   inputs:
@@ -114,6 +118,7 @@ func TestPlayHintMasksQuoteBearingSensitivePlayName(t *testing.T) {
 // TestApplyStartAtTaskUnknownMasksTaskDeclaredSecret, which is the same leak
 // on the --start-at-task hint (#455).
 func TestApplyPlayHintMasksTaskDeclaredSecretInPlayName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - name: play-taskdeclaredzzz
   tasks:
@@ -137,6 +142,7 @@ func TestApplyPlayHintMasksTaskDeclaredSecretInPlayName(t *testing.T) {
 }
 
 func TestPlanPlayHintMasksTaskDeclaredSecretInPlayName(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - name: play-taskdeclaredzzz
   tasks:

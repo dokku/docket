@@ -24,6 +24,7 @@ const requiredBoolRecipe = `---
 `
 
 func TestRequiredInputIsEnforcedForEveryType(t *testing.T) {
+	t.Parallel()
 	recipes := map[string]string{
 		"bool": requiredBoolRecipe,
 		"int": `---
@@ -69,6 +70,7 @@ func TestRequiredInputIsEnforcedForEveryType(t *testing.T) {
 }
 
 func TestRequiredInputSatisfiedBySuppliedValue(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, requiredBoolRecipe)
 
 	stdout, stderr, exit := runApply(t, path, "--list-tasks", "--debug=false")
@@ -81,6 +83,7 @@ func TestRequiredInputSatisfiedBySuppliedValue(t *testing.T) {
 }
 
 func TestRequiredInputSatisfiedByDeclaredDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: debug, type: bool, required: true, default: "true" }
@@ -100,6 +103,7 @@ func TestRequiredInputSatisfiedByDeclaredDefault(t *testing.T) {
 // TestMissingRequiredInputIsDeterministic: the argument map is walked in sorted
 // order, so a recipe missing two required inputs names the same one every run.
 func TestMissingRequiredInputIsDeterministic(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: zebra, required: true }
@@ -124,6 +128,7 @@ func TestMissingRequiredInputIsDeterministic(t *testing.T) {
 // to "" and render an app named `web-`, which is why IsSatisfied checks the
 // resolved value as well as where it came from.
 func TestRequiredStringInputIsNotSatisfiedByAnEmptyValue(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: app, required: true }
@@ -155,6 +160,7 @@ func TestRequiredStringInputIsNotSatisfiedByAnEmptyValue(t *testing.T) {
 // from HasValue(), so every non-string input counted as supplied and
 // input_missing never fired for one.
 func TestValidateStrictFlagsRequiredNonStringInput(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, requiredBoolRecipe)
 
 	stdout, stderr, exit := runValidate(t, path, "--strict")

@@ -53,7 +53,6 @@ import (
 	"sync"
 
 	execute "github.com/alexellis/go-execute/v2"
-	"github.com/fatih/color"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -300,9 +299,9 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Err: err}
 	}
 
-	// isatty reports whether our own stdout is a terminal, which is the
-	// signal used below to decide whether the child may read the terminal.
-	isatty := !color.NoColor
+	// Whether our own stdout is a terminal is the signal used below to decide
+	// whether the child may read ours.
+	interactive := stdoutIsTerminal()
 	masker := MaskerFromContext(ctx)
 
 	remote := append([]string{input.Command}, input.Args...)
@@ -325,7 +324,7 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 
 	if input.Stdin != nil {
 		cmd.Stdin = input.Stdin
-	} else if isatty {
+	} else if interactive {
 		cmd.Stdin = os.Stdin
 	}
 	if input.StreamStdio {

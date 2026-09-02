@@ -30,6 +30,7 @@ func runValidate(t *testing.T, path string, args ...string) (string, string, int
 }
 
 func TestValidateReportsInvalidInputDeclarations(t *testing.T) {
+	t.Parallel()
 	tests := map[string]struct {
 		recipe  string
 		code    string
@@ -120,6 +121,7 @@ func TestValidateReportsInvalidInputDeclarations(t *testing.T) {
 // for the type, which is what the inputs table has always documented. It must
 // not be mistaken for an unparseable one.
 func TestValidateAcceptsOmittedDefaults(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: debug, type: bool }
@@ -140,6 +142,7 @@ func TestValidateAcceptsOmittedDefaults(t *testing.T) {
 // the same message validate prints, before any server is contacted - the
 // contract invalid_input_name already holds to.
 func TestApplyRejectsInvalidInputDeclarationOffline(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: port, type: int, default: abc }

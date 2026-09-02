@@ -15,6 +15,7 @@ import (
 // state that init must not contact any subprocess; the package import
 // graph is the ground truth.
 func TestInitDoesNotImportSubprocess(t *testing.T) {
+	t.Parallel()
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("os.Getwd: %v", err)

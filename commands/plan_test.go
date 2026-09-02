@@ -10,6 +10,7 @@ import (
 // TestPlanCommandMetadata is a smoke check that PlanCommand exposes a
 // reasonable Name and Synopsis, satisfying the cli.Command interface.
 func TestPlanCommandMetadata(t *testing.T) {
+	t.Parallel()
 	c := &PlanCommand{}
 	if c.Name() != "plan" {
 		t.Errorf("Name = %q, want \"plan\"", c.Name())
@@ -22,6 +23,7 @@ func TestPlanCommandMetadata(t *testing.T) {
 // TestPlanCommandExamples ensures every example string is non-empty. The
 // cli-skeleton uses these in --help output.
 func TestPlanCommandExamples(t *testing.T) {
+	t.Parallel()
 	c := &PlanCommand{}
 	examples := c.Examples()
 	if len(examples) == 0 {
@@ -37,6 +39,7 @@ func TestPlanCommandExamples(t *testing.T) {
 // TestPlanCommandHelpDoesNotPanic guards against a regression where
 // FlagSet panics at help time when no tasks.yml exists on disk.
 func TestPlanCommandHelpDoesNotPanic(t *testing.T) {
+	t.Parallel()
 	c := &PlanCommand{}
 	defer func() {
 		if r := recover(); r != nil {
@@ -53,6 +56,7 @@ func TestPlanCommandHelpDoesNotPanic(t *testing.T) {
 // part worth pinning - it is how cancellation and the target reach a task,
 // and dropping it would silently put both back on package globals.
 func TestPlanCommandUsesPlanInterface(t *testing.T) {
+	t.Parallel()
 	var _ interface {
 		Plan(ctx context.Context) tasks.PlanResult
 		Execute(ctx context.Context) tasks.TaskOutputState

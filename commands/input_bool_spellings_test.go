@@ -36,6 +36,7 @@ func boolSpellingRecipe(def string) string {
 }
 
 func TestBoolDefaultTakesEverySpellingTheCommandLineTakes(t *testing.T) {
+	t.Parallel()
 	tests := map[string]string{
 		"1":     "web-true",
 		"t":     "web-true",
@@ -74,6 +75,7 @@ func TestBoolDefaultTakesEverySpellingTheCommandLineTakes(t *testing.T) {
 // TestBoolDefaultStillRejectsANearMiss: the table widened, it did not stop
 // judging. A spelling in neither vocabulary is still invalid_input_default.
 func TestBoolDefaultStillRejectsANearMiss(t *testing.T) {
+	t.Parallel()
 	for _, def := range []string{"maybe", "2", "yeah"} {
 		t.Run(def, func(t *testing.T) {
 			path := writeTasksFile(t, boolSpellingRecipe(def))
@@ -95,6 +97,7 @@ func TestBoolDefaultStillRejectsANearMiss(t *testing.T) {
 // TestRegisterInputFlagsWidenedBoolDefault: the flag the recipe registers holds
 // the resolved value, so `--help` and an untouched run agree with validate.
 func TestRegisterInputFlagsWidenedBoolDefault(t *testing.T) {
+	t.Parallel()
 	f := flag.NewFlagSet("apply", flag.ContinueOnError)
 	arguments, err := registerInputFlags(f, []byte(boolSpellingRecipe("On")), tasks.FormatYAML)
 	if err != nil {
@@ -115,6 +118,7 @@ func TestRegisterInputFlagsWidenedBoolDefault(t *testing.T) {
 // TestVarsFileSpellsABoolTheWayTheCommandLineDoes is the issue's third face: a
 // vars file used to refuse `debug: 1` while `--debug=1` was accepted.
 func TestVarsFileSpellsABoolTheWayTheCommandLineDoes(t *testing.T) {
+	t.Parallel()
 	tests := map[string]struct {
 		vars string
 		want string
@@ -147,6 +151,7 @@ func TestVarsFileSpellsABoolTheWayTheCommandLineDoes(t *testing.T) {
 // TestVarsFileRejectsANumberThatIsNotABool: 1 and 0 are the spellings pflag
 // takes, not an invitation to C-style truthiness.
 func TestVarsFileRejectsANumberThatIsNotABool(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, boolSpellingRecipe("false"))
 	vars := filepath.Join(filepath.Dir(path), "vars.yml")
 	if err := os.WriteFile(vars, []byte("debug: 2\n"), 0o644); err != nil {
@@ -169,6 +174,7 @@ func TestVarsFileRejectsANumberThatIsNotABool(t *testing.T) {
 // a widened spelling would have rendered `web-On` where the flag path renders
 // `web-true`.
 func TestPlayLocalBoolDefaultResolvesToItsType(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: file_level, type: bool, default: "on" }
@@ -194,6 +200,7 @@ func TestPlayLocalBoolDefaultResolvesToItsType(t *testing.T) {
 // whether the input was declared file-level or play-local. Before, a play-local
 // input compared the string "true" to a bool and was never equal.
 func TestBoolInputReadsTheSameInWhenFromEitherLayer(t *testing.T) {
+	t.Parallel()
 	recipe := func(def string) string {
 		return `---
 - inputs:

@@ -15,6 +15,7 @@ import (
 )
 
 func TestInitCommandMetadata(t *testing.T) {
+	t.Parallel()
 	c := &InitCommand{}
 	if c.Name() != "init" {
 		t.Errorf("Name = %q, want %q", c.Name(), "init")
@@ -25,6 +26,7 @@ func TestInitCommandMetadata(t *testing.T) {
 }
 
 func TestInitCommandExamples(t *testing.T) {
+	t.Parallel()
 	c := &InitCommand{}
 	examples := c.Examples()
 	if len(examples) == 0 {
@@ -38,6 +40,7 @@ func TestInitCommandExamples(t *testing.T) {
 }
 
 func TestInitCommandHelpDoesNotPanic(t *testing.T) {
+	t.Parallel()
 	c := &InitCommand{}
 	defer func() {
 		if r := recover(); r != nil {
@@ -48,6 +51,7 @@ func TestInitCommandHelpDoesNotPanic(t *testing.T) {
 }
 
 func TestInitRendersDefaultTemplate(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo"})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -70,6 +74,7 @@ func TestInitRendersDefaultTemplate(t *testing.T) {
 }
 
 func TestInitRendersMinimalTemplate(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo", Minimal: true})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -90,6 +95,7 @@ func TestInitRendersMinimalTemplate(t *testing.T) {
 }
 
 func TestInitRefusesToOverwriteWithoutForce(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte("preserved\n"), 0o644); err != nil {
@@ -110,6 +116,7 @@ func TestInitRefusesToOverwriteWithoutForce(t *testing.T) {
 }
 
 func TestInitForceOverwrites(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte("preserved\n"), 0o644); err != nil {
@@ -130,6 +137,7 @@ func TestInitForceOverwrites(t *testing.T) {
 }
 
 func TestInitWritesDefaultTemplateToDisk(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 
@@ -147,6 +155,7 @@ func TestInitWritesDefaultTemplateToDisk(t *testing.T) {
 }
 
 func TestInitNameFlagSetsAppDefault(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "billing"})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -161,6 +170,7 @@ func TestInitNameFlagSetsAppDefault(t *testing.T) {
 // Every template variant is checked because the play name is what the
 // documented `--name` behaviour promises.
 func TestInitNameSetsPlayName(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		label   string
 		opts    initOptions
@@ -193,6 +203,7 @@ func TestInitNameSetsPlayName(t *testing.T) {
 }
 
 func TestInitRepoFlagSetsRepoDefault(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo", Repo: "git@github.com:foo/bar.git"})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -207,6 +218,7 @@ func TestInitRepoFlagSetsRepoDefault(t *testing.T) {
 }
 
 func TestInitRepoEmptyKeepsRepoRequired(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo"})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -218,6 +230,7 @@ func TestInitRepoEmptyKeepsRepoRequired(t *testing.T) {
 }
 
 func TestInitDefaultNameFromCwd(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "widget-svc")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -229,6 +242,7 @@ func TestInitDefaultNameFromCwd(t *testing.T) {
 }
 
 func TestInitDefaultRepoFromGitConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -248,6 +262,7 @@ func TestInitDefaultRepoFromGitConfig(t *testing.T) {
 }
 
 func TestInitNoGitConfigYieldsEmptyRepo(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if got := defaultRepo(dir); got != "" {
 		t.Errorf("defaultRepo(dir) with no .git/config = %q, want empty", got)
@@ -255,6 +270,7 @@ func TestInitNoGitConfigYieldsEmptyRepo(t *testing.T) {
 }
 
 func TestInitGitConfigWithoutOriginYieldsEmptyRepo(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -270,6 +286,7 @@ func TestInitGitConfigWithoutOriginYieldsEmptyRepo(t *testing.T) {
 }
 
 func TestInitDefaultPassesValidate(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo"})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -289,6 +306,7 @@ func TestInitDefaultPassesValidate(t *testing.T) {
 }
 
 func TestInitSpecialCharacterNamesParse(t *testing.T) {
+	t.Parallel()
 	// A --name with YAML/JSON-special characters used to render a scaffold
 	// that would not parse; the escaping helpers now emit a correctly
 	// quoted scalar for every format, so init's parse check (which uses
@@ -318,6 +336,7 @@ func TestInitSpecialCharacterNamesParse(t *testing.T) {
 }
 
 func TestInitYAMLSpecialNamesFullyValidate(t *testing.T) {
+	t.Parallel()
 	// The names the issue calls out (@web, a `: `-containing name) also
 	// round-trip through full validate, including the sigil render that
 	// substitutes the name into the task bodies (#355). A name with a double
@@ -336,6 +355,7 @@ func TestInitYAMLSpecialNamesFullyValidate(t *testing.T) {
 }
 
 func TestInitSimpleNameStaysUnquoted(t *testing.T) {
+	t.Parallel()
 	// The escaping helper must not quote ordinary names, keeping the
 	// scaffold output stable for the common case.
 	out, err := renderInit(initOptions{Name: "billing"})
@@ -348,6 +368,7 @@ func TestInitSimpleNameStaysUnquoted(t *testing.T) {
 }
 
 func TestInitSpecialCharacterNameWritesValidFile(t *testing.T) {
+	t.Parallel()
 	// End-to-end: a special-character --name writes a file that round-trips
 	// through validate, and the parse check (which now runs before the
 	// write) does not reject it (#355).
@@ -367,6 +388,7 @@ func TestInitSpecialCharacterNameWritesValidFile(t *testing.T) {
 }
 
 func TestInitMinimalPassesValidate(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo", Minimal: true})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -377,6 +399,7 @@ func TestInitMinimalPassesValidate(t *testing.T) {
 }
 
 func TestInitDefaultJSON5PassesValidate(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo", Format: tasks.FormatNameJSON5})
 	if err != nil {
 		t.Fatalf("renderInit (json5): %v", err)
@@ -394,6 +417,7 @@ func TestInitDefaultJSON5PassesValidate(t *testing.T) {
 }
 
 func TestInitMinimalJSON5PassesValidate(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo", Minimal: true, Format: tasks.FormatNameJSON5})
 	if err != nil {
 		t.Fatalf("renderInit (minimal json5): %v", err)
@@ -404,6 +428,7 @@ func TestInitMinimalJSON5PassesValidate(t *testing.T) {
 }
 
 func TestInitJSON5HasNoYAMLDocumentMarker(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "demo", Format: tasks.FormatNameJSON5})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -417,6 +442,7 @@ func TestInitJSON5HasNoYAMLDocumentMarker(t *testing.T) {
 }
 
 func TestInitJSON5RoundTripsThroughGetPlays(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "api", Format: tasks.FormatNameJSON5})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -437,6 +463,7 @@ func TestInitJSON5RoundTripsThroughGetPlays(t *testing.T) {
 }
 
 func TestSelectInitTemplate(t *testing.T) {
+	t.Parallel()
 	cases := map[[2]string]string{
 		{tasks.FormatYAML, "false"}:      "default.yml.tmpl",
 		{tasks.FormatYAML, "true"}:       "minimal.yml.tmpl",
@@ -453,6 +480,7 @@ func TestSelectInitTemplate(t *testing.T) {
 }
 
 func TestInitDefaultParsesAsRecipe(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "api"})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -470,6 +498,7 @@ func TestInitDefaultParsesAsRecipe(t *testing.T) {
 }
 
 func TestInitDefaultRecipeShape(t *testing.T) {
+	t.Parallel()
 	out, err := renderInit(initOptions{Name: "billing", Repo: "git@example.com:foo/bar.git"})
 	if err != nil {
 		t.Fatalf("renderInit: %v", err)
@@ -506,6 +535,7 @@ func TestInitDefaultRecipeShape(t *testing.T) {
 }
 
 func TestInitOutputDashWritesToStdout(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	captured, exit := captureStdout(t, func(out io.Writer) int {
@@ -535,6 +565,7 @@ func TestInitOutputDashWritesToStdout(t *testing.T) {
 // --force governs is skipped entirely when streaming, so the flag would
 // otherwise be read off the flag set and dropped.
 func TestInitRejectsForceWithStdout(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	c, ui := newTestInitCommandUi(dir)
@@ -559,6 +590,7 @@ func TestInitRejectsForceWithStdout(t *testing.T) {
 // for JSON5 by name, with no --output, writes tasks.json rather than a
 // JSON5 document under a .yml name.
 func TestInitFormatJSON5WritesTasksJSON(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	c, ui := newTestInitCommandUi(dir)
@@ -594,6 +626,7 @@ func TestInitFormatJSON5WritesTasksJSON(t *testing.T) {
 // one normaliser with --tasks-format: the json alias resolves to json5,
 // so it drives the default-path swap too.
 func TestInitFormatJSONAliasWritesTasksJSON(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	if exit := newTestInitCommand(dir).Run([]string{"--format", "json"}); exit != 0 {
@@ -607,6 +640,7 @@ func TestInitFormatJSONAliasWritesTasksJSON(t *testing.T) {
 // TestInitFormatYAMLKeepsDefaultPath guards the untouched default: only
 // json5 moves the path.
 func TestInitFormatYAMLKeepsDefaultPath(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	if exit := newTestInitCommand(dir).Run([]string{"--format", "yaml"}); exit != 0 {
@@ -629,6 +663,7 @@ func TestInitFormatYAMLKeepsDefaultPath(t *testing.T) {
 // have moved the default. The extension then disagrees with the bytes,
 // which is legal and warned about.
 func TestInitExplicitOutputWinsOverFormatDefault(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	c, ui := newTestInitCommandUi(dir)
@@ -653,6 +688,7 @@ func TestInitExplicitOutputWinsOverFormatDefault(t *testing.T) {
 // TestInitFormatOverridesOutputExtension is the mirror case: --format
 // yaml beats a .json extension.
 func TestInitFormatOverridesOutputExtension(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.json")
 
@@ -680,6 +716,7 @@ func TestInitFormatOverridesOutputExtension(t *testing.T) {
 // or init would stat tasks.yml while writing tasks.json - refusing over
 // an unrelated file, then clobbering the relevant one.
 func TestInitFormatJSON5ChecksForceOnAdjustedPath(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	jsonPath := filepath.Join(dir, "tasks.json")
@@ -720,6 +757,7 @@ func TestInitFormatJSON5ChecksForceOnAdjustedPath(t *testing.T) {
 // TestInitFormatJSON5ToStdout is the case #410 was filed for: before
 // --format, `--output -` could only ever emit YAML.
 func TestInitFormatJSON5ToStdout(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	captured, exit := captureStdout(t, func(out io.Writer) int {
@@ -755,6 +793,7 @@ func TestInitFormatJSON5ToStdout(t *testing.T) {
 // TestInitRejectsUnknownFormat checks the value error names the flag the
 // user actually typed, not the --tasks-format it shares a parser with.
 func TestInitRejectsUnknownFormat(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	c, ui := newTestInitCommandUi(dir)
@@ -781,6 +820,7 @@ func TestInitRejectsUnknownFormat(t *testing.T) {
 // would be noise. The literal lines are asserted because the padding is
 // what keeps the three comments in one column.
 func TestInitNextStepsDefaultOutputStaysBare(t *testing.T) {
+	t.Parallel()
 	c, ui := newTestInitCommandUi(t.TempDir())
 	if exit := c.Run(nil); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
@@ -806,6 +846,7 @@ func TestInitNextStepsDefaultOutputStaysBare(t *testing.T) {
 // in the commands, or `docket validate` silently reports on a stale
 // tasks.yml sitting next to it.
 func TestInitNextStepsNameNonDefaultOutput(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		args []string
@@ -844,6 +885,7 @@ func TestInitNextStepsNameNonDefaultOutput(t *testing.T) {
 // TestInitNextStepsCleansRelativeDefault: "./tasks.yml" is the first
 // probe candidate spelled differently, so it stays on the bare path.
 func TestInitNextStepsCleansRelativeDefault(t *testing.T) {
+	t.Parallel()
 	c, ui := newTestInitCommandUi(t.TempDir())
 	if exit := c.Run([]string{"--output", "./tasks.yml"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
@@ -857,6 +899,7 @@ func TestInitNextStepsCleansRelativeDefault(t *testing.T) {
 // the three comments share a column, and the --tasks suffix must not
 // break that.
 func TestInitNextStepsCommentsStayAligned(t *testing.T) {
+	t.Parallel()
 	c, ui := newTestInitCommandUi(t.TempDir())
 	if exit := c.Run([]string{"--format", "json5"}); exit != 0 {
 		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())

@@ -14,6 +14,7 @@ import (
 // tasks.ParseInputBool, so the vars file reads the same vocabulary a `default:`
 // does, and a native 1 / 0 is the bool pflag reads `--debug=1` as.
 func TestCoerceBool(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		value   interface{}
@@ -67,6 +68,7 @@ func TestCoerceBool(t *testing.T) {
 // TestCoerceBoolNumberErrorNamesTheValue: "expected bool, got 2" is actionable
 // where "expected bool, got int" is not.
 func TestCoerceBoolNumberErrorNamesTheValue(t *testing.T) {
+	t.Parallel()
 	_, err := coerceBool(2)
 	if err == nil {
 		t.Fatal("expected an error for 2")
@@ -79,6 +81,7 @@ func TestCoerceBoolNumberErrorNamesTheValue(t *testing.T) {
 // TestCoerceIntAndFloatStillRejectBool: the widening runs one way. pflag takes
 // `--debug=1` and refuses `--replicas=true`, and the vars file matches it.
 func TestCoerceIntAndFloatStillRejectBool(t *testing.T) {
+	t.Parallel()
 	if _, err := coerceInt(true); err == nil {
 		t.Error("coerceInt(true) succeeded, want an error")
 	}
@@ -88,6 +91,7 @@ func TestCoerceIntAndFloatStillRejectBool(t *testing.T) {
 }
 
 func TestGetTaskYamlFilename(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		args     []string
@@ -136,6 +140,7 @@ func TestGetTaskYamlFilename(t *testing.T) {
 }
 
 func TestArgumentGetValue(t *testing.T) {
+	t.Parallel()
 	t.Run("bool value", func(t *testing.T) {
 		b := true
 		arg := Argument{}
@@ -208,6 +213,7 @@ func TestArgumentGetValue(t *testing.T) {
 }
 
 func TestParseInputDocumentJSON5(t *testing.T) {
+	t.Parallel()
 	data := []byte(`[
   {
     inputs: [
@@ -235,6 +241,7 @@ func TestParseInputDocumentJSON5(t *testing.T) {
 }
 
 func TestGetInputVariablesJSON5(t *testing.T) {
+	t.Parallel()
 	data := []byte(`[
   {
     inputs: [
@@ -253,6 +260,7 @@ func TestGetInputVariablesJSON5(t *testing.T) {
 }
 
 func TestParseInputYamlValidInputs(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - inputs:
     - name: app
@@ -302,6 +310,7 @@ func TestParseInputYamlValidInputs(t *testing.T) {
 }
 
 func TestParseInputYamlNoInputs(t *testing.T) {
+	t.Parallel()
 	data := []byte("---\n- tasks: []\n")
 	inputs, err := parseInputYaml(data)
 	if err != nil {
@@ -313,6 +322,7 @@ func TestParseInputYamlNoInputs(t *testing.T) {
 }
 
 func TestParseInputYamlInvalidYaml(t *testing.T) {
+	t.Parallel()
 	data := []byte("not valid yaml: [[[")
 	_, err := parseInputYaml(data)
 	if err == nil {
@@ -321,6 +331,7 @@ func TestParseInputYamlInvalidYaml(t *testing.T) {
 }
 
 func TestParseInputYamlAllTypes(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - inputs:
     - name: str_input
@@ -365,6 +376,7 @@ func TestParseInputYamlAllTypes(t *testing.T) {
 }
 
 func TestParseInputYamlMultipleRecipes(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - inputs:
     - name: first
@@ -389,6 +401,7 @@ func TestParseInputYamlMultipleRecipes(t *testing.T) {
 }
 
 func TestGetInputVariablesValid(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - inputs:
     - name: app
@@ -415,6 +428,7 @@ func TestGetInputVariablesValid(t *testing.T) {
 }
 
 func TestGetInputVariablesTemplateError(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - inputs:
     - name: {{ .broken
@@ -430,6 +444,7 @@ func TestGetInputVariablesTemplateError(t *testing.T) {
 }
 
 func TestInputSetValueAndGetValue(t *testing.T) {
+	t.Parallel()
 	input := tasks.Input{}
 	err := input.SetValue("hello")
 	if err != nil {
@@ -444,6 +459,7 @@ func TestInputSetValueAndGetValue(t *testing.T) {
 }
 
 func TestInputHasValueEmpty(t *testing.T) {
+	t.Parallel()
 	input := tasks.Input{}
 	if input.HasValue() {
 		t.Error("HasValue() = true for unset input, want false")
@@ -454,6 +470,7 @@ func TestInputHasValueEmpty(t *testing.T) {
 }
 
 func TestInputSetValueOverwrite(t *testing.T) {
+	t.Parallel()
 	input := tasks.Input{}
 	input.SetValue("first")
 	input.SetValue("second")
@@ -474,6 +491,7 @@ func writeTempFile(t *testing.T, dir, name, content string) string {
 }
 
 func TestLoadVarsFilesYAML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.yml", "app: api\nreplicas: 3\ndebug: true\n")
 
@@ -496,6 +514,7 @@ func TestLoadVarsFilesYAML(t *testing.T) {
 }
 
 func TestLoadVarsFilesJSON(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.json", `{"app":"api","replicas":3,"debug":false}`)
 
@@ -517,6 +536,7 @@ func TestLoadVarsFilesJSON(t *testing.T) {
 }
 
 func TestLoadVarsFilesMissingFile(t *testing.T) {
+	t.Parallel()
 	_, _, _, err := loadVarsFiles([]string{"/nonexistent/path/vars.yml"})
 	if err == nil {
 		t.Fatal("expected error for missing file")
@@ -527,6 +547,7 @@ func TestLoadVarsFilesMissingFile(t *testing.T) {
 }
 
 func TestLoadVarsFilesNonMappingError(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "list.yml", "- one\n- two\n")
 
@@ -540,6 +561,7 @@ func TestLoadVarsFilesNonMappingError(t *testing.T) {
 }
 
 func TestLoadVarsFilesMultiFileLastWins(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	a := writeTempFile(t, dir, "a.yml", "app: from-a\nshared: from-a\n")
 	b := writeTempFile(t, dir, "b.yml", "shared: from-b\nextra: only-b\n")
@@ -566,6 +588,7 @@ func TestLoadVarsFilesMultiFileLastWins(t *testing.T) {
 }
 
 func TestLoadVarsFilesEmptyYAML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "empty.yml", "")
 
@@ -605,6 +628,7 @@ func argFor(t *testing.T, declared string, def interface{}) *Argument {
 }
 
 func TestSetFromVarsFileString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		value interface{}
@@ -629,6 +653,7 @@ func TestSetFromVarsFileString(t *testing.T) {
 }
 
 func TestSetFromVarsFileInt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		value   interface{}
@@ -664,6 +689,7 @@ func TestSetFromVarsFileInt(t *testing.T) {
 }
 
 func TestSetFromVarsFileFloat(t *testing.T) {
+	t.Parallel()
 	arg := argFor(t, "float", 0.0)
 	if err := arg.SetFromVarsFile("k", "2.5"); err != nil {
 		t.Fatalf("string coerce failed: %v", err)
@@ -687,6 +713,7 @@ func TestSetFromVarsFileFloat(t *testing.T) {
 }
 
 func TestSetFromVarsFileBool(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		value   interface{}
@@ -728,6 +755,7 @@ func TestSetFromVarsFileBool(t *testing.T) {
 }
 
 func TestApplyVarsFilesEmptyPathsNoOp(t *testing.T) {
+	t.Parallel()
 	args := map[string]*Argument{"app": argFor(t, "string", "default")}
 	flags := flag.NewFlagSet("t", flag.ContinueOnError)
 	if _, _, err := applyVarsFiles(args, flags, nil); err != nil {
@@ -739,6 +767,7 @@ func TestApplyVarsFilesEmptyPathsNoOp(t *testing.T) {
 }
 
 func TestApplyVarsFilesUpdatesUnsetArgument(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.yml", "app: from-vars\n")
 
@@ -755,6 +784,7 @@ func TestApplyVarsFilesUpdatesUnsetArgument(t *testing.T) {
 }
 
 func TestApplyVarsFilesCLIOverridesVarsFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.yml", "app: from-vars\n")
 
@@ -776,6 +806,7 @@ func TestApplyVarsFilesCLIOverridesVarsFile(t *testing.T) {
 }
 
 func TestApplyVarsFilesUnknownKey(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.yml", "appp: typo\n")
 
@@ -794,6 +825,7 @@ func TestApplyVarsFilesUnknownKey(t *testing.T) {
 }
 
 func TestApplyVarsFilesUnknownKeyNoSuggestionWhenFar(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.yml", "totallyunrelated: x\n")
 
@@ -810,6 +842,7 @@ func TestApplyVarsFilesUnknownKeyNoSuggestionWhenFar(t *testing.T) {
 }
 
 func TestApplyVarsFilesMultiFileLastWins(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	a := writeTempFile(t, dir, "a.yml", "app: from-a\n")
 	b := writeTempFile(t, dir, "b.yml", "app: from-b\n")
@@ -826,6 +859,7 @@ func TestApplyVarsFilesMultiFileLastWins(t *testing.T) {
 }
 
 func TestApplyVarsFilesCoercionFailureNamesInput(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.yml", "replicas: not-a-number\n")
 
@@ -844,6 +878,7 @@ func TestApplyVarsFilesCoercionFailureNamesInput(t *testing.T) {
 }
 
 func TestApplyVarsFilesJSONFloatCoercesToInt(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeTempFile(t, dir, "vars.json", `{"replicas": 5}`)
 
@@ -859,6 +894,7 @@ func TestApplyVarsFilesJSONFloatCoercesToInt(t *testing.T) {
 }
 
 func TestNearestInputNameSuggestion(t *testing.T) {
+	t.Parallel()
 	names := []string{"app", "repo", "replicas"}
 	tests := []struct {
 		candidate string

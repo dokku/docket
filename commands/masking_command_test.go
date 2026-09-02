@@ -24,6 +24,7 @@ const parseErrorRecipe = `---
 `
 
 func TestApplyMasksSensitiveInputInParseError(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, parseErrorRecipe)
 	_, stderr, exit := runApply(t, path, "--secret_value=envelopekey_secretzzz")
 	if exit == 0 {
@@ -38,6 +39,7 @@ func TestApplyMasksSensitiveInputInParseError(t *testing.T) {
 }
 
 func TestPlanMasksSensitiveInputInParseError(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, parseErrorRecipe)
 	_, stderr, exit := runPlan(t, path, "--secret_value=envelopekey_secretzzz")
 	if exit == 0 {
@@ -52,6 +54,7 @@ func TestPlanMasksSensitiveInputInParseError(t *testing.T) {
 }
 
 func TestValidateMasksSensitiveInJSONProblem(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker("tok_secret")
 
 	ui := cli.NewMockUi()
@@ -73,6 +76,7 @@ func TestValidateMasksSensitiveInJSONProblem(t *testing.T) {
 }
 
 func TestValidateMasksSensitiveInHumanProblem(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker("tok_secret")
 
 	ui := cli.NewMockUi()

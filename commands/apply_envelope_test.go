@@ -45,6 +45,7 @@ func writeTasksFile(t *testing.T, body string) string {
 // `registered.first.Changed`. The follow-up should run when first
 // changed and skip otherwise.
 func TestApplyRegisterMakesPriorResultAvailable(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 	stubSet(t, "b", StubFixture{Changed: false})
 
@@ -73,6 +74,7 @@ func TestApplyRegisterMakesPriorResultAvailable(t *testing.T) {
 // not change, the follow-up's when: predicate is falsy and the task
 // renders as [skipped].
 func TestApplyRegisterFalseSkipsFollowUp(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false})
 	stubSet(t, "b", StubFixture{Changed: true})
 
@@ -97,6 +99,7 @@ func TestApplyRegisterFalseSkipsFollowUp(t *testing.T) {
 // TestApplyChangedWhenFalseFlipsToOK: changed_when: false flips a
 // self-reported-changed task to [ok].
 func TestApplyChangedWhenFalseFlipsToOK(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
@@ -120,6 +123,7 @@ func TestApplyChangedWhenFalseFlipsToOK(t *testing.T) {
 // TestApplyChangedWhenTrueFlipsToChanged: changed_when: true converts
 // an in-sync task to [changed].
 func TestApplyChangedWhenTrueFlipsToChanged(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
@@ -140,6 +144,7 @@ func TestApplyChangedWhenTrueFlipsToChanged(t *testing.T) {
 // TestApplyFailedWhenSuppressesExpectedError: failed_when matching the
 // stderr pattern clears the error, exit is 0.
 func TestApplyFailedWhenSuppressesExpectedError(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{
 		ExecuteError: stubExecError("App nonexistent does not exist"),
 		Stderr:       "App nonexistent does not exist",
@@ -163,6 +168,7 @@ func TestApplyFailedWhenSuppressesExpectedError(t *testing.T) {
 // TestApplyFailedWhenTrueMarksSuccessAsError: failed_when: true on a
 // successful task flips it to [error] and the run aborts (exit 1).
 func TestApplyFailedWhenTrueMarksSuccessAsError(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
@@ -185,6 +191,7 @@ func TestApplyFailedWhenTrueMarksSuccessAsError(t *testing.T) {
 // and aborts the run with a non-zero exit. This is the baseline the
 // group path is expected to match (see TestApplyGroupBlockStateMismatchFailsGroup).
 func TestApplyLeafStateMismatchFailsRun(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{MismatchState: true})
 
 	path := writeTasksFile(t, `---
@@ -205,6 +212,7 @@ func TestApplyLeafStateMismatchFailsRun(t *testing.T) {
 // also normalizes State to DesiredState so the state-mismatch branch
 // does not re-flag the task.
 func TestApplyFailedWhenFalseClearsStateMismatch(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{MismatchState: true, Changed: true})
 
 	path := writeTasksFile(t, `---
@@ -226,6 +234,7 @@ func TestApplyFailedWhenFalseClearsStateMismatch(t *testing.T) {
 // the run going past an erroring task. The error event is still
 // emitted but the second task runs and the exit code is 0.
 func TestApplyIgnoreErrorsContinuesPastFailure(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{ExecuteError: errors.New("boom")})
 	stubSet(t, "b", StubFixture{Changed: true})
 
@@ -253,6 +262,7 @@ func TestApplyIgnoreErrorsContinuesPastFailure(t *testing.T) {
 // successful task is a no-op; the task still renders as [ok] /
 // [changed] and the run exits 0.
 func TestApplyIgnoreErrorsNoOpOnSuccess(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
@@ -277,6 +287,7 @@ func TestApplyIgnoreErrorsNoOpOnSuccess(t *testing.T) {
 // accumulates per-iteration states into Results, and the aggregate
 // Changed reflects "any iteration changed."
 func TestApplyLoopRegisterAccumulatesResults(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false})
 	stubSet(t, "b", StubFixture{Changed: true})
 
@@ -319,6 +330,7 @@ func TestApplyLoopRegisterAccumulatesResults(t *testing.T) {
 // behavior in isolation so the predicate phase ordering and Ansible
 // failure-verdict semantics are anchored without spinning up Run().
 func TestApplyEnvelopeOverridesUnitFailedWhen(t *testing.T) {
+	t.Parallel()
 	env := &tasks.TaskEnvelope{
 		Name:       "x",
 		FailedWhen: "false",
@@ -344,6 +356,7 @@ func TestApplyEnvelopeOverridesUnitFailedWhen(t *testing.T) {
 }
 
 func TestApplyEnvelopeOverridesUnitChangedWhen(t *testing.T) {
+	t.Parallel()
 	env := &tasks.TaskEnvelope{
 		Name:        "x",
 		ChangedWhen: "false",

@@ -310,7 +310,7 @@ A multi-command task renders one continuation line per invocation under `--verbo
 ```
 
 Color output respects [`NO_COLOR`](https://no-color.org/): set `NO_COLOR=1` to disable ANSI escapes.
-Output is also plain automatically when piped to a non-TTY.
+Setting `TERM=dumb` disables them too, and output is plain automatically when piped to a non-TTY.
 
 ### Interrupting a run
 
