@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -30,25 +29,30 @@ type helpCommand interface {
 // helpCommands builds each command whose --help page can carry input flags.
 // The three share registerInputFlags but reach it from three separate
 // FlagSet() implementations, so each is exercised on its own.
-var helpCommands = map[string]func() helpCommand{
-	"apply":    func() helpCommand { return &ApplyCommand{Meta: command.Meta{Ui: cli.NewMockUi()}} },
-	"plan":     func() helpCommand { return &PlanCommand{Meta: command.Meta{Ui: cli.NewMockUi()}} },
-	"validate": func() helpCommand { return &ValidateCommand{Meta: command.Meta{Ui: cli.NewMockUi()}} },
+var helpCommands = map[string]func(argv []string) helpCommand{
+	"apply": func(argv []string) helpCommand {
+		return &ApplyCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv}
+	},
+	"plan": func(argv []string) helpCommand {
+		return &PlanCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv}
+	},
+	"validate": func(argv []string) helpCommand {
+		return &ValidateCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv}
+	},
 }
 
 // helpText renders one command's --help page for the recipe at path. FlagSet()
-// resolves the recipe out of os.Args rather than from the parsed flags, so the
-// argv has to be staged the way runApply and runPlan stage it.
+// resolves the recipe out of the command's argv rather than from the parsed
+// flags, so the argv is handed over the way runApply and runPlan hand it.
 func helpText(t *testing.T, name, path string) string {
 	t.Helper()
 	build, ok := helpCommands[name]
 	if !ok {
 		t.Fatalf("no help command registered for %q", name)
 	}
-	origArgs := os.Args
-	os.Args = []string{"docket-test", name, "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
-	return build().Help()
+	argv := []string{"docket-test", name, "--tasks", path}
+
+	return build(argv).Help()
 }
 
 // TestHelpMasksSensitiveInputDefault is the #490 regression. A recipe that

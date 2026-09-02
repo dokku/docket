@@ -19,11 +19,9 @@ import (
 // before invoking Run.
 func runApply(t *testing.T, path string, args ...string) (string, string, int) {
 	t.Helper()
-	origArgs := os.Args
-	os.Args = []string{"docket-test", "apply", "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", "apply", "--tasks", path}
 
-	c := &ApplyCommand{}
+	c := &ApplyCommand{Argv: argv}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
 	all := append([]string{"--tasks", path}, args...)
 	exit := c.Run(all)

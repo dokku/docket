@@ -159,15 +159,12 @@ func TestExportCommandRecipeModeLeftAlone(t *testing.T) {
 func TestExportCommandWarnsWhenTheModeCannotBeSet(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
 
-	orig := chmodVarsFile
-	chmodVarsFile = func(*os.File, os.FileMode) error { return errors.New("operation not supported") }
-	defer func() { chmodVarsFile = orig }()
-
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
 	c, ui := newExportCommand()
+	c.ChmodVarsFile = func(*os.File, os.FileMode) error { return errors.New("operation not supported") }
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("a mode that cannot be set must not fail the export, got exit %d", code)
 	}

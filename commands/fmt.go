@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +27,30 @@ import (
 // contacts the Dokku server.
 type FmtCommand struct {
 	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdout is where a streamed recipe, diff or catalog is written. Populated
+	// from main.go; nil writes to the process's standard output. These writes
+	// bypass Ui on purpose - it is wrapped in a log formatter - so a test that
+	// asserts on them needs somewhere of its own to capture.
+	Stdout io.Writer
+
+	// Stdin is where a `--tasks -` recipe is read from. Populated from
+	// main.go; nil reads the process's standard input. A test hands over its
+	// own pipe instead of swapping os.Stdin, which no two tests can do at
+	// once.
+	Stdin io.Reader
+
+	stdin *stdinRecipeSource
 
 	check bool
 	diff  bool
@@ -111,7 +136,7 @@ func (c *FmtCommand) Run(args []string) int {
 		return 1
 	}
 
-	if err := applyColorMode(c.color); err != nil {
+	if err := applyColorMode(c.color, c.stdout()); err != nil {
 		c.Ui.Error(err.Error())
 		return 1
 	}
@@ -137,7 +162,7 @@ func (c *FmtCommand) Run(args []string) int {
 		}
 	}
 
-	paths, ambiguous, err := expandPaths(positional)
+	paths, ambiguous, err := expandPaths(c.baseDir(), positional)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
@@ -168,7 +193,7 @@ func (c *FmtCommand) Run(args []string) int {
 // --tasks-format, wins over the sniff - a flow-style YAML recipe starts
 // with [ and would otherwise be reformatted as JSON5.
 func (c *FmtCommand) runStdin(formatOverride string) int {
-	src, err := readStdinRecipe()
+	src, err := c.stdinSource().recipe()
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read stdin: %v", err))
 		return 1
@@ -182,7 +207,7 @@ func (c *FmtCommand) runStdin(formatOverride string) int {
 	changed := !bytesEqual(src, formatted)
 
 	if c.diff && changed {
-		_, _ = os.Stdout.WriteString(renderDiff("<stdin>", string(src), string(formatted)))
+		_, _ = io.WriteString(c.stdout(), renderDiff("<stdin>", string(src), string(formatted)))
 	}
 
 	if c.check {
@@ -198,7 +223,7 @@ func (c *FmtCommand) runStdin(formatOverride string) int {
 		return 0
 	}
 
-	if _, err := os.Stdout.Write(formatted); err != nil {
+	if _, err := c.stdout().Write(formatted); err != nil {
 		c.Ui.Error(fmt.Sprintf("write stdout: %v", err))
 		return 1
 	}
@@ -224,7 +249,7 @@ func (c *FmtCommand) formatPath(path, formatOverride string) int {
 	changed := !bytesEqual(src, formatted)
 
 	if c.diff && changed {
-		_, _ = os.Stdout.WriteString(renderDiff(path, string(src), string(formatted)))
+		_, _ = io.WriteString(c.stdout(), renderDiff(path, string(src), string(formatted)))
 	}
 
 	if c.check {
@@ -298,22 +323,25 @@ func sniffStdinFormat(src []byte) string {
 // The second return value carries the other default candidates the probe
 // passed over, for ambiguousTaskFileWarning. Named arguments select their
 // own files, so it is only ever set for the empty-argument case.
-func expandPaths(args []string) ([]string, []string, error) {
+func expandPaths(baseDir string, args []string) ([]string, []string, error) {
 	if len(args) == 0 {
-		chosen, others, err := probeDefaultTaskFile()
+		chosen, others, err := probeDefaultTaskFile(baseDir)
 		if err != nil {
 			return nil, nil, err
 		}
+		// The probe answers in bare candidate names because the ambiguity
+		// warning reads better that way; the paths handed on have to be
+		// concrete.
 		if chosen == "" {
-			return []string{defaultTaskFileCandidates[0]}, nil, nil
+			return []string{inDir(baseDir, defaultTaskFileCandidates[0])}, nil, nil
 		}
-		return []string{chosen}, others, nil
+		return []string{inDir(baseDir, chosen)}, others, nil
 	}
 
 	seen := map[string]bool{}
 	var paths []string
 	for _, arg := range args {
-		matches, err := filepath.Glob(arg)
+		matches, err := filepath.Glob(inDir(baseDir, arg))
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid glob %q: %w", arg, err)
 		}
@@ -321,7 +349,7 @@ func expandPaths(args []string) ([]string, []string, error) {
 			// A literal path with no glob metacharacters that does
 			// not exist still flows through to the read step so
 			// the user gets a clean "no such file" error.
-			matches = []string{arg}
+			matches = []string{inDir(baseDir, arg)}
 		}
 		for _, m := range matches {
 			if !seen[m] {
@@ -337,7 +365,7 @@ func expandPaths(args []string) ([]string, []string, error) {
 // applyColorMode resolves the --color flag value into the global
 // fatih/color state. auto delegates to the library's TTY / NO_COLOR
 // detection; always forces colors on; never forces colors off.
-func applyColorMode(mode string) error {
+func applyColorMode(mode string, out io.Writer) error {
 	switch mode {
 	case "auto":
 		// Default behaviour: respect TTY and NO_COLOR. fatih/color
@@ -345,7 +373,7 @@ func applyColorMode(mode string) error {
 		// package-default value. Re-derive the default explicitly
 		// so a previous --color always/never invocation in the same
 		// process (i.e. tests) does not leak state.
-		color.NoColor = noColorDefault()
+		color.NoColor = noColorDefault(out)
 	case "always":
 		color.NoColor = false
 	case "never":
@@ -358,11 +386,19 @@ func applyColorMode(mode string) error {
 
 // noColorDefault matches fatih/color's own default detection: colors
 // on when stdout is a terminal AND NO_COLOR is unset.
-func noColorDefault() bool {
+//
+// A writer that is not the process's own stdout has no file descriptor to ask,
+// and is not a terminal by definition - it is a buffer a test or a caller is
+// collecting bytes in - so it answers "no color" without consulting isatty.
+func noColorDefault(w io.Writer) bool {
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {
 		return true
 	}
-	return !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd())
+	f, ok := w.(*os.File)
+	if !ok {
+		return true
+	}
+	return !isatty.IsTerminal(f.Fd()) && !isatty.IsCygwinTerminal(f.Fd())
 }
 
 // renderDiff produces a colorized GNU unified diff between original
@@ -424,3 +460,20 @@ func bytesEqual(a, b []byte) bool {
 	}
 	return true
 }
+
+// stdinSource returns this command's memoized standard-input reader, creating
+// it on first use. One per command: the recipe is read more than once per
+// invocation (FlagSet, Run, and Help on a flag error) but standard input only
+// yields its bytes once.
+func (c *FmtCommand) stdinSource() *stdinRecipeSource {
+	if c.stdin == nil {
+		c.stdin = newStdinRecipeSource(c.Stdin)
+	}
+	return c.stdin
+}
+
+// stdout returns the writer this command streams bytes to.
+func (c *FmtCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *FmtCommand) baseDir() string { return c.BaseDir }

@@ -281,31 +281,29 @@ func TestResolveTaskFilePathStdin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte("---\n"), 0o644); err != nil {
 		t.Fatalf("write yml: %v", err)
 	}
-	withCwd(t, dir, func() {
-		path, format, ambiguous, err := resolveTaskFilePath(taskFileStdin)
-		if err != nil {
-			t.Fatalf("resolveTaskFilePath: %v", err)
-		}
-		if path != taskFileStdin {
-			t.Errorf("path = %q, want %q", path, taskFileStdin)
-		}
-		if format != "" {
-			t.Errorf("format = %q, want empty so the caller sniffs", format)
-		}
-		if len(ambiguous) != 0 {
-			t.Errorf("ambiguous = %v, want none; stdin never runs the probe", ambiguous)
-		}
-	})
+	path, format, ambiguous, err := resolveTaskFilePath("", taskFileStdin)
+	if err != nil {
+		t.Fatalf("resolveTaskFilePath: %v", err)
+	}
+	if path != taskFileStdin {
+		t.Errorf("path = %q, want %q", path, taskFileStdin)
+	}
+	if format != "" {
+		t.Errorf("format = %q, want empty so the caller sniffs", format)
+	}
+	if len(ambiguous) != 0 {
+		t.Errorf("ambiguous = %v, want none; stdin never runs the probe", ambiguous)
+	}
 }
 
 // TestReadRecipeBytesURLPermission: validate is offline by contract, so
 // it passes allowURL=false and an http(s) --tasks must not be fetched.
 func TestReadRecipeBytesURLPermission(t *testing.T) {
 	const url = "https://example.invalid/tasks.yml"
-	if _, err := readRecipeBytes(url, false); err == nil {
-		t.Fatal("readRecipeBytes(url, false) = nil error, want a local-read failure")
+	if _, err := readRecipeBytes("", url, false, newStdinRecipeSource(nil)); err == nil {
+		t.Fatal("readRecipeBytes(url, false, newStdinRecipeSource(nil)) = nil error, want a local-read failure")
 	} else if strings.Contains(err.Error(), "fetch") {
-		t.Errorf("readRecipeBytes(url, false) attempted a fetch: %v", err)
+		t.Errorf("readRecipeBytes(url, false, newStdinRecipeSource(nil)) attempted a fetch: %v", err)
 	}
 }
 
@@ -355,13 +353,13 @@ func TestResolveTaskFileFromArgsPositional(t *testing.T) {
 
 	// A --vars-file value that looks like a recipe must not be picked as
 	// the positional; the real positional recipe path should win.
-	got, _ := resolveTaskFileFromArgs([]string{"docket", "validate", "--vars-file", vars, recipe})
+	got, _ := resolveTaskFileFromArgs("", []string{"docket", "validate", "--vars-file", vars, recipe})
 	if got != recipe {
 		t.Errorf("expected positional %q, got %q", recipe, got)
 	}
 
 	// --tasks still takes precedence for preregistration.
-	got, _ = resolveTaskFileFromArgs([]string{"docket", "validate", "--tasks", recipe})
+	got, _ = resolveTaskFileFromArgs("", []string{"docket", "validate", "--tasks", recipe})
 	if got != recipe {
 		t.Errorf("expected --tasks %q, got %q", recipe, got)
 	}
@@ -373,7 +371,7 @@ func TestResolveTaskFilePathExplicit(t *testing.T) {
 	if err := os.WriteFile(path, []byte("[]"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	gotPath, gotFormat, ambiguous, err := resolveTaskFilePath(path)
+	gotPath, gotFormat, ambiguous, err := resolveTaskFilePath("", path)
 	if err != nil {
 		t.Fatalf("resolveTaskFilePath: %v", err)
 	}
@@ -396,21 +394,19 @@ func TestResolveTaskFilePathDefaultPrefersYAML(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), []byte("[]"), 0o644); err != nil {
 		t.Fatalf("write json: %v", err)
 	}
-	withCwd(t, dir, func() {
-		path, format, ambiguous, err := resolveTaskFilePath("")
-		if err != nil {
-			t.Fatalf("resolveTaskFilePath: %v", err)
-		}
-		if path != "tasks.yml" {
-			t.Errorf("path = %q, want tasks.yml", path)
-		}
-		if format != taskFileFormatYAML {
-			t.Errorf("format = %q, want yaml", format)
-		}
-		if !slices.Equal(ambiguous, []string{"tasks.json"}) {
-			t.Errorf("ambiguous = %v, want [tasks.json]", ambiguous)
-		}
-	})
+	path, format, ambiguous, err := resolveTaskFilePath(dir, "")
+	if err != nil {
+		t.Fatalf("resolveTaskFilePath: %v", err)
+	}
+	if path != "tasks.yml" {
+		t.Errorf("path = %q, want tasks.yml", path)
+	}
+	if format != taskFileFormatYAML {
+		t.Errorf("format = %q, want yaml", format)
+	}
+	if !slices.Equal(ambiguous, []string{"tasks.json"}) {
+		t.Errorf("ambiguous = %v, want [tasks.json]", ambiguous)
+	}
 }
 
 func TestResolveTaskFilePathDefaultFallsThroughToJSON(t *testing.T) {
@@ -418,34 +414,30 @@ func TestResolveTaskFilePathDefaultFallsThroughToJSON(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), []byte("[]"), 0o644); err != nil {
 		t.Fatalf("write json: %v", err)
 	}
-	withCwd(t, dir, func() {
-		path, format, ambiguous, err := resolveTaskFilePath("")
-		if err != nil {
-			t.Fatalf("resolveTaskFilePath: %v", err)
-		}
-		if path != "tasks.json" {
-			t.Errorf("path = %q, want tasks.json", path)
-		}
-		if format != taskFileFormatJSON5 {
-			t.Errorf("format = %q, want json5", format)
-		}
-		if len(ambiguous) != 0 {
-			t.Errorf("ambiguous = %v, want none; tasks.json was the only candidate", ambiguous)
-		}
-	})
+	path, format, ambiguous, err := resolveTaskFilePath(dir, "")
+	if err != nil {
+		t.Fatalf("resolveTaskFilePath: %v", err)
+	}
+	if path != "tasks.json" {
+		t.Errorf("path = %q, want tasks.json", path)
+	}
+	if format != taskFileFormatJSON5 {
+		t.Errorf("format = %q, want json5", format)
+	}
+	if len(ambiguous) != 0 {
+		t.Errorf("ambiguous = %v, want none; tasks.json was the only candidate", ambiguous)
+	}
 }
 
 func TestResolveTaskFilePathDefaultErrorsWhenNoneExist(t *testing.T) {
 	dir := t.TempDir()
-	withCwd(t, dir, func() {
-		_, _, _, err := resolveTaskFilePath("")
-		if err == nil {
-			t.Fatal("expected error when no candidate task file exists")
-		}
-		if !strings.Contains(err.Error(), "no task file found") {
-			t.Errorf("error = %q, want substring 'no task file found'", err.Error())
-		}
-	})
+	_, _, _, err := resolveTaskFilePath(dir, "")
+	if err == nil {
+		t.Fatal("expected error when no candidate task file exists")
+	}
+	if !strings.Contains(err.Error(), "no task file found") {
+		t.Errorf("error = %q, want substring 'no task file found'", err.Error())
+	}
 }
 
 // TestProbeDefaultTaskFile covers the shared probe every command reaches
@@ -491,18 +483,16 @@ func TestProbeDefaultTaskFile(t *testing.T) {
 					t.Fatalf("write %s: %v", name, err)
 				}
 			}
-			withCwd(t, dir, func() {
-				chosen, others, err := probeDefaultTaskFile()
-				if err != nil {
-					t.Fatalf("probeDefaultTaskFile: %v", err)
-				}
-				if chosen != tc.wantChosen {
-					t.Errorf("chosen = %q, want %q", chosen, tc.wantChosen)
-				}
-				if !slices.Equal(others, tc.wantOthers) {
-					t.Errorf("others = %v, want %v", others, tc.wantOthers)
-				}
-			})
+			chosen, others, err := probeDefaultTaskFile(dir)
+			if err != nil {
+				t.Fatalf("probeDefaultTaskFile: %v", err)
+			}
+			if chosen != tc.wantChosen {
+				t.Errorf("chosen = %q, want %q", chosen, tc.wantChosen)
+			}
+			if !slices.Equal(others, tc.wantOthers) {
+				t.Errorf("others = %v, want %v", others, tc.wantOthers)
+			}
 		})
 	}
 }
@@ -573,7 +563,7 @@ func TestShellQuotePath(t *testing.T) {
 }
 
 func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
-	path, format := resolveTaskFileFromArgs([]string{"docket", "apply", "--tasks", "custom.json"})
+	path, format := resolveTaskFileFromArgs("", []string{"docket", "apply", "--tasks", "custom.json"})
 	if path != "custom.json" {
 		t.Errorf("path = %q, want custom.json", path)
 	}
@@ -581,7 +571,7 @@ func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
 		t.Errorf("format = %q, want json5", format)
 	}
 
-	path, format = resolveTaskFileFromArgs([]string{"docket", "apply", "--tasks=other.yml"})
+	path, format = resolveTaskFileFromArgs("", []string{"docket", "apply", "--tasks=other.yml"})
 	if path != "other.yml" {
 		t.Errorf("path = %q, want other.yml", path)
 	}
@@ -614,19 +604,17 @@ func TestResolveTaskFileFromArgsStdin(t *testing.T) {
 		t.Fatalf("seed tasks.yml: %v", err)
 	}
 
-	withCwd(t, dir, func() {
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				path, format := resolveTaskFileFromArgs(tt.argv)
-				if path != taskFileStdin {
-					t.Errorf("path = %q, want %q", path, taskFileStdin)
-				}
-				if format != "" {
-					t.Errorf("format = %q, want empty so the caller sniffs stdin", format)
-				}
-			})
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, format := resolveTaskFileFromArgs("", tt.argv)
+			if path != taskFileStdin {
+				t.Errorf("path = %q, want %q", path, taskFileStdin)
+			}
+			if format != "" {
+				t.Errorf("format = %q, want empty so the caller sniffs stdin", format)
+			}
+		})
+	}
 }
 
 // TestResolveTaskFileFromArgsStdinNotAFlagValue: a "-" that is the value
@@ -641,7 +629,7 @@ func TestResolveTaskFileFromArgsStdinNotAFlagValue(t *testing.T) {
 
 	for _, flagName := range []string{"--play", "--vars-file", "--host", "--start-at-task", "--tasks-format"} {
 		t.Run(flagName, func(t *testing.T) {
-			path, _ := resolveTaskFileFromArgs([]string{"docket", "apply", flagName, "-", recipe})
+			path, _ := resolveTaskFileFromArgs("", []string{"docket", "apply", flagName, "-", recipe})
 			if path != recipe {
 				t.Errorf("path = %q, want %q (the %s value must not be read as the recipe)", path, recipe, flagName)
 			}
@@ -689,23 +677,27 @@ func TestTaskFileAutocompleteMatchesRecipeExtensions(t *testing.T) {
 		t.Fatalf("mkdir sub: %v", err)
 	}
 
-	withCwd(t, dir, func() {
-		counts := map[string]int{}
-		for _, match := range taskFileAutocomplete().Predict(complete.Args{Last: ""}) {
-			counts[match]++
+	// Driven the way a shell drives it - with the directory already typed -
+	// rather than by moving the process into it.
+	// Driven the way a shell drives it - with the directory already typed -
+	// rather than by moving the process into it. The prefix is trimmed rather
+	// than taking the base name, so a directory keeps its trailing separator.
+	prefix := dir + string(filepath.Separator)
+	counts := map[string]int{}
+	for _, match := range taskFileAutocomplete().Predict(complete.Args{Last: prefix}) {
+		counts[strings.TrimPrefix(match, prefix)]++
+	}
+	for _, name := range recipes {
+		if counts[name] == 0 {
+			t.Errorf("expected %q to be offered, got %v", name, counts)
 		}
-		for _, name := range recipes {
-			if counts[name] == 0 {
-				t.Errorf("expected %q to be offered, got %v", name, counts)
-			}
-		}
-		if counts["notes.txt"] != 0 {
-			t.Errorf("non-recipe notes.txt must not be offered, got %v", counts)
-		}
-		if counts["sub/"] != 1 {
-			t.Errorf("directory sub/ should be offered exactly once, got %d (%v)", counts["sub/"], counts)
-		}
-	})
+	}
+	if counts["notes.txt"] != 0 {
+		t.Errorf("non-recipe notes.txt must not be offered, got %v", counts)
+	}
+	if counts["sub/"] != 1 {
+		t.Errorf("directory sub/ should be offered exactly once, got %d (%v)", counts["sub/"], counts)
+	}
 }
 
 // TestPredictFilesByExtension proves the completion mechanism is generic and
@@ -718,21 +710,20 @@ func TestPredictFilesByExtension(t *testing.T) {
 		}
 	}
 
-	withCwd(t, dir, func() {
-		got := map[string]bool{}
-		for _, match := range predictFilesByExtension([]string{"md", "txt"}).Predict(complete.Args{Last: ""}) {
-			got[match] = true
-		}
-		if !got["readme.md"] {
-			t.Errorf("expected readme.md to be offered, got %v", got)
-		}
-		if !got["todo.txt"] {
-			t.Errorf("expected todo.txt to be offered, got %v", got)
-		}
-		if got["ignore.yml"] {
-			t.Errorf("ignore.yml must not be offered for extensions {md,txt}, got %v", got)
-		}
-	})
+	prefix := dir + string(filepath.Separator)
+	got := map[string]bool{}
+	for _, match := range predictFilesByExtension([]string{"md", "txt"}).Predict(complete.Args{Last: prefix}) {
+		got[strings.TrimPrefix(match, prefix)] = true
+	}
+	if !got["readme.md"] {
+		t.Errorf("expected readme.md to be offered, got %v", got)
+	}
+	if !got["todo.txt"] {
+		t.Errorf("expected todo.txt to be offered, got %v", got)
+	}
+	if got["ignore.yml"] {
+		t.Errorf("ignore.yml must not be offered for extensions {md,txt}, got %v", got)
+	}
 }
 
 func TestHasTaskFileExtension(t *testing.T) {
@@ -748,20 +739,4 @@ func TestHasTaskFileExtension(t *testing.T) {
 			t.Errorf("hasTaskFileExtension(%q) = true, want false", p)
 		}
 	}
-}
-
-// withCwd chdirs to dir for the duration of body and restores the
-// original cwd afterwards. Centralised so the resolveTaskFilePath
-// tests do not each handle the t.Cleanup dance.
-func withCwd(t *testing.T, dir string, body func()) {
-	t.Helper()
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir %s: %v", dir, err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
-	body()
 }

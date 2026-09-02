@@ -31,11 +31,9 @@ func writeMultiPlayTasks(t *testing.T, body string) string {
 // runs against the per-call args).
 func runPlan(t *testing.T, path string, args ...string) (string, string, int) {
 	t.Helper()
-	origArgs := os.Args
-	os.Args = []string{"docket-test", "plan", "--tasks", path}
-	t.Cleanup(func() { os.Args = origArgs })
+	argv := []string{"docket-test", "plan", "--tasks", path}
 
-	c := &PlanCommand{}
+	c := &PlanCommand{Argv: argv}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
 	all := append([]string{"--tasks", path}, args...)
 	exit := c.Run(all)

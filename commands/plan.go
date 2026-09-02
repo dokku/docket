@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -19,6 +20,31 @@ import (
 // per-task Plan() method; the apply path is never invoked.
 type PlanCommand struct {
 	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdin is where a `--tasks -` recipe is read from. Populated from
+	// main.go; nil reads the process's standard input. A test hands over its
+	// own pipe instead of swapping os.Stdin, which no two tests can do at
+	// once.
+	Stdin io.Reader
+
+	stdin *stdinRecipeSource
+
+	// Argv is the process argv this command resolves its --tasks and
+	// --tasks-format from, before pflag has parsed anything. Populated from
+	// main.go; nil falls back to os.Args, which is what a command built
+	// directly gets. It exists so a test can hand the command its own argv
+	// instead of assigning to the process global and putting it back.
+	Argv []string
 
 	// Ctx is the run context, populated from main.go with the process signal
 	// context. It carries cancellation down through every task's Plan and
@@ -103,7 +129,7 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.play, "play", "", "plan only the play with this name (matches the play's `name:` field; auto-named plays use `play #N`)")
 	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without contacting the server. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
 
-	data, format, source := preloadRecipeForFlags(os.Args, true)
+	data, format, source := preloadRecipeForFlags(c.baseDir(), c.argv(), true, c.stdinSource())
 	if data == nil {
 		return f
 	}
@@ -201,7 +227,7 @@ func (c *PlanCommand) Run(args []string) int {
 	// The cached bytes are the ones FlagSet already read for this source
 	// (see tasksData); for a --tasks URL this avoids a second HTTP fetch
 	// of the same recipe.
-	recipe, err := loadRecipe(taskFile, formatOverride, true, c.tasksData, c.tasksDataSource)
+	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("read error: %v", err))
 		return 1
@@ -726,3 +752,20 @@ func planGroup(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask
 	})
 	return out
 }
+
+// argv returns the argv this command resolves its pre-parse flags from.
+func (c *PlanCommand) argv() []string { return commandArgv(c.Argv) }
+
+// stdinSource returns this command's memoized standard-input reader, creating
+// it on first use. One per command: the recipe is read more than once per
+// invocation (FlagSet, Run, and Help on a flag error) but standard input only
+// yields its bytes once.
+func (c *PlanCommand) stdinSource() *stdinRecipeSource {
+	if c.stdin == nil {
+		c.stdin = newStdinRecipeSource(c.Stdin)
+	}
+	return c.stdin
+}
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *PlanCommand) baseDir() string { return c.BaseDir }

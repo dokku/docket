@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -19,6 +20,31 @@ import (
 // docket recipe without contacting a Dokku server.
 type ValidateCommand struct {
 	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdin is where a `--tasks -` recipe is read from. Populated from
+	// main.go; nil reads the process's standard input. A test hands over its
+	// own pipe instead of swapping os.Stdin, which no two tests can do at
+	// once.
+	Stdin io.Reader
+
+	stdin *stdinRecipeSource
+
+	// Argv is the process argv this command resolves its --tasks and
+	// --tasks-format from, before pflag has parsed anything. Populated from
+	// main.go; nil falls back to os.Args, which is what a command built
+	// directly gets. It exists so a test can hand the command its own argv
+	// instead of assigning to the process global and putting it back.
+	Argv []string
 
 	// masker holds the sensitive input values this run must not echo. Set in
 	// Run before any problem is rendered; the renderers below are methods so
@@ -91,7 +117,7 @@ func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	// validate is offline by contract, so its recipe read never fetches
 	// a URL - unlike apply and plan, its --tasks help has never
 	// advertised one.
-	data, format, _ := preloadRecipeForFlags(os.Args, false)
+	data, format, _ := preloadRecipeForFlags(c.baseDir(), c.argv(), false, c.stdinSource())
 	if data == nil {
 		return f
 	}
@@ -187,7 +213,7 @@ func (c *ValidateCommand) Run(args []string) int {
 		return 1
 	}
 
-	recipe, err := loadRecipe(taskFile, formatOverride, false, nil, "")
+	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, false, nil, "", c.stdinSource())
 	if err != nil {
 		if c.json {
 			c.emitJSONProblem(tasks.Problem{
@@ -352,3 +378,20 @@ func formatProblem(p tasks.Problem) string {
 	}
 	return b.String()
 }
+
+// argv returns the argv this command resolves its pre-parse flags from.
+func (c *ValidateCommand) argv() []string { return commandArgv(c.Argv) }
+
+// stdinSource returns this command's memoized standard-input reader, creating
+// it on first use. One per command: the recipe is read more than once per
+// invocation (FlagSet, Run, and Help on a flag error) but standard input only
+// yields its bytes once.
+func (c *ValidateCommand) stdinSource() *stdinRecipeSource {
+	if c.stdin == nil {
+		c.stdin = newStdinRecipeSource(c.Stdin)
+	}
+	return c.stdin
+}
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *ValidateCommand) baseDir() string { return c.BaseDir }

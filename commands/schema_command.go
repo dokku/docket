@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/dokku/docket/tasks"
@@ -31,6 +32,22 @@ import (
 // the published JSON Schema covers both.
 type SchemaCommand struct {
 	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdout is where a streamed recipe, diff or catalog is written. Populated
+	// from main.go; nil writes to the process's standard output. These writes
+	// bypass Ui on purpose - it is wrapped in a log formatter - so a test that
+	// asserts on them needs somewhere of its own to capture.
+	Stdout io.Writer
 
 	output    string
 	taskTypes []string
@@ -164,16 +181,22 @@ func (c *SchemaCommand) Run(args []string) int {
 	// wrapped in a human log formatter. Same reason init and export write
 	// their rendered output directly.
 	if c.output == "-" {
-		if _, err := os.Stdout.Write(buf.Bytes()); err != nil {
+		if _, err := c.stdout().Write(buf.Bytes()); err != nil {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
 			return 1
 		}
 		return 0
 	}
 
-	if err := os.WriteFile(c.output, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(inDir(c.baseDir(), c.output), buf.Bytes(), 0o644); err != nil {
 		c.Ui.Error(fmt.Sprintf("write error: %v", err))
 		return 1
 	}
 	return 0
 }
+
+// stdout returns the writer this command streams bytes to.
+func (c *SchemaCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *SchemaCommand) baseDir() string { return c.BaseDir }

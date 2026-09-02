@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,9 +28,16 @@ func exportCommandFixture() map[string]string {
 	}
 }
 
-func newExportCommand() (*ExportCommand, *cli.MockUi) {
+// newExportCommand builds an ExportCommand writing into baseDir. Passing one
+// is what replaced chdir'ing the process: export's --output default is
+// relative, and several tests are precisely about what that default resolves
+// to.
+func newExportCommand(baseDir ...string) (*ExportCommand, *cli.MockUi) {
 	ui := cli.NewMockUi()
 	c := &ExportCommand{Meta: command.Meta{Ui: ui}}
+	if len(baseDir) > 0 {
+		c.BaseDir = baseDir[0]
+	}
 	return c, ui
 }
 
@@ -50,7 +58,7 @@ func TestExportCommandWritesRecipeAndVars(t *testing.T) {
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
-	c, _ := newExportCommand()
+	c, _ := newExportCommand(dir)
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0", code)
 	}
@@ -84,7 +92,7 @@ func TestExportCommandOverwritePromptDeclined(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	ui.InputReader = strings.NewReader("n\n")
 	if code := c.Run([]string{"--output", recipe}); code != 1 {
 		t.Fatalf("declined overwrite should exit 1, got %d", code)
@@ -104,7 +112,7 @@ func TestExportCommandOverwriteConfirmed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	ui.InputReader = strings.NewReader("y\n")
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("confirmed overwrite should exit 0, got %d", code)
@@ -124,7 +132,7 @@ func TestExportCommandOverwriteFlagSkipsPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, _ := newExportCommand()
+	c, _ := newExportCommand(dir)
 	// No InputReader set: --overwrite must not prompt.
 	if code := c.Run([]string{"--output", recipe, "--overwrite"}); code != 0 {
 		t.Fatalf("--overwrite should exit 0 without prompting, got %d", code)
@@ -142,7 +150,7 @@ func TestExportOutputValidates(t *testing.T) {
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
-	c, _ := newExportCommand()
+	c, _ := newExportCommand(dir)
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("export exit = %d", code)
 	}
@@ -152,14 +160,11 @@ func TestExportOutputValidates(t *testing.T) {
 	// and the required inputs resolve from the vars-file. This is the
 	// offline stand-in for the apply round-trip contract.
 	// ValidateCommand.FlagSet loads the recipe's inputs from the --tasks path
-	// in os.Args (before flag parsing), so set os.Args as the real CLI would.
+	// in its argv (before flag parsing), so hand it one as the real CLI would.
 	valArgs := []string{"--tasks", recipe, "--vars-file", vars, "--strict"}
-	oldArgs := os.Args
-	os.Args = append([]string{"docket", "validate"}, valArgs...)
-	defer func() { os.Args = oldArgs }()
 
 	vui := cli.NewMockUi()
-	v := &ValidateCommand{Meta: command.Meta{Ui: vui}}
+	v := &ValidateCommand{Meta: command.Meta{Ui: vui}, Argv: append([]string{"docket", "validate"}, valArgs...)}
 	if code := v.Run(valArgs); code != 0 {
 		rb, _ := os.ReadFile(recipe)
 		vb, _ := os.ReadFile(vars)
@@ -175,22 +180,18 @@ func TestExportOutputValidatesJSON5(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
 
 	dir := t.TempDir()
-	t.Chdir(dir)
 	recipe := filepath.Join(dir, "tasks.json")
 	vars := filepath.Join(dir, "tasks.vars.json")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--format", "json5"}); code != 0 {
 		t.Fatalf("export exit = %d: %s", code, ui.ErrorWriter.String())
 	}
 
 	valArgs := []string{"--tasks", recipe, "--vars-file", vars, "--strict"}
-	oldArgs := os.Args
-	os.Args = append([]string{"docket", "validate"}, valArgs...)
-	defer func() { os.Args = oldArgs }()
 
 	vui := cli.NewMockUi()
-	v := &ValidateCommand{Meta: command.Meta{Ui: vui}}
+	v := &ValidateCommand{Meta: command.Meta{Ui: vui}, Argv: append([]string{"docket", "validate"}, valArgs...)}
 	if code := v.Run(valArgs); code != 0 {
 		rb, _ := os.ReadFile(recipe)
 		vb, _ := os.ReadFile(vars)
@@ -206,9 +207,8 @@ func TestExportCommandFormatJSON5WritesJSONPair(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
 
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--format", "json5"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -256,7 +256,7 @@ func TestExportCommandFormatOverridesOutputExtension(t *testing.T) {
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--output", recipe, "--format", "json5"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -283,7 +283,7 @@ func TestExportCommandFormatGovernsVarsFile(t *testing.T) {
 	recipe := filepath.Join(dir, "tasks.json5")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--output", recipe, "--vars-output", vars, "--format", "json5"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -319,7 +319,7 @@ func TestExportCommandVarsFileKeepsItsOwnExtensionWithoutFormat(t *testing.T) {
 			dir := t.TempDir()
 			vars := filepath.Join(dir, tt.varsName)
 
-			c, ui := newExportCommand()
+			c, ui := newExportCommand(dir)
 			code := c.Run([]string{"--output", filepath.Join(dir, "tasks.yml"), "--vars-output", vars})
 			if code != 0 {
 				t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
@@ -343,12 +343,12 @@ func TestExportCommandFormatJSON5ToStdout(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
 
 	dir := t.TempDir()
-	t.Chdir(dir)
 
 	var ui *cli.MockUi
-	captured, exit := captureStdout(t, func() int {
+	captured, exit := captureStdout(t, func(out io.Writer) int {
 		var c *ExportCommand
-		c, ui = newExportCommand()
+		c, ui = newExportCommand(dir)
+		c.Stdout = out
 		return c.Run([]string{"--output", "-", "--format", "json5"})
 	})
 	if exit != 0 {
@@ -377,13 +377,12 @@ func TestExportCommandFormatJSON5PromptsOnAdjustedPath(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
 
 	dir := t.TempDir()
-	t.Chdir(dir)
 	recipe := filepath.Join(dir, "tasks.json")
 	if err := os.WriteFile(recipe, []byte("OLD\n"), 0o644); err != nil {
 		t.Fatalf("seed tasks.json: %v", err)
 	}
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	ui.InputReader = strings.NewReader("n\n")
 	if code := c.Run([]string{"--format", "json5"}); code != 1 {
 		t.Fatalf("declined overwrite exit = %d, want 1", code)
@@ -403,7 +402,7 @@ func TestExportCommandRejectsUnknownFormatBeforeReadingServer(t *testing.T) {
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--format", "toml", "--output", recipe}); code != 1 {
 		t.Fatalf("exit = %d, want 1", code)
 	}
@@ -435,7 +434,6 @@ func TestExportCommandRejectsStdoutInertFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			t.Chdir(dir)
 			vars := filepath.Join(dir, "secrets.yml")
 
 			args := []string{"--output", "-"}
@@ -446,7 +444,7 @@ func TestExportCommandRejectsStdoutInertFlags(t *testing.T) {
 				args = append(args, a)
 			}
 
-			c, ui := newExportCommand()
+			c, ui := newExportCommand(dir)
 			if code := c.Run(args); code != 1 {
 				t.Fatalf("exit = %d, want 1", code)
 			}
@@ -488,7 +486,7 @@ func TestExportCommandReportsUnusedVarsOutput(t *testing.T) {
 		recipe := filepath.Join(dir, "tasks.yml")
 		vars := filepath.Join(dir, "secrets.yml")
 
-		c, ui := newExportCommand()
+		c, ui := newExportCommand(dir)
 		if code := c.Run([]string{"--output", recipe, "--vars-output", vars}); code != 0 {
 			t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 		}
@@ -514,7 +512,7 @@ func TestExportCommandReportsUnusedVarsOutput(t *testing.T) {
 		dir := t.TempDir()
 		recipe := filepath.Join(dir, "tasks.yml")
 
-		c, ui := newExportCommand()
+		c, ui := newExportCommand(dir)
 		if code := c.Run([]string{"--output", recipe}); code != 0 {
 			t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 		}
@@ -533,7 +531,7 @@ func TestExportCommandSummaryExcludesGlobalPlay(t *testing.T) {
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0", code)
 	}
@@ -553,7 +551,7 @@ func TestExportCommandNonexistentAppExitsNonZero(t *testing.T) {
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	code := c.Run([]string{"--app", "nope", "--output", recipe})
 	if code != 1 {
 		t.Fatalf("Run exit = %d, want 1", code)
@@ -574,7 +572,7 @@ func TestExportCommandPartialMissingAppStillWrites(t *testing.T) {
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	code := c.Run([]string{"--app", "web", "--app", "nope", "--output", recipe})
 	if code != 1 {
 		t.Fatalf("Run exit = %d, want 1", code)
@@ -617,7 +615,7 @@ func TestExportCommandResourceSelectsOneResource(t *testing.T) {
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--output", recipe, "--resource", "dokku_config[app=web]"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0; stderr=%s", code, ui.ErrorWriter.String())
 	}
@@ -698,7 +696,7 @@ func TestExportOutputValidatesWithUnappliableK3sProfile(t *testing.T) {
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("export exit = %d: %s", code, ui.ErrorWriter.String())
 	}
@@ -724,12 +722,9 @@ func TestExportOutputValidatesWithUnappliableK3sProfile(t *testing.T) {
 	}
 
 	valArgs := []string{"--tasks", recipe, "--vars-file", vars, "--strict"}
-	oldArgs := os.Args
-	os.Args = append([]string{"docket", "validate"}, valArgs...)
-	defer func() { os.Args = oldArgs }()
 
 	vui := cli.NewMockUi()
-	v := &ValidateCommand{Meta: command.Meta{Ui: vui}}
+	v := &ValidateCommand{Meta: command.Meta{Ui: vui}, Argv: append([]string{"docket", "validate"}, valArgs...)}
 	if code := v.Run(valArgs); code != 0 {
 		t.Fatalf("docket validate --strict exit = %d, want 0\n--- validate stderr ---\n%s\n--- recipe ---\n%s",
 			code, vui.ErrorWriter.String(), recipeBytes)

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,6 +27,22 @@ import (
 // directory (cwd basename for --name, ./.git/config for --repo).
 type InitCommand struct {
 	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdout is where a streamed recipe, diff or catalog is written. Populated
+	// from main.go; nil writes to the process's standard output. These writes
+	// bypass Ui on purpose - it is wrapped in a log formatter - so a test that
+	// asserts on them needs somewhere of its own to capture.
+	Stdout io.Writer
 
 	output string
 	// formatFlag is the raw --format value; it is normalised by
@@ -83,8 +100,8 @@ func (c *InitCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.formatFlag, "format", "", "write the scaffold as this format (yaml or json5) instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputJSON5+"; this is also the only way to get JSON5 on stdout.")
 	f.BoolVar(&c.force, "force", false, "overwrite an existing output file")
 	f.BoolVar(&c.minimal, "minimal", false, "emit a minimal one-task scaffold without an inputs block")
-	f.StringVar(&c.name, "name", defaultName(), "play name and default app input value")
-	f.StringVar(&c.repo, "repo", defaultRepo(), "git repository URL used as the default for the repo input")
+	f.StringVar(&c.name, "name", defaultName(c.baseDir()), "play name and default app input value")
+	f.StringVar(&c.repo, "repo", defaultRepo(c.baseDir()), "git repository URL used as the default for the repo input")
 	return f
 }
 
@@ -147,7 +164,7 @@ func (c *InitCommand) Run(args []string) int {
 	toStdout := c.output == taskFileStdin
 
 	if !toStdout {
-		if _, err := os.Stat(c.output); err == nil {
+		if _, err := os.Stat(inDir(c.baseDir(), c.output)); err == nil {
 			if !c.force {
 				c.Ui.Error(fmt.Sprintf("file %s already exists; pass --force to overwrite", c.output))
 				return 1
@@ -179,14 +196,14 @@ func (c *InitCommand) Run(args []string) int {
 	}
 
 	if toStdout {
-		if _, err := os.Stdout.Write(rendered); err != nil {
+		if _, err := c.stdout().Write(rendered); err != nil {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
 			return 1
 		}
 		return 0
 	}
 
-	if err := os.WriteFile(c.output, rendered, 0o644); err != nil {
+	if err := os.WriteFile(inDir(c.baseDir(), c.output), rendered, 0o644); err != nil {
 		c.Ui.Error(fmt.Sprintf("write error: %v", err))
 		return 1
 	}
@@ -290,25 +307,29 @@ func selectInitTemplate(format string, minimal bool) string {
 	return "default." + suffix + ".tmpl"
 }
 
-// defaultName returns the basename of the working directory, or "app" if
-// the cwd cannot be derived to a usable name.
-func defaultName() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "app"
+// defaultName returns the basename of dir, or "app" if it cannot be derived to
+// a usable name. An empty dir means the process working directory, which is
+// what `docket init` in a project folder gets.
+func defaultName(dir string) string {
+	if dir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "app"
+		}
+		dir = cwd
 	}
-	base := filepath.Base(cwd)
+	base := filepath.Base(dir)
 	if base == "" || base == "." || base == string(filepath.Separator) {
 		return "app"
 	}
 	return base
 }
 
-// defaultRepo reads ./.git/config and returns the value of the `url` key
+// defaultRepo reads dir's .git/config and returns the value of the `url` key
 // inside the `[remote "origin"]` section. Returns "" when the file does
 // not exist, when there is no origin section, or on any parse error.
-func defaultRepo() string {
-	f, err := os.Open(".git/config")
+func defaultRepo(dir string) string {
+	f, err := os.Open(inDir(dir, filepath.Join(".git", "config")))
 	if err != nil {
 		return ""
 	}
@@ -365,3 +386,9 @@ func appName() string {
 	}
 	return "docket"
 }
+
+// stdout returns the writer this command streams bytes to.
+func (c *InitCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *InitCommand) baseDir() string { return c.BaseDir }

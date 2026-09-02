@@ -38,9 +38,7 @@ func TestExportCommandWarningMasksAConfigValue(t *testing.T) {
 		"--quiet apps:locked web",
 		errors.New(`apps:locked: unreadable lock state "abc123"`),
 	))()
-	t.Chdir(t.TempDir())
-
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(t.TempDir())
 	if code := c.Run(nil); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -75,9 +73,8 @@ func TestExportCommandRedactWarningMasksAConfigValue(t *testing.T) {
 		errors.New(`apps:locked: unreadable lock state "abc123"`),
 	))()
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run([]string{"--redact"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -106,9 +103,7 @@ func TestExportCommandFailureMasksASecretReadBeforeTheAppList(t *testing.T) {
 		"--quiet apps:list",
 		errors.New("apps:list: server rejected cluster token s3cr3ttoken"),
 	))()
-	t.Chdir(t.TempDir())
-
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(t.TempDir())
 	if code := c.Run(nil); code != 1 {
 		t.Fatalf("Run exit = %d, want 1: %s", code, ui.ErrorWriter.String())
 	}
@@ -133,9 +128,8 @@ func TestExportCommandFailureMasksASecretReadBeforeTheAppList(t *testing.T) {
 func TestExportCommandMaskingLeavesTheVarsFileInTheClear(t *testing.T) {
 	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
 	dir := t.TempDir()
-	t.Chdir(dir)
 
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(dir)
 	if code := c.Run(nil); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -160,9 +154,7 @@ func TestExportCommandMissingAppNameStaysReadable(t *testing.T) {
 	responses := exportCommandFixture()
 	responses["--quiet config:export --format json web"] = `{"API_KEY":"nope-app"}`
 	defer subprocess.SetExecRunner(fakeExecRunner(responses))()
-	t.Chdir(t.TempDir())
-
-	c, ui := newExportCommand()
+	c, ui := newExportCommand(t.TempDir())
 	if code := c.Run([]string{"--app", "web", "--app", "nope-app"}); code != 1 {
 		t.Fatalf("Run exit = %d, want 1: %s", code, ui.ErrorWriter.String())
 	}

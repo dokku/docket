@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -31,11 +32,31 @@ const varsFileMode = 0o600
 type ExportCommand struct {
 	command.Meta
 
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdout is where a streamed recipe, diff or catalog is written. Populated
+	// from main.go; nil writes to the process's standard output. These writes
+	// bypass Ui on purpose - it is wrapped in a log formatter - so a test that
+	// asserts on them needs somewhere of its own to capture.
+	Stdout io.Writer
+
 	// Ctx is the run context, populated from main.go with the process signal
 	// context. It carries cancellation down through every task's Plan and
 	// Execute. Nil when the command was constructed directly (tests do this),
 	// in which case Run falls back to context.Background().
 	Ctx context.Context
+
+	// ChmodVarsFile overrides how the companion vars-file's mode is set. Only
+	// a test sets it, to force the failure path; nil uses os.File.Chmod.
+	ChmodVarsFile chmodFunc
 
 	output     string
 	varsOutput string
@@ -253,7 +274,7 @@ func (c *ExportCommand) Run(args []string) int {
 	}
 
 	if toStdout {
-		if _, err := os.Stdout.Write(recipeBytes); err != nil {
+		if _, err := c.stdout().Write(recipeBytes); err != nil {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
 			return 1
 		}
@@ -282,7 +303,7 @@ func (c *ExportCommand) Run(args []string) int {
 			targets = append(targets, varsOutput)
 		}
 		for _, path := range targets {
-			exists, err := pathExists(path)
+			exists, err := pathExists(c.baseDir(), path)
 			if err != nil {
 				c.Ui.Error(fmt.Sprintf("stat error: %v", err))
 				return 1
@@ -302,7 +323,7 @@ func (c *ExportCommand) Run(args []string) int {
 		}
 	}
 
-	if err := os.WriteFile(c.output, recipeBytes, 0o644); err != nil {
+	if err := os.WriteFile(inDir(c.baseDir(), c.output), recipeBytes, 0o644); err != nil {
 		c.Ui.Error(fmt.Sprintf("write error: %v", err))
 		return 1
 	}
@@ -373,11 +394,22 @@ func (c *ExportCommand) confirmOverwrite(path string) (bool, error) {
 	return answer == "y" || answer == "yes", nil
 }
 
-// chmodVarsFile is os.File.Chmod, indirected so the warning below can be
-// tested: no filesystem a test can portably create rejects fchmod, and a
-// fallback that tells the operator their secrets are exposed is worth more
-// than an untested one.
-var chmodVarsFile = func(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }
+// chmodFile is os.File.Chmod, indirected so the warning below can be tested:
+// no filesystem a test can portably create rejects fchmod, and a fallback that
+// tells the operator their secrets are exposed is worth more than an untested
+// one.
+//
+// It lives on the command rather than in a package variable so a test that
+// forces the failure does not have to swap process state and put it back.
+type chmodFunc func(f *os.File, mode os.FileMode) error
+
+// chmodVarsFile returns the chmod this command writes its vars-file with.
+func (c *ExportCommand) chmodVarsFile() chmodFunc {
+	if c.ChmodVarsFile != nil {
+		return c.ChmodVarsFile
+	}
+	return func(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }
+}
 
 // writeVarsFile writes the companion vars-file at varsFileMode. os.WriteFile
 // is not enough on its own: O_CREATE's mode applies only to a file the call
@@ -393,11 +425,11 @@ var chmodVarsFile = func(f *os.File, mode os.FileMode) error { return f.Chmod(mo
 // operator just has to know this half is exposed. The message names the path
 // unmasked for the reason exitForMissingApps gives.
 func (c *ExportCommand) writeVarsFile(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, varsFileMode)
+	f, err := os.OpenFile(inDir(c.baseDir(), path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, varsFileMode)
 	if err != nil {
 		return err
 	}
-	if err := chmodVarsFile(f, varsFileMode); err != nil {
+	if err := c.chmodVarsFile()(f, varsFileMode); err != nil {
 		c.Ui.Warn(fmt.Sprintf("warning: could not set mode %#o on %s: %v; it holds secrets in the clear", varsFileMode, path, err))
 	}
 	if _, err := f.Write(data); err != nil {
@@ -419,8 +451,8 @@ func deriveVarsOutput(output string) string {
 
 // pathExists reports whether path exists, distinguishing a genuine stat error
 // from a not-found.
-func pathExists(path string) (bool, error) {
-	if _, err := os.Stat(path); err == nil {
+func pathExists(baseDir, path string) (bool, error) {
+	if _, err := os.Stat(inDir(baseDir, path)); err == nil {
 		return true, nil
 	} else if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
@@ -428,3 +460,9 @@ func pathExists(path string) (bool, error) {
 		return false, err
 	}
 }
+
+// stdout returns the writer this command streams bytes to.
+func (c *ExportCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *ExportCommand) baseDir() string { return c.BaseDir }
