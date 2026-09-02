@@ -220,7 +220,7 @@ func (c *ApplyCommand) Run(args []string) int {
 	// The target rides on the run context, so every task planned or executed
 	// below routes to the same server without any of them holding a reference
 	// to it - and a second run in the same process can carry a different one.
-	target := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
+	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
 	ctx = subprocess.ContextWithTarget(ctx, target)
 
 	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)

@@ -218,6 +218,10 @@ func TestCallExecCommandNotFound(t *testing.T) {
 // own environment, and nothing is layered on top. The inheritance itself is
 // implicit - go-execute leaves cmd.Env nil when ExecTask.Env is empty - so it
 // is worth asserting rather than assuming.
+//
+// This one stays serial on purpose. Its subject is the process environment,
+// so a stubbed lookup of the kind parseDokkuHost takes would assert nothing -
+// the variable has to really be set for the child to really inherit it.
 func TestCallExecCommandInheritsProcessEnv(t *testing.T) {
 	t.Setenv("DOCKET_TEST_VAR", "test123")
 
@@ -302,6 +306,10 @@ func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
 	}
 }
 
+// TestCallExecCommandTraceLogIsMasked also stays serial, for a second reason
+// on top of DOKKU_TRACE: it swaps the standard logger's output to read the
+// trace back. Taking the environment as a parameter would not free it while
+// the sink is still a process-wide global.
 func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 	t.Setenv("DOKKU_TRACE", "1")
 	masker := NewMasker("topsecret123")

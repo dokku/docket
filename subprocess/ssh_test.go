@@ -3,13 +3,21 @@ package subprocess
 import (
 	"context"
 	"errors"
+	"os/user"
 	"strings"
 	"testing"
 )
 
+// stubEnv turns a map into the lookup parseDokkuHost takes, so a test can
+// state the environment it wants without t.Setenv - which panics in a
+// parallel test and would make every case below serial.
+func stubEnv(vars map[string]string) func(string) string {
+	return func(key string) string { return vars[key] }
+}
+
 func TestParseDokkuHost(t *testing.T) {
-	t.Setenv("USER", "deploy")
-	t.Setenv("LOGNAME", "")
+	t.Parallel()
+	env := stubEnv(map[string]string{"USER": "deploy"})
 
 	tests := []struct {
 		name     string
@@ -30,7 +38,8 @@ func TestParseDokkuHost(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseDokkuHost(tt.raw)
+			t.Parallel()
+			got, err := parseDokkuHost(tt.raw, env)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for %q", tt.raw)
@@ -54,15 +63,36 @@ func TestParseDokkuHost(t *testing.T) {
 }
 
 func TestParseDokkuHostFallsBackToLogname(t *testing.T) {
-	t.Setenv("USER", "")
-	t.Setenv("LOGNAME", "fallback")
+	t.Parallel()
+	env := stubEnv(map[string]string{"LOGNAME": "fallback"})
 
-	target, err := parseDokkuHost("host")
+	target, err := parseDokkuHost("host", env)
 	if err != nil {
 		t.Fatalf("parseDokkuHost returned error: %v", err)
 	}
 	if target.User != "fallback" {
 		t.Errorf("user = %q, want %q", target.User, "fallback")
+	}
+}
+
+// TestParseDokkuHostFallsBackToTheCurrentUser covers the last branch of
+// defaultSshUser, which neither env var reaches. It was untestable while the
+// function read os.Getenv directly: clearing USER and LOGNAME for real needs
+// t.Setenv, and a developer with neither set is not a state a test could rely
+// on. With the lookup as a parameter an empty environment is just a stub.
+func TestParseDokkuHostFallsBackToTheCurrentUser(t *testing.T) {
+	t.Parallel()
+	current, err := user.Current()
+	if err != nil {
+		t.Skipf("no current user available: %v", err)
+	}
+
+	target, err := parseDokkuHost("host", stubEnv(nil))
+	if err != nil {
+		t.Fatalf("parseDokkuHost returned error: %v", err)
+	}
+	if target.User != current.Username {
+		t.Errorf("user = %q, want the current user %q", target.User, current.Username)
 	}
 }
 
@@ -224,8 +254,7 @@ func TestBuildSshArgvDoubleDashSeparator(t *testing.T) {
 }
 
 func TestBuildSshArgvQuotesRemoteArgs(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
-	t.Setenv("DOKKU_SUDO", "")
+	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
@@ -247,8 +276,7 @@ func TestBuildSshArgvQuotesRemoteArgs(t *testing.T) {
 }
 
 func TestBuildSshArgvQuotesInjection(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
-	t.Setenv("DOKKU_SUDO", "")
+	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
@@ -276,8 +304,7 @@ func TestBuildSshArgvQuotesInjection(t *testing.T) {
 // reconciles an image pin, so this covers both call sites: the quoting is a
 // property of the argv, not of the subcommand carrying it.
 func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
-	t.Setenv("DOKKU_SUDO", "")
+	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	argv, err := buildSshArgv(target, Target{}, []string{
@@ -306,8 +333,7 @@ func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
 }
 
 func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "")
-	t.Setenv("DOKKU_SUDO", "")
+	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	// A newline has no POSIX-shell escape, so we refuse to build the remote

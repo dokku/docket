@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"os"
 
 	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
@@ -22,11 +21,15 @@ import (
 // environment: --sudo and --accept-new-host-keys used to be bridged through
 // os.Setenv so the SSH argv builder could read them back, which made them
 // sticky for the life of the process and impossible to vary per call.
-func resolveSshFlags(hostFlag string, sudo, acceptNewHostKeys bool) subprocess.Target {
+//
+// getenv is how the three variables are read - `os.Getenv` in production. It
+// is a parameter rather than a direct call so the tests can state their own
+// environment and still run in parallel, which `t.Setenv` panics on.
+func resolveSshFlags(getenv func(string) string, hostFlag string, sudo, acceptNewHostKeys bool) subprocess.Target {
 	return subprocess.Target{
-		Host:              firstNonEmpty(hostFlag, os.Getenv("DOKKU_HOST")),
-		Sudo:              sudo || os.Getenv("DOKKU_SUDO") == "1",
-		AcceptNewHostKeys: acceptNewHostKeys || os.Getenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS") == "1",
+		Host:              firstNonEmpty(hostFlag, getenv("DOKKU_HOST")),
+		Sudo:              sudo || getenv("DOKKU_SUDO") == "1",
+		AcceptNewHostKeys: acceptNewHostKeys || getenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS") == "1",
 	}
 }
 

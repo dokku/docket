@@ -109,7 +109,12 @@ func (t sshTarget) UserHost() string {
 // We prepend `ssh://` and use net/url so port and IPv6 hosts get parsed
 // correctly. An empty user defaults to $USER (then $LOGNAME, then
 // user.Current); an empty port defaults to "22".
-func parseDokkuHost(raw string) (sshTarget, error) {
+//
+// getenv is how those two variables are read - `os.Getenv` in production.
+// Taking it rather than calling `os.Getenv` here is what lets the tests for
+// the default state their own environment and still call t.Parallel(), which
+// `t.Setenv` panics on.
+func parseDokkuHost(raw string, getenv func(string) string) (sshTarget, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return sshTarget{}, errors.New("host is empty")
@@ -137,7 +142,7 @@ func parseDokkuHost(raw string) (sshTarget, error) {
 		target.User = u.User.Username()
 	}
 	if target.User == "" {
-		target.User = defaultSshUser()
+		target.User = defaultSshUser(getenv)
 	}
 	if target.Port == "" {
 		target.Port = "22"
@@ -150,15 +155,15 @@ func parseDokkuHost(raw string) (sshTarget, error) {
 // typo in a play's `host:` offline rather than leaving it to surface as an
 // `ssh:` failure partway through a run.
 func ValidateHost(raw string) error {
-	_, err := parseDokkuHost(raw)
+	_, err := parseDokkuHost(raw, os.Getenv)
 	return err
 }
 
-func defaultSshUser() string {
-	if v := os.Getenv("USER"); v != "" {
+func defaultSshUser(getenv func(string) string) string {
+	if v := getenv("USER"); v != "" {
 		return v
 	}
-	if v := os.Getenv("LOGNAME"); v != "" {
+	if v := getenv("LOGNAME"); v != "" {
 		return v
 	}
 	if u, err := user.Current(); err == nil {
@@ -291,7 +296,7 @@ func ensureSshAvailable() error {
 // is the plain underlying error so the formatter renders the failure
 // as a remote dokku error.
 func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) (ExecCommandResponse, error) {
-	parsed, err := parseDokkuHost(target.Host)
+	parsed, err := parseDokkuHost(target.Host, os.Getenv)
 	if err != nil {
 		return ExecCommandResponse{}, &SSHError{Host: target.Host, Err: err}
 	}
@@ -393,7 +398,7 @@ func classifySshResult(target sshTarget, remote []string, resp ExecCommandRespon
 // (ControlPersist timeout, kill -9, etc.). Intended to be called as a
 // `defer` from command run loops.
 func CloseSshControlMaster(host string) error {
-	target, err := parseDokkuHost(host)
+	target, err := parseDokkuHost(host, os.Getenv)
 	if err != nil {
 		return nil
 	}

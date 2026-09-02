@@ -213,7 +213,7 @@ func (c *ExportCommand) Run(args []string) int {
 	// The target rides on the run context, so every exporter reads the same
 	// server without any of them holding a reference to it - and a second
 	// export in the same process can read a different one.
-	target := resolveSshFlags(c.host, c.sudo, c.acceptNewHostKeys)
+	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
 	ctx = subprocess.ContextWithTarget(ctx, target)
 	if target.Host != "" {
 		defer subprocess.CloseSshControlMaster(target.Host)
