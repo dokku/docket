@@ -24,3 +24,7 @@ Complete documentation for docket, a declarative way to pre-package and ship app
 - [Embedding docket in Go](embedding.md) -- reading a server back as structured data from Go
 - [Writing tasks](writing-tasks.md) -- contribute a new task type
 - [Roadmap](roadmap.md) -- ideas for where docket could go next
+
+## Comparisons
+
+- [Comparisons](comparisons/README.md) -- how docket's plan/apply and idempotency compare to Terraform/OpenTofu, Ansible, Kubernetes, and other tools
