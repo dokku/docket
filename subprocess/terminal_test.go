@@ -16,8 +16,9 @@ import (
 // concurrent dispatch behaved.
 //
 // The test is serial and writes the global deliberately, which is the only way
-// to show the two are no longer the same answer. Under `go test` stdout is a
-// pipe, so a check that merely read the environment would pass either way.
+// to show the two are no longer the same answer - and the reason it is the one
+// test in this file without t.Parallel(). Under `go test` stdout is a pipe, so
+// a check that merely read the environment would pass either way.
 
 func TestStdoutIsTerminalIgnoresTheColorGlobal(t *testing.T) {
 	want := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())

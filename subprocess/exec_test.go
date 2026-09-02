@@ -11,6 +11,7 @@ import (
 )
 
 func TestResolveCommandString(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
 		name      string
@@ -86,6 +87,7 @@ func TestResolveCommandStringWithoutATargetRunsLocally(t *testing.T) {
 }
 
 func TestExecCommandResponseStdoutContents(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		stdout string
@@ -108,6 +110,7 @@ func TestExecCommandResponseStdoutContents(t *testing.T) {
 }
 
 func TestExecCommandResponseStderrContents(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		stderr string
@@ -130,6 +133,7 @@ func TestExecCommandResponseStderrContents(t *testing.T) {
 }
 
 func TestExecCommandResponseStdoutBytes(t *testing.T) {
+	t.Parallel()
 	resp := ExecCommandResponse{Stdout: "  hello world  \n"}
 	got := resp.StdoutBytes()
 	want := []byte("hello world")
@@ -144,6 +148,7 @@ func TestExecCommandResponseStdoutBytes(t *testing.T) {
 }
 
 func TestExecCommandResponseStderrBytes(t *testing.T) {
+	t.Parallel()
 	resp := ExecCommandResponse{Stderr: "  error msg  \n"}
 	got := resp.StderrBytes()
 	want := []byte("error msg")
@@ -158,6 +163,7 @@ func TestExecCommandResponseStderrBytes(t *testing.T) {
 }
 
 func TestCallExecCommandSuccess(t *testing.T) {
+	t.Parallel()
 	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"hello"},
@@ -174,6 +180,7 @@ func TestCallExecCommandSuccess(t *testing.T) {
 }
 
 func TestCallExecCommandFailure(t *testing.T) {
+	t.Parallel()
 	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "false",
 	})
@@ -195,6 +202,7 @@ func TestCallExecCommandFailure(t *testing.T) {
 }
 
 func TestCallExecCommandNotFound(t *testing.T) {
+	t.Parallel()
 	_, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "nonexistent-binary-docket-test-12345",
 	})
@@ -235,6 +243,7 @@ func TestCallExecCommandInheritsProcessEnv(t *testing.T) {
 }
 
 func TestCallExecCommandWithContext(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
@@ -284,6 +293,7 @@ func TestContextRunnerReceivesInputAndFallsBackToTheReal(t *testing.T) {
 }
 
 func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
+	t.Parallel()
 	masker := NewMasker("topsecret123")
 
 	resp, err := CallExecCommand(ContextWithMasker(context.Background(), masker), ExecCommandInput{
@@ -335,6 +345,7 @@ func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 }
 
 func TestCallExecCommandResponseCommandUnmaskedWhenNoSecrets(t *testing.T) {
+	t.Parallel()
 
 	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",

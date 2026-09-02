@@ -97,6 +97,7 @@ func TestParseDokkuHostFallsBackToTheCurrentUser(t *testing.T) {
 }
 
 func TestSshTargetUserHost(t *testing.T) {
+	t.Parallel()
 	if got := (sshTarget{User: "alice", Host: "host"}).UserHost(); got != "alice@host" {
 		t.Errorf("UserHost() = %q, want alice@host", got)
 	}
@@ -106,6 +107,7 @@ func TestSshTargetUserHost(t *testing.T) {
 }
 
 func TestControlPathStableForSamePidHost(t *testing.T) {
+	t.Parallel()
 	a := controlPath("alice@host", 1234)
 	b := controlPath("alice@host", 1234)
 	if a != b {
@@ -114,6 +116,7 @@ func TestControlPathStableForSamePidHost(t *testing.T) {
 }
 
 func TestControlPathDiffersByPid(t *testing.T) {
+	t.Parallel()
 	a := controlPath("alice@host", 1234)
 	b := controlPath("alice@host", 5678)
 	if a == b {
@@ -122,6 +125,7 @@ func TestControlPathDiffersByPid(t *testing.T) {
 }
 
 func TestControlPathDiffersByHost(t *testing.T) {
+	t.Parallel()
 	a := controlPath("alice@hostA", 1234)
 	b := controlPath("alice@hostB", 1234)
 	if a == b {
@@ -130,6 +134,7 @@ func TestControlPathDiffersByHost(t *testing.T) {
 }
 
 func TestControlPathExtension(t *testing.T) {
+	t.Parallel()
 	got := controlPath("host", 1)
 	if !strings.HasSuffix(got, ".sock") {
 		t.Errorf("controlPath should end with .sock: %q", got)
@@ -238,6 +243,7 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 }
 
 func TestBuildSshArgvDoubleDashSeparator(t *testing.T) {
+	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "--no-restart"})
 	if err != nil {
@@ -358,6 +364,7 @@ func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
 }
 
 func TestSSHErrorMessage(t *testing.T) {
+	t.Parallel()
 	e := &SSHError{Host: "alice@host", Stderr: "Permission denied (publickey)."}
 	got := e.Error()
 	want := "ssh alice@host: Permission denied (publickey)."
@@ -367,6 +374,7 @@ func TestSSHErrorMessage(t *testing.T) {
 }
 
 func TestSSHErrorMessageFallsBackToErr(t *testing.T) {
+	t.Parallel()
 	inner := errors.New("dial tcp: connection refused")
 	e := &SSHError{Host: "alice@host", Err: inner}
 	got := e.Error()
@@ -379,6 +387,7 @@ func TestSSHErrorMessageFallsBackToErr(t *testing.T) {
 }
 
 func TestSSHErrorUnwrap(t *testing.T) {
+	t.Parallel()
 	inner := errors.New("inner")
 	e := &SSHError{Host: "host", Err: inner}
 	if !errors.Is(e, inner) {
@@ -391,6 +400,7 @@ func TestSSHErrorUnwrap(t *testing.T) {
 }
 
 func TestClassifySshResultExit255(t *testing.T) {
+	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	resp := ExecCommandResponse{ExitCode: 255, Stderr: "ssh: connect to host: Connection refused"}
 	_, err := classifySshResult(target, []string{"dokku", "version"}, resp, nil)
@@ -404,6 +414,7 @@ func TestClassifySshResultExit255(t *testing.T) {
 }
 
 func TestClassifySshResultRemoteFailureIsNotSshError(t *testing.T) {
+	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	resp := ExecCommandResponse{ExitCode: 1, Stderr: "App test does not exist"}
 	_, err := classifySshResult(target, []string{"dokku", "apps:exists", "test"}, resp, nil)
@@ -420,6 +431,7 @@ func TestClassifySshResultRemoteFailureIsNotSshError(t *testing.T) {
 }
 
 func TestClassifySshResultPreProcessErrorIsSshError(t *testing.T) {
+	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	resp := ExecCommandResponse{}
 	runErr := errors.New("exec: \"ssh\": executable file not found")
@@ -431,6 +443,7 @@ func TestClassifySshResultPreProcessErrorIsSshError(t *testing.T) {
 }
 
 func TestClassifySshResultSuccess(t *testing.T) {
+	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	resp := ExecCommandResponse{ExitCode: 0}
 	_, err := classifySshResult(target, []string{"dokku", "version"}, resp, nil)
@@ -440,6 +453,7 @@ func TestClassifySshResultSuccess(t *testing.T) {
 }
 
 func TestCallSshCommandReturnsSshErrorOnEmptyHost(t *testing.T) {
+	t.Parallel()
 	_, err := CallSshCommand(context.Background(), Target{}, ExecCommandInput{Command: "dokku", Args: []string{"version"}})
 	if err == nil {
 		t.Fatal("expected error for empty host")
@@ -451,6 +465,7 @@ func TestCallSshCommandReturnsSshErrorOnEmptyHost(t *testing.T) {
 }
 
 func TestProbeSuccess(t *testing.T) {
+	t.Parallel()
 	matched, err := Probe(context.Background(), ExecCommandInput{Command: "true"})
 	if err != nil {
 		t.Fatalf("Probe(context.Background(), true) returned error: %v", err)
@@ -461,6 +476,7 @@ func TestProbeSuccess(t *testing.T) {
 }
 
 func TestProbeDokkuLevelFailure(t *testing.T) {
+	t.Parallel()
 	matched, err := Probe(context.Background(), ExecCommandInput{Command: "false"})
 	if err != nil {
 		t.Errorf("Probe(context.Background(), false) returned non-nil error %v - dokku-level exit should be normalised", err)
@@ -496,6 +512,7 @@ func TestProbeSshTransportErrorPropagates(t *testing.T) {
 }
 
 func TestProbeLocalExecErrorPropagates(t *testing.T) {
+	t.Parallel()
 	// A local probe whose binary is not on PATH must surface the failure
 	// rather than reporting the probed state as absent. This is the
 	// no-dokku-installed scenario: without propagation, plan would print a
