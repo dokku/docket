@@ -1240,7 +1240,7 @@ func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
 func TestExportPortsUsesStateSet(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		"--quiet ports:report web --ports-map": "https:443:5000 http:80:5000",
+		"--quiet ports:report web --ports-map-json": `[{"container_port":5000,"host_port":443,"scheme":"https"},{"container_port":5000,"host_port":80,"scheme":"http"}]`,
 	}))
 
 	// state:set replaces the whole mapping list, so re-applying an export
@@ -1273,7 +1273,7 @@ func TestExportPortsUsesStateSet(t *testing.T) {
 func TestExportPortsEmitsNoTaskWithoutMappings(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		"--quiet ports:report web --ports-map": "",
+		"--quiet ports:report web --ports-map-json": "null",
 	}))
 
 	bodies, err := PortsTask{}.ExportApp(ctx, "web")

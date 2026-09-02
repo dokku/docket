@@ -2,12 +2,11 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/dokku/docket/subprocess"
 	"sort"
-	"strconv"
-	"strings"
 )
 
 // PortsTask manages the ports for a given dokku application
@@ -373,20 +372,63 @@ func (t PortsTask) ExportApp(ctx context.Context, app string) ([]interface{}, er
 	return []interface{}{PortsTask{App: app, PortMappings: list, State: StateSet}}, nil
 }
 
+// portsMapEntry mirrors the shape dokku's ports plugin marshals for
+// `ports:report --ports-map-json` (plugins/ports/proxy.go). It is deliberately
+// separate from PortMapping: that type is the recipe's vocabulary (scheme,
+// host, container), this one is dokku's wire format, and the two are free to
+// drift.
+type portsMapEntry struct {
+	ContainerPort int    `json:"container_port"`
+	HostPort      int    `json:"host_port"`
+	Scheme        string `json:"scheme"`
+}
+
+// portsReportArgs builds the argv for the port-mapping probe.
+func portsReportArgs(appName string) []string {
+	return []string{"--quiet", "ports:report", appName, "--ports-map-json"}
+}
+
+// parsePortsMapReport decodes the payload `ports:report --ports-map-json` emits
+// into the mapping set getPorts hands back, keyed by scheme:host:container.
+//
+// An app with no mappings reports `null` - dokku marshals a nil slice - and a
+// dokku that could not read the property reports `[]`; both decode to no
+// entries. An empty payload is treated the same, since it can only mean the
+// command produced nothing at all. Anything else that is not valid JSON is an
+// error, where the text form this replaced silently dropped the mapping.
+func parsePortsMapReport(raw []byte) (map[string]PortMapping, error) {
+	mappings := map[string]PortMapping{}
+	if len(raw) == 0 {
+		return mappings, nil
+	}
+
+	var entries []portsMapEntry
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil, fmt.Errorf("parse ports:report --ports-map-json: %w", err)
+	}
+
+	for _, entry := range entries {
+		mapping := PortMapping{
+			Scheme:    entry.Scheme,
+			Host:      entry.HostPort,
+			Container: entry.ContainerPort,
+		}
+		mappings[mapping.String()] = mapping
+	}
+
+	return mappings, nil
+}
+
 // getPorts gets the ports for a given app. A transport-level failure
 // (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit
-// (e.g. app does not exist) is treated as "no ports configured."
+// (e.g. app does not exist) is treated as "no ports configured." A report
+// that comes back but does not decode is an error: dokku marshals the
+// mappings itself, so a payload it cannot produce means something is wrong
+// rather than that a mapping is missing.
 func getPorts(ctx context.Context, appName string) (map[string]PortMapping, error) {
-	// dokku master has a --ports-map-json that would replace this text parse,
-	// but it is not in a release yet; see #431.
 	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args: []string{
-			"--quiet",
-			"ports:report",
-			appName,
-			"--ports-map",
-		},
+		Args:    portsReportArgs(appName),
 	})
 	if err != nil {
 		var sshErr *subprocess.SSHError
@@ -396,32 +438,7 @@ func getPorts(ctx context.Context, appName string) (map[string]PortMapping, erro
 		return map[string]PortMapping{}, nil
 	}
 
-	portMappings := map[string]PortMapping{}
-	for _, mapping := range strings.Fields(result.StdoutContents()) {
-		parts := strings.Split(mapping, ":")
-		if len(parts) != 3 {
-			continue
-		}
-
-		scheme := parts[0]
-		host, err := strconv.Atoi(parts[1])
-		if err != nil {
-			continue
-		}
-
-		container, err := strconv.Atoi(parts[2])
-		if err != nil {
-			continue
-		}
-
-		portMappings[mapping] = PortMapping{
-			Scheme:    scheme,
-			Host:      host,
-			Container: container,
-		}
-	}
-
-	return portMappings, nil
+	return parsePortsMapReport(result.StdoutBytes())
 }
 
 // init registers the PortsTask with the task registry
