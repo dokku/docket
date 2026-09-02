@@ -303,6 +303,7 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 	// isatty reports whether our own stdout is a terminal, which is the
 	// signal used below to decide whether the child may read the terminal.
 	isatty := !color.NoColor
+	masker := MaskerFromContext(ctx)
 
 	remote := append([]string{input.Command}, input.Args...)
 	argv, err := buildSshArgv(parsed, target, remote)
@@ -319,7 +320,7 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 	}
 
 	if os.Getenv("DOKKU_TRACE") == "1" {
-		log.Printf("ssh: %s %s", MaskString("ssh"), MaskString(strings.Join(argv, " ")))
+		log.Printf("ssh: %s %s", masker.String("ssh"), masker.String(strings.Join(argv, " ")))
 	}
 
 	if input.Stdin != nil {
@@ -343,7 +344,7 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 		cmd.StdErrWriter = input.StderrWriter
 	}
 
-	resolved := resolveSshCommandString(input.Command, input.Args)
+	resolved := resolveSshCommandString(masker, input.Command, input.Args)
 
 	res, runErr := cmd.Execute(ctx)
 	resp := ExecCommandResponse{

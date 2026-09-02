@@ -11,7 +11,6 @@ import (
 )
 
 func TestResolveCommandString(t *testing.T) {
-	t.Cleanup(func() { SetGlobalSensitive(nil) })
 
 	tests := []struct {
 		name      string
@@ -63,9 +62,8 @@ func TestResolveCommandString(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			SetGlobalSensitive(tc.sensitive)
-			t.Cleanup(func() { SetGlobalSensitive(nil) })
 			ctx := ContextWithTarget(context.Background(), tc.target)
+			ctx = ContextWithMasker(ctx, NewMasker(tc.sensitive...))
 			if got := ResolveCommandString(ctx, tc.input); got != tc.want {
 				t.Errorf("ResolveCommandString = %q, want %q", got, tc.want)
 			}
@@ -280,10 +278,9 @@ func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
 }
 
 func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
-	SetGlobalSensitive([]string{"topsecret123"})
-	defer SetGlobalSensitive(nil)
+	masker := NewMasker("topsecret123")
 
-	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
+	resp, err := CallExecCommand(ContextWithMasker(context.Background(), masker), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"login", "topsecret123"},
 	})
@@ -305,15 +302,14 @@ func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
 
 func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 	t.Setenv("DOKKU_TRACE", "1")
-	SetGlobalSensitive([]string{"topsecret123"})
-	defer SetGlobalSensitive(nil)
+	masker := NewMasker("topsecret123")
 
 	var buf bytes.Buffer
 	prev := log.Writer()
 	log.SetOutput(&buf)
 	defer log.SetOutput(prev)
 
-	if _, err := CallExecCommand(context.Background(), ExecCommandInput{
+	if _, err := CallExecCommand(ContextWithMasker(context.Background(), masker), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"login", "topsecret123"},
 	}); err != nil {
@@ -329,7 +325,6 @@ func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 }
 
 func TestCallExecCommandResponseCommandUnmaskedWhenNoSecrets(t *testing.T) {
-	SetGlobalSensitive(nil)
 
 	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",

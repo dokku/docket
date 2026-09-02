@@ -20,6 +20,11 @@ import (
 type ValidateCommand struct {
 	command.Meta
 
+	// masker holds the sensitive input values this run must not echo. Set in
+	// Run before any problem is rendered; the renderers below are methods so
+	// they can reach it without a parameter of their own.
+	masker *subprocess.Masker
+
 	tasksFile string
 	// tasksDisplay is tasksFile rendered for output; "<stdin>" when the
 	// recipe was piped in.
@@ -226,8 +231,7 @@ func (c *ValidateCommand) Run(args []string) int {
 	// Register the sensitive input values so a problem message that quotes an
 	// interpolated secret (e.g. a template render error) is masked. validate is
 	// offline, so only input-derived values are available to collect.
-	subprocess.SetGlobalSensitive(sensitiveValues)
-	defer subprocess.SetGlobalSensitive(nil)
+	c.masker = subprocess.NewMasker(sensitiveValues...)
 
 	problems := tasks.Validate(data, tasks.ValidateOptions{
 		Strict:         c.strict,
@@ -265,13 +269,13 @@ func (c *ValidateCommand) emitJSONProblem(p tasks.Problem) {
 		"version": 1,
 		"type":    "validate_problem",
 		"code":    p.Code,
-		"message": subprocess.MaskString(p.Message),
+		"message": c.masker.String(p.Message),
 	}
 	if p.Play != "" {
-		event["play"] = subprocess.MaskString(p.Play)
+		event["play"] = c.masker.String(p.Play)
 	}
 	if p.Task != "" {
-		event["task"] = subprocess.MaskString(p.Task)
+		event["task"] = c.masker.String(p.Task)
 	}
 	if p.Line > 0 {
 		event["line"] = p.Line
@@ -280,7 +284,7 @@ func (c *ValidateCommand) emitJSONProblem(p tasks.Problem) {
 		event["column"] = p.Column
 	}
 	if p.Hint != "" {
-		event["hint"] = subprocess.MaskString(p.Hint)
+		event["hint"] = c.masker.String(p.Hint)
 	}
 	b, err := json.Marshal(event)
 	if err != nil {
@@ -314,10 +318,10 @@ func (c *ValidateCommand) renderHumanProblems(problems []tasks.Problem) {
 
 	for _, play := range playOrder {
 		if play != "" {
-			c.Ui.Info(fmt.Sprintf("  %s", subprocess.MaskString(play)))
+			c.Ui.Info(fmt.Sprintf("  %s", c.masker.String(play)))
 		}
 		for _, p := range grouped[play] {
-			c.Ui.Info(fmt.Sprintf("    ! %s", subprocess.MaskString(formatProblem(p))))
+			c.Ui.Info(fmt.Sprintf("    ! %s", c.masker.String(formatProblem(p))))
 		}
 		c.Ui.Info("")
 	}

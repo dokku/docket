@@ -22,6 +22,9 @@ type listTasksOptions struct {
 	userSet       map[string]bool
 	context       map[string]interface{}
 	jsonOut       bool
+	// masker holds the run's sensitive values; the rendered plan echoes task
+	// and play names, which are exactly where a secret reaches output.
+	masker *subprocess.Masker
 	// target is the run-wide target the plays resolve against, so the
 	// rendered plan can say which server each play would talk to. The JSON
 	// stream is deliberately left alone: it has no play_start event to hang a
@@ -75,9 +78,9 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 		// per value rather than per output site is what keeps the two paths
 		// from drifting apart, and it leaves docket's own decorations - the
 		// `==> Play: ` prefix, the markers, `(group)` - untouched.
-		playName := subprocess.MaskString(play.Name)
+		playName := opts.masker.String(play.Name)
 		if play.HasWhen() {
-			whenSrc := subprocess.MaskString(play.When)
+			whenSrc := opts.masker.String(play.When)
 			playCtx := buildEnvelopeExprContext(buildPlayWhenContext(opts.context, opts.fileLevelKeys, opts.userSet))
 			ok, err := tasks.EvalBool(play.WhenProgram(), playCtx)
 			if err != nil {
@@ -85,7 +88,7 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 				// An expr runtime error quotes the predicate's own source
 				// back in its snippet, so the formatted error - not just the
 				// play name - carries whatever the predicate interpolated.
-				reason := subprocess.MaskString(fmt.Sprintf("when error: %v", err))
+				reason := opts.masker.String(fmt.Sprintf("when error: %v", err))
 				if opts.jsonOut {
 					emitListJSON(ui, map[string]interface{}{
 						"type":   "play_skipped",
@@ -122,6 +125,7 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 		}
 
 		rc := listRenderContext{
+			masker:      opts.masker,
 			ui:          ui,
 			playName:    playName,
 			playExprCtx: buildEnvelopeExprContext(tasks.BuildPerPlayContext(opts.context, play.Inputs, opts.userSet)),
@@ -151,6 +155,7 @@ type listRenderContext struct {
 	playName    string
 	playExprCtx map[string]interface{}
 	jsonOut     bool
+	masker      *subprocess.Masker
 }
 
 // renderListEnvelope renders one envelope's line and, for a group,
@@ -189,16 +194,16 @@ func renderListEnvelope(
 	// `phase` are deliberately absent - they are docket's own vocabulary,
 	// pinned as enums in docs/schemas/list-tasks-v1.schema.json, and masking
 	// one would emit a stream that fails its own schema.
-	display := subprocess.MaskString(env.Name)
-	whenSrc := subprocess.MaskString(env.When)
-	tags := maskedStrings(env.Tags)
+	display := rc.masker.String(env.Name)
+	whenSrc := rc.masker.String(env.When)
+	tags := maskedStrings(rc.masker, env.Tags)
 	deprecation := ""
 	caveat := ""
 	var probe tasks.ProbeSupport
 	if env != nil && env.Task != nil {
-		deprecation = subprocess.MaskString(tasks.TaskDeprecation(env.Task))
+		deprecation = rc.masker.String(tasks.TaskDeprecation(env.Task))
 		probe, _ = tasks.TaskProbeSupport(env.Task)
-		caveat = subprocess.MaskString(probe.Caveat)
+		caveat = rc.masker.String(probe.Caveat)
 	}
 
 	if rc.jsonOut {
@@ -239,7 +244,7 @@ func renderListEnvelope(
 		if env.IsLoopExpansion {
 			ev["loop_index"] = env.LoopIndex
 			if env.LoopItem != nil {
-				ev["loop_item"] = subprocess.MaskValue(env.LoopItem)
+				ev["loop_item"] = rc.masker.Value(env.LoopItem)
 			}
 		}
 		emitListJSON(rc.ui, ev)

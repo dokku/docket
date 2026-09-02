@@ -33,7 +33,6 @@ func failingExecRunner(responses map[string]string, failing string, err error) f
 // deliberate: it pins that masking happens when the warning is printed, after
 // the whole read, rather than when it is appended.
 func TestExportCommandWarningMasksAConfigValue(t *testing.T) {
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 	defer subprocess.SetExecRunner(failingExecRunner(
 		exportCommandFixture(),
 		"--quiet apps:locked web",
@@ -70,7 +69,6 @@ func TestExportCommandWarningMasksAConfigValue(t *testing.T) {
 // placeholder there, so the vars map holds nothing to mask with - while the
 // real value was still read off the server and is still in the warning.
 func TestExportCommandRedactWarningMasksAConfigValue(t *testing.T) {
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 	defer subprocess.SetExecRunner(failingExecRunner(
 		exportCommandFixture(),
 		"--quiet apps:locked web",
@@ -101,7 +99,6 @@ func TestExportCommandRedactWarningMasksAConfigValue(t *testing.T) {
 // exported before apps:list runs, so by the time the failure is printed the
 // export is already holding the cluster token it read.
 func TestExportCommandFailureMasksASecretReadBeforeTheAppList(t *testing.T) {
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 	defer subprocess.SetExecRunner(failingExecRunner(
 		map[string]string{
 			"--quiet scheduler-k3s:report --global --format json": `{"global-token":"s3cr3ttoken"}`,
@@ -134,7 +131,6 @@ func TestExportCommandFailureMasksASecretReadBeforeTheAppList(t *testing.T) {
 // masked Ui, so an export whose every config value is registered still writes
 // a vars-file the operator can apply.
 func TestExportCommandMaskingLeavesTheVarsFileInTheClear(t *testing.T) {
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -161,7 +157,6 @@ func TestExportCommandMaskingLeavesTheVarsFileInTheClear(t *testing.T) {
 // point at the typo - which "*** not found on server" would not do. It stays
 // unmasked even when it collides with a value the export registered.
 func TestExportCommandMissingAppNameStaysReadable(t *testing.T) {
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 	responses := exportCommandFixture()
 	responses["--quiet config:export --format json web"] = `{"API_KEY":"nope-app"}`
 	defer subprocess.SetExecRunner(fakeExecRunner(responses))()

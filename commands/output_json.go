@@ -16,15 +16,20 @@ const jsonSchemaVersion = 1
 
 // JSONEmitter writes one JSON-lines event per call to the underlying Ui's
 // stdout (Output) sink. Sensitive values registered via
-// subprocess.SetGlobalSensitive are masked before any string field that
+// the run's masker are masked before any string field that
 // could carry them is serialised.
 type JSONEmitter struct {
 	ui cli.Ui
+	// masker holds the run's sensitive values. An emitter renders text at
+	// points that have no context to carry one, so it is handed the run's
+	// masker at construction instead. A nil masker masks nothing, which is
+	// what a caller that registered no secrets wants.
+	masker *subprocess.Masker
 }
 
 // NewJSONEmitter constructs a JSONEmitter bound to the given Ui.
-func NewJSONEmitter(ui cli.Ui) *JSONEmitter {
-	return &JSONEmitter{ui: ui}
+func NewJSONEmitter(ui cli.Ui, masker *subprocess.Masker) *JSONEmitter {
+	return &JSONEmitter{ui: ui, masker: masker}
 }
 
 // PlayStart emits a `play_start` event.
@@ -32,7 +37,7 @@ func (e *JSONEmitter) PlayStart(name, host string) {
 	ev := map[string]interface{}{
 		"version": jsonSchemaVersion,
 		"type":    "play_start",
-		"name":    subprocess.MaskString(name),
+		"name":    e.masker.String(name),
 		"ts":      nowRFC3339(),
 	}
 	if host != "" {
@@ -52,11 +57,11 @@ func (e *JSONEmitter) PlaySkipped(name, whenSrc string) {
 	ev := map[string]interface{}{
 		"version": jsonSchemaVersion,
 		"type":    "play_skipped",
-		"name":    subprocess.MaskString(name),
+		"name":    e.masker.String(name),
 		"ts":      nowRFC3339(),
 	}
 	if whenSrc != "" {
-		masked := subprocess.MaskString(whenSrc)
+		masked := e.masker.String(whenSrc)
 		ev["when"] = masked
 		ev["reason"] = "when: " + masked
 	}
@@ -69,8 +74,8 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	out := map[string]interface{}{
 		"version":       jsonSchemaVersion,
 		"type":          "task",
-		"play":          subprocess.MaskString(ev.Play),
-		"name":          subprocess.MaskString(ev.Name),
+		"play":          e.masker.String(ev.Play),
+		"name":          e.masker.String(ev.Name),
 		"changed":       ev.State.Changed,
 		"state":         string(ev.State.State),
 		"desired_state": string(ev.State.DesiredState),
@@ -80,20 +85,20 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	switch {
 	case ev.WhenError != nil:
 		out["status"] = "error"
-		out["error"] = subprocess.MaskString(ev.WhenError.Error())
+		out["error"] = e.masker.String(ev.WhenError.Error())
 	case ev.Skipped:
 		out["status"] = "skipped"
 		if ev.SkipReason != "" {
-			out["skip_reason"] = subprocess.MaskString(ev.SkipReason)
+			out["skip_reason"] = e.masker.String(ev.SkipReason)
 		}
 	case ev.State.Error != nil:
 		out["status"] = "error"
-		out["error"] = subprocess.MaskString(PrefixErrorMessage(ev.State.Error))
+		out["error"] = e.masker.String(PrefixErrorMessage(ev.State.Error))
 		if ev.State.Stderr != "" {
-			out["stderr"] = subprocess.MaskString(ev.State.Stderr)
+			out["stderr"] = e.masker.String(ev.State.Stderr)
 		}
 		if ev.State.Stdout != "" {
-			out["stdout"] = subprocess.MaskString(ev.State.Stdout)
+			out["stdout"] = e.masker.String(ev.State.Stdout)
 		}
 		out["exit_code"] = ev.State.ExitCode
 		if ev.Ignored {
@@ -101,7 +106,7 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 		}
 	case ev.InvalidState:
 		out["status"] = "error"
-		out["error"] = subprocess.MaskString(invalidStateMessage(ev.State))
+		out["error"] = e.masker.String(invalidStateMessage(ev.State))
 		if ev.Ignored {
 			out["ignored"] = true
 		}
@@ -110,7 +115,7 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 	default:
 		out["status"] = "ok"
 	}
-	if cmds := maskedStrings(ev.State.Commands); len(cmds) > 0 {
+	if cmds := maskedStrings(e.masker, ev.State.Commands); len(cmds) > 0 {
 		out["commands"] = cmds
 	}
 	if ev.Phase != "" {
@@ -128,8 +133,8 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 	out := map[string]interface{}{
 		"version":       jsonSchemaVersion,
 		"type":          "task",
-		"play":          subprocess.MaskString(ev.Play),
-		"name":          subprocess.MaskString(ev.Name),
+		"play":          e.masker.String(ev.Play),
+		"name":          e.masker.String(ev.Name),
 		"would_change":  !ev.Result.InSync && ev.Result.Error == nil && !ev.Skipped && ev.WhenError == nil,
 		"state":         string(ev.Result.DesiredState),
 		"desired_state": string(ev.Result.DesiredState),
@@ -140,14 +145,14 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 	case ev.WhenError != nil:
 		out["status"] = "error"
 		out["would_change"] = false
-		out["error"] = subprocess.MaskString(ev.WhenError.Error())
+		out["error"] = e.masker.String(ev.WhenError.Error())
 	case ev.Skipped:
 		out["status"] = "skipped"
 		out["would_change"] = false
 	case ev.Result.Error != nil:
 		out["status"] = "error"
 		out["would_change"] = false
-		out["error"] = subprocess.MaskString(PrefixErrorMessage(ev.Result.Error))
+		out["error"] = e.masker.String(PrefixErrorMessage(ev.Result.Error))
 	case ev.Result.InSync:
 		out["status"] = "ok"
 	default:
@@ -156,12 +161,12 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 			out["status"] = string(tasks.PlanStatusModify)
 		}
 		if ev.Result.Reason != "" {
-			out["reason"] = subprocess.MaskString(ev.Result.Reason)
+			out["reason"] = e.masker.String(ev.Result.Reason)
 		}
 		if len(ev.Result.Mutations) > 0 {
-			out["mutations"] = maskedStrings(ev.Result.Mutations)
+			out["mutations"] = maskedStrings(e.masker, ev.Result.Mutations)
 		}
-		if cmds := maskedStrings(ev.Result.Commands); len(cmds) > 0 {
+		if cmds := maskedStrings(e.masker, ev.Result.Commands); len(cmds) > 0 {
 			out["commands"] = cmds
 		}
 	}
@@ -186,10 +191,10 @@ func (e *JSONEmitter) TaskWarning(play, name, reason, message string) {
 	e.write(map[string]interface{}{
 		"version": jsonSchemaVersion,
 		"type":    "warning",
-		"play":    subprocess.MaskString(play),
-		"name":    subprocess.MaskString(name),
+		"play":    e.masker.String(play),
+		"name":    e.masker.String(name),
 		"reason":  reason,
-		"message": subprocess.MaskString(message),
+		"message": e.masker.String(message),
 		"ts":      nowRFC3339(),
 	})
 }
@@ -237,17 +242,17 @@ func (e *JSONEmitter) write(ev map[string]interface{}) {
 }
 
 // maskedStrings returns a copy of in with each entry passed through
-// subprocess.MaskString. Returns nil for an empty slice so the caller can
+// the run's masker. Returns nil for an empty slice so the caller can
 // detect "nothing here" and omit the JSON field. Serves the run stream's
 // `commands` and `mutations` arrays and the --list-tasks `tags` array, all of
 // which are rendered from the recipe and can carry an interpolated secret.
-func maskedStrings(in []string) []string {
+func maskedStrings(masker *subprocess.Masker, in []string) []string {
 	if len(in) == 0 {
 		return nil
 	}
 	out := make([]string, len(in))
 	for i, v := range in {
-		out[i] = subprocess.MaskString(v)
+		out[i] = masker.String(v)
 	}
 	return out
 }

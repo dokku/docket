@@ -188,17 +188,23 @@ type Formatter struct {
 	verbose bool
 	color   bool
 	paint   map[Marker]*color.Color
+	// masker holds the run's sensitive values. An emitter renders text at
+	// points that have no context to carry one, so it is handed the run's
+	// masker at construction instead. A nil masker masks nothing, which is
+	// what a caller that registered no secrets wants.
+	masker  *subprocess.Masker
 }
 
 // NewFormatter constructs a Formatter bound to the given Ui. verbose
 // controls whether `→`-prefixed continuation lines are emitted under
 // each task line in apply mode.
-func NewFormatter(ui cli.Ui, verbose bool) *Formatter {
+func NewFormatter(ui cli.Ui, verbose bool, masker *subprocess.Masker) *Formatter {
 	useColor := !noColorDefault()
 	return &Formatter{
 		ui:      ui,
 		verbose: verbose,
 		color:   useColor,
+		masker:  masker,
 		paint: map[Marker]*color.Color{
 			MarkerOK:         color.New(color.FgGreen),
 			MarkerChanged:    color.New(color.FgYellow),
@@ -238,7 +244,7 @@ func (f *Formatter) Verbose() bool { return f.verbose }
 // listing. Used once per play; until #208 lands, callers emit one
 // header per run.
 func (f *Formatter) PlayHeader(name string) {
-	f.ui.Output(fmt.Sprintf("==> Play: %s", subprocess.MaskString(name)))
+	f.ui.Output(fmt.Sprintf("==> Play: %s", f.masker.String(name)))
 }
 
 // PlayHeaderWithHost is like PlayHeader but appends a `(host: <name>)`
@@ -250,7 +256,7 @@ func (f *Formatter) PlayHeaderWithHost(name, host string) {
 		f.PlayHeader(name)
 		return
 	}
-	f.ui.Output(fmt.Sprintf("==> Play: %s  (host: %s)", subprocess.MaskString(name), host))
+	f.ui.Output(fmt.Sprintf("==> Play: %s  (host: %s)", f.masker.String(name), host))
 }
 
 // PlayStart satisfies EventEmitter; delegates to PlayHeaderWithHost.
@@ -267,12 +273,12 @@ func (f *Formatter) PlayStart(name, host string) {
 // wrapped with an eval error by apply/plan) may contain the literal
 // secret.
 func (f *Formatter) PlaySkipped(name, whenSrc string) {
-	name = subprocess.MaskString(name)
+	name = f.masker.String(name)
 	if whenSrc == "" {
 		f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped)", name))
 		return
 	}
-	f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped: when %q)", name, subprocess.MaskString(whenSrc)))
+	f.ui.Output(fmt.Sprintf("==> Play: %s  (skipped: when %q)", name, f.masker.String(whenSrc)))
 }
 
 // ApplyTask renders one apply task line plus optional continuations,
@@ -414,9 +420,9 @@ func PrefixErrorMessage(err error) string {
 // suffix can carry a secret via a plan reason or stderr context.
 func (f *Formatter) TaskLine(m Marker, name, suffix string) {
 	marker := f.paintMarker(m)
-	line := marker + subprocess.MaskString(name)
+	line := marker + f.masker.String(name)
 	if suffix != "" {
-		line = line + "  " + subprocess.MaskString(suffix)
+		line = line + "  " + f.masker.String(suffix)
 	}
 	if m == MarkerError || m == MarkerProbeError {
 		f.ui.Error(line)
@@ -435,7 +441,7 @@ func (f *Formatter) Continuation(prefix rune, body string) {
 	if body == "" {
 		return
 	}
-	body = subprocess.MaskString(body)
+	body = f.masker.String(body)
 	for _, line := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
 		out := fmt.Sprintf("%s%c %s", continuationIndent, prefix, line)
 		f.ui.Output(out)

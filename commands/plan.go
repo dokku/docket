@@ -225,12 +225,15 @@ func (c *PlanCommand) Run(args []string) int {
 	// parsed and rendered, so a template or parse error that interpolated one
 	// of them is masked. Task-declared sensitive values are added once the
 	// recipe parses (below).
-	subprocess.SetGlobalSensitive(sensitiveValues)
-	defer subprocess.SetGlobalSensitive(nil)
+	// The masker belongs to this run and goes out of scope with it, so there
+	// is no teardown: the deferred clear this replaces is exactly what made a
+	// second run in the same process lose its secrets.
+	masker := subprocess.NewMasker(sensitiveValues...)
+	ctx = subprocess.ContextWithMasker(ctx, masker)
 
 	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
-		c.Ui.Error(subprocess.MaskString(fmt.Sprintf("task error: %v", err)))
+		c.Ui.Error(masker.String(fmt.Sprintf("task error: %v", err)))
 		return 1
 	}
 
@@ -239,14 +242,14 @@ func (c *PlanCommand) Run(args []string) int {
 	// declared inputs the surviving play's when: depends on.
 	fileLevelKeys := tasks.FileLevelInputNames(plays)
 
-	selected, err := filterPlaysByName(plays, c.play)
+	selected, err := filterPlaysByName(masker, plays, c.play)
 	if err != nil {
 		// The hint names every play in the file, so a value any of their tasks
 		// declares sensitive is in scope for this message - unlike the filtered
 		// collection below, which deliberately leaves out a play --play
 		// excluded. Registering the whole file costs nothing here: this branch
 		// prints one line and returns.
-		subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
+		masker.Add(tasks.CollectPlaySensitiveValues(plays)...)
 		c.Ui.Error(err.Error())
 		return 1
 	}
@@ -259,7 +262,7 @@ func (c *PlanCommand) Run(args []string) int {
 	// that is only secret in a play --play excluded from masking output it
 	// never appears in. The unmatched --play branch above is the one place
 	// that collects from the whole file, and says why.
-	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
+	masker.Add(tasks.CollectPlaySensitiveValues(plays)...)
 
 	if c.listTasks {
 		return renderListTasks(c.Ui, listTasksOptions{
@@ -270,6 +273,7 @@ func (c *PlanCommand) Run(args []string) int {
 			userSet:       userSet,
 			context:       inputCtx,
 			jsonOut:       c.json,
+			masker:        masker,
 			target:        target,
 		})
 	}
@@ -280,7 +284,7 @@ func (c *PlanCommand) Run(args []string) int {
 	// not collide; nothing was closing the extra ones.
 	defer closeControlMasters(target, plays)
 
-	emitter := c.newEmitter()
+	emitter := c.newEmitter(masker)
 	start := time.Now()
 	counts := PlanCounts{}
 	hasError := false
@@ -378,11 +382,11 @@ playLoop:
 
 // newEmitter constructs the EventEmitter for this run. --json builds a
 // JSONEmitter; otherwise the human Formatter is used.
-func (c *PlanCommand) newEmitter() EventEmitter {
+func (c *PlanCommand) newEmitter(masker *subprocess.Masker) EventEmitter {
 	if c.json {
-		return NewJSONEmitter(c.Ui)
+		return NewJSONEmitter(c.Ui, masker)
 	}
-	return NewFormatter(c.Ui, false)
+	return NewFormatter(c.Ui, false, masker)
 }
 
 // planContext bundles the run-wide plan state per-task helpers share so

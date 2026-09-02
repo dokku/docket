@@ -138,8 +138,7 @@ func TestIdentityAddressMasksQuotedSensitiveValue(t *testing.T) {
 		{name: "a tab is escaped once the value is quoted", option: "--label tab,\tzzz"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			isolateMaskRegistry(t)
-			subprocess.SetGlobalSensitive([]string{tt.option})
+			masker := subprocess.NewMasker(tt.option)
 
 			address := IdentityAddress("dokku_docker_options", DockerOptionsTask{
 				App:    "api",
@@ -149,9 +148,9 @@ func TestIdentityAddressMasksQuotedSensitiveValue(t *testing.T) {
 			if !strings.Contains(address, "zzz") {
 				t.Fatalf("address %q does not carry the value under test", address)
 			}
-			masked := subprocess.MaskString(address)
+			masked := masker.String(address)
 			if strings.Contains(masked, "zzz") {
-				t.Fatalf("MaskString(%q) = %q, want the sensitive option masked", address, masked)
+				t.Fatalf("masking %q gave %q, want the sensitive option masked", address, masked)
 			}
 		})
 	}

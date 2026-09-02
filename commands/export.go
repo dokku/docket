@@ -219,15 +219,14 @@ func (c *ExportCommand) Run(args []string) int {
 	// arguments - the --app names and --resource addresses reported missing,
 	// and the output paths - because a name masked down to *** would hide the
 	// typo the message exists to report.
-	subprocess.SetGlobalSensitive(res.SensitiveValues())
-	defer subprocess.SetGlobalSensitive(nil)
+	masker := subprocess.NewMasker(res.SensitiveValues()...)
 
 	if err != nil {
-		c.Ui.Error(fmt.Sprintf("export failed: %v", subprocess.MaskString(err.Error())))
+		c.Ui.Error(fmt.Sprintf("export failed: %v", masker.String(err.Error())))
 		return 1
 	}
 	for _, w := range res.Report.Warnings {
-		c.Ui.Warn(fmt.Sprintf("warning: %s", subprocess.MaskString(w)))
+		c.Ui.Warn(fmt.Sprintf("warning: %s", masker.String(w)))
 	}
 
 	// A nonexistent --app must not silently produce an empty recipe (which the
@@ -249,7 +248,7 @@ func (c *ExportCommand) Run(args []string) int {
 
 	recipeBytes, err := res.MarshalRecipe(recipeFormat)
 	if err != nil {
-		c.Ui.Error(fmt.Sprintf("marshal recipe: %v", subprocess.MaskString(err.Error())))
+		c.Ui.Error(fmt.Sprintf("marshal recipe: %v", masker.String(err.Error())))
 		return 1
 	}
 
@@ -310,7 +309,7 @@ func (c *ExportCommand) Run(args []string) int {
 	if writeVars {
 		varsBytes, err := res.MarshalVars(varsFormat)
 		if err != nil {
-			c.Ui.Error(fmt.Sprintf("marshal vars: %v", subprocess.MaskString(err.Error())))
+			c.Ui.Error(fmt.Sprintf("marshal vars: %v", masker.String(err.Error())))
 			return 1
 		}
 		if err := c.writeVarsFile(varsOutput, varsBytes); err != nil {

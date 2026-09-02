@@ -52,11 +52,10 @@ func TestPlanMasksSensitiveInputInParseError(t *testing.T) {
 }
 
 func TestValidateMasksSensitiveInJSONProblem(t *testing.T) {
-	subprocess.SetGlobalSensitive([]string{"tok_secret"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	masker := subprocess.NewMasker("tok_secret")
 
 	ui := cli.NewMockUi()
-	c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+	c := &ValidateCommand{Meta: command.Meta{Ui: ui}, masker: masker}
 	c.emitJSONProblem(tasks.Problem{
 		Code:    "template_error",
 		Message: `cannot render "tok_secret"`,
@@ -74,11 +73,10 @@ func TestValidateMasksSensitiveInJSONProblem(t *testing.T) {
 }
 
 func TestValidateMasksSensitiveInHumanProblem(t *testing.T) {
-	subprocess.SetGlobalSensitive([]string{"tok_secret"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
+	masker := subprocess.NewMasker("tok_secret")
 
 	ui := cli.NewMockUi()
-	c := &ValidateCommand{Meta: command.Meta{Ui: ui}}
+	c := &ValidateCommand{Meta: command.Meta{Ui: ui}, masker: masker}
 	c.renderHumanProblems([]tasks.Problem{{
 		Play:    "play tok_secret",
 		Task:    "task tok_secret",
