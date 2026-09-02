@@ -41,9 +41,10 @@ func assertNotRegistered(t *testing.T, res *ExportResult, unwanted string) {
 // dokku_config declares its own sensitive set, and it is the spelling
 // `config:set --encoded` puts on argv.
 func TestExportRegistersConfigValues(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -55,9 +56,10 @@ func TestExportRegistersConfigValues(t *testing.T) {
 // res.Vars after the fact wrong: --redact writes a placeholder there, but the
 // value was still read off the server and can still reach a warning.
 func TestExportRedactStillRegistersTheRealValue(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{Redact: true})
+	res, err := ExportRecipe(ctx, ExportOptions{Redact: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -71,9 +73,10 @@ func TestExportRedactStillRegistersTheRealValue(t *testing.T) {
 // lifts nothing into a vars map at all, yet its warnings print to the same
 // stream as everything else.
 func TestExportInlineRegistersValuesItDoesNotLift(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
+	res, err := ExportRecipe(ctx, ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -88,12 +91,13 @@ func TestExportInlineRegistersValuesItDoesNotLift(t *testing.T) {
 // family's Sensitive flag says the cluster token is credential material. Its
 // benign sibling in the same report is the boundary.
 func TestExportRegistersSensitivePropertyValue(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list": "",
 		"--quiet scheduler-k3s:report --global --format json": `{"global-token":"s3cr3ttoken","global-ingress-class":"nginx-ingress"}`,
-	}))()
+	}))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -106,9 +110,10 @@ func TestExportRegistersSensitivePropertyValue(t *testing.T) {
 // declares them through SensitiveValues(). Inline mode is the interesting one:
 // the hash stays in the streamed body and is lifted nowhere.
 func TestExportRegistersHttpAuthHashes(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthExportFixture("admin", "admin:"+exportHttpAuthHash+"\n")))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
+	res, err := ExportRecipe(ctx, ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -123,12 +128,13 @@ func TestExportRegistersHttpAuthHashes(t *testing.T) {
 // (TestExportLetsencryptBenignPropertyNotLifted). That is exactly what apply
 // masks for the same task, and over-masking is the safe direction.
 func TestExportRegistersEveryLetsencryptPropertyValue(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list":                            "web",
 		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"tok3n"}`,
-	}))()
+	}))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -141,12 +147,13 @@ func TestExportRegistersEveryLetsencryptPropertyValue(t *testing.T) {
 // not Sensitive contributes nothing, so an export of a server holding no
 // secrets masks nothing and its diagnostics read exactly as they did before.
 func TestExportRegistersNothingForBenignProperties(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list":                         "",
 		"--quiet git:report --global --format json": `{"global-deploy-branch":"main","global-archive-max-files":"100","global-keep-git-dir":""}`,
-	}))()
+	}))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

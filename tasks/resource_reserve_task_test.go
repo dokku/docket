@@ -9,6 +9,7 @@ import (
 )
 
 func TestResourceReserveTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := ResourceReserveTask{
 		App:       "test-app",
 		Resources: map[string]string{"cpu": "100"},
@@ -21,6 +22,7 @@ func TestResourceReserveTaskInvalidState(t *testing.T) {
 }
 
 func TestResourceReserveTaskEmptyResources(t *testing.T) {
+	t.Parallel()
 	task := ResourceReserveTask{App: "test-app", Resources: map[string]string{}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -29,6 +31,7 @@ func TestResourceReserveTaskEmptyResources(t *testing.T) {
 }
 
 func TestResourceReserveTaskNilResources(t *testing.T) {
+	t.Parallel()
 	task := ResourceReserveTask{App: "test-app", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -37,12 +40,13 @@ func TestResourceReserveTaskNilResources(t *testing.T) {
 }
 
 func TestResourceReserveSetCommandDeterministicOrder(t *testing.T) {
+	t.Parallel()
 	// Both cpu and memory drift, so the set command carries both flags and both
 	// mutations are reported. Sorting the resource keys must yield byte-identical,
 	// alphabetical output on every run so plan and apply agree (issue #341).
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet resource:reserve test-app": "cpu: 50\nmemory: 256",
-	}))()
+	}))
 
 	task := ResourceReserveTask{
 		App:       "test-app",
@@ -56,7 +60,7 @@ func TestResourceReserveSetCommandDeterministicOrder(t *testing.T) {
 	// Repeat so a reintroduced map-order bug is caught reliably rather than
 	// passing by chance on a lucky iteration.
 	for i := 0; i < 20; i++ {
-		plan := task.Plan(testCtx())
+		plan := task.Plan(ctx)
 		if plan.Error != nil {
 			t.Fatalf("iteration %d: unexpected plan error: %v", i, plan.Error)
 		}
@@ -70,6 +74,7 @@ func TestResourceReserveSetCommandDeterministicOrder(t *testing.T) {
 }
 
 func TestGetTasksResourceReserveTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set resource reservations

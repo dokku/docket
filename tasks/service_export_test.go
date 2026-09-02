@@ -10,12 +10,13 @@ import (
 )
 
 func TestListServicesParsesTypeAndName(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		// well-formed lines, plus blank/malformed ones that must be dropped
 		"--quiet plugin:trigger service-list": "redis:cache\npostgres:my-db\npostgres:analytics\n\nmalformed-line\n:bad\nbad:",
-	}))()
+	}))
 
-	services, err := listServices(testCtx())
+	services, err := listServices(ctx)
 	if err != nil {
 		t.Fatalf("listServices: %v", err)
 	}
@@ -31,13 +32,14 @@ func TestListServicesParsesTypeAndName(t *testing.T) {
 }
 
 func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet plugin:trigger service-list":   "postgres:my-db\nredis:cache",
 		"--quiet postgres:info my-db --version": "postgis/postgis:13-master",
 		"--quiet redis:info cache --version":    "redis:7.2.5",
-	}))()
+	}))
 
-	bodies, err := ServiceCreateTask{}.ExportGlobal(testCtx())
+	bodies, err := ServiceCreateTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -69,11 +71,12 @@ func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
 // is gone: dokku prints nothing for --version, and the export must leave both
 // image fields empty rather than emitting a half-formed pin.
 func TestExportServiceCreateOmitsUnreadableImage(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet plugin:trigger service-list": "redis:cache",
-	}))()
+	}))
 
-	bodies, err := ServiceCreateTask{}.ExportGlobal(testCtx())
+	bodies, err := ServiceCreateTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -87,6 +90,7 @@ func TestExportServiceCreateOmitsUnreadableImage(t *testing.T) {
 }
 
 func TestSplitImageRef(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		ref         string
 		wantImage   string
@@ -117,6 +121,7 @@ func TestSplitImageRef(t *testing.T) {
 }
 
 func TestServiceExposedPortListParsesHostSide(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		stdout string
@@ -131,10 +136,10 @@ func TestServiceExposedPortListParsesHostSide(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 				"--quiet postgres:info svc --exposed-ports": tc.stdout,
-			}))()
-			got, err := serviceExposedPortList(testCtx(), "postgres", "svc")
+			}))
+			got, err := serviceExposedPortList(ctx, "postgres", "svc")
 			if err != nil {
 				t.Fatalf("serviceExposedPortList: %v", err)
 			}
@@ -146,13 +151,14 @@ func TestServiceExposedPortListParsesHostSide(t *testing.T) {
 }
 
 func TestExportServiceExposeReadsHostPorts(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet plugin:trigger service-list":         "postgres:my-db\nredis:cache",
 		"--quiet postgres:info my-db --exposed-ports": "5432->5433",
 		"--quiet redis:info cache --exposed-ports":    "-",
-	}))()
+	}))
 
-	bodies, err := ServiceExposeTask{}.ExportGlobal(testCtx())
+	bodies, err := ServiceExposeTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -169,6 +175,7 @@ func TestExportServiceExposeReadsHostPorts(t *testing.T) {
 }
 
 func TestParseBackupSchedule(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		content  string
@@ -196,13 +203,14 @@ func TestParseBackupSchedule(t *testing.T) {
 }
 
 func TestExportServiceBackupParsesSchedule(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet plugin:trigger service-list":        "postgres:my-db\nredis:cache",
 		"--quiet postgres:backup-schedule-cat my-db": "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket --use-iam",
 		// redis has no schedule: unmapped -> empty content -> parse fails -> skipped
-	}))()
+	}))
 
-	bodies, err := ServiceBackupTask{}.ExportGlobal(testCtx())
+	bodies, err := ServiceBackupTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -223,13 +231,14 @@ func TestExportServiceBackupParsesSchedule(t *testing.T) {
 }
 
 func TestExportServiceLinkEnumeratesForApp(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache",
 		"--quiet postgres:links my-db":        "web\nworker",
 		"--quiet redis:links cache":           "worker",
-	}))()
+	}))
 
-	bodies, err := ServiceLinkTask{}.ExportApp(testCtx(), "web")
+	bodies, err := ServiceLinkTask{}.ExportApp(ctx, "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -241,7 +250,7 @@ func TestExportServiceLinkEnumeratesForApp(t *testing.T) {
 		t.Errorf("unexpected link task: %+v", l)
 	}
 
-	bodies, err = ServiceLinkTask{}.ExportApp(testCtx(), "worker")
+	bodies, err = ServiceLinkTask{}.ExportApp(ctx, "worker")
 	if err != nil {
 		t.Fatalf("ExportApp worker: %v", err)
 	}
@@ -251,6 +260,7 @@ func TestExportServiceLinkEnumeratesForApp(t *testing.T) {
 }
 
 func TestExportAclServiceReadsUsers(t *testing.T) {
+	t.Parallel()
 	responses := map[string]string{
 		"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache",
 	}
@@ -259,12 +269,12 @@ func TestExportAclServiceReadsUsers(t *testing.T) {
 		"--quiet acl:list-service postgres my-db": "bob\nalice",
 		"--quiet acl:list-service redis cache":    "",
 	}
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		key := strings.Join(in.Args, " ")
 		return subprocess.ExecCommandResponse{Stdout: responses[key], Stderr: stderr[key]}, nil
-	})()
+	})
 
-	bodies, err := AclServiceTask{}.ExportGlobal(testCtx())
+	bodies, err := AclServiceTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -283,16 +293,17 @@ func TestExportAclServiceReadsUsers(t *testing.T) {
 }
 
 func TestExportConfigExcludesLinkedServiceDSNs(t *testing.T) {
+	t.Parallel()
 	dsn := "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db"
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list":                       "web",
 		"--quiet config:export --format json web": `{"DATABASE_URL":"` + dsn + `","SECRET_KEY":"s3cr3t"}`,
 		"--quiet plugin:trigger service-list":     "postgres:my-db",
 		"--quiet postgres:links my-db":            "web",
 		"--quiet postgres:info my-db --dsn":       dsn,
-	}))()
+	}))
 
-	bodies, err := ConfigTask{}.ExportApp(testCtx(), "web")
+	bodies, err := ConfigTask{}.ExportApp(ctx, "web")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -309,7 +320,8 @@ func TestExportConfigExcludesLinkedServiceDSNs(t *testing.T) {
 }
 
 func TestExportRecipeIncludesServiceTasks(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list":                           "web",
 		"--quiet config:export --format json web":     `{}`,
 		"domains:report web --domains-app-vhosts":     "",
@@ -318,9 +330,9 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 		"--quiet postgres:links my-db":                "web",
 		"--quiet postgres:info my-db --dsn":           "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db",
 		"--quiet postgres:info my-db --version":       "postgres:17.2",
-	}))()
+	}))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

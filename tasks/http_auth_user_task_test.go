@@ -14,6 +14,7 @@ import (
 )
 
 func TestHttpAuthUserTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "admin", Password: "secret"}}, State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -22,6 +23,7 @@ func TestHttpAuthUserTaskInvalidState(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskPresentMissingApp(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{Users: []HttpAuthUser{{Username: "admin", Password: "secret"}}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -33,6 +35,7 @@ func TestHttpAuthUserTaskPresentMissingApp(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskAbsentMissingApp(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{State: StateAbsent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -44,6 +47,7 @@ func TestHttpAuthUserTaskAbsentMissingApp(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskPresentEmptyUsers(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{App: "test-app", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -55,6 +59,7 @@ func TestHttpAuthUserTaskPresentEmptyUsers(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskPresentWithoutCredential(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "admin"}}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -66,6 +71,7 @@ func TestHttpAuthUserTaskPresentWithoutCredential(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskSetWithoutCredential(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "admin"}}, State: StateSet}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -77,6 +83,7 @@ func TestHttpAuthUserTaskSetWithoutCredential(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskSetEmptyUsers(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{App: "test-app", State: StateSet}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -91,6 +98,7 @@ func TestHttpAuthUserTaskSetEmptyUsers(t *testing.T) {
 // generated parameter table cannot express: the two credential forms dispatch
 // to different dokku commands, so a user carrying both has no defined meaning.
 func TestHttpAuthUserTaskPasswordAndHashAreExclusive(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "admin", Password: "secret", Hash: "$6$abc$def"}},
@@ -105,6 +113,7 @@ func TestHttpAuthUserTaskPasswordAndHashAreExclusive(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskDuplicateUsernameRejected(t *testing.T) {
+	t.Parallel()
 	// Once the credential forms split across import-users and add-user, the
 	// winner for a repeated username would depend on nothing but list order.
 	task := HttpAuthUserTask{
@@ -127,6 +136,7 @@ func TestHttpAuthUserTaskDuplicateUsernameRejected(t *testing.T) {
 // docket frames itself: a colon in the username or a newline in either half
 // would write a corrupt htpasswd through http-auth:import-users.
 func TestHttpAuthUserTaskHashFramingRejected(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		user HttpAuthUser
@@ -165,6 +175,7 @@ func TestHttpAuthUserTaskHashFramingRejected(t *testing.T) {
 // is scoped to the hash form. A password goes on argv, never into the htpasswd
 // stream docket writes, so no recipe that validates today starts failing.
 func TestHttpAuthUserTaskPasswordUsernameColonAllowed(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "ad:min", Password: "secret"}}}
 	if err := task.Validate(); err != nil {
 		t.Errorf("password users should not be subject to the stdin framing guard, got: %v", err)
@@ -172,6 +183,7 @@ func TestHttpAuthUserTaskPasswordUsernameColonAllowed(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskMissingUsername(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Password: "secret"}}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -183,6 +195,7 @@ func TestHttpAuthUserTaskMissingUsername(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskSensitiveValues(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthUserTask{
 		App: "test-app",
 		Users: []HttpAuthUser{
@@ -221,14 +234,15 @@ const (
 // have: because http-auth:export-users reads the stored hash back, a task that
 // already matches the server plans nothing.
 func TestHttpAuthUserTaskHashInSync(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture(
-		"alice:"+aliceHash+"\nbob:"+bobHash+"\n", "alice bob")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture(
+		"alice:"+aliceHash+"\nbob:"+bobHash+"\n", "alice bob")))
 
 	plan := HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -244,15 +258,16 @@ func TestHttpAuthUserTaskHashInSync(t *testing.T) {
 // stored-hash comparison has to win over the update_password arm, or a matching
 // hash user would be re-imported on every run and Changed would never be false.
 func TestHttpAuthUserTaskHashIgnoresUpdatePassword(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture(
-		"alice:"+aliceHash+"\n", "alice")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture(
+		"alice:"+aliceHash+"\n", "alice")))
 
 	plan := HttpAuthUserTask{
 		App:            "test-app",
 		Users:          []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		UpdatePassword: boolPtr(true),
 		State:          StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -262,14 +277,15 @@ func TestHttpAuthUserTaskHashIgnoresUpdatePassword(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskHashDriftPlansImport(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture(
-		"alice:"+aliceHash+"\n", "alice")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture(
+		"alice:"+aliceHash+"\n", "alice")))
 
 	plan := HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: "$6$rotated$ROTATED"}},
 		State: StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -295,7 +311,8 @@ func TestHttpAuthUserTaskHashDriftPlansImport(t *testing.T) {
 // validates its whole stream before writing, so it runs before any add-user
 // that could otherwise land first and leave a partial apply behind.
 func TestHttpAuthUserTaskMixedPlansImportFirst(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture("", "")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture("", "")))
 
 	plan := HttpAuthUserTask{
 		App: "test-app",
@@ -304,7 +321,7 @@ func TestHttpAuthUserTaskMixedPlansImportFirst(t *testing.T) {
 			{Username: "alice", Hash: aliceHash},
 		},
 		State: StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -327,8 +344,9 @@ func TestHttpAuthUserTaskMixedPlansImportFirst(t *testing.T) {
 // replacement for the membership probe, so a password-only recipe still works
 // against a plugin that predates the command.
 func TestHttpAuthUserTaskPasswordOnlySkipsExportUsers(t *testing.T) {
+	t.Parallel()
 	asked := false
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		joined := strings.Join(in.Args, " ")
 		if strings.Contains(joined, "export-users") {
 			asked = true
@@ -337,13 +355,13 @@ func TestHttpAuthUserTaskPasswordOnlySkipsExportUsers(t *testing.T) {
 			return subprocess.ExecCommandResponse{Stdout: `{"enabled":"true","users":"alice","allowed-ips":"","domains":""}`}, nil
 		}
 		return subprocess.ExecCommandResponse{}, nil
-	})()
+	})
 
 	HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Password: "secret"}},
 		State: StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if asked {
 		t.Error("a password-only task must not probe http-auth:export-users")
 	}
@@ -353,8 +371,9 @@ func TestHttpAuthUserTaskPasswordOnlySkipsExportUsers(t *testing.T) {
 // appears in plan output: resolveCommands ignores Stdin, so the only way to see
 // what import-users receives is to read the reader off the exec input.
 func TestHttpAuthUserTaskExecuteStreamsEntries(t *testing.T) {
+	t.Parallel()
 	var payload string
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		joined := strings.Join(in.Args, " ")
 		if strings.Contains(joined, "http-auth:report") {
 			return subprocess.ExecCommandResponse{Stdout: `{"enabled":"true","users":"alice bob","allowed-ips":"","domains":""}`}, nil
@@ -372,7 +391,7 @@ func TestHttpAuthUserTaskExecuteStreamsEntries(t *testing.T) {
 			payload = string(b)
 		}
 		return subprocess.ExecCommandResponse{}, nil
-	})()
+	})
 
 	result := HttpAuthUserTask{
 		App: "test-app",
@@ -382,7 +401,7 @@ func TestHttpAuthUserTaskExecuteStreamsEntries(t *testing.T) {
 			{Username: "carol", Hash: "$6$cccc$CCCC"},
 		},
 		State: StatePresent,
-	}.Execute(testCtx())
+	}.Execute(ctx)
 	if result.Error != nil {
 		t.Fatalf("Execute: %v", result.Error)
 	}
@@ -394,14 +413,15 @@ func TestHttpAuthUserTaskExecuteStreamsEntries(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskSetAllHashesUsesReplace(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture(
-		"alice:"+aliceHash+"\nbob:"+bobHash+"\n", "alice bob")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture(
+		"alice:"+aliceHash+"\nbob:"+bobHash+"\n", "alice bob")))
 
 	plan := HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StateSet,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -425,8 +445,9 @@ func TestHttpAuthUserTaskSetAllHashesUsesReplace(t *testing.T) {
 // cleartext password cannot be written into the htpasswd stream, so the exact
 // set is reached by removing the strays and upserting instead.
 func TestHttpAuthUserTaskSetWithPasswordAvoidsReplace(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture(
-		"alice:"+aliceHash+"\nbob:"+bobHash+"\n", "alice bob")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture(
+		"alice:"+aliceHash+"\nbob:"+bobHash+"\n", "alice bob")))
 
 	plan := HttpAuthUserTask{
 		App: "test-app",
@@ -435,7 +456,7 @@ func TestHttpAuthUserTaskSetWithPasswordAvoidsReplace(t *testing.T) {
 			{Username: "carol", Password: "secret"},
 		},
 		State: StateSet,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -456,14 +477,15 @@ func TestHttpAuthUserTaskSetWithPasswordAvoidsReplace(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskSetInSync(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture(
-		"alice:"+aliceHash+"\n", "alice")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture(
+		"alice:"+aliceHash+"\n", "alice")))
 
 	plan := HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StateSet,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -473,13 +495,14 @@ func TestHttpAuthUserTaskSetInSync(t *testing.T) {
 }
 
 func TestHttpAuthUserTaskSetReportsSetState(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(httpAuthUserFixture("", "")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthUserFixture("", "")))
 
 	result := HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Hash: aliceHash}},
 		State: StateSet,
-	}.Execute(testCtx())
+	}.Execute(ctx)
 	if result.Error != nil {
 		t.Fatalf("Execute: %v", result.Error)
 	}
@@ -497,11 +520,12 @@ func TestHttpAuthUserTaskSetReportsSetState(t *testing.T) {
 // this parser lets through lands in a recipe, and a credential-less user would
 // make `docket export` emit a body its own Validate rejects.
 func TestGetHttpAuthUserHashesSkipsMalformedLines(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet http-auth:export-users test-app": "# a comment\n\nalice:" + aliceHash + "\ntruncated:\nnoseparator\nbob:$6$b:b$BB\n",
-	}))()
+	}))
 
-	got, err := getHttpAuthUserHashes(testCtx(), "test-app")
+	got, err := getHttpAuthUserHashes(ctx, "test-app")
 	if err != nil {
 		t.Fatalf("getHttpAuthUserHashes: %v", err)
 	}
@@ -513,6 +537,7 @@ func TestGetHttpAuthUserHashesSkipsMalformedLines(t *testing.T) {
 }
 
 func TestGetTasksHttpAuthUserTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: add http auth users

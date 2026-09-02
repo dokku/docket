@@ -9,6 +9,7 @@ import (
 )
 
 func TestDomainsTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := DomainsTask{App: "test-app", Domains: []string{"example.com"}, State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -17,6 +18,7 @@ func TestDomainsTaskInvalidState(t *testing.T) {
 }
 
 func TestDomainsTaskMissingApp(t *testing.T) {
+	t.Parallel()
 	task := DomainsTask{Domains: []string{"example.com"}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -25,6 +27,7 @@ func TestDomainsTaskMissingApp(t *testing.T) {
 }
 
 func TestDomainsTaskGlobalWithApp(t *testing.T) {
+	t.Parallel()
 	task := DomainsTask{App: "test-app", Global: true, Domains: []string{"example.com"}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -36,6 +39,7 @@ func TestDomainsTaskGlobalWithApp(t *testing.T) {
 }
 
 func TestDomainsTaskEmptyDomains(t *testing.T) {
+	t.Parallel()
 	states := []State{StatePresent, StateAbsent, StateSet}
 	for _, s := range states {
 		task := DomainsTask{App: "test-app", Domains: []string{}, State: s}
@@ -47,6 +51,7 @@ func TestDomainsTaskEmptyDomains(t *testing.T) {
 }
 
 func TestDomainsTaskClearRejectsDomains(t *testing.T) {
+	t.Parallel()
 	// domains:clear takes no domains, so a list here would be silently
 	// discarded rather than removed.
 	task := DomainsTask{App: "test-app", Domains: []string{"example.com"}, State: StateClear}
@@ -60,6 +65,7 @@ func TestDomainsTaskClearRejectsDomains(t *testing.T) {
 }
 
 func TestDomainsTaskClearNoDomains(t *testing.T) {
+	t.Parallel()
 	task := DomainsTask{App: "test-app", State: StateClear}
 	result := task.Execute(testCtx())
 	// Should fail because dokku isn't running, but NOT because of missing domains
@@ -86,11 +92,12 @@ func assertNoGlobalPositional(t *testing.T, commands []string) {
 }
 
 func TestDomainsGlobalSetOmitsGlobalPositional(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"domains:report --global --domains-global-vhosts": "",
-	}))()
+	}))
 
-	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan(testCtx())
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -107,11 +114,12 @@ func TestDomainsGlobalSetOmitsGlobalPositional(t *testing.T) {
 }
 
 func TestDomainsGlobalSetConvergesWhenReportMatches(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"domains:report --global --domains-global-vhosts": "global.example.com",
-	}))()
+	}))
 
-	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan(testCtx())
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StateSet}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -121,11 +129,12 @@ func TestDomainsGlobalSetConvergesWhenReportMatches(t *testing.T) {
 }
 
 func TestDomainsGlobalAddOmitsGlobalPositional(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"domains:report --global --domains-global-vhosts": "",
-	}))()
+	}))
 
-	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StatePresent}.Plan(testCtx())
+	plan := DomainsTask{Global: true, Domains: []string{"global.example.com"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -139,11 +148,12 @@ func TestDomainsGlobalAddOmitsGlobalPositional(t *testing.T) {
 }
 
 func TestDomainsGlobalClearOmitsGlobalPositional(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"domains:report --global --domains-global-vhosts": "old.example.com",
-	}))()
+	}))
 
-	plan := DomainsTask{Global: true, State: StateClear}.Plan(testCtx())
+	plan := DomainsTask{Global: true, State: StateClear}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -157,6 +167,7 @@ func TestDomainsGlobalClearOmitsGlobalPositional(t *testing.T) {
 }
 
 func TestGetTasksDomainsTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: add domains
@@ -206,6 +217,7 @@ func TestGetTasksDomainsTaskParsedCorrectly(t *testing.T) {
 }
 
 func TestGetTasksDomainsTaskGlobalParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set global domains

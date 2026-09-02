@@ -9,6 +9,7 @@ import (
 )
 
 func TestNetworkTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := NetworkTask{Name: "test-network", State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -17,6 +18,7 @@ func TestNetworkTaskInvalidState(t *testing.T) {
 }
 
 func TestGetTasksNetworkTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: create test network
@@ -65,11 +67,12 @@ const networkListFixture = `[
 ]`
 
 func TestNetworkExportGlobalOnlyDokkuManaged(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet network:list --format json": networkListFixture,
-	}))()
+	}))
 
-	bodies, err := NetworkTask{}.ExportGlobal(testCtx())
+	bodies, err := NetworkTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -95,11 +98,12 @@ func TestNetworkExportGlobalOnlyDokkuManaged(t *testing.T) {
 }
 
 func TestExportNetworksBecomeTasks(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet network:list --format json": networkListFixture,
-	}))()
+	}))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

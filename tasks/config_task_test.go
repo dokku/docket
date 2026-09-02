@@ -9,6 +9,7 @@ import (
 )
 
 func TestConfigTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := ConfigTask{
 		App:    "test-app",
 		Config: map[string]string{"KEY": "VALUE"},
@@ -21,6 +22,7 @@ func TestConfigTaskInvalidState(t *testing.T) {
 }
 
 func TestGetTasksConfigTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set config
@@ -80,6 +82,7 @@ func TestGetTasksConfigTaskParsedCorrectly(t *testing.T) {
 // across both config:set and config:unset. An explicit restart: false must emit
 // --no-restart; an omitted restart (nil) defaults to true and must not.
 func TestConfigTaskRestartFlag(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		restart      *bool
@@ -97,16 +100,16 @@ func TestConfigTaskRestartFlag(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 				"--quiet config:export --format json test-app": tc.current,
-			}))()
+			}))
 
 			plan := ConfigTask{
 				App:     "test-app",
 				Restart: tc.restart,
 				Config:  map[string]string{"KEY": "val"},
 				State:   tc.state,
-			}.Plan(testCtx())
+			}.Plan(ctx)
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -128,6 +131,7 @@ func TestConfigTaskRestartFlag(t *testing.T) {
 // pipeline: a recipe with restart: false must still yield a --no-restart
 // command. This is the regression the go-defaults clobber produced.
 func TestConfigTaskRestartFalseEndToEnd(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set config
@@ -137,9 +141,9 @@ func TestConfigTaskRestartFalseEndToEnd(t *testing.T) {
         config:
           KEY: val
 `)
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet config:export --format json test-app": "{}",
-	}))()
+	}))
 
 	parsed, err := GetTasks(data, map[string]interface{}{})
 	if err != nil {
@@ -149,7 +153,7 @@ func TestConfigTaskRestartFalseEndToEnd(t *testing.T) {
 	if task == nil {
 		t.Fatal("task 'set config' not found")
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}

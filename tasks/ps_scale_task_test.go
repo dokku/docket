@@ -9,6 +9,7 @@ import (
 )
 
 func TestPsScaleTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := PsScaleTask{App: "test-app", Scale: map[string]int{"web": 1}, State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -17,6 +18,7 @@ func TestPsScaleTaskInvalidState(t *testing.T) {
 }
 
 func TestPsScaleTaskEmptyScale(t *testing.T) {
+	t.Parallel()
 	task := PsScaleTask{App: "test-app", Scale: map[string]int{}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -25,6 +27,7 @@ func TestPsScaleTaskEmptyScale(t *testing.T) {
 }
 
 func TestPsScaleTaskNilScale(t *testing.T) {
+	t.Parallel()
 	task := PsScaleTask{App: "test-app", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -33,12 +36,13 @@ func TestPsScaleTaskNilScale(t *testing.T) {
 }
 
 func TestPsScaleCommandDeterministicOrder(t *testing.T) {
+	t.Parallel()
 	// web and worker both drift, so the ps:scale command lists both (appended
 	// after the app) and both mutations are reported. Sorting the process types
 	// must yield byte-identical output on every run (issue #341).
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet ps:scale test-app": "web: 1\nworker: 1",
-	}))()
+	}))
 
 	task := PsScaleTask{
 		App:   "test-app",
@@ -52,7 +56,7 @@ func TestPsScaleCommandDeterministicOrder(t *testing.T) {
 	// Repeat so a reintroduced map-order bug is caught reliably rather than
 	// passing by chance on a lucky iteration.
 	for i := 0; i < 20; i++ {
-		plan := task.Plan(testCtx())
+		plan := task.Plan(ctx)
 		if plan.Error != nil {
 			t.Fatalf("iteration %d: unexpected plan error: %v", i, plan.Error)
 		}
@@ -66,6 +70,7 @@ func TestPsScaleCommandDeterministicOrder(t *testing.T) {
 }
 
 func TestGetTasksPsScaleTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: scale processes
