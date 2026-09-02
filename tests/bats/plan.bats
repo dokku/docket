@@ -295,3 +295,67 @@ EOF
   assert_output --partial "records path"
   assert_output --partial "destroy and re-create the entry"
 }
+
+# generate_cert writes a self-signed cert/key pair named "$1.crt"/"$1.key" under
+# BATS_TEST_TMPDIR. The material only has to parse as a certificate; dokku's
+# certs:add validates it with openssl before installing it.
+generate_cert() {
+  local name="$1"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+    -subj "/CN=$name.docket-test.example.com" \
+    -keyout "$BATS_TEST_TMPDIR/$name.key" \
+    -out "$BATS_TEST_TMPDIR/$name.crt" >/dev/null 2>/dev/null
+}
+
+# write_certs_tasks_file writes a recipe installing the named pair on
+# docket-test-plan as inline PEM, indented into the block scalars. write_tasks_file
+# is called directly rather than through a pipe so the TASKS_FILE it exports
+# survives - a pipeline would run it in a subshell.
+write_certs_tasks_file() {
+  local name="$1"
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: ensure docket-test-plan
+      dokku_app:
+        app: docket-test-plan
+    - name: ensure the certificate
+      dokku_certs:
+        app: docket-test-plan
+        cert_content: |
+$(sed 's/^/          /' "$BATS_TEST_TMPDIR/$name.crt")
+        key_content: |
+$(sed 's/^/          /' "$BATS_TEST_TMPDIR/$name.key")
+EOF
+}
+
+@test "docket plan reports drift when a pinned certificate is renewed" {
+  generate_cert original
+  generate_cert renewed
+
+  write_certs_tasks_file original
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "0 would change"
+
+  # Pinning a different certificate against an app that already holds one is
+  # drift, not a silent no-op, and applying it settles.
+  write_certs_tasks_file renewed
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "[~]"
+  assert_output --partial "certificate material drift"
+  assert_output --partial "replace certificate for docket-test-plan"
+  assert_output --partial "1 would change"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "[ok]"
+  assert_output --partial "0 would change"
+}

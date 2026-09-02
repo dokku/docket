@@ -111,7 +111,8 @@ func TestIntegrationCertsApp(t *testing.T) {
 		t.Errorf("expected cert to be enabled after add")
 	}
 
-	// add again - should be idempotent (does not update; matches ansible-dokku semantics)
+	// add again with the same material - the probe compares the installed
+	// certificate and finds nothing to do
 	result = addTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed second add: %v", result.Error)
@@ -325,4 +326,164 @@ func TestIntegrationCertsGlobal(t *testing.T) {
 	if result.Changed {
 		t.Errorf("expected Changed=false on idempotent global remove")
 	}
+}
+
+// TestIntegrationCertsAppRotation covers the case the probe was added for: an
+// app already holding a certificate, and a recipe pinning a different one. The
+// path form doubles as coverage of the local-file read, since a local run
+// resolves `cert:` on this machine.
+func TestIntegrationCertsAppRotation(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-certs-rotate"
+	oldCert, oldKey := generateSelfSignedCert(t, appName+".example.com")
+	newCert, newKey := generateSelfSignedCert(t, appName+".example.net")
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	install := CertsTask{App: appName, Cert: oldCert, Key: oldKey, State: StatePresent}
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to add cert: %v", result.Error)
+	}
+
+	rotate := CertsTask{App: appName, Cert: newCert, Key: newKey, State: StatePresent}
+	plan := rotate.Plan(testCtx())
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
+	}
+
+	result := rotate.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to rotate cert: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true when the pinned certificate differs")
+	}
+
+	installed, err := certsShow(testCtx(), CertsTask{App: appName}, "crt")
+	if err != nil {
+		t.Fatalf("certsShow failed: %v", err)
+	}
+	wantPEM, err := os.ReadFile(newCert)
+	if err != nil {
+		t.Fatalf("read cert: %v", err)
+	}
+	if !samePEM(installed, string(wantPEM)) {
+		t.Errorf("installed certificate is not the one the recipe pinned")
+	}
+
+	// The rotation settles: a second run of the same recipe is a no-op.
+	result = rotate.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed second rotate: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false once the pinned certificate is installed")
+	}
+}
+
+// TestIntegrationCertsAppInlineRotation is the same rotation through inline PEM,
+// the form that works over any transport.
+func TestIntegrationCertsAppInlineRotation(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-certs-inline-rotate"
+	oldCert, oldKey := generateSelfSignedCert(t, appName+".example.com")
+	newCert, newKey := generateSelfSignedCert(t, appName+".example.net")
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	install := CertsTask{App: appName, CertContent: readFileT(t, oldCert), KeyContent: readFileT(t, oldKey), State: StatePresent}
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to add cert inline: %v", result.Error)
+	}
+
+	rotate := CertsTask{App: appName, CertContent: readFileT(t, newCert), KeyContent: readFileT(t, newKey), State: StatePresent}
+	plan := rotate.Plan(testCtx())
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
+	}
+
+	result := rotate.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to rotate cert inline: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true when the pinned certificate differs")
+	}
+
+	result = rotate.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed second inline rotate: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false once the pinned certificate is installed")
+	}
+}
+
+// TestIntegrationCertsGlobalRotation covers the same rotation for the global
+// scope, which reads back through global-cert:show.
+func TestIntegrationCertsGlobalRotation(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "global-cert")
+
+	oldCert, oldKey := generateSelfSignedCert(t, "global-rotate.example.com")
+	newCert, newKey := generateSelfSignedCert(t, "global-rotate.example.net")
+
+	cleanup := func() {
+		(CertsTask{Global: true, State: StateAbsent}).Execute(testCtx())
+	}
+	cleanup()
+	defer cleanup()
+
+	install := CertsTask{Global: true, Cert: oldCert, Key: oldKey, State: StatePresent}
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to add global cert: %v", result.Error)
+	}
+
+	rotate := CertsTask{Global: true, Cert: newCert, Key: newKey, State: StatePresent}
+	plan := rotate.Plan(testCtx())
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
+	}
+
+	result := rotate.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to rotate global cert: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true when the pinned global certificate differs")
+	}
+
+	result = rotate.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed second global rotate: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false once the pinned global certificate is installed")
+	}
+}
+
+// readFileT reads a generated fixture, failing the test rather than returning an
+// error the caller has to thread through a struct literal.
+func readFileT(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
 }
