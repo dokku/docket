@@ -12,7 +12,7 @@ import (
 // canonicalPlayKeys is the canonical key order inside a play mapping.
 // Keys not in this list keep their relative order, appended after the
 // canonical keys.
-var canonicalPlayKeys = []string{"name", "tags", "when", "inputs", "tasks"}
+var canonicalPlayKeys = []string{"name", "tags", "when", "host", "sudo", "accept_new_host_keys", "inputs", "tasks"}
 
 // canonicalEnvelopeKeys is the canonical key order inside a task entry's
 // envelope. The task-type key (e.g. dokku_app) sorts after every envelope

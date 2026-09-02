@@ -90,7 +90,7 @@ func (e *SSHError) Unwrap() error {
 	return e.Err
 }
 
-// sshTarget is the parsed form of DOKKU_HOST.
+// sshTarget is the parsed form of a target host.
 type sshTarget struct {
 	User string
 	Host string
@@ -105,22 +105,30 @@ func (t sshTarget) UserHost() string {
 	return t.User + "@" + t.Host
 }
 
-// parseDokkuHost parses a DOKKU_HOST value of the form `[user@]host[:port]`.
+// parseDokkuHost parses a target host of the form `[user@]host[:port]`, as
+// supplied by DOKKU_HOST, --host, or a play's own `host:` key.
 // We prepend `ssh://` and use net/url so port and IPv6 hosts get parsed
 // correctly. An empty user defaults to $USER (then $LOGNAME, then
 // user.Current); an empty port defaults to "22".
 func parseDokkuHost(raw string) (sshTarget, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return sshTarget{}, errors.New("DOKKU_HOST is empty")
+		return sshTarget{}, errors.New("host is empty")
+	}
+	// A scheme is rejected rather than parsed. The value is joined onto
+	// "ssh://" below, so `ssh://example.com` would become
+	// `ssh://ssh://example.com` and yield the hostname "ssh" - connecting
+	// somewhere the user plainly did not mean, with no error to say so.
+	if strings.Contains(raw, "://") {
+		return sshTarget{}, fmt.Errorf("invalid host %q: remove the scheme, the form is [user@]host[:port]", raw)
 	}
 	u, err := url.Parse("ssh://" + raw)
 	if err != nil {
-		return sshTarget{}, fmt.Errorf("invalid DOKKU_HOST %q: %w", raw, err)
+		return sshTarget{}, fmt.Errorf("invalid host %q: %w", raw, err)
 	}
 	host := u.Hostname()
 	if host == "" {
-		return sshTarget{}, fmt.Errorf("invalid DOKKU_HOST %q: no host", raw)
+		return sshTarget{}, fmt.Errorf("invalid host %q: no hostname", raw)
 	}
 	target := sshTarget{
 		Host: host,
@@ -136,6 +144,15 @@ func parseDokkuHost(raw string) (sshTarget, error) {
 		target.Port = "22"
 	}
 	return target, nil
+}
+
+// ValidateHost reports whether raw is a usable `[user@]host[:port]` target,
+// without contacting anything. It exists so `docket validate` can reject a
+// typo in a play's `host:` offline rather than leaving it to surface as an
+// `ssh:` failure partway through a run.
+func ValidateHost(raw string) error {
+	_, err := parseDokkuHost(raw)
+	return err
 }
 
 func defaultSshUser() string {

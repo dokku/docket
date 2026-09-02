@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dokku/docket/subprocess"
 	_ "github.com/gliderlabs/sigil/builtin"
 )
 
@@ -390,5 +391,109 @@ func TestMergePlayTagsEmptyPlay(t *testing.T) {
 	got := mergePlayTags(in, nil)
 	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
 		t.Errorf("got %v, want %v unchanged", got, in)
+	}
+}
+
+// TestGetPlaysTargetingKeysDecode pins that the three targeting keys reach the
+// Play. They are decoded through playMeta rather than RecipeEntry, which is
+// the shape that actually runs, so a field added to one and not the other
+// would silently never arrive.
+func TestGetPlaysTargetingKeysDecode(t *testing.T) {
+	t.Parallel()
+	data := []byte(`---
+- name: remote
+  host: deploy@example.com:2222
+  sudo: true
+  accept_new_host_keys: false
+  tasks:
+    - dokku_app: { app: api }
+`)
+	plays, err := GetPlays(data, map[string]interface{}{}, nil)
+	if err != nil {
+		t.Fatalf("GetPlays: %v", err)
+	}
+	if len(plays) != 1 {
+		t.Fatalf("got %d plays, want 1", len(plays))
+	}
+	play := plays[0]
+	if play.Host != "deploy@example.com:2222" {
+		t.Errorf("Host = %q, want %q", play.Host, "deploy@example.com:2222")
+	}
+	if play.Sudo == nil || !*play.Sudo {
+		t.Errorf("Sudo = %v, want a pointer to true", play.Sudo)
+	}
+	if play.AcceptNewHostKeys == nil || *play.AcceptNewHostKeys {
+		t.Errorf("AcceptNewHostKeys = %v, want a pointer to false", play.AcceptNewHostKeys)
+	}
+}
+
+// TestGetPlaysOmittedTargetingKeysAreNil pins the distinction the pointers
+// exist for: an omitted key is nil, not false, so ResolveTarget can tell
+// "inherit the run's setting" from "decline it".
+func TestGetPlaysOmittedTargetingKeysAreNil(t *testing.T) {
+	t.Parallel()
+	plays, err := GetPlays([]byte("---\n- tasks:\n    - dokku_app: { app: api }\n"), map[string]interface{}{}, nil)
+	if err != nil {
+		t.Fatalf("GetPlays: %v", err)
+	}
+	if plays[0].Host != "" || plays[0].Sudo != nil || plays[0].AcceptNewHostKeys != nil {
+		t.Errorf("a play declaring no targeting keys should leave them unset; got %+v", plays[0])
+	}
+}
+
+func TestPlayResolveTarget(t *testing.T) {
+	t.Parallel()
+
+	base := subprocess.Target{Host: "run@base", Sudo: true, AcceptNewHostKeys: true}
+	tests := []struct {
+		name string
+		play *Play
+		want subprocess.Target
+	}{
+		{
+			name: "a play declaring nothing inherits the run's target",
+			play: &Play{},
+			want: base,
+		},
+		{
+			name: "host alone redirects but keeps the run's flags",
+			play: &Play{Host: "play@other"},
+			want: subprocess.Target{Host: "play@other", Sudo: true, AcceptNewHostKeys: true},
+		},
+		{
+			name: "an explicit false declines a flag the run was given",
+			play: &Play{Host: "play@other", Sudo: boolPtr(false)},
+			want: subprocess.Target{Host: "play@other", Sudo: false, AcceptNewHostKeys: true},
+		},
+		{
+			name: "a flag can be asked for without redirecting",
+			play: &Play{Sudo: boolPtr(true)},
+			want: base,
+		},
+		{
+			name: "a nil play is the run's target",
+			play: nil,
+			want: base,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.play.ResolveTarget(base); got != tc.want {
+				t.Errorf("ResolveTarget() = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPlayResolveTargetOffALocalRun pins the common case: no --host at all,
+// and a play that names one. The run-wide zero target must not turn the
+// play's own host back off.
+func TestPlayResolveTargetOffALocalRun(t *testing.T) {
+	t.Parallel()
+	got := (&Play{Host: "play@other", Sudo: boolPtr(true)}).ResolveTarget(subprocess.Target{})
+	want := subprocess.Target{Host: "play@other", Sudo: true}
+	if got != want {
+		t.Errorf("ResolveTarget() = %+v, want %+v", got, want)
 	}
 }

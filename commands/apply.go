@@ -292,12 +292,15 @@ func (c *ApplyCommand) Run(args []string) int {
 			userSet:       userSet,
 			context:       inputCtx,
 			jsonOut:       c.json,
+			target:        target,
 		})
 	}
 
-	if target.Host != "" {
-		defer subprocess.CloseSshControlMaster(target.Host)
-	}
+	// Every distinct host the run will touch, so a recipe whose plays span
+	// servers tears down one ControlMaster per server rather than only the
+	// run-wide one. controlPath already keys on the host, so the sockets do
+	// not collide; nothing was closing the extra ones.
+	defer closeControlMasters(target, plays)
 
 	emitter := c.newEmitter()
 	start := time.Now()
@@ -349,12 +352,19 @@ playLoop:
 			}
 		}
 
-		emitter.PlayStart(play.Name, target.Host)
+		// A play may send its tasks somewhere other than the run-wide
+		// target. Resolving here and deriving a child context is the whole
+		// of the per-play routing: the tasks below read the target off the
+		// context they are handed and need to know nothing about plays.
+		playTarget := play.ResolveTarget(target)
+		playCtx := subprocess.ContextWithTarget(ctx, playTarget)
+
+		emitter.PlayStart(play.Name, playTarget.Host)
 
 		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(inputCtx, play.Inputs, userSet))
 
 		ac := &applyContext{
-			ctx:         ctx,
+			ctx:         playCtx,
 			play:        play,
 			playExprCtx: playExprCtx,
 			registered:  registered,

@@ -163,3 +163,35 @@ func TestContextRunnerBeatsThePackageRunner(t *testing.T) {
 		t.Errorf("stdout = %q, want the package runner as the fallback", resp.Stdout)
 	}
 }
+
+func TestValidateHost(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{
+		"example.com",
+		"deploy@example.com",
+		"deploy@example.com:2222",
+		"[2001:db8::1]:2222",
+	}
+	for _, raw := range valid {
+		t.Run("valid/"+raw, func(t *testing.T) {
+			t.Parallel()
+			if err := ValidateHost(raw); err != nil {
+				t.Errorf("ValidateHost(%q) = %v, want nil", raw, err)
+			}
+		})
+	}
+
+	// An empty host is rejected rather than treated as "run locally": reaching
+	// this function at all means something named a host, and `host: ""` in a
+	// recipe is a mistake rather than a way to opt out.
+	invalid := []string{"", "   ", "deploy@", "ssh://example.com"}
+	for _, raw := range invalid {
+		t.Run("invalid/"+raw, func(t *testing.T) {
+			t.Parallel()
+			if err := ValidateHost(raw); err == nil {
+				t.Errorf("ValidateHost(%q) = nil, want an error", raw)
+			}
+		})
+	}
+}

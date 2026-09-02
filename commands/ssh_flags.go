@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/dokku/docket/subprocess"
+	"github.com/dokku/docket/tasks"
 )
 
 // resolveSshFlags merges the SSH-related CLI flags with their env-var
@@ -49,4 +50,34 @@ func runContext(ctx context.Context) context.Context {
 		return context.Background()
 	}
 	return ctx
+}
+
+// closeControlMasters tears down the multiplexed SSH connection for every host
+// the run could have opened one against: the run-wide target, plus whatever
+// the plays declared for themselves.
+//
+// One per host rather than one per run, because a recipe whose plays span
+// servers opens a master per server. Best-effort, like the underlying call -
+// a host that was never reached has no socket and is skipped there.
+func closeControlMasters(base subprocess.Target, plays []*tasks.Play) {
+	seen := map[string]bool{}
+	for _, host := range append([]string{base.Host}, playHosts(base, plays)...) {
+		if host == "" || seen[host] {
+			continue
+		}
+		seen[host] = true
+		_ = subprocess.CloseSshControlMaster(host)
+	}
+}
+
+// playHosts returns the host each play resolves to against base.
+func playHosts(base subprocess.Target, plays []*tasks.Play) []string {
+	hosts := make([]string, 0, len(plays))
+	for _, play := range plays {
+		if play == nil {
+			continue
+		}
+		hosts = append(hosts, play.ResolveTarget(base).Host)
+	}
+	return hosts
 }

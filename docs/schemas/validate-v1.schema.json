@@ -26,6 +26,7 @@
         "duplicate_task_name",
         "empty_task_body",
         "envelope_key_type",
+        "play_key_type",
         "envelope_key_unsupported",
         "expr_compile",
         "input_missing",

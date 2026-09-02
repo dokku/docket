@@ -108,16 +108,19 @@ var groupClauseKeys = []string{"block", "rescue", "always"}
 // admits without flagging as unexpected. #208 extends the legacy
 // inputs/tasks pair with name/tags/when at the play envelope.
 var allowedPlayKeys = map[string]bool{
-	"name":   true,
-	"tags":   true,
-	"when":   true,
-	"inputs": true,
-	"tasks":  true,
+	"name":                 true,
+	"tags":                 true,
+	"when":                 true,
+	"inputs":               true,
+	"host":                 true,
+	"sudo":                 true,
+	"accept_new_host_keys": true,
+	"tasks":                true,
 }
 
 // allowedPlayKeysList is the comma-separated form rendered into the
 // "unexpected play key" diagnostic so users see the full allowlist.
-const allowedPlayKeysList = "name, tags, when, inputs, tasks"
+const allowedPlayKeysList = "name, tags, when, inputs, host, sudo, accept_new_host_keys, tasks"
 
 // Validate parses data as a docket recipe and returns every problem it finds.
 // It is offline by contract: the implementation must never invoke

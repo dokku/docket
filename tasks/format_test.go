@@ -390,3 +390,55 @@ func mustParse(t *testing.T, in string) *yaml.Node {
 	}
 	return &n
 }
+
+// TestFormatOrdersTargetingPlayKeys pins where the targeting keys sort. They
+// belong with the play's other metadata rather than trailing after tasks:,
+// which is where fmt left them while they were unknown keys it merely
+// preserved.
+func TestFormatOrdersTargetingPlayKeys(t *testing.T) {
+	input := []byte(`---
+- tasks:
+    - dokku_app: {app: api}
+  accept_new_host_keys: true
+  sudo: true
+  host: deploy@example.com
+  name: remote
+`)
+	out, err := Format(input)
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	got := string(out)
+
+	order := []string{"name:", "host:", "sudo:", "accept_new_host_keys:", "tasks:"}
+	for i := 1; i < len(order); i++ {
+		prev, cur := strings.Index(got, order[i-1]), strings.Index(got, order[i])
+		if prev < 0 || cur < 0 {
+			t.Fatalf("expected both %q and %q in output:\n%s", order[i-1], order[i], got)
+		}
+		if prev > cur {
+			t.Errorf("%q should sort before %q:\n%s", order[i-1], order[i], got)
+		}
+	}
+}
+
+// TestFormatTargetingKeysStayValidatable is the tripwire for adding a key to
+// canonicalPlayKeys without adding it to allowedPlayKeys: fmt would reorder a
+// recipe that validate then rejects.
+func TestFormatTargetingKeysStayValidatable(t *testing.T) {
+	input := []byte(`---
+- name: remote
+  host: deploy@example.com
+  sudo: false
+  accept_new_host_keys: true
+  tasks:
+    - dokku_app: {app: api}
+`)
+	out, err := Format(input)
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	if problems := Validate(out, ValidateOptions{}); len(problems) != 0 {
+		t.Errorf("formatted output should still validate; got %+v", problems)
+	}
+}

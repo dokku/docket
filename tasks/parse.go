@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/dokku/docket/subprocess"
 	defaults "github.com/mcuadros/go-defaults"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -213,16 +214,19 @@ func parsePlay(play *yaml.Node, index int) *parsedPlay {
 	pp.Name = scalarChild(play, "name")
 
 	for i := 0; i < len(play.Content); i += 2 {
-		key := play.Content[i].Value
+		keyNode, valueNode := play.Content[i], play.Content[i+1]
+		key := keyNode.Value
 		if !allowedPlayKeys[key] {
 			pp.Problems = append(pp.Problems, Problem{
 				Code:    "recipe_shape",
 				Play:    pp.Label,
-				Line:    play.Content[i].Line,
-				Column:  play.Content[i].Column,
+				Line:    keyNode.Line,
+				Column:  keyNode.Column,
 				Message: fmt.Sprintf("unexpected play key %q (expected: %s)", key, allowedPlayKeysList),
 			})
+			continue
 		}
+		pp.Problems = append(pp.Problems, checkPlayKeyValue(pp.Label, key, valueNode)...)
 	}
 
 	flagReservedInputNames(pp, play)
@@ -292,6 +296,50 @@ func flagDuplicateTaskNames(pp *parsedPlay) {
 // collides with a built-in CLI flag (see ReservedInputNames). Such a name
 // used to make pflag panic before flag parsing began; both the loader and
 // the validator now reject it offline (#302).
+// checkPlayKeyValue type-checks the play keys whose value shape the loader
+// would otherwise reject with an opaque `play parse error` from the yaml
+// decoder, with no line or column to point at.
+//
+// Only the targeting keys are checked. `name`, `tags`, `when` and `inputs`
+// predate this and are left as they were rather than changed underneath
+// existing recipes.
+//
+// The bool check is narrower than it looks: yaml.v3 already accepts `yes`,
+// `on` and even a quoted `"yes"` as true, so what it actually catches is
+// `sudo: 1` and the collection forms. The host check is the one that earns
+// its place - a typo there is otherwise a run that fails partway through
+// with an `ssh:` error against a server that was never going to answer.
+func checkPlayKeyValue(label, key string, valueNode *yaml.Node) []Problem {
+	problem := func(msg string) []Problem {
+		return []Problem{{
+			Code:    "play_key_type",
+			Play:    label,
+			Line:    valueNode.Line,
+			Column:  valueNode.Column,
+			Message: msg,
+		}}
+	}
+
+	switch key {
+	case "host":
+		host, ok, typeName := scalarString(valueNode)
+		if !ok {
+			return problem(fmt.Sprintf("host must be a string, got %s", typeName))
+		}
+		// Checked offline so a typo costs a diagnostic rather than a run that
+		// fails partway through with an `ssh:` error.
+		if err := subprocess.ValidateHost(host); err != nil {
+			return problem(fmt.Sprintf("host is not usable: %v", err))
+		}
+	case "sudo", "accept_new_host_keys":
+		var b bool
+		if err := valueNode.Decode(&b); err != nil {
+			return problem(fmt.Sprintf("%s must be a bool, got %s", key, scalarTypeName(valueNode)))
+		}
+	}
+	return nil
+}
+
 func flagReservedInputNames(pp *parsedPlay, play *yaml.Node) {
 	inputsNode := mappingValue(play, "inputs")
 	if inputsNode == nil || inputsNode.Kind != yaml.SequenceNode {

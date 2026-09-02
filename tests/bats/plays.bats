@@ -552,3 +552,112 @@ EOF
   assert_success
   refute_output --partial "[skipped]"
 }
+
+# Per-play targeting tests drive `apply --list-tasks` and `validate`, both of
+# which resolve the play's host and return before contacting anything. That
+# keeps them runnable without a Dokku server, the same reason the when: tests
+# above use --list-tasks.
+
+@test "plays: a play's host: is shown in the resolved plan" {
+  write_tasks_file <<EOF
+---
+- name: local play
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+- name: remote play
+  host: deploy@remote.example.com
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
+  assert_success
+  assert_output --partial "==> Play: remote play  (host: deploy@remote.example.com)"
+  # The play that names no host of its own must not claim one.
+  assert_output --partial "==> Play: local play"
+  refute_output --partial "local play  (host:"
+}
+
+@test "plays: a play's host: overrides --host" {
+  write_tasks_file <<EOF
+---
+- name: follows the flag
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+- name: names its own
+  host: deploy@remote.example.com
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+EOF
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --host run@cli.example.com
+  assert_success
+  assert_output --partial "==> Play: follows the flag  (host: run@cli.example.com)"
+  assert_output --partial "==> Play: names its own  (host: deploy@remote.example.com)"
+}
+
+@test "plays: targeting keys validate cleanly" {
+  write_tasks_file <<EOF
+---
+- name: remote
+  host: deploy@remote.example.com:2222
+  sudo: true
+  accept_new_host_keys: false
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+}
+
+@test "plays: an unusable host: is rejected offline" {
+  write_tasks_file <<EOF
+---
+- name: typo
+  host: "ssh://remote.example.com"
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+EOF
+  # Caught by validate rather than surfacing as an ssh: failure partway
+  # through a run, which is the point of checking the host offline.
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "host is not usable"
+  assert_output --partial "remove the scheme"
+}
+
+@test "plays: a non-bool sudo: is rejected with a position" {
+  write_tasks_file <<EOF
+---
+- name: bad
+  sudo: 1
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "sudo must be a bool"
+}
+
+@test "plays: fmt sorts the targeting keys with the play metadata" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_app:
+        app: docket-test-noop
+  host: deploy@remote.example.com
+  name: remote
+EOF
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_success
+  run cat "$TASKS_FILE"
+  assert_success
+  # name, then host, then tasks - not the order they were written in.
+  assert_line --index 1 "- name: remote"
+  assert_line --index 2 "  host: deploy@remote.example.com"
+}

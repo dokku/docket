@@ -105,6 +105,9 @@ A play can carry these keys:
 | `name` | A human label for the play, shown in the output. Defaults to `play #N`, except a single-play recipe uses the legacy `tasks` header. |
 | `tags` | A tag list inherited by every task in the play. Combines with per-task `tags`. See [task envelope](task-envelope.md#tags). |
 | `when` | A condition. When it is false, the whole play is skipped. |
+| `host` | The server this play's tasks run against, as `[user@]host[:port]`. Overrides `--host` / `DOKKU_HOST` for this play. See [remote execution](remote-execution.md#a-recipe-that-spans-hosts). |
+| `sudo` | Run this play's `dokku` calls as root. Overrides `--sudo`. |
+| `accept_new_host_keys` | Trust an unknown SSH host key on first connect for this play. Overrides `--accept-new-host-keys`. |
 | `inputs` | Variable defaults for this play. See [inputs](inputs.md). |
 | `tasks` | The play's list of tasks. |
 
@@ -132,6 +135,44 @@ writing more than one play. docket runs the plays top to bottom:
 ```
 
 Single-play recipes keep working unchanged, because a single play is just a one-element list.
+
+### Plays on different servers
+
+A play can name its own `host:`, which is what makes a migration or a fan-out deploy expressible as
+one recipe:
+
+```yaml
+---
+- name: drain the old server
+  host: deploy@old.example.com
+  tasks:
+    - dokku_maintenance: { app: api }
+
+- name: install on the new one
+  host: deploy@new.example.com
+  sudo: true
+  tasks:
+    - dokku_app: { app: api }
+```
+
+A play that names no `host:` runs against `--host` / `DOKKU_HOST` as before, so every recipe written
+without these keys behaves exactly as it did.
+
+The three keys override **individually**, not as a group. A play that sets `host:` and nothing else
+still gets the run's `--sudo` and `--accept-new-host-keys`, which is what lets the example above
+send both plays to servers that need root without repeating the flag. A play that wants the opposite
+says so explicitly:
+
+```yaml
+- name: a server where dokku runs unprivileged
+  host: deploy@other.example.com
+  sudo: false
+  tasks: ...
+```
+
+`docket validate` checks each `host:` offline, so a typo is caught before anything connects rather
+than surfacing as an `ssh:` failure partway through the run. `docket plan --list-tasks` and the play
+headers in `plan` and `apply` all name the host each play resolved to.
 
 ### Running one play with `--play`
 
