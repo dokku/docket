@@ -487,17 +487,19 @@ func TestProbeLocalExecErrorPropagates(t *testing.T) {
 }
 
 func TestProbeExecRanFlagControlsAbsence(t *testing.T) {
+	t.Parallel()
 	// The Ran flag is the sole signal that separates "the command ran and
 	// exited non-zero" (state absent) from "the command could not run"
-	// (real failure). Inject each case via the swappable runner so the
-	// behaviour is pinned without spawning a process.
+	// (real failure). Inject each case on the context so the behaviour is
+	// pinned without spawning a process.
 	t.Run("ran non-zero reports absent", func(t *testing.T) {
-		defer SetExecRunner(func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+		t.Parallel()
+		ctx := ContextWithRunner(context.Background(), func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
 			resp := ExecCommandResponse{ExitCode: 1}
 			return resp, &ExecError{Response: resp, Err: errors.New("absent"), Ran: true}
-		})()
+		})
 
-		matched, err := Probe(context.Background(), ExecCommandInput{Command: "dokku"})
+		matched, err := Probe(ctx, ExecCommandInput{Command: "dokku"})
 		if err != nil {
 			t.Fatalf("Probe should treat a ran non-zero exit as absent, got err %v", err)
 		}
@@ -507,12 +509,13 @@ func TestProbeExecRanFlagControlsAbsence(t *testing.T) {
 	})
 
 	t.Run("cancelled probe propagates", func(t *testing.T) {
-		defer SetExecRunner(func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+		t.Parallel()
+		ctx := ContextWithRunner(context.Background(), func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
 			resp := ExecCommandResponse{ExitCode: -1, Cancelled: true}
 			return resp, &ExecError{Response: resp, Err: context.Canceled}
-		})()
+		})
 
-		matched, err := Probe(context.Background(), ExecCommandInput{Command: "dokku"})
+		matched, err := Probe(ctx, ExecCommandInput{Command: "dokku"})
 		if matched {
 			t.Error("Probe should report matched=false on a cancelled probe")
 		}

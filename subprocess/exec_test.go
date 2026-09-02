@@ -243,18 +243,22 @@ func TestCallExecCommandWithContext(t *testing.T) {
 	}
 }
 
-func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
+// TestContextRunnerReceivesInputAndFallsBackToTheReal covers both halves of
+// runnerFromContext: a context carrying a runner routes to it with the input
+// intact, and one carrying none reaches the real executor. It replaces
+// TestSetExecRunnerSwapsAndRestores, which pinned the same two halves against
+// the package-level setter #502 removed.
+func TestContextRunnerReceivesInputAndFallsBackToTheReal(t *testing.T) {
+	t.Parallel()
 	var gotInput ExecCommandInput
-	fake := func(_ context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
+	ctx := ContextWithRunner(context.Background(), func(_ context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
 		gotInput = input
 		return ExecCommandResponse{Stdout: "canned"}, nil
-	}
+	})
 
-	restore := SetExecRunner(fake)
-
-	// Both entry points route through the swapped runner without spawning a
-	// process (the command below does not exist on PATH).
-	resp, err := CallExecCommand(context.Background(), ExecCommandInput{Command: "dokku", Args: []string{"apps:list"}})
+	// The fake answers without spawning a process (the command below does
+	// not exist on PATH).
+	resp, err := CallExecCommand(ctx, ExecCommandInput{Command: "dokku", Args: []string{"apps:list"}})
 	if err != nil {
 		t.Fatalf("CallExecCommand with fake runner failed: %v", err)
 	}
@@ -265,12 +269,10 @@ func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
 		t.Errorf("fake runner did not receive the input: %+v", gotInput)
 	}
 
-	restore()
-
-	// After restore the real executor runs again: echo succeeds locally.
+	// A bare context reaches the real executor: echo succeeds locally.
 	resp, err = CallExecCommand(context.Background(), ExecCommandInput{Command: "echo", Args: []string{"hi"}})
 	if err != nil {
-		t.Fatalf("CallExecCommand after restore failed: %v", err)
+		t.Fatalf("CallExecCommand without a context runner failed: %v", err)
 	}
 	if resp.StdoutContents() != "hi" {
 		t.Errorf("expected real executor output %q, got %q", "hi", resp.StdoutContents())
