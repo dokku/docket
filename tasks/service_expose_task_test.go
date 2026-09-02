@@ -9,6 +9,7 @@ import (
 )
 
 func TestServiceExposeTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := ServiceExposeTask{Service: "redis", Name: "test-service", Ports: []string{"6379"}, State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -17,6 +18,7 @@ func TestServiceExposeTaskInvalidState(t *testing.T) {
 }
 
 func TestServiceExposeTaskPresentRequiresPorts(t *testing.T) {
+	t.Parallel()
 	task := ServiceExposeTask{Service: "redis", Name: "test-service"}
 	result := task.Plan(testCtx())
 	if result.Error == nil {
@@ -25,6 +27,7 @@ func TestServiceExposeTaskPresentRequiresPorts(t *testing.T) {
 }
 
 func TestGetTasksServiceExposeTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: expose postgres service
@@ -70,11 +73,12 @@ func TestGetTasksServiceExposeTaskParsedCorrectly(t *testing.T) {
 }
 
 func TestServiceExposeSameOrderInSync(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet redis:info my-svc --exposed-ports": "1111->1111 2222->2222",
-	}))()
+	}))
 
-	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan(testCtx())
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -84,11 +88,12 @@ func TestServiceExposeSameOrderInSync(t *testing.T) {
 }
 
 func TestServiceExposeReorderReportsDrift(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet redis:info my-svc --exposed-ports": "1111->1111 2222->2222",
-	}))()
+	}))
 
-	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"2222", "1111"}, State: StatePresent}.Plan(testCtx())
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"2222", "1111"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -117,11 +122,12 @@ func TestServiceExposeReorderReportsDrift(t *testing.T) {
 }
 
 func TestServiceExposeCreatesWhenNotExposed(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet redis:info my-svc --exposed-ports": "",
-	}))()
+	}))
 
-	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan(testCtx())
+	plan := ServiceExposeTask{Service: "redis", Name: "my-svc", Ports: []string{"1111", "2222"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}

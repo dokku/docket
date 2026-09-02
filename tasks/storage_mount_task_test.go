@@ -8,6 +8,7 @@ import (
 )
 
 func TestStorageMountTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := StorageMountTask{
 		App:          "test-app",
 		HostDir:      "/host",
@@ -21,6 +22,7 @@ func TestStorageMountTaskInvalidState(t *testing.T) {
 }
 
 func TestStorageMountRequiresExactlyOneSource(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		task StorageMountTask
@@ -51,6 +53,7 @@ func TestStorageMountRequiresExactlyOneSource(t *testing.T) {
 }
 
 func TestStorageMountRejectsInvalidPhase(t *testing.T) {
+	t.Parallel()
 	task := StorageMountTask{
 		App:          "test-app",
 		EntryName:    "data",
@@ -68,6 +71,7 @@ func TestStorageMountRejectsInvalidPhase(t *testing.T) {
 }
 
 func TestStorageMountNamedEntryCommandShape(t *testing.T) {
+	t.Parallel()
 	task := StorageMountTask{
 		App:           "test-app",
 		EntryName:     "data",
@@ -96,6 +100,7 @@ func TestStorageMountNamedEntryCommandShape(t *testing.T) {
 }
 
 func TestStorageMountLegacyFirstMountCommandShape(t *testing.T) {
+	t.Parallel()
 	task := StorageMountTask{
 		App:          "test-app",
 		HostDir:      "/var/data",
@@ -109,6 +114,7 @@ func TestStorageMountLegacyFirstMountCommandShape(t *testing.T) {
 }
 
 func TestStorageMountLegacyFirstMountWithVolumeOptions(t *testing.T) {
+	t.Parallel()
 	task := StorageMountTask{
 		App:           "test-app",
 		HostDir:       "/var/data",
@@ -128,6 +134,7 @@ func TestStorageMountLegacyFirstMountWithVolumeOptions(t *testing.T) {
 }
 
 func TestStorageMountNamedRemediationFromLegacy(t *testing.T) {
+	t.Parallel()
 	// Recipe uses host_dir; storage:report discovered the auto-named
 	// entry. Drift remediation must upsert via the named-entry CLI.
 	task := StorageMountTask{
@@ -148,6 +155,7 @@ func TestStorageMountNamedRemediationFromLegacy(t *testing.T) {
 }
 
 func TestStorageMountNamedRemediationWithOptions(t *testing.T) {
+	t.Parallel()
 	task := StorageMountTask{
 		App:           "test-app",
 		HostDir:       "/var/data",
@@ -166,6 +174,7 @@ func TestStorageMountNamedRemediationWithOptions(t *testing.T) {
 }
 
 func TestStorageMountNamedUnmount(t *testing.T) {
+	t.Parallel()
 	task := StorageMountTask{
 		App:          "test-app",
 		HostDir:      "/var/data",
@@ -183,11 +192,11 @@ func TestStorageMountNamedUnmount(t *testing.T) {
 // without a live server.
 func exportMounts(t *testing.T, app, report string) []StorageMountTask {
 	t.Helper()
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet storage:report " + app + " --format json": report,
-	}))()
+	}))
 
-	bodies, err := StorageMountTask{}.ExportApp(testCtx(), app)
+	bodies, err := StorageMountTask{}.ExportApp(ctx, app)
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -203,6 +212,7 @@ func exportMounts(t *testing.T, app, report string) []StorageMountTask {
 }
 
 func TestStorageMountExportNamedEntryFullFidelity(t *testing.T) {
+	t.Parallel()
 	report := `{
 		"attachment.1.entry-name": "data",
 		"attachment.1.host-path": "/var/lib/dokku/data/storage/data",
@@ -248,6 +258,7 @@ func TestStorageMountExportNamedEntryFullFidelity(t *testing.T) {
 }
 
 func TestStorageMountExportSinglePhaseAndDefaultProcessType(t *testing.T) {
+	t.Parallel()
 	report := `{
 		"attachment.1.entry-name": "logs",
 		"attachment.1.host-path": "/var/lib/dokku/data/storage/logs",
@@ -276,6 +287,7 @@ func TestStorageMountExportSinglePhaseAndDefaultProcessType(t *testing.T) {
 }
 
 func TestStorageMountExportLegacyEntryUsesHostDir(t *testing.T) {
+	t.Parallel()
 	report := `{
 		"attachment.1.entry-name": "legacy-abc123def4",
 		"attachment.1.host-path": "/var/data",
@@ -296,6 +308,7 @@ func TestStorageMountExportLegacyEntryUsesHostDir(t *testing.T) {
 }
 
 func TestStorageMountExportSortsByContainerPath(t *testing.T) {
+	t.Parallel()
 	// Indices are intentionally out of container-path order to prove the
 	// exporter sorts deterministically rather than trusting report order.
 	report := `{
@@ -319,6 +332,7 @@ func TestStorageMountExportSortsByContainerPath(t *testing.T) {
 }
 
 func TestStorageMountExportRecipeEmitsFields(t *testing.T) {
+	t.Parallel()
 	// End-to-end through ExportRecipe: the reconstructed fields must survive
 	// YAML marshaling in the user-facing recipe (bool readonly, single-phase
 	// list, process_type).
@@ -330,12 +344,12 @@ func TestStorageMountExportRecipeEmitsFields(t *testing.T) {
 		"attachment.1.process-type": "web",
 		"attachment.1.readonly": "true"
 	}`
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list": "node-js-app",
 		"--quiet storage:report node-js-app --format json": report,
-	}))()
+	}))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{Apps: []string{"node-js-app"}})
+	res, err := ExportRecipe(ctx, ExportOptions{Apps: []string{"node-js-app"}})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -362,6 +376,7 @@ func TestStorageMountExportRecipeEmitsFields(t *testing.T) {
 }
 
 func TestStorageMountPlanFindsRunOnlyMount(t *testing.T) {
+	t.Parallel()
 	// storage:list hides run-only mounts (it reports the deploy phase only);
 	// findMount now reads storage:report, so a run-only mount is discovered and
 	// the recipe reports InSync instead of a perpetual create.
@@ -372,9 +387,9 @@ func TestStorageMountPlanFindsRunOnlyMount(t *testing.T) {
 		"attachment.1.phases": "run",
 		"attachment.1.readonly": "false"
 	}`
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet storage:report node-js-app --format json": report,
-	}))()
+	}))
 
 	task := StorageMountTask{
 		App:          "node-js-app",
@@ -383,7 +398,7 @@ func TestStorageMountPlanFindsRunOnlyMount(t *testing.T) {
 		Phases:       []string{"run"},
 		State:        StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("Plan returned error: %v", plan.Error)
 	}
@@ -393,6 +408,7 @@ func TestStorageMountPlanFindsRunOnlyMount(t *testing.T) {
 }
 
 func TestStorageMountPlanVolumeOptionsDriftReportsModify(t *testing.T) {
+	t.Parallel()
 	// An attachment already exists and only volume_options drifted: the plan
 	// remediates it in place, so it must render the modify marker (~), not the
 	// create marker (+). Regression guard for the hardcoded PlanStatusCreate.
@@ -404,9 +420,9 @@ func TestStorageMountPlanVolumeOptionsDriftReportsModify(t *testing.T) {
 		"attachment.1.volume-options": "Z",
 		"attachment.1.readonly": "false"
 	}`
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet storage:report node-js-app --format json": report,
-	}))()
+	}))
 
 	task := StorageMountTask{
 		App:           "node-js-app",
@@ -415,7 +431,7 @@ func TestStorageMountPlanVolumeOptionsDriftReportsModify(t *testing.T) {
 		VolumeOptions: "noexec,nosuid",
 		State:         StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("Plan returned error: %v", plan.Error)
 	}
@@ -431,11 +447,12 @@ func TestStorageMountPlanVolumeOptionsDriftReportsModify(t *testing.T) {
 }
 
 func TestStorageMountPlanMissingReportsCreate(t *testing.T) {
+	t.Parallel()
 	// No attachment matches the recipe, so the mount is brand new and must
 	// render the create marker (+). Pins the default create branch.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet storage:report node-js-app --format json": "{}",
-	}))()
+	}))
 
 	task := StorageMountTask{
 		App:          "node-js-app",
@@ -443,7 +460,7 @@ func TestStorageMountPlanMissingReportsCreate(t *testing.T) {
 		ContainerDir: "/app/storage",
 		State:        StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("Plan returned error: %v", plan.Error)
 	}

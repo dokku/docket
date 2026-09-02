@@ -18,6 +18,7 @@ type ctxKey struct{}
 // which means applying a plan uses the caller's current cancellation and
 // target rather than whatever was in scope when the plan was computed.
 func TestExecutePlanPassesItsContextToApply(t *testing.T) {
+	t.Parallel()
 	planCtx := context.WithValue(context.Background(), ctxKey{}, "plan")
 	applyCtx := context.WithValue(context.Background(), ctxKey{}, "apply")
 
@@ -50,13 +51,17 @@ func TestExecutePlanPassesItsContextToApply(t *testing.T) {
 // bottomed out in a context.Background() manufactured inside subprocess, so a
 // caller's cancellation and deadline could not reach a running task at all.
 func TestPlanUsesTheContextItWasGiven(t *testing.T) {
+	t.Parallel()
 	var seen string
-	defer subprocess.SetExecRunner(func(ctx context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
-		seen, _ = ctx.Value(ctxKey{}).(string)
-		return subprocess.ExecCommandResponse{}, nil
-	})()
+	// The runner goes on the caller's own context, not a fresh one, so what the
+	// probe observes is the value the caller put there.
+	ctx := subprocess.ContextWithRunner(
+		context.WithValue(context.Background(), ctxKey{}, "caller"),
+		func(ctx context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+			seen, _ = ctx.Value(ctxKey{}).(string)
+			return subprocess.ExecCommandResponse{}, nil
+		})
 
-	ctx := context.WithValue(context.Background(), ctxKey{}, "caller")
 	AppTask{App: "demo", State: StatePresent}.Plan(ctx)
 
 	if seen != "caller" {
@@ -69,12 +74,12 @@ func TestPlanUsesTheContextItWasGiven(t *testing.T) {
 // "the probe did not answer" as "the resource is missing" would have apply
 // mutate a server whose state was never established.
 func TestPlanReportsCancellationAsAnError(t *testing.T) {
-	defer subprocess.SetExecRunner(func(ctx context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
-		return subprocess.ExecCommandResponse{Cancelled: true}, &subprocess.ExecError{Err: context.Canceled}
-	})()
-
-	ctx, cancel := context.WithCancel(context.Background())
+	t.Parallel()
+	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
+	ctx := subprocess.ContextWithRunner(cancelled, func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		return subprocess.ExecCommandResponse{Cancelled: true}, &subprocess.ExecError{Err: context.Canceled}
+	})
 
 	plan := AppTask{App: "demo", State: StatePresent}.Plan(ctx)
 	if plan.Error == nil {

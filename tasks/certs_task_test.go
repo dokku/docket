@@ -12,6 +12,7 @@ import (
 )
 
 func TestCertsTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", Key: "/tmp/key", State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -20,6 +21,7 @@ func TestCertsTaskInvalidState(t *testing.T) {
 }
 
 func TestCertsTaskMissingApp(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{Cert: "/tmp/cert", Key: "/tmp/key", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -31,6 +33,7 @@ func TestCertsTaskMissingApp(t *testing.T) {
 }
 
 func TestCertsTaskGlobalWithApp(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{App: "test-app", Global: true, Cert: "/tmp/cert", Key: "/tmp/key", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -42,6 +45,7 @@ func TestCertsTaskGlobalWithApp(t *testing.T) {
 }
 
 func TestCertsTaskPresentMissingCert(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{App: "test-app", Key: "/tmp/key", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -53,6 +57,7 @@ func TestCertsTaskPresentMissingCert(t *testing.T) {
 }
 
 func TestCertsTaskPresentMissingKey(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -64,6 +69,7 @@ func TestCertsTaskPresentMissingKey(t *testing.T) {
 }
 
 func TestCertsTaskInlineMissingKeyContent(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{App: "test-app", CertContent: "cert-pem", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -75,6 +81,7 @@ func TestCertsTaskInlineMissingKeyContent(t *testing.T) {
 }
 
 func TestCertsTaskInlineMixedSources(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", KeyContent: "key-pem", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -86,6 +93,7 @@ func TestCertsTaskInlineMixedSources(t *testing.T) {
 }
 
 func TestCertsTaskInlineBothCertForms(t *testing.T) {
+	t.Parallel()
 	task := CertsTask{App: "test-app", Cert: "/tmp/cert", CertContent: "cert-pem", Key: "/tmp/key", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -97,6 +105,7 @@ func TestCertsTaskInlineBothCertForms(t *testing.T) {
 }
 
 func TestBuildCertTarball(t *testing.T) {
+	t.Parallel()
 	certPEM := "-----BEGIN CERTIFICATE-----\nfake-cert\n-----END CERTIFICATE-----\n"
 	keyPEM := "-----BEGIN PRIVATE KEY-----\nfake-key\n-----END PRIVATE KEY-----\n"
 
@@ -138,6 +147,7 @@ func TestBuildCertTarball(t *testing.T) {
 }
 
 func TestGetTasksCertsTaskInlineParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: install cert
@@ -184,6 +194,7 @@ func TestGetTasksCertsTaskInlineParsedCorrectly(t *testing.T) {
 }
 
 func TestGetTasksCertsTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: install cert
@@ -228,13 +239,14 @@ func TestGetTasksCertsTaskParsedCorrectly(t *testing.T) {
 // global-cert:report so a bare `--global-cert-enabled` flag now reports
 // per-app; only `--global` targets the global certificate itself.
 func TestCertsEnabledGlobalUsesGlobalScope(t *testing.T) {
+	t.Parallel()
 	var gotArgs []string
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		gotArgs = in.Args
 		return subprocess.ExecCommandResponse{Stdout: "true"}, nil
-	})()
+	})
 
-	enabled, err := certsEnabled(testCtx(), CertsTask{Global: true})
+	enabled, err := certsEnabled(ctx, CertsTask{Global: true})
 	if err != nil {
 		t.Fatalf("certsEnabled: %v", err)
 	}

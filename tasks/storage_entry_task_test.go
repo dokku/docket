@@ -9,6 +9,7 @@ import (
 )
 
 func TestStorageEntryTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := StorageEntryTask{Name: "test-entry", State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -17,6 +18,7 @@ func TestStorageEntryTaskInvalidState(t *testing.T) {
 }
 
 func TestStorageEntryAbsentStateAllowed(t *testing.T) {
+	t.Parallel()
 	// Absent is a valid state, unlike storage_ensure. The task will fail
 	// because dokku isn't reachable, but the failure must not be the
 	// "absent state is not supported" sentinel.
@@ -28,12 +30,14 @@ func TestStorageEntryAbsentStateAllowed(t *testing.T) {
 }
 
 func TestStorageEntryRegistered(t *testing.T) {
+	t.Parallel()
 	if _, ok := RegisteredTasks["dokku_storage_entry"]; !ok {
 		t.Fatal("expected dokku_storage_entry to be registered")
 	}
 }
 
 func TestStorageEntryCreateArgsMinimal(t *testing.T) {
+	t.Parallel()
 	// An omitted scheduler leaves the flag off entirely so dokku applies
 	// its own default rather than docket restating it.
 	task := StorageEntryTask{Name: "app-data", State: StatePresent}
@@ -44,6 +48,7 @@ func TestStorageEntryCreateArgsMinimal(t *testing.T) {
 }
 
 func TestStorageEntryCreateArgsPathIsTrailingPositional(t *testing.T) {
+	t.Parallel()
 	task := StorageEntryTask{
 		Name:      "app-data",
 		Path:      "/mnt/app-data",
@@ -63,6 +68,7 @@ func TestStorageEntryCreateArgsPathIsTrailingPositional(t *testing.T) {
 }
 
 func TestStorageEntryCreateArgsEveryFlag(t *testing.T) {
+	t.Parallel()
 	// The full k3s surface, asserting the fixed flag order plan and apply
 	// both build from.
 	task := StorageEntryTask{
@@ -97,6 +103,7 @@ func TestStorageEntryCreateArgsEveryFlag(t *testing.T) {
 }
 
 func TestStorageEntryCreateArgsRepeatsMapFlagsInSortedOrder(t *testing.T) {
+	t.Parallel()
 	// dokku collects the flag into a map, so docket sorts the keys to keep
 	// plan and apply byte-identical across runs.
 	task := StorageEntryTask{
@@ -124,6 +131,7 @@ func TestStorageEntryCreateArgsRepeatsMapFlagsInSortedOrder(t *testing.T) {
 }
 
 func TestStorageEntryCreateArgsCarriesMode(t *testing.T) {
+	t.Parallel()
 	// --mode sits between --chown and --reclaim-policy, matching dokku's own
 	// flag order, and is rendered in the 4 digit form the registry records so
 	// the create command reads the same as the storage:set a later converge
@@ -146,6 +154,7 @@ func TestStorageEntryCreateArgsCarriesMode(t *testing.T) {
 }
 
 func TestStorageEntryCreateArgsKeepsAFourDigitMode(t *testing.T) {
+	t.Parallel()
 	task := StorageEntryTask{Name: "app-data", Mode: "0777", State: StatePresent}
 	want := []string{"--quiet", "storage:create", "--mode", "0777", "app-data"}
 	if got := task.createArgs(); !equalStrings(got, want) {
@@ -154,6 +163,7 @@ func TestStorageEntryCreateArgsKeepsAFourDigitMode(t *testing.T) {
 }
 
 func TestStorageEntryValidModeValues(t *testing.T) {
+	t.Parallel()
 	// The same shape dokku's directoryModeRegexp accepts: 3 or 4 octal digits.
 	for _, mode := range []string{"000", "755", "777", "0000", "0755", "0777", "2775", "7777"} {
 		task := StorageEntryTask{Name: "app-data", Mode: mode, State: StatePresent}
@@ -164,6 +174,7 @@ func TestStorageEntryValidModeValues(t *testing.T) {
 }
 
 func TestStorageEntryInvalidModeValue(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"8", "99", "12345", "0888", "0o755", "-755", "+755", "07 5", "abc", "0x1ff", "u+rwx"} {
 		task := StorageEntryTask{Name: "app-data", Mode: mode, State: StatePresent}
 		err := task.Validate()
@@ -178,6 +189,7 @@ func TestStorageEntryInvalidModeValue(t *testing.T) {
 }
 
 func TestStorageEntryOmittedModeAllowed(t *testing.T) {
+	t.Parallel()
 	task := StorageEntryTask{Name: "app-data", State: StatePresent}
 	if err := task.Validate(); err != nil {
 		t.Errorf("an omitted mode should be valid, got: %v", err)
@@ -185,6 +197,7 @@ func TestStorageEntryOmittedModeAllowed(t *testing.T) {
 }
 
 func TestStorageEntryValidChownValues(t *testing.T) {
+	t.Parallel()
 	// The same value set dokku_storage_ensure accepts: the entry task now
 	// shares validChown rather than forwarding anything at all.
 	for _, chown := range []string{"heroku", "herokuish", "paketo", "root", "false", "0", "1000", "32767", "65535"} {
@@ -196,6 +209,7 @@ func TestStorageEntryValidChownValues(t *testing.T) {
 }
 
 func TestStorageEntryInvalidChownValue(t *testing.T) {
+	t.Parallel()
 	for _, chown := range []string{"packeto", "65536", "70000", "-1", "+5", "1000:1000", "root:root", "0x10", "1_000", "abc"} {
 		task := StorageEntryTask{Name: "app-data", Chown: chown, State: StatePresent}
 		err := task.Validate()
@@ -210,6 +224,7 @@ func TestStorageEntryInvalidChownValue(t *testing.T) {
 }
 
 func TestStorageEntryOmittedChownAllowed(t *testing.T) {
+	t.Parallel()
 	task := StorageEntryTask{Name: "app-data", State: StatePresent}
 	if err := task.Validate(); err != nil {
 		t.Errorf("an omitted chown should be valid, got: %v", err)
@@ -217,6 +232,7 @@ func TestStorageEntryOmittedChownAllowed(t *testing.T) {
 }
 
 func TestStorageEntryValidateSchedulerRules(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		task    StorageEntryTask
@@ -319,6 +335,7 @@ func TestStorageEntryValidateSchedulerRules(t *testing.T) {
 }
 
 func TestStorageEntryValidateRejectsCreateOptionsWhenAbsent(t *testing.T) {
+	t.Parallel()
 	// storage:destroy takes only the entry name, so a create-time option
 	// alongside state 'absent' would be silently dropped.
 	tests := []struct {
@@ -353,6 +370,7 @@ func TestStorageEntryValidateRejectsCreateOptionsWhenAbsent(t *testing.T) {
 }
 
 func TestStorageEntryValidateAbsentWithOnlyNameIsValid(t *testing.T) {
+	t.Parallel()
 	// The scheduler default must not count as a supplied create-time
 	// option, or every destroy would fail validation.
 	task := StorageEntryTask{Name: "app-data", Scheduler: "docker-local", State: StateAbsent}
@@ -362,6 +380,7 @@ func TestStorageEntryValidateAbsentWithOnlyNameIsValid(t *testing.T) {
 }
 
 func TestStorageEntryValidateRejectsDestroyHostDirWhenPresent(t *testing.T) {
+	t.Parallel()
 	// storage:destroy is the only command that takes the flag, so asking for
 	// it under 'present' asks for a removal that will never happen.
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StatePresent}
@@ -375,6 +394,7 @@ func TestStorageEntryValidateRejectsDestroyHostDirWhenPresent(t *testing.T) {
 }
 
 func TestStorageEntryValidateAcceptsDestroyHostDirWhenAbsent(t *testing.T) {
+	t.Parallel()
 	// It is the one field state 'absent' wants rather than refuses, so it must
 	// not be swept up by the create-time option guard.
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
@@ -384,6 +404,7 @@ func TestStorageEntryValidateAcceptsDestroyHostDirWhenAbsent(t *testing.T) {
 }
 
 func TestStorageEntryValidateMapKeysAndValues(t *testing.T) {
+	t.Parallel()
 	// dokku splits each pair on its first '=' and the flag is comma-split
 	// through a CSV reader before dokku sees it, so neither delimiter can
 	// survive inside a key or value.
@@ -468,6 +489,7 @@ func TestStorageEntryValidateMapKeysAndValues(t *testing.T) {
 }
 
 func TestStorageEntryPlanReportsValidationError(t *testing.T) {
+	t.Parallel()
 	// Validate runs before the probe, so an invalid input never reaches
 	// the server.
 	task := StorageEntryTask{Name: "app-data", Chown: "packeto", State: StatePresent}
@@ -481,9 +503,10 @@ func TestStorageEntryPlanReportsValidationError(t *testing.T) {
 }
 
 func TestStorageEntryPlanCreateCarriesEveryFlag(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet storage:list-entries --format json": `[]`,
-	}))()
+	}))
 
 	task := StorageEntryTask{
 		Name:        "app-data",
@@ -491,7 +514,7 @@ func TestStorageEntryPlanCreateCarriesEveryFlag(t *testing.T) {
 		Annotations: map[string]string{"team": "platform"},
 		State:       StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusCreate {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusCreate, plan.Status)
 	}
@@ -542,9 +565,10 @@ func storageEntriesFixture() map[string]string {
 }
 
 func TestStorageEntryExportGlobal(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(storageEntriesFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(storageEntriesFixture()))
 
-	exported, err := StorageEntryTask{}.ExportGlobal(testCtx())
+	exported, err := StorageEntryTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal returned an error: %v", err)
 	}
@@ -610,7 +634,8 @@ const dockerLocalEntryJSON = `{
 }`
 
 func TestStorageEntryPlanInSyncWhenEveryDeclaredFieldMatches(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))
 
 	task := StorageEntryTask{
 		Name:      "app-data",
@@ -619,7 +644,7 @@ func TestStorageEntryPlanInSyncWhenEveryDeclaredFieldMatches(t *testing.T) {
 		Chown:     "herokuish",
 		State:     StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q reason %q", plan.Status, plan.Reason)
 	}
@@ -629,11 +654,12 @@ func TestStorageEntryPlanInSyncWhenEveryDeclaredFieldMatches(t *testing.T) {
 }
 
 func TestStorageEntryPlanLeavesUndeclaredAttributesAlone(t *testing.T) {
+	t.Parallel()
 	// The recipe names only the fields it manages. A size, namespace and
 	// annotation it never mentions are neither compared nor cleared, which
 	// is what stops a partially-declared recipe from destroying attributes
 	// set elsewhere.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(`{
 		"name": "app-data",
 		"scheduler": "k3s",
 		"size": "2Gi",
@@ -642,7 +668,7 @@ func TestStorageEntryPlanLeavesUndeclaredAttributesAlone(t *testing.T) {
 		"annotations": {"team": "platform"},
 		"labels": {"tier": "data"},
 		"schema_version": 1
-	}`)))()
+	}`)))
 
 	task := StorageEntryTask{
 		Name:      "app-data",
@@ -651,17 +677,18 @@ func TestStorageEntryPlanLeavesUndeclaredAttributesAlone(t *testing.T) {
 		Chown:     "herokuish",
 		State:     StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q reason %q mutations %v", plan.Status, plan.Reason, plan.Mutations)
 	}
 }
 
 func TestStorageEntryPlanConvergesChown(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))
 
 	task := StorageEntryTask{Name: "app-data", Chown: "root", State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusModify, plan.Status)
 	}
@@ -693,10 +720,11 @@ const dockerLocalEntryWithModeJSON = `{
 }`
 
 func TestStorageEntryPlanConvergesMode(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))
 
 	task := StorageEntryTask{Name: "app-data", Mode: "0777", State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
 	}
@@ -711,25 +739,27 @@ func TestStorageEntryPlanConvergesMode(t *testing.T) {
 }
 
 func TestStorageEntryPlanReadsAThreeDigitModeAsItsFourDigitForm(t *testing.T) {
+	t.Parallel()
 	// dokku records 0755 whether the caller wrote 755 or 0755. Comparing the
 	// raw recipe value against the recorded one would report drift on every
 	// run and re-apply a mode that was already correct.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))
 
 	task := StorageEntryTask{Name: "app-data", Mode: "755", State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q mutations %v", plan.Status, plan.Mutations)
 	}
 }
 
 func TestStorageEntryPlanNormalizesAThreeDigitModeItSets(t *testing.T) {
+	t.Parallel()
 	// The other half of the same rule: a drifted three digit mode converges to
 	// the four digit form, so the next run settles rather than looping.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))
 
 	task := StorageEntryTask{Name: "app-data", Mode: "700", State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	want := []string{"dokku --quiet storage:set app-data mode 0700"}
 	if !equalStrings(plan.Commands, want) {
 		t.Errorf("expected commands %v, got %v", want, plan.Commands)
@@ -737,13 +767,14 @@ func TestStorageEntryPlanNormalizesAThreeDigitModeItSets(t *testing.T) {
 }
 
 func TestStorageEntryPlanConvergesChownBeforeMode(t *testing.T) {
+	t.Parallel()
 	// Struct field order, so plan and apply build byte-identical argv across
 	// runs. The k3s ordering test below cannot cover this pair: k3s rejects
 	// mode outright.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryWithModeJSON)))
 
 	task := StorageEntryTask{Name: "app-data", Chown: "root", Mode: "0777", State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	want := []string{
 		"dokku --quiet storage:set app-data chown root",
 		"dokku --quiet storage:set app-data mode 0777",
@@ -757,9 +788,10 @@ func TestStorageEntryPlanConvergesChownBeforeMode(t *testing.T) {
 }
 
 func TestStorageEntryPlanConvergesEveryMutableAttributeInFieldOrder(t *testing.T) {
+	t.Parallel()
 	// One command per drifted field, in struct field order with sorted map
 	// keys, so plan and apply build byte-identical argv across runs.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(`{
 		"name": "app-data",
 		"scheduler": "k3s",
 		"size": "2Gi",
@@ -768,7 +800,7 @@ func TestStorageEntryPlanConvergesEveryMutableAttributeInFieldOrder(t *testing.T
 		"reclaim_policy": "Retain",
 		"annotations": {"team": "infra"},
 		"schema_version": 1
-	}`)))()
+	}`)))
 
 	task := StorageEntryTask{
 		Name:          "app-data",
@@ -781,7 +813,7 @@ func TestStorageEntryPlanConvergesEveryMutableAttributeInFieldOrder(t *testing.T
 		Labels:        map[string]string{"tier": "data"},
 		State:         StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusModify {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusModify, plan.Status, plan.Error)
 	}
@@ -815,23 +847,24 @@ func TestStorageEntryPlanConvergesEveryMutableAttributeInFieldOrder(t *testing.T
 }
 
 func TestStorageEntryPlanConvergesMapKeysWithoutDisturbingSiblings(t *testing.T) {
+	t.Parallel()
 	// The per-key subcommands are what make an omitted key unmanaged; the
 	// wholesale --annotation flag would replace the entire map and drop the
 	// key the recipe does not name.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(`{
 		"name": "app-data",
 		"scheduler": "docker-local",
 		"host_path": "/var/lib/dokku/data/storage/app-data",
 		"annotations": {"team": "platform", "owner": "sre"},
 		"schema_version": 1
-	}`)))()
+	}`)))
 
 	task := StorageEntryTask{
 		Name:        "app-data",
 		Annotations: map[string]string{"team": "data"},
 		State:       StatePresent,
 	}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	want := []string{"dokku --quiet storage:annotations:set app-data team data"}
 	if !equalStrings(plan.Commands, want) {
 		t.Errorf("expected commands %v, got %v", want, plan.Commands)
@@ -844,6 +877,7 @@ func TestStorageEntryPlanConvergesMapKeysWithoutDisturbingSiblings(t *testing.T)
 }
 
 func TestStorageEntryPlanRejectsImmutableDrift(t *testing.T) {
+	t.Parallel()
 	// dokku refuses an access-mode or storage-class swap in place, and has
 	// no command at all for the scheduler or the host path, so the plan
 	// errors rather than reporting a change it could never apply.
@@ -881,10 +915,10 @@ func TestStorageEntryPlanRejectsImmutableDrift(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(test.entry)))()
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(test.entry)))
 
 			test.task.State = StatePresent
-			plan := test.task.Plan(testCtx())
+			plan := test.task.Plan(ctx)
 			if plan.Status != PlanStatusError {
 				t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 			}
@@ -899,15 +933,16 @@ func TestStorageEntryPlanRejectsImmutableDrift(t *testing.T) {
 }
 
 func TestStorageEntryPlanReadsAnOmittedSchedulerAsDockerLocal(t *testing.T) {
+	t.Parallel()
 	// createArgs drops the flag when the scheduler is empty and dokku
 	// applies docker-local, so the comparison has to read it the same way
 	// rather than treating an empty scheduler as unmanaged.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(
 		`{"name": "app-data", "scheduler": "k3s", "size": "2Gi", "schema_version": 1}`,
-	)))()
+	)))
 
 	task := StorageEntryTask{Name: "app-data", State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusError {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 	}
@@ -917,12 +952,13 @@ func TestStorageEntryPlanReadsAnOmittedSchedulerAsDockerLocal(t *testing.T) {
 }
 
 func TestStorageEntryPlanAbsentIgnoresAttributes(t *testing.T) {
+	t.Parallel()
 	// Attributes are rejected by Validate under state 'absent', so the
 	// destroy branch never compares them - it plans on presence alone.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))
 
 	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusDestroy {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusDestroy, plan.Status)
 	}
@@ -933,10 +969,11 @@ func TestStorageEntryPlanAbsentIgnoresAttributes(t *testing.T) {
 }
 
 func TestStorageEntryPlanAbsentDestroysTheHostDirectoryOnRequest(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))
 
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusDestroy {
 		t.Fatalf("expected plan status %q, got %q (error %v)", PlanStatusDestroy, plan.Status, plan.Error)
 	}
@@ -952,19 +989,20 @@ func TestStorageEntryPlanAbsentDestroysTheHostDirectoryOnRequest(t *testing.T) {
 }
 
 func TestStorageEntryPlanAbsentReportsAReclaimDeleteRemoval(t *testing.T) {
+	t.Parallel()
 	// dokku removes the host directory for a Delete entry with no flag at all,
 	// so a plan reporting only what the recipe asked for would stay silent
 	// about a directory that is about to go.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(`{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(`{
 		"name": "app-data",
 		"scheduler": "docker-local",
 		"host_path": "/var/lib/dokku/data/storage/app-data",
 		"reclaim_policy": "Delete",
 		"schema_version": 1
-	}`)))()
+	}`)))
 
 	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	want := []string{"dokku --quiet storage:destroy --force app-data"}
 	if !equalStrings(plan.Commands, want) {
 		t.Errorf("expected commands %v, got %v", want, plan.Commands)
@@ -976,10 +1014,11 @@ func TestStorageEntryPlanAbsentReportsAReclaimDeleteRemoval(t *testing.T) {
 }
 
 func TestStorageEntryPlanAbsentLeavesTheHostDirectoryAloneByDefault(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(dockerLocalEntryJSON)))
 
 	task := StorageEntryTask{Name: "app-data", State: StateAbsent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	wantMutations := []string{"destroy storage entry app-data"}
 	if !equalStrings(plan.Mutations, wantMutations) {
 		t.Errorf("expected mutations %v, got %v", wantMutations, plan.Mutations)
@@ -987,14 +1026,15 @@ func TestStorageEntryPlanAbsentLeavesTheHostDirectoryAloneByDefault(t *testing.T
 }
 
 func TestStorageEntryPlanAbsentRejectsDestroyHostDirOnANonDockerLocalEntry(t *testing.T) {
+	t.Parallel()
 	// dokku refuses the flag outright there, so the plan says so rather than
 	// letting the apply fail part way through.
-	defer subprocess.SetExecRunner(fakeDokku(singleStorageEntryFixture(
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(singleStorageEntryFixture(
 		`{"name": "app-data", "scheduler": "k3s", "size": "2Gi", "reclaim_policy": "Delete", "schema_version": 1}`,
-	)))()
+	)))
 
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Status != PlanStatusError {
 		t.Fatalf("expected plan status %q, got %q", PlanStatusError, plan.Status)
 	}
@@ -1007,29 +1047,31 @@ func TestStorageEntryPlanAbsentRejectsDestroyHostDirOnANonDockerLocalEntry(t *te
 }
 
 func TestStorageEntryPlanAbsentIgnoresDestroyHostDirWhenTheEntryIsGone(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet storage:list-entries --format json": `[]`,
-	}))()
+	}))
 
 	task := StorageEntryTask{Name: "app-data", DestroyHostDir: true, State: StateAbsent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Fatalf("expected an in-sync plan, got status %q (error %v)", plan.Status, plan.Error)
 	}
 }
 
 func TestStorageEntryExecuteAppliesAttributeDrift(t *testing.T) {
+	t.Parallel()
 	// The apply path runs what the plan rendered, and reports the entry as
 	// still present afterwards rather than newly created.
 	responses := singleStorageEntryFixture(dockerLocalEntryJSON)
 	var dispatched [][]string
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		dispatched = append(dispatched, in.Args)
 		return subprocess.ExecCommandResponse{Stdout: responses[strings.Join(in.Args, " ")]}, nil
-	})()
+	})
 
 	task := StorageEntryTask{Name: "app-data", Chown: "root", State: StatePresent}
-	result := task.Execute(testCtx())
+	result := task.Execute(ctx)
 	if result.Error != nil {
 		t.Fatalf("expected the apply to succeed, got: %v", result.Error)
 	}

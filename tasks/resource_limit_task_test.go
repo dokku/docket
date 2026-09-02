@@ -10,6 +10,7 @@ import (
 )
 
 func TestResourceLimitTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := ResourceLimitTask{
 		App:       "test-app",
 		Resources: map[string]string{"cpu": "100"},
@@ -22,6 +23,7 @@ func TestResourceLimitTaskInvalidState(t *testing.T) {
 }
 
 func TestResourceLimitTaskEmptyResources(t *testing.T) {
+	t.Parallel()
 	task := ResourceLimitTask{App: "test-app", Resources: map[string]string{}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -30,6 +32,7 @@ func TestResourceLimitTaskEmptyResources(t *testing.T) {
 }
 
 func TestResourceLimitTaskNilResources(t *testing.T) {
+	t.Parallel()
 	task := ResourceLimitTask{App: "test-app", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -38,16 +41,17 @@ func TestResourceLimitTaskNilResources(t *testing.T) {
 }
 
 func TestResourceLimitClearBeforeConvergesWhenMatched(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet resource:limit test-app": "cpu: 100",
-	}))()
+	}))
 
 	plan := ResourceLimitTask{
 		App:         "test-app",
 		Resources:   map[string]string{"cpu": "100"},
 		ClearBefore: boolPtr(true),
 		State:       StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -57,17 +61,18 @@ func TestResourceLimitClearBeforeConvergesWhenMatched(t *testing.T) {
 }
 
 func TestResourceLimitClearBeforeIgnoresEmptyExtraResource(t *testing.T) {
+	t.Parallel()
 	// memory reads as "0" (unset), so clearing before setting cpu changes nothing.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet resource:limit test-app": "cpu: 100\nmemory: 0",
-	}))()
+	}))
 
 	plan := ResourceLimitTask{
 		App:         "test-app",
 		Resources:   map[string]string{"cpu": "100"},
 		ClearBefore: boolPtr(true),
 		State:       StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -77,17 +82,18 @@ func TestResourceLimitClearBeforeIgnoresEmptyExtraResource(t *testing.T) {
 }
 
 func TestResourceLimitClearBeforeClearsNonDesiredResource(t *testing.T) {
+	t.Parallel()
 	// memory holds a real value outside the desired map, so the clear must run.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet resource:limit test-app": "cpu: 100\nmemory: 256",
-	}))()
+	}))
 
 	plan := ResourceLimitTask{
 		App:         "test-app",
 		Resources:   map[string]string{"cpu": "100"},
 		ClearBefore: boolPtr(true),
 		State:       StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -115,12 +121,13 @@ func TestResourceLimitClearBeforeClearsNonDesiredResource(t *testing.T) {
 }
 
 func TestResourceLimitSetCommandDeterministicOrder(t *testing.T) {
+	t.Parallel()
 	// Both cpu and memory drift, so the set command carries both flags and both
 	// mutations are reported. Sorting the resource keys must yield byte-identical,
 	// alphabetical output on every run so plan and apply agree (issue #341).
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet resource:limit test-app": "cpu: 50\nmemory: 256",
-	}))()
+	}))
 
 	task := ResourceLimitTask{
 		App:       "test-app",
@@ -134,7 +141,7 @@ func TestResourceLimitSetCommandDeterministicOrder(t *testing.T) {
 	// Repeat so a reintroduced map-order bug is caught reliably rather than
 	// passing by chance on a lucky iteration.
 	for i := 0; i < 20; i++ {
-		plan := task.Plan(testCtx())
+		plan := task.Plan(ctx)
 		if plan.Error != nil {
 			t.Fatalf("iteration %d: unexpected plan error: %v", i, plan.Error)
 		}
@@ -148,6 +155,7 @@ func TestResourceLimitSetCommandDeterministicOrder(t *testing.T) {
 }
 
 func TestGetTasksResourceLimitTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set resource limits

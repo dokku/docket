@@ -33,6 +33,7 @@ func assertBuildpacksReplaceInOrder(t *testing.T, plan PlanResult, want []string
 }
 
 func TestBuildpacksTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := BuildpacksTask{App: "test-app", Buildpacks: []string{"https://example.com/bp.git"}, State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -41,6 +42,7 @@ func TestBuildpacksTaskInvalidState(t *testing.T) {
 }
 
 func TestBuildpacksTaskPresentMissingApp(t *testing.T) {
+	t.Parallel()
 	task := BuildpacksTask{Buildpacks: []string{"https://example.com/bp.git"}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -52,6 +54,7 @@ func TestBuildpacksTaskPresentMissingApp(t *testing.T) {
 }
 
 func TestBuildpacksTaskAbsentMissingApp(t *testing.T) {
+	t.Parallel()
 	task := BuildpacksTask{State: StateAbsent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -63,6 +66,7 @@ func TestBuildpacksTaskAbsentMissingApp(t *testing.T) {
 }
 
 func TestBuildpacksTaskPresentEmptyBuildpacks(t *testing.T) {
+	t.Parallel()
 	task := BuildpacksTask{App: "test-app", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -74,11 +78,12 @@ func TestBuildpacksTaskPresentEmptyBuildpacks(t *testing.T) {
 }
 
 func TestBuildpacksSameOrderInSync(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet buildpacks:report test-app --format json": `{"list":"nodejs,nginx"}`,
-	}))()
+	}))
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(testCtx())
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -88,11 +93,12 @@ func TestBuildpacksSameOrderInSync(t *testing.T) {
 }
 
 func TestBuildpacksReorderReportsDrift(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet buildpacks:report test-app --format json": `{"list":"nginx,nodejs"}`,
-	}))()
+	}))
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(testCtx())
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -106,11 +112,12 @@ func TestBuildpacksReorderReportsDrift(t *testing.T) {
 }
 
 func TestBuildpacksPartialSetUsesReplaceInOrder(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet buildpacks:report test-app --format json": `{"list":"nginx"}`,
-	}))()
+	}))
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(testCtx())
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs", "nginx"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -122,11 +129,12 @@ func TestBuildpacksPartialSetUsesReplaceInOrder(t *testing.T) {
 }
 
 func TestBuildpacksCreateWhenEmpty(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet buildpacks:report test-app --format json": `{"list":""}`,
-	}))()
+	}))
 
-	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs"}, State: StatePresent}.Plan(testCtx())
+	plan := BuildpacksTask{App: "test-app", Buildpacks: []string{"nodejs"}, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -139,6 +147,7 @@ func TestBuildpacksCreateWhenEmpty(t *testing.T) {
 }
 
 func TestGetTasksBuildpacksTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: add buildpacks

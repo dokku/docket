@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -9,13 +10,13 @@ import (
 
 // exportResource runs ExportRecipe restricted to the given addresses against
 // the shared fixture and returns the marshalled recipe plus the report.
-func exportResource(t *testing.T, addresses ...string) (string, ExportReport) {
+func exportResource(t *testing.T, ctx context.Context, addresses ...string) (string, ExportReport) {
 	t.Helper()
 	selectors, err := ParseResourceSelectors(addresses)
 	if err != nil {
 		t.Fatalf("ParseResourceSelectors(%v): %v", addresses, err)
 	}
-	res, err := ExportRecipe(testCtx(), ExportOptions{Resources: selectors, Inline: true})
+	res, err := ExportRecipe(ctx, ExportOptions{Resources: selectors, Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -29,9 +30,10 @@ func exportResource(t *testing.T, addresses ...string) (string, ExportReport) {
 // TestExportResourceSelectsOneResource covers the headline case the issue asks
 // for: reading back a single resource instead of a whole app play.
 func TestExportResourceSelectsOneResource(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	out, report := exportResource(t, "dokku_config[app=app-one]")
+	out, report := exportResource(t, ctx, "dokku_config[app=app-one]")
 
 	if !strings.Contains(out, "dokku_config") {
 		t.Errorf("expected the addressed task in the recipe; got:\n%s", out)
@@ -50,9 +52,10 @@ func TestExportResourceSelectsOneResource(t *testing.T) {
 // TestExportResourceBareTypeSelectsEveryApp covers the wildcard form: an
 // address with no keys means every resource of that type, wherever it lives.
 func TestExportResourceBareTypeSelectsEveryApp(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	out, report := exportResource(t, "dokku_domains")
+	out, report := exportResource(t, ctx, "dokku_domains")
 
 	if !strings.Contains(out, "dokku_domains") {
 		t.Errorf("expected the addressed task type; got:\n%s", out)
@@ -71,9 +74,10 @@ func TestExportResourceBareTypeSelectsEveryApp(t *testing.T) {
 // TestExportResourceCombinesAddresses covers several addresses in one run,
 // including two apps, and asserts each contributes its own play.
 func TestExportResourceCombinesAddresses(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	out, _ := exportResource(t, "dokku_config[app=app-one]", "dokku_domains[app=app-one]")
+	out, _ := exportResource(t, ctx, "dokku_config[app=app-one]", "dokku_domains[app=app-one]")
 
 	for _, want := range []string{"dokku_config", "dokku_domains", "app-one"} {
 		if !strings.Contains(out, want) {
@@ -89,9 +93,10 @@ func TestExportResourceCombinesAddresses(t *testing.T) {
 // nothing for is reported rather than silently exporting nothing, the same
 // contract --app has for a nonexistent app (#346).
 func TestExportResourceReportsUnmatchedAddress(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	_, report := exportResource(t, "dokku_config[app=app-one]", "dokku_domains[app=app-two]")
+	_, report := exportResource(t, ctx, "dokku_config[app=app-one]", "dokku_domains[app=app-two]")
 
 	if len(report.MissingResources) != 1 || report.MissingResources[0] != "dokku_domains[app=app-two]" {
 		t.Errorf("MissingResources = %v, want [dokku_domains[app=app-two]]", report.MissingResources)
@@ -102,14 +107,15 @@ func TestExportResourceReportsUnmatchedAddress(t *testing.T) {
 // leading global play and no app plays at all - distinct from "no app
 // restriction", which would enumerate every app.
 func TestExportResourceGlobalScope(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list": "app-one",
 		"--quiet plugin:list --format json": `[
 			{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"","branch":""}
 		]`,
-	}))()
+	}))
 
-	out, report := exportResource(t, "dokku_plugin[name=redis]")
+	out, report := exportResource(t, ctx, "dokku_plugin[name=redis]")
 
 	if !strings.Contains(out, "dokku_plugin") {
 		t.Errorf("expected the global task; got:\n%s", out)
@@ -125,6 +131,7 @@ func TestExportResourceGlobalScope(t *testing.T) {
 // TestParseResourceSelectorsRejectsBadAddresses covers the validation that
 // runs before the export contacts the server, so a typo fails instantly.
 func TestParseResourceSelectorsRejectsBadAddresses(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name    string
 		address string
@@ -166,6 +173,7 @@ func TestParseResourceSelectorsRejectsBadAddresses(t *testing.T) {
 // TestParseResourceSelectorsAcceptsValidAddresses is the positive half: every
 // exportable form parses, including a bare type key and a global scope.
 func TestParseResourceSelectorsAcceptsValidAddresses(t *testing.T) {
+	t.Parallel()
 	selectors, err := ParseResourceSelectors([]string{
 		"dokku_config",
 		"dokku_config[app=api]",
@@ -190,9 +198,10 @@ func TestParseResourceSelectorsAcceptsValidAddresses(t *testing.T) {
 // auto-named. If two tasks in a play resolved to the same generated name and
 // nothing disambiguated them, the loader would reject its own export.
 func TestExportedRecipeLoadsWithoutNameCollisions(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(exportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{Inline: true})
+	res, err := ExportRecipe(ctx, ExportOptions{Inline: true})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}

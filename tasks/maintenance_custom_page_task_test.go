@@ -21,17 +21,18 @@ var _ appExportReporter = MaintenanceCustomPageTask{}
 // the dropped-assets notice through the warn callback the engine wires to
 // ExportReport.Warnings, and still captures the maintenance.html content.
 func TestMaintenanceCustomPageExportReportWarnsOnExtraAssets(t *testing.T) {
+	t.Parallel()
 	tarball := tarFromEntries(t, map[string]string{
 		"maintenance.html": maintenanceTestPage,
 		"assets/logo.png":  "PNGDATA",
 	})
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"maintenance:report myapp --format json":       `{"custom-page-sha256":"abc123"}`,
 		"--quiet maintenance:custom-page-export myapp": string(tarball),
-	}))()
+	}))
 
 	var warnings []string
-	bodies, err := MaintenanceCustomPageTask{}.ExportAppReport(testCtx(), "myapp", func(msg string) {
+	bodies, err := MaintenanceCustomPageTask{}.ExportAppReport(ctx, "myapp", func(msg string) {
 		warnings = append(warnings, msg)
 	})
 	if err != nil {
@@ -58,16 +59,17 @@ func TestMaintenanceCustomPageExportReportWarnsOnExtraAssets(t *testing.T) {
 // TestMaintenanceCustomPageExportReportNoExtraAssets pins that a single
 // maintenance.html produces no warning.
 func TestMaintenanceCustomPageExportReportNoExtraAssets(t *testing.T) {
+	t.Parallel()
 	tarball := tarFromEntries(t, map[string]string{
 		"maintenance.html": maintenanceTestPage,
 	})
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"maintenance:report myapp --format json":       `{"custom-page-sha256":"abc123"}`,
 		"--quiet maintenance:custom-page-export myapp": string(tarball),
-	}))()
+	}))
 
 	var warnings []string
-	if _, err := (MaintenanceCustomPageTask{}).ExportAppReport(testCtx(), "myapp", func(msg string) {
+	if _, err := (MaintenanceCustomPageTask{}).ExportAppReport(ctx, "myapp", func(msg string) {
 		warnings = append(warnings, msg)
 	}); err != nil {
 		t.Fatalf("ExportAppReport error: %v", err)
@@ -116,6 +118,7 @@ const (
 )
 
 func TestMaintenanceCustomPageTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := MaintenanceCustomPageTask{App: "test-app", Content: maintenanceTestPage, State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -124,6 +127,7 @@ func TestMaintenanceCustomPageTaskInvalidState(t *testing.T) {
 }
 
 func TestMaintenanceCustomPageTaskMissingApp(t *testing.T) {
+	t.Parallel()
 	task := MaintenanceCustomPageTask{Content: maintenanceTestPage, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -135,6 +139,7 @@ func TestMaintenanceCustomPageTaskMissingApp(t *testing.T) {
 }
 
 func TestMaintenanceCustomPageTaskPresentMissingSource(t *testing.T) {
+	t.Parallel()
 	task := MaintenanceCustomPageTask{App: "test-app", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -146,6 +151,7 @@ func TestMaintenanceCustomPageTaskPresentMissingSource(t *testing.T) {
 }
 
 func TestMaintenanceCustomPageTaskPresentBothSources(t *testing.T) {
+	t.Parallel()
 	task := MaintenanceCustomPageTask{App: "test-app", Content: maintenanceTestPage, Tarball: "/tmp/page.tar", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -157,6 +163,7 @@ func TestMaintenanceCustomPageTaskPresentBothSources(t *testing.T) {
 }
 
 func TestMaintenanceCustomPageTaskAbsentWithContent(t *testing.T) {
+	t.Parallel()
 	task := MaintenanceCustomPageTask{App: "test-app", Content: maintenanceTestPage, State: StateAbsent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -168,6 +175,7 @@ func TestMaintenanceCustomPageTaskAbsentWithContent(t *testing.T) {
 }
 
 func TestMaintenanceCustomPageTaskAbsentWithTarball(t *testing.T) {
+	t.Parallel()
 	task := MaintenanceCustomPageTask{App: "test-app", Tarball: "/tmp/page.tar", State: StateAbsent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -179,6 +187,7 @@ func TestMaintenanceCustomPageTaskAbsentWithTarball(t *testing.T) {
 }
 
 func TestBuildMaintenancePageTarball(t *testing.T) {
+	t.Parallel()
 	out, err := buildMaintenancePageTarball(maintenanceTestPage)
 	if err != nil {
 		t.Fatalf("buildMaintenancePageTarball failed: %v", err)
@@ -209,6 +218,7 @@ func TestBuildMaintenancePageTarball(t *testing.T) {
 }
 
 func TestMaintenanceTarballChecksumSingleFile(t *testing.T) {
+	t.Parallel()
 	tarBytes, err := buildMaintenancePageTarball(maintenanceTestPage)
 	if err != nil {
 		t.Fatalf("buildMaintenancePageTarball failed: %v", err)
@@ -223,6 +233,7 @@ func TestMaintenanceTarballChecksumSingleFile(t *testing.T) {
 }
 
 func TestMaintenanceTarballChecksumMultiFile(t *testing.T) {
+	t.Parallel()
 	tarBytes := tarFromEntries(t, map[string]string{
 		"maintenance.html": maintenanceTestPage,
 		"assets/style.css": maintenanceTestCSS,
@@ -237,6 +248,7 @@ func TestMaintenanceTarballChecksumMultiFile(t *testing.T) {
 }
 
 func TestMaintenanceTarballChecksumDeterministicAndSensitive(t *testing.T) {
+	t.Parallel()
 	a := tarFromEntries(t, map[string]string{"maintenance.html": maintenanceTestPage})
 	b := tarFromEntries(t, map[string]string{"maintenance.html": maintenanceTestPage + "<!-- changed -->"})
 
@@ -264,6 +276,7 @@ func TestMaintenanceTarballChecksumDeterministicAndSensitive(t *testing.T) {
 }
 
 func TestMaintenanceTarballChecksumMissingIndex(t *testing.T) {
+	t.Parallel()
 	tarBytes := tarFromEntries(t, map[string]string{"index.html": maintenanceTestPage})
 	if _, err := maintenanceTarballChecksum(tarBytes); err == nil {
 		t.Fatal("expected error when maintenance.html is absent")
@@ -273,12 +286,14 @@ func TestMaintenanceTarballChecksumMissingIndex(t *testing.T) {
 }
 
 func TestMaintenanceTarballChecksumMalformed(t *testing.T) {
+	t.Parallel()
 	if _, err := maintenanceTarballChecksum([]byte("not a tar archive at all")); err == nil {
 		t.Fatal("expected error for malformed tar bytes")
 	}
 }
 
 func TestGetTasksMaintenanceCustomPageInlineParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set page
@@ -318,6 +333,7 @@ func TestGetTasksMaintenanceCustomPageInlineParsedCorrectly(t *testing.T) {
 }
 
 func TestGetTasksMaintenanceCustomPageTarballParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set page

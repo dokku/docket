@@ -9,6 +9,7 @@ import (
 )
 
 func TestHttpAuthTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthTask{App: "test-app", Username: "admin", Password: "secret", State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -17,6 +18,7 @@ func TestHttpAuthTaskInvalidState(t *testing.T) {
 }
 
 func TestHttpAuthTaskPresentWithoutUsername(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthTask{App: "test-app", Password: "secret", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -28,6 +30,7 @@ func TestHttpAuthTaskPresentWithoutUsername(t *testing.T) {
 }
 
 func TestHttpAuthTaskPresentWithoutPassword(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthTask{App: "test-app", Username: "admin", State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -44,6 +47,7 @@ func TestHttpAuthTaskPresentWithoutPassword(t *testing.T) {
 // what lets the exporter emit an app's auth state without duplicating the
 // password input dokku_http_auth_user already lifts (#428).
 func TestHttpAuthTaskPresentWithoutCredentialsIsValid(t *testing.T) {
+	t.Parallel()
 	task := HttpAuthTask{App: "test-app", State: StatePresent}
 	if err := task.Validate(); err != nil {
 		t.Errorf("credential-free present state should validate, got: %v", err)
@@ -51,11 +55,12 @@ func TestHttpAuthTaskPresentWithoutCredentialsIsValid(t *testing.T) {
 }
 
 func TestHttpAuthTaskEnableOmitsEmptyCredentials(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"http-auth:report test-app --format json": `{"enabled":"false"}`,
-	}))()
+	}))
 
-	plan := HttpAuthTask{App: "test-app", State: StatePresent}.Plan(testCtx())
+	plan := HttpAuthTask{App: "test-app", State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("Plan: %v", plan.Error)
 	}
@@ -70,6 +75,7 @@ func TestHttpAuthTaskEnableOmitsEmptyCredentials(t *testing.T) {
 }
 
 func TestGetTasksHttpAuthTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: enable http auth

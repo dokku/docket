@@ -9,6 +9,7 @@ import (
 )
 
 func TestChecksToggleTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := ChecksToggleTask{App: "test-app", State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -20,14 +21,15 @@ func TestChecksToggleTaskInvalidState(t *testing.T) {
 // forwards an SSH transport failure so planToggle reports it as a plan error
 // rather than spurious drift (#357).
 func TestChecksToggleTaskPlanSurfacesSSHError(t *testing.T) {
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		return subprocess.ExecCommandResponse{ExitCode: 255}, &subprocess.SSHError{
 			Host:   "dokku@unreachable",
 			Stderr: "ssh: connect to host unreachable port 22: Connection refused",
 		}
-	})()
+	})
 
-	plan := ChecksToggleTask{App: "web", State: StatePresent}.Plan(testCtx())
+	plan := ChecksToggleTask{App: "web", State: StatePresent}.Plan(ctx)
 	if plan.Status != PlanStatusError {
 		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusError)
 	}
@@ -46,6 +48,7 @@ func TestChecksToggleTaskPlanSurfacesSSHError(t *testing.T) {
 // ToggleFields` (#467), so this is what proves the shared field set still yields
 // the flat `app` / `state` recipe keys and that SetDefaults still fills `state`.
 func TestGetTasksChecksToggleTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: enable checks

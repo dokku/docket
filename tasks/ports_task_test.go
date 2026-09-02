@@ -10,6 +10,7 @@ import (
 )
 
 func TestPortsTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := PortsTask{
 		App:          "test-app",
 		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}},
@@ -22,6 +23,7 @@ func TestPortsTaskInvalidState(t *testing.T) {
 }
 
 func TestPortsTaskEmptyPortMappings(t *testing.T) {
+	t.Parallel()
 	task := PortsTask{App: "test-app", PortMappings: []PortMapping{}, State: StatePresent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -30,6 +32,7 @@ func TestPortsTaskEmptyPortMappings(t *testing.T) {
 }
 
 func TestPortsTaskValidatePerItem(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		task    PortsTask
@@ -149,15 +152,16 @@ func TestPortsTaskValidatePerItem(t *testing.T) {
 const portsReportKey = "--quiet ports:report web --ports-map"
 
 func TestPortsSetPlansFullReplacement(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "http:80:5000 https:443:5000",
-	}))()
+	}))
 
 	plan := PortsTask{
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "http", Host: 8080, Container: 5000}},
 		State:        StateSet,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -181,15 +185,16 @@ func TestPortsSetPlansFullReplacement(t *testing.T) {
 }
 
 func TestPortsSetOnAppWithNoMappingsIsACreate(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "",
-	}))()
+	}))
 
 	plan := PortsTask{
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}},
 		State:        StateSet,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -199,9 +204,10 @@ func TestPortsSetOnAppWithNoMappingsIsACreate(t *testing.T) {
 }
 
 func TestPortsSetConvergesWhenReportMatches(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "https:443:5000 http:80:5000",
-	}))()
+	}))
 
 	plan := PortsTask{
 		App: "web",
@@ -210,7 +216,7 @@ func TestPortsSetConvergesWhenReportMatches(t *testing.T) {
 			{Scheme: "https", Host: 443, Container: 5000},
 		},
 		State: StateSet,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -223,11 +229,12 @@ func TestPortsSetConvergesWhenReportMatches(t *testing.T) {
 }
 
 func TestPortsClearPlansEveryMapping(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "http:80:5000 https:443:5000",
-	}))()
+	}))
 
-	plan := PortsTask{App: "web", State: StateClear}.Plan(testCtx())
+	plan := PortsTask{App: "web", State: StateClear}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -251,11 +258,12 @@ func TestPortsClearPlansEveryMapping(t *testing.T) {
 }
 
 func TestPortsClearIsInSyncWithoutMappings(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "",
-	}))()
+	}))
 
-	plan := PortsTask{App: "web", State: StateClear}.Plan(testCtx())
+	plan := PortsTask{App: "web", State: StateClear}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -268,9 +276,10 @@ func TestPortsClearIsInSyncWithoutMappings(t *testing.T) {
 }
 
 func TestPortsPresentPlansOnlyTheMissingMappings(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "http:80:5000",
-	}))()
+	}))
 
 	plan := PortsTask{
 		App: "web",
@@ -279,7 +288,7 @@ func TestPortsPresentPlansOnlyTheMissingMappings(t *testing.T) {
 			{Scheme: "https", Host: 443, Container: 5000},
 		},
 		State: StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -299,15 +308,16 @@ func TestPortsPresentPlansOnlyTheMissingMappings(t *testing.T) {
 }
 
 func TestPortsPresentRejectsCollisionWithAnExistingMapping(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "http:80:5000",
-	}))()
+	}))
 
 	plan := PortsTask{
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 6000}},
 		State:        StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error == nil {
 		t.Fatal("expected an error when the scheme:host pair is already bound to another container port")
 	}
@@ -320,15 +330,16 @@ func TestPortsPresentRejectsCollisionWithAnExistingMapping(t *testing.T) {
 }
 
 func TestPortsPresentAllowsTheSameHostPortUnderAnotherScheme(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "http:80:5000",
-	}))()
+	}))
 
 	plan := PortsTask{
 		App:          "web",
 		PortMappings: []PortMapping{{Scheme: "https", Host: 80, Container: 5000}},
 		State:        StatePresent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -341,9 +352,10 @@ func TestPortsPresentAllowsTheSameHostPortUnderAnotherScheme(t *testing.T) {
 }
 
 func TestPortsAbsentPlansOnlyThePresentMappings(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		portsReportKey: "http:80:5000",
-	}))()
+	}))
 
 	plan := PortsTask{
 		App: "web",
@@ -352,7 +364,7 @@ func TestPortsAbsentPlansOnlyThePresentMappings(t *testing.T) {
 			{Scheme: "https", Host: 443, Container: 5000},
 		},
 		State: StateAbsent,
-	}.Plan(testCtx())
+	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -368,6 +380,7 @@ func TestPortsAbsentPlansOnlyThePresentMappings(t *testing.T) {
 }
 
 func TestPortMappingString(t *testing.T) {
+	t.Parallel()
 	pm := PortMapping{Scheme: "http", Host: 80, Container: 5000}
 	expected := "http:80:5000"
 	if pm.String() != expected {
@@ -376,6 +389,7 @@ func TestPortMappingString(t *testing.T) {
 }
 
 func TestPortMappingStringVariousValues(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		pm   PortMapping
@@ -397,6 +411,7 @@ func TestPortMappingStringVariousValues(t *testing.T) {
 }
 
 func TestGetTasksPortsTaskWithMappings(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: set ports
@@ -444,6 +459,7 @@ func TestGetTasksPortsTaskWithMappings(t *testing.T) {
 }
 
 func TestGetTasksPortsTaskClearWithoutMappings(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: clear ports

@@ -7,6 +7,7 @@ import (
 )
 
 func TestGitSyncTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := GitSyncTask{
 		App:    "test-app",
 		Remote: "https://example.com/repo",
@@ -19,14 +20,15 @@ func TestGitSyncTaskInvalidState(t *testing.T) {
 }
 
 func TestGitSyncInSyncOnRemoteAndDeployBranch(t *testing.T) {
+	t.Parallel()
 	// The stored metadata SHA differs from the pinned ref, but the remote and
 	// the persisted deploy-branch match, so the app is in sync.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/repo.git#abc123def456"}`,
 		"git:report test-app --format json":  `{"deploy-branch":"main"}`,
-	}))()
+	}))
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", Build: true, State: StatePresent}.Plan(testCtx())
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", Build: true, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -36,12 +38,13 @@ func TestGitSyncInSyncOnRemoteAndDeployBranch(t *testing.T) {
 }
 
 func TestGitSyncDriftOnRefChange(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/repo.git#abc123"}`,
 		"git:report test-app --format json":  `{"deploy-branch":"main"}`,
-	}))()
+	}))
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "develop", Build: true, State: StatePresent}.Plan(testCtx())
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "develop", Build: true, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -51,22 +54,24 @@ func TestGitSyncDriftOnRefChange(t *testing.T) {
 }
 
 func TestGitSyncDriftOnRemoteChange(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/other.git#abc123"}`,
-	}))()
+	}))
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan(testCtx())
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan(ctx)
 	if plan.InSync {
 		t.Fatal("expected drift when the remote differs")
 	}
 }
 
 func TestGitSyncInSyncWithoutRef(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/repo.git#abc123"}`,
-	}))()
+	}))
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", State: StatePresent}.Plan(testCtx())
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -76,13 +81,14 @@ func TestGitSyncInSyncWithoutRef(t *testing.T) {
 }
 
 func TestGitSyncSkipDeployBranchMatchesOnRemote(t *testing.T) {
+	t.Parallel()
 	// With skip_deploy_branch the ref is not persisted, so a matching remote is
 	// treated as in sync rather than re-syncing forever.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/repo.git#abc123"}`,
-	}))()
+	}))
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", SkipDeployBranch: true, State: StatePresent}.Plan(testCtx())
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", SkipDeployBranch: true, State: StatePresent}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -92,23 +98,25 @@ func TestGitSyncSkipDeployBranchMatchesOnRemote(t *testing.T) {
 }
 
 func TestGitSyncDriftWhenNotGitSyncSource(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"apps:report test-app --format json": `{"app-deploy-source":"","app-deploy-source-metadata":""}`,
-	}))()
+	}))
 
-	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan(testCtx())
+	plan := GitSyncTask{App: "test-app", Remote: "https://github.com/org/repo.git", GitRef: "main", State: StatePresent}.Plan(ctx)
 	if plan.InSync {
 		t.Fatal("expected drift when the app has no git-sync deploy source")
 	}
 }
 
 func TestGitSyncExportUsesDeployBranchAsRef(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"apps:report test-app --format json": `{"app-deploy-source":"git-sync","app-deploy-source-metadata":"https://github.com/org/repo.git#abc123def"}`,
 		"git:report test-app --format json":  `{"deploy-branch":"main"}`,
-	}))()
+	}))
 
-	bodies, err := GitSyncTask{}.ExportApp(testCtx(), "test-app")
+	bodies, err := GitSyncTask{}.ExportApp(ctx, "test-app")
 	if err != nil {
 		t.Fatalf("ExportApp error: %v", err)
 	}

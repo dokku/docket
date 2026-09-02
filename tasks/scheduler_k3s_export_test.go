@@ -9,6 +9,7 @@ import (
 )
 
 func TestParseSchedulerK3sAutoscalingAuthReport(t *testing.T) {
+	t.Parallel()
 	t.Run("dot format grouped by trigger", func(t *testing.T) {
 		raw := []byte(`{"datadog.apiKey":"secret-1","datadog.appKey":"secret-2"}`)
 		md, err := parseSchedulerK3sAutoscalingAuthReport(raw, "datadog")
@@ -76,15 +77,16 @@ func annotationScope(bodies []interface{}, processType, resourceType string) *Sc
 }
 
 func TestSchedulerK3sAnnotationsExportApp(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:annotations:report myapp --format json": `{
 			"global.deployment.prometheus.io/scrape":"true",
 			"global.deployment.prometheus.io/port":"9090",
 			"web.ingress.nginx.ingress.kubernetes.io/rewrite-target":"/"
 		}`,
-	}))()
+	}))
 
-	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(testCtx(), "myapp")
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(ctx, "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -122,11 +124,12 @@ func TestSchedulerK3sAnnotationsExportApp(t *testing.T) {
 }
 
 func TestSchedulerK3sAnnotationsExportGlobal(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:annotations:report --global --format json": `{"global.deployment.managed-by":"docket"}`,
-	}))()
+	}))
 
-	bodies, err := SchedulerK3sAnnotationsTask{}.ExportGlobal(testCtx())
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -143,11 +146,12 @@ func TestSchedulerK3sAnnotationsExportGlobal(t *testing.T) {
 }
 
 func TestSchedulerK3sLabelsExportApp(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:labels:report myapp --format json": `{"web.deployment.tier":"edge","web.deployment.app.kubernetes.io/component":"api"}`,
-	}))()
+	}))
 
-	bodies, err := SchedulerK3sLabelsTask{}.ExportApp(testCtx(), "myapp")
+	bodies, err := SchedulerK3sLabelsTask{}.ExportApp(ctx, "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -164,15 +168,16 @@ func TestSchedulerK3sLabelsExportApp(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthExportApp(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:autoscaling-auth:report myapp --format json": `{
 			"datadog.apiKey":"secret-1",
 			"aws-secret-manager.awsRegion":"us-east-1",
 			"aws-secret-manager.secretName":"my-secret"
 		}`,
-	}))()
+	}))
 
-	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportApp(testCtx(), "myapp")
+	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportApp(ctx, "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -199,11 +204,12 @@ func TestSchedulerK3sAutoscalingAuthExportApp(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthExportGlobal(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:autoscaling-auth:report --global --format json": `{"datadog.apiKey":"global-secret"}`,
-	}))()
+	}))
 
-	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportGlobal(testCtx())
+	bodies, err := SchedulerK3sAutoscalingAuthTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -220,12 +226,13 @@ func TestSchedulerK3sAutoscalingAuthExportGlobal(t *testing.T) {
 }
 
 func TestSchedulerK3sScopedPairsExportEmpty(t *testing.T) {
+	t.Parallel()
 	// An app with no annotations returns "{}"; the exporter yields no bodies.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:annotations:report myapp --format json": `{}`,
-	}))()
+	}))
 
-	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(testCtx(), "myapp")
+	bodies, err := SchedulerK3sAnnotationsTask{}.ExportApp(ctx, "myapp")
 	if err != nil {
 		t.Fatalf("ExportApp: %v", err)
 	}
@@ -238,14 +245,15 @@ func TestSchedulerK3sScopedPairsExportEmpty(t *testing.T) {
 // and labels are emitted inline, while trigger-auth metadata (a secret) is
 // lifted into the vars map and never leaks into the recipe body.
 func TestExportSchedulerK3sScopedAndAuthRecipe(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet apps:list": "web",
 		"--quiet scheduler-k3s:annotations:report web --format json":      `{"global.deployment.prometheus.io/scrape":"true"}`,
 		"--quiet scheduler-k3s:labels:report web --format json":           `{"web.deployment.tier":"edge"}`,
 		"--quiet scheduler-k3s:autoscaling-auth:report web --format json": `{"datadog.apiKey":"s3cr3t-key"}`,
-	}))()
+	}))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -309,10 +317,11 @@ func schedulerK3sProfileExportFixture() map[string]string {
 // out, and the profiles that survive carry an explicit state so the body is
 // plannable straight out of the exporter.
 func TestSchedulerK3sProfileExportReportLeavesOutUnappliableProfiles(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(schedulerK3sProfileExportFixture()))
 
 	var warnings []string
-	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(testCtx(), func(msg string) {
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobalReport(ctx, func(msg string) {
 		warnings = append(warnings, msg)
 	})
 	if err != nil {
@@ -360,9 +369,10 @@ func TestSchedulerK3sProfileExportReportLeavesOutUnappliableProfiles(t *testing.
 // plain GlobalExporter form leaves out the same profiles; it only discards the
 // explanation, which is why the engine prefers ExportGlobalReport.
 func TestSchedulerK3sProfileExportGlobalDropsWithoutDiagnostics(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(schedulerK3sProfileExportFixture()))
 
-	bodies, err := SchedulerK3sProfileTask{}.ExportGlobal(testCtx())
+	bodies, err := SchedulerK3sProfileTask{}.ExportGlobal(ctx)
 	if err != nil {
 		t.Fatalf("ExportGlobal: %v", err)
 	}
@@ -378,9 +388,10 @@ func TestSchedulerK3sProfileExportGlobalDropsWithoutDiagnostics(t *testing.T) {
 // engine: the warnings reach ExportReport.Warnings under the global prefix, and
 // the recipe that comes back carries only the profile that can be applied.
 func TestExportSchedulerK3sProfileRecipeOmitsUnappliableProfiles(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(schedulerK3sProfileExportFixture()))
 
-	res, err := ExportRecipe(testCtx(), ExportOptions{})
+	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
@@ -420,13 +431,14 @@ func TestExportSchedulerK3sProfileRecipeOmitsUnappliableProfiles(t *testing.T) {
 // so export reports it as missing and the command exits non-zero. The warning
 // printed above it is what says the profile is on the server but unexportable.
 func TestExportSchedulerK3sProfileResourceAddressReportsAMissingProfile(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(schedulerK3sProfileExportFixture()))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(schedulerK3sProfileExportFixture()))
 
 	selectors, err := ParseResourceSelectors([]string{"dokku_scheduler_k3s_profile[name=EdgePool]"})
 	if err != nil {
 		t.Fatalf("ParseResourceSelectors: %v", err)
 	}
-	res, err := ExportRecipe(testCtx(), ExportOptions{Resources: selectors})
+	res, err := ExportRecipe(ctx, ExportOptions{Resources: selectors})
 	if err != nil {
 		t.Fatalf("ExportRecipe: %v", err)
 	}
