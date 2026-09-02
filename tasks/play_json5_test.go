@@ -3,8 +3,6 @@ package tasks
 import (
 	"strings"
 	"testing"
-
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 func TestGetPlaysWithFormatJSON5SinglePlay(t *testing.T) {

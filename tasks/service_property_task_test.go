@@ -2,8 +2,6 @@ package tasks
 
 import (
 	"testing"
-
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 func TestServicePropertyTaskInvalidState(t *testing.T) {

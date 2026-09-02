@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 // serviceMissing stubs every dokku call as a clean non-zero exit, which is how

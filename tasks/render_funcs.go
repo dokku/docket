@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"text/template"
 
-	sigil "github.com/gliderlabs/sigil"
 	yaml "gopkg.in/yaml.v3"
 )
 
-// render_funcs.go registers the `dq` template filter with sigil so a recipe can
+// render_funcs.go defines the `dq` template filter so a recipe can
 // interpolate an input value that contains YAML-special characters without
 // breaking the surrounding scalar. Because docket renders the whole file as
 // text before parsing it (see renderRecipeBytes), an input value like `ab"cd`
@@ -30,11 +28,7 @@ import (
 //
 // The name differs from sigil's `tojson` built-in, which emits a value WITH its
 // surrounding quotes and so cannot be used inside an existing quoted scalar.
-func init() {
-	sigil.Register(template.FuncMap{
-		"dq": DoubleQuoteEscape,
-	})
-}
+// It joins the other filters in renderFuncs (render.go).
 
 // DoubleQuoteEscape escapes v for interpolation inside a double-quoted YAML (or
 // JSON5) scalar, returning the escaped body WITHOUT the surrounding quotes so

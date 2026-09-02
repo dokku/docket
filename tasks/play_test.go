@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 // TestGetPlaysSinglePlayBackCompat ensures a single-play file - the legacy

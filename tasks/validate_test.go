@@ -3,8 +3,6 @@ package tasks
 import (
 	"strings"
 	"testing"
-
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 // findProblem returns the first problem whose Code matches code, or nil.

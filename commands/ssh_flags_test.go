@@ -91,20 +91,12 @@ func TestResolveSshFlagsFlagWinsOverEnv(t *testing.T) {
 // It compares a snapshot rather than requiring the three variables be unset,
 // so it no longer has to clear them first.
 //
-// Serial on purpose, and not because of t.Setenv - it sets nothing. Rendering
-// a recipe goes through sigil, which exports the template variables into the
-// process environment and restores it with os.Clearenv on the way out, so for
-// a moment during any render the environment is empty. tasks.RenderTemplate
-// serializes renders against each other, which is what stops variables being
-// lost for good, but it cannot stop a concurrent *reader* seeing the gap. A
-// whole-environment assertion is therefore only meaningful while nothing else
-// is running, which the serial phase guarantees.
-//
 // The snapshot is sorted because os.Environ()'s order is not stable across a
 // Setenv/Unsetenv round trip - restoring a variable appends it rather than
 // putting it back in its old slot - so an unsorted compare fails on a
 // reordering no one performed.
 func TestResolveSshFlagsDoesNotMutateProcessEnv(t *testing.T) {
+	t.Parallel()
 	before := sortedEnv()
 
 	resolveSshFlags(os.Getenv, "deploy@dokku.example.com", true, true)
