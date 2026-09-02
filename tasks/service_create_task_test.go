@@ -25,9 +25,9 @@ func serviceMissing() func(context.Context, subprocess.ExecCommandInput) (subpro
 
 // planCreateCommand returns the single command Plan() would run to create the
 // task's service, failing the test if the plan did not reach a create.
-func planCreateCommand(t *testing.T, task ServiceCreateTask) string {
+func planCreateCommand(t *testing.T, ctx context.Context, task ServiceCreateTask) string {
 	t.Helper()
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
@@ -193,7 +193,7 @@ func TestServiceCreateTaskCreateFlags(t *testing.T) {
 			// a struct built in Go has to state it for DispatchPlan.
 			task := tc.task
 			task.State = StatePresent
-			if got := planCreateCommand(t, task); got != tc.want {
+			if got := planCreateCommand(t, testCtx(), task); got != tc.want {
 				t.Errorf("command = %q, want %q", got, tc.want)
 			}
 		})
@@ -243,11 +243,11 @@ func TestServiceCreateTaskMasksSecretsInCommands(t *testing.T) {
 		State:        StatePresent,
 	}
 
-	isolateMaskRegistry(t)
-	subprocess.SetGlobalSensitive(sensitiveValuesFromTask(&task))
+	masker := subprocess.NewMasker(sensitiveValuesFromTask(&task)...)
+	ctx := subprocess.ContextWithMasker(testCtx(), masker)
 	defer subprocess.SetExecRunner(serviceMissing())()
 
-	got := planCreateCommand(t, task)
+	got := planCreateCommand(t, ctx, task)
 	for _, secret := range []string{"env-secret", "user-secret", "root-secret"} {
 		if strings.Contains(got, secret) {
 			t.Errorf("command %q leaks %q", got, secret)
@@ -874,10 +874,9 @@ func TestServiceCreateTaskImageDriftUpgradeMasksSecrets(t *testing.T) {
 	task := driftTask()
 	task.ImageDrift = imageDriftUpgrade
 	task.CustomEnv = map[string]string{"GREETING": "s3cret"}
-	isolateMaskRegistry(t)
-	subprocess.SetGlobalSensitive(sensitiveValuesFromTask(&task))
+	ctx := subprocess.ContextWithMasker(testCtx(), subprocess.NewMasker(sensitiveValuesFromTask(&task)...))
 
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if len(plan.Commands) != 1 {
 		t.Fatalf("expected 1 command, got %v", plan.Commands)
 	}

@@ -734,7 +734,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 	// directly would leave an unprobeable credential unmasked (#457).
 	sensitive := propertyEntry(plugin, property, keys).Sensitive
 	if sensitive {
-		subprocess.AddGlobalSensitive(value)
+		subprocess.MaskerFromContext(ctx).Add(value)
 	}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
@@ -750,7 +750,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 			// surface SSH transport failures so the user sees `! ssh:`.
 			current, probeErr := getProperty(ctx, subcommand, app, global, property, keys)
 			if sensitive {
-				subprocess.AddGlobalSensitive(current)
+				subprocess.MaskerFromContext(ctx).Add(current)
 			}
 			var warnings []PlanWarning
 			if probeErr != nil {
@@ -795,7 +795,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 
 			current, probeErr := getProperty(ctx, subcommand, app, global, property, keys)
 			if sensitive {
-				subprocess.AddGlobalSensitive(current)
+				subprocess.MaskerFromContext(ctx).Add(current)
 			}
 			var warnings []PlanWarning
 			if probeErr != nil {

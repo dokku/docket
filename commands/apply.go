@@ -235,12 +235,15 @@ func (c *ApplyCommand) Run(args []string) int {
 	// parsed and rendered, so a template or parse error that interpolated one
 	// of them is masked. Task-declared sensitive values are added once the
 	// recipe parses (below).
-	subprocess.SetGlobalSensitive(sensitiveValues)
-	defer subprocess.SetGlobalSensitive(nil)
+	// The masker belongs to this run and goes out of scope with it, so there
+	// is no teardown: the deferred clear this replaces is exactly what made a
+	// second run in the same process lose its secrets.
+	masker := subprocess.NewMasker(sensitiveValues...)
+	ctx = subprocess.ContextWithMasker(ctx, masker)
 
 	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
-		c.Ui.Error(subprocess.MaskString(fmt.Sprintf("task error: %v", err)))
+		c.Ui.Error(masker.String(fmt.Sprintf("task error: %v", err)))
 		return 1
 	}
 
@@ -249,14 +252,14 @@ func (c *ApplyCommand) Run(args []string) int {
 	// declared inputs the surviving play's when: depends on.
 	fileLevelKeys := tasks.FileLevelInputNames(plays)
 
-	selected, err := filterPlaysByName(plays, c.play)
+	selected, err := filterPlaysByName(masker, plays, c.play)
 	if err != nil {
 		// The hint names every play in the file, so a value any of their tasks
 		// declares sensitive is in scope for this message - unlike the filtered
 		// collection below, which deliberately leaves out a play --play
 		// excluded. Registering the whole file costs nothing here: this branch
 		// prints one line and returns.
-		subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
+		masker.Add(tasks.CollectPlaySensitiveValues(plays)...)
 		c.Ui.Error(err.Error())
 		return 1
 	}
@@ -271,13 +274,13 @@ func (c *ApplyCommand) Run(args []string) int {
 	// play --play excluded from masking output it never appears in. The
 	// unmatched --play branch above is the one place that collects from the
 	// whole file, and says why.
-	subprocess.AddGlobalSensitive(tasks.CollectPlaySensitiveValues(plays)...)
+	masker.Add(tasks.CollectPlaySensitiveValues(plays)...)
 
 	if c.startAtTask != "" {
 		if !startAtTaskMatches(plays, c.startAtTask) {
-			c.Ui.Error(subprocess.MaskString(fmt.Sprintf(
+			c.Ui.Error(masker.String(fmt.Sprintf(
 				"--start-at-task %q: no task matched name; available names: %s",
-				c.startAtTask, formatStartAtTaskNames(plays),
+				c.startAtTask, formatStartAtTaskNames(masker, plays),
 			)))
 			return 1
 		}
@@ -292,6 +295,7 @@ func (c *ApplyCommand) Run(args []string) int {
 			userSet:       userSet,
 			context:       inputCtx,
 			jsonOut:       c.json,
+			masker:        masker,
 			target:        target,
 		})
 	}
@@ -302,7 +306,7 @@ func (c *ApplyCommand) Run(args []string) int {
 	// not collide; nothing was closing the extra ones.
 	defer closeControlMasters(target, plays)
 
-	emitter := c.newEmitter()
+	emitter := c.newEmitter(masker)
 	start := time.Now()
 	counts := ApplyCounts{}
 	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(inputCtx, fileLevelKeys, userSet))
@@ -942,7 +946,7 @@ func startAtTaskMatches(plays []*tasks.Play, target string) bool {
 // text that carries the secret escaped twice over - and would miss it (#475).
 // Deduplication still keys on the real name: two tasks that mask alike are two
 // tasks.
-func formatStartAtTaskNames(plays []*tasks.Play) string {
+func formatStartAtTaskNames(masker *subprocess.Masker, plays []*tasks.Play) string {
 	seen := map[string]bool{}
 	var quoted []string
 	for _, play := range plays {
@@ -952,7 +956,7 @@ func formatStartAtTaskNames(plays []*tasks.Play) string {
 		for _, name := range play.Tasks.Keys() {
 			if !seen[name] {
 				seen[name] = true
-				quoted = append(quoted, fmt.Sprintf("%q", subprocess.MaskString(name)))
+				quoted = append(quoted, fmt.Sprintf("%q", masker.String(name)))
 			}
 			env := play.Tasks.GetEnvelope(name)
 			for _, descendant := range tasks.CollectEnvelopeNames([]*tasks.TaskEnvelope{env}) {
@@ -961,7 +965,7 @@ func formatStartAtTaskNames(plays []*tasks.Play) string {
 				}
 				if !seen[descendant] {
 					seen[descendant] = true
-					quoted = append(quoted, fmt.Sprintf("%q", subprocess.MaskString(descendant)))
+					quoted = append(quoted, fmt.Sprintf("%q", masker.String(descendant)))
 				}
 			}
 		}
@@ -980,13 +984,13 @@ func formatStartAtTaskNames(plays []*tasks.Play) string {
 // formatStartAtTaskNames gives: `%q` escapes what it wraps, so masking the
 // finished message would be matching a registered literal against text that
 // carries the secret escaped (#477).
-func formatAvailablePlayNames(plays []*tasks.Play) string {
+func formatAvailablePlayNames(masker *subprocess.Masker, plays []*tasks.Play) string {
 	quoted := make([]string, 0, len(plays))
 	for _, play := range plays {
 		if play == nil {
 			continue
 		}
-		quoted = append(quoted, fmt.Sprintf("%q", subprocess.MaskString(play.Name)))
+		quoted = append(quoted, fmt.Sprintf("%q", masker.String(play.Name)))
 	}
 	if len(quoted) == 0 {
 		return "(none)"
@@ -1002,18 +1006,22 @@ func formatAvailablePlayNames(plays []*tasks.Play) string {
 type unknownPlayError struct {
 	target string
 	plays  []*tasks.Play
+	// masker is carried on the error because Error() is called from places
+	// that have neither a context nor an emitter, and the message names both
+	// the requested play and every available one.
+	masker *subprocess.Masker
 }
 
 func (e *unknownPlayError) Error() string {
 	return fmt.Sprintf("--play %q: no play with that name; available plays: %s",
-		subprocess.MaskString(e.target), formatAvailablePlayNames(e.plays))
+		e.masker.String(e.target), formatAvailablePlayNames(e.masker, e.plays))
 }
 
 // filterPlaysByName narrows plays to the single play whose Name matches
 // target. An empty target returns plays unchanged. An unmatched target
 // returns an error so the user sees a clear "no such play" diagnostic
 // rather than silently doing nothing.
-func filterPlaysByName(plays []*tasks.Play, target string) ([]*tasks.Play, error) {
+func filterPlaysByName(masker *subprocess.Masker, plays []*tasks.Play, target string) ([]*tasks.Play, error) {
 	if target == "" {
 		return plays, nil
 	}
@@ -1022,16 +1030,16 @@ func filterPlaysByName(plays []*tasks.Play, target string) ([]*tasks.Play, error
 			return []*tasks.Play{play}, nil
 		}
 	}
-	return nil, &unknownPlayError{target: target, plays: plays}
+	return nil, &unknownPlayError{target: target, plays: plays, masker: masker}
 }
 
 // newEmitter constructs the EventEmitter for this run. --json builds a
 // JSONEmitter; otherwise the human Formatter is used. The verbose flag is
 // only meaningful for the human path - JSON output already includes the
 // resolved commands in each task event's `commands` array.
-func (c *ApplyCommand) newEmitter() EventEmitter {
+func (c *ApplyCommand) newEmitter(masker *subprocess.Masker) EventEmitter {
 	if c.json {
-		return NewJSONEmitter(c.Ui)
+		return NewJSONEmitter(c.Ui, masker)
 	}
-	return NewFormatter(c.Ui, c.verbose)
+	return NewFormatter(c.Ui, c.verbose, masker)
 }

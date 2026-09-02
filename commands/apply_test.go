@@ -117,17 +117,17 @@ func TestFilterPlaysByName(t *testing.T) {
 		{Name: "worker"},
 	}
 
-	out, err := filterPlaysByName(plays, "")
+	out, err := filterPlaysByName(nil, plays, "")
 	if err != nil || len(out) != 2 {
 		t.Errorf("empty target should pass through; got len=%d err=%v", len(out), err)
 	}
 
-	out, err = filterPlaysByName(plays, "api")
+	out, err = filterPlaysByName(nil, plays, "api")
 	if err != nil || len(out) != 1 || out[0].Name != "api" {
 		t.Errorf(`--play "api" got len=%d names=%v err=%v`, len(out), playNames(out), err)
 	}
 
-	_, err = filterPlaysByName(plays, "missing")
+	_, err = filterPlaysByName(nil, plays, "missing")
 	if err == nil {
 		t.Fatal("expected error for unknown play")
 	}
@@ -139,7 +139,7 @@ func TestFilterPlaysByName(t *testing.T) {
 
 	// An empty recipe has no name to suggest, so the hint says so rather
 	// than trailing off after the colon.
-	_, err = filterPlaysByName(nil, "missing")
+	_, err = filterPlaysByName(nil, nil, "missing")
 	if err == nil {
 		t.Fatal("expected error for unknown play in an empty list")
 	}

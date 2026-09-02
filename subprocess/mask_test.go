@@ -1,26 +1,25 @@
 package subprocess
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 )
 
-func TestMaskStringNoGlobalSet(t *testing.T) {
-	SetGlobalSensitive(nil)
-	defer SetGlobalSensitive(nil)
+func TestMaskStringWithNothingRegistered(t *testing.T) {
+	m := NewMasker()
 
-	if got := MaskString("hello world"); got != "hello world" {
+	if got := m.String("hello world"); got != "hello world" {
 		t.Errorf("MaskString with no global set = %q, want input unchanged", got)
 	}
 }
 
 func TestMaskStringReplacesAllOccurrences(t *testing.T) {
-	SetGlobalSensitive([]string{"secret"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("secret")
 
-	got := MaskString("a secret and another secret")
+	got := m.String("a secret and another secret")
 	want := "a *** and another ***"
 	if got != want {
 		t.Errorf("MaskString = %q, want %q", got, want)
@@ -28,15 +27,14 @@ func TestMaskStringReplacesAllOccurrences(t *testing.T) {
 }
 
 func TestMaskStringEmptyEntriesSkipped(t *testing.T) {
-	SetGlobalSensitive([]string{"", "tok"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("", "tok")
 
-	got := MaskString("xtoky")
+	got := m.String("xtoky")
 	if got != "x***y" {
 		t.Errorf("MaskString = %q, want %q", got, "x***y")
 	}
 	// Verify the empty entry didn't cause every character to mask.
-	if strings.Contains(MaskString("abc"), "***") && !strings.Contains("abc", "tok") {
+	if strings.Contains(m.String("abc"), "***") && !strings.Contains("abc", "tok") {
 		t.Errorf("empty entry caused unintended masking")
 	}
 }
@@ -44,20 +42,18 @@ func TestMaskStringEmptyEntriesSkipped(t *testing.T) {
 func TestMaskStringLongerBeforeShorter(t *testing.T) {
 	// "ab" is a substring of "abcdef"; the longer one must be masked first
 	// so we don't see "***cdef" instead of a single "***".
-	SetGlobalSensitive([]string{"ab", "abcdef"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("ab", "abcdef")
 
-	got := MaskString("xabcdefy")
+	got := m.String("xabcdefy")
 	if got != "x***y" {
 		t.Errorf("MaskString = %q, want %q (longer match first)", got, "x***y")
 	}
 }
 
-func TestSetGlobalSensitiveDeduplicates(t *testing.T) {
-	SetGlobalSensitive([]string{"a", "a", "b"})
-	defer SetGlobalSensitive(nil)
+func TestMaskerSetDeduplicates(t *testing.T) {
+	m := NewMasker("a", "a", "b")
 
-	values := GlobalSensitive()
+	values := m.Values()
 	count := 0
 	for _, v := range values {
 		if v == "a" {
@@ -69,104 +65,107 @@ func TestSetGlobalSensitiveDeduplicates(t *testing.T) {
 	}
 }
 
-func TestSetGlobalSensitiveClear(t *testing.T) {
-	SetGlobalSensitive([]string{"x"})
-	SetGlobalSensitive(nil)
-	if got := MaskString("xyz"); got != "xyz" {
-		t.Errorf("MaskString after clear = %q, want %q", got, "xyz")
+// TestMaskersAreIndependent is the property that replaced clearing. The old
+// registry was cleared on the way out of a run, and that teardown is what made
+// a second run in the same process lose its secrets. A Masker is never cleared;
+// two of them simply do not see each other.
+func TestMaskersAreIndependent(t *testing.T) {
+	t.Parallel()
+
+	first := NewMasker("first-secret")
+	second := NewMasker("second-secret")
+
+	if got := first.String("first-secret second-secret"); got != "*** second-secret" {
+		t.Errorf("first masker = %q, want it to mask only its own value", got)
+	}
+	if got := second.String("first-secret second-secret"); got != "first-secret ***" {
+		t.Errorf("second masker = %q, want it to mask only its own value", got)
 	}
 }
 
-func TestAddGlobalSensitiveAppendsKeepingExisting(t *testing.T) {
-	SetGlobalSensitive([]string{"first"})
-	defer SetGlobalSensitive(nil)
+func TestMaskerAddAppendsKeepingExisting(t *testing.T) {
+	m := NewMasker("first")
 
-	AddGlobalSensitive("second")
+	m.Add("second")
 
-	got := MaskString("first and second")
+	got := m.String("first and second")
 	if got != "*** and ***" {
 		t.Errorf("MaskString = %q, want both values masked", got)
 	}
 }
 
-func TestAddGlobalSensitiveDeduplicatesAgainstExisting(t *testing.T) {
-	SetGlobalSensitive([]string{"tok"})
-	defer SetGlobalSensitive(nil)
+func TestMaskerAddDeduplicatesAgainstExisting(t *testing.T) {
+	m := NewMasker("tok")
 
-	AddGlobalSensitive("tok", "", "tok")
+	m.Add("tok", "", "tok")
 
 	count := 0
-	for _, v := range GlobalSensitive() {
+	for _, v := range m.Values() {
 		if v == "tok" {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("AddGlobalSensitive introduced duplicates: %v", GlobalSensitive())
+		t.Errorf("Add introduced duplicates: %v", m.Values())
 	}
 }
 
-func TestAddGlobalSensitiveKeepsLengthDescOrder(t *testing.T) {
+func TestMaskerAddKeepsLengthDescOrder(t *testing.T) {
 	// "ab" registered first; adding the longer "abcdef" must still mask the
 	// longer match first so a substring secret does not leak its remainder.
-	SetGlobalSensitive([]string{"ab"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("ab")
 
-	AddGlobalSensitive("abcdef")
+	m.Add("abcdef")
 
-	if got := MaskString("xabcdefy"); got != "x***y" {
+	if got := m.String("xabcdefy"); got != "x***y" {
 		t.Errorf("MaskString = %q, want %q (longer match first)", got, "x***y")
 	}
 }
 
-func TestAddGlobalSensitiveOnEmptyRegistry(t *testing.T) {
-	SetGlobalSensitive(nil)
-	defer SetGlobalSensitive(nil)
+func TestMaskerAddOnEmptyRegistry(t *testing.T) {
+	m := NewMasker()
 
-	AddGlobalSensitive("late")
+	m.Add("late")
 
-	if got := MaskString("a late value"); got != "a *** value" {
+	if got := m.String("a late value"); got != "a *** value" {
 		t.Errorf("MaskString = %q, want the added value masked", got)
 	}
 }
 
-func TestAddGlobalSensitiveNoValuesIsNoop(t *testing.T) {
-	SetGlobalSensitive([]string{"keep"})
-	defer SetGlobalSensitive(nil)
+func TestMaskerAddNoValuesIsNoop(t *testing.T) {
+	m := NewMasker("keep")
 
-	AddGlobalSensitive()
+	m.Add()
 
-	if got := MaskString("keep"); got != "***" {
+	if got := m.String("keep"); got != "***" {
 		t.Errorf("MaskString = %q, want existing registry untouched", got)
 	}
 }
 
-// TestSetGlobalSensitiveRegistersTrimmedSpelling covers #473: a secret whose
+// TestMaskerSetRegistersTrimmedSpelling covers #473: a secret whose
 // value carries leading or trailing whitespace is rendered trimmed in places
 // docket builds text - the `(item=<value>)` loop suffix on a task name - and
 // masking is literal substring replacement, so both spellings must register.
-func TestSetGlobalSensitiveRegistersTrimmedSpelling(t *testing.T) {
-	SetGlobalSensitive([]string{"  padded  "})
-	defer SetGlobalSensitive(nil)
+func TestMaskerSetRegistersTrimmedSpelling(t *testing.T) {
+	m := NewMasker("  padded  ")
 
-	if got := MaskString("deploy (item=padded)"); got != "deploy (item=***)" {
+	if got := m.String("deploy (item=padded)"); got != "deploy (item=***)" {
 		t.Errorf("MaskString = %q, want the trimmed spelling masked", got)
 	}
-	if got := MaskString("raw:  padded  ."); got != "raw:***." {
+	if got := m.String("raw:  padded  ."); got != "raw:***." {
 		t.Errorf("MaskString = %q, want the literal spelling masked", got)
 	}
 }
 
-// TestAddGlobalSensitiveRegistersTrimmedSpelling pins the same rule on the
+// TestMaskerAddRegistersTrimmedSpelling pins the same rule on the
 // late-registration path, which is how a task-declared secret joins the
 // registry - after the recipe has parsed and already named its expansions.
-func TestAddGlobalSensitiveRegistersTrimmedSpelling(t *testing.T) {
-	SetGlobalSensitive(nil)
-	defer SetGlobalSensitive(nil)
+func TestMaskerAddRegistersTrimmedSpelling(t *testing.T) {
+	m := NewMasker()
 
-	AddGlobalSensitive("\tlate\n")
+	m.Add("\tlate\n")
 
-	if got := MaskString("configure (item=late)"); got != "configure (item=***)" {
+	if got := m.String("configure (item=late)"); got != "configure (item=***)" {
 		t.Errorf("MaskString = %q, want the trimmed spelling masked", got)
 	}
 }
@@ -176,32 +175,30 @@ func TestAddGlobalSensitiveRegistersTrimmedSpelling(t *testing.T) {
 // replaced first, so text holding the full value masks to a single `***`
 // rather than leaving the padding behind around an inner match.
 func TestSensitiveTrimmedSpellingSortsAfterLiteral(t *testing.T) {
-	SetGlobalSensitive([]string{" tok "})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker(" tok ")
 
-	values := GlobalSensitive()
+	values := m.Values()
 	want := []string{" tok ", "tok"}
 	if len(values) != len(want) {
-		t.Fatalf("GlobalSensitive = %v, want %v", values, want)
+		t.Fatalf("Values() = %v, want %v", values, want)
 	}
 	for i := range want {
 		if values[i] != want[i] {
-			t.Fatalf("GlobalSensitive = %v, want %v", values, want)
+			t.Fatalf("Values() = %v, want %v", values, want)
 		}
 	}
 }
 
 // TestSensitiveWhitespaceOnlyValueIsDropped keeps the trimmed spelling from
-// reintroducing the empty entry SetGlobalSensitive drops: an all-whitespace
+// reintroducing the empty entry the masker drops: an all-whitespace
 // value trims to "", which would otherwise match every position in a string.
 func TestSensitiveWhitespaceOnlyValueIsDropped(t *testing.T) {
-	SetGlobalSensitive([]string{"   "})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("   ")
 
-	if got := GlobalSensitive(); len(got) != 1 || got[0] != "   " {
-		t.Fatalf("GlobalSensitive = %v, want only the literal whitespace value", got)
+	if got := m.Values(); len(got) != 1 || got[0] != "   " {
+		t.Fatalf("Values() = %v, want only the literal whitespace value", got)
 	}
-	if got := MaskString("plain"); got != "plain" {
+	if got := m.String("plain"); got != "plain" {
 		t.Errorf("MaskString = %q, want %q; an empty entry masked everything", got, "plain")
 	}
 }
@@ -209,40 +206,37 @@ func TestSensitiveWhitespaceOnlyValueIsDropped(t *testing.T) {
 // TestSensitiveUnpaddedValueRegistersOnce keeps the common case free of a
 // duplicate entry: a value that is already trimmed contributes one spelling.
 func TestSensitiveUnpaddedValueRegistersOnce(t *testing.T) {
-	SetGlobalSensitive([]string{"plain"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("plain")
 
-	if got := GlobalSensitive(); len(got) != 1 || got[0] != "plain" {
-		t.Errorf("GlobalSensitive = %v, want a single entry", got)
+	if got := m.Values(); len(got) != 1 || got[0] != "plain" {
+		t.Errorf("Values() = %v, want a single entry", got)
 	}
 }
 
-// TestSetGlobalSensitiveRegistersEscapedSpelling covers #475: a generated
+// TestMaskerSetRegistersEscapedSpelling covers #475: a generated
 // resource address wraps a key value in strconv.Quote when a bare form would
 // not parse back, which escapes the double quote the value carries, so the
 // registered literal no longer matches inside the address it produced.
-func TestSetGlobalSensitiveRegistersEscapedSpelling(t *testing.T) {
-	SetGlobalSensitive([]string{`quo"ted`})
-	defer SetGlobalSensitive(nil)
+func TestMaskerSetRegistersEscapedSpelling(t *testing.T) {
+	m := NewMasker(`quo"ted`)
 
-	if got := MaskString(`dokku_stub[key="quo\"ted"]`); got != `dokku_stub[key="***"]` {
+	if got := m.String(`dokku_stub[key="quo\"ted"]`); got != `dokku_stub[key="***"]` {
 		t.Errorf("MaskString = %q, want the escaped spelling masked", got)
 	}
-	if got := MaskString(`raw:quo"ted.`); got != "raw:***." {
+	if got := m.String(`raw:quo"ted.`); got != "raw:***." {
 		t.Errorf("MaskString = %q, want the literal spelling masked", got)
 	}
 }
 
-// TestAddGlobalSensitiveRegistersEscapedSpelling pins the same rule on the
+// TestMaskerAddRegistersEscapedSpelling pins the same rule on the
 // late-registration path, which is how a task-declared secret joins the
 // registry - after the recipe has parsed and already named its tasks.
-func TestAddGlobalSensitiveRegistersEscapedSpelling(t *testing.T) {
-	SetGlobalSensitive(nil)
-	defer SetGlobalSensitive(nil)
+func TestMaskerAddRegistersEscapedSpelling(t *testing.T) {
+	m := NewMasker()
 
-	AddGlobalSensitive(`la"te`)
+	m.Add(`la"te`)
 
-	if got := MaskString(`dokku_stub[key="la\"te"]`); got != `dokku_stub[key="***"]` {
+	if got := m.String(`dokku_stub[key="la\"te"]`); got != `dokku_stub[key="***"]` {
 		t.Errorf("MaskString = %q, want the escaped spelling masked", got)
 	}
 }
@@ -252,17 +246,16 @@ func TestAddGlobalSensitiveRegistersEscapedSpelling(t *testing.T) {
 // longer one, so it is replaced first; the reverse order would leave the
 // escaping backslash stranded next to a `***`.
 func TestSensitiveEscapedSpellingSortsBeforeLiteral(t *testing.T) {
-	SetGlobalSensitive([]string{`a"b`})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker(`a"b`)
 
-	values := GlobalSensitive()
+	values := m.Values()
 	want := []string{`a\"b`, `a"b`}
 	if len(values) != len(want) {
-		t.Fatalf("GlobalSensitive = %q, want %q", values, want)
+		t.Fatalf("Values() = %q, want %q", values, want)
 	}
 	for i := range want {
 		if values[i] != want[i] {
-			t.Fatalf("GlobalSensitive = %q, want %q", values, want)
+			t.Fatalf("Values() = %q, want %q", values, want)
 		}
 	}
 }
@@ -272,13 +265,12 @@ func TestSensitiveEscapedSpellingSortsBeforeLiteral(t *testing.T) {
 // own, so it reaches an address escaped only when the value also carries a
 // comma, a bracket, or a quote. Both spellings register either way.
 func TestSensitiveBackslashValueRegistersEscapedSpelling(t *testing.T) {
-	SetGlobalSensitive([]string{`a,b\c`})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker(`a,b\c`)
 
-	if got := MaskString(`dokku_stub[key="a,b\\c"]`); got != `dokku_stub[key="***"]` {
+	if got := m.String(`dokku_stub[key="a,b\\c"]`); got != `dokku_stub[key="***"]` {
 		t.Errorf("MaskString = %q, want the escaped spelling masked", got)
 	}
-	if got := MaskString(`raw:a,b\c.`); got != "raw:***." {
+	if got := m.String(`raw:a,b\c.`); got != "raw:***." {
 		t.Errorf("MaskString = %q, want the literal spelling masked", got)
 	}
 }
@@ -288,13 +280,12 @@ func TestSensitiveBackslashValueRegistersEscapedSpelling(t *testing.T) {
 // escaping inside those quotes, so the literal still matches there and the
 // registry stays at one entry.
 func TestSensitiveCommaValueRegistersOnce(t *testing.T) {
-	SetGlobalSensitive([]string{"a,b"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("a,b")
 
-	if got := GlobalSensitive(); len(got) != 1 || got[0] != "a,b" {
-		t.Errorf("GlobalSensitive = %q, want a single entry", got)
+	if got := m.Values(); len(got) != 1 || got[0] != "a,b" {
+		t.Errorf("Values() = %q, want a single entry", got)
 	}
-	if got := MaskString(`dokku_stub[key="a,b"]`); got != `dokku_stub[key="***"]` {
+	if got := m.String(`dokku_stub[key="a,b"]`); got != `dokku_stub[key="***"]` {
 		t.Errorf("MaskString = %q, want the quoted value masked", got)
 	}
 }
@@ -303,17 +294,16 @@ func TestSensitiveCommaValueRegistersOnce(t *testing.T) {
 // derivations compose. A value that is both padded and escape-bearing is
 // printed four ways, and every one of them masks.
 func TestSensitivePaddedEscapedValueRegistersEverySpelling(t *testing.T) {
-	SetGlobalSensitive([]string{` p"q `})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker(` p"q `)
 
-	values := GlobalSensitive()
+	values := m.Values()
 	want := []string{` p\"q `, ` p"q `, `p\"q`, `p"q`}
 	if len(values) != len(want) {
-		t.Fatalf("GlobalSensitive = %q, want %q", values, want)
+		t.Fatalf("Values() = %q, want %q", values, want)
 	}
 	for i := range want {
 		if values[i] != want[i] {
-			t.Fatalf("GlobalSensitive = %q, want %q", values, want)
+			t.Fatalf("Values() = %q, want %q", values, want)
 		}
 	}
 }
@@ -322,42 +312,44 @@ func TestSensitivePaddedEscapedValueRegistersEverySpelling(t *testing.T) {
 // registering the escaped spelling must not widen masking to a value that
 // merely shares a prefix with a secret.
 func TestSensitiveEscapedSpellingLeavesLookalikesAlone(t *testing.T) {
-	SetGlobalSensitive([]string{`a"b`})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker(`a"b`)
 
-	if got := MaskString(`dokku_stub[key=keepzzz]`); got != `dokku_stub[key=keepzzz]` {
+	if got := m.String(`dokku_stub[key=keepzzz]`); got != `dokku_stub[key=keepzzz]` {
 		t.Errorf("MaskString = %q, want the non-secret value untouched", got)
 	}
 }
 
 func TestMaskStringConcurrent(t *testing.T) {
-	SetGlobalSensitive([]string{"secret"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("secret")
 
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			SetGlobalSensitive([]string{"secret", "token"})
+			m.Add("token")
 		}()
 		go func() {
 			defer wg.Done()
-			_ = MaskString("a secret token here")
+			_ = m.String("a secret token here")
 		}()
 	}
 	wg.Wait()
+
+	// A value added under contention is still registered afterwards.
+	if got := m.String("a secret token here"); got != "a *** *** here" {
+		t.Errorf("after concurrent use = %q, want both values masked", got)
+	}
 }
 
-func TestGlobalSensitiveReturnsCopy(t *testing.T) {
-	SetGlobalSensitive([]string{"a"})
-	defer SetGlobalSensitive(nil)
+func TestMaskerValuesReturnsCopy(t *testing.T) {
+	m := NewMasker("a")
 
-	values := GlobalSensitive()
+	values := m.Values()
 	values[0] = "mutated"
-	again := GlobalSensitive()
+	again := m.Values()
 	if again[0] != "a" {
-		t.Errorf("GlobalSensitive returned shared slice; mutation leaked: %v", again)
+		t.Errorf("Values returned a shared slice; mutation leaked: %v", again)
 	}
 }
 
@@ -366,8 +358,7 @@ func TestGlobalSensitiveReturnsCopy(t *testing.T) {
 // `loop:` can resolve to a scalar, a list, or a mapping, so a secret can sit
 // at any depth and on either side of a map entry.
 func TestMaskValue(t *testing.T) {
-	SetGlobalSensitive([]string{"sekret"})
-	defer SetGlobalSensitive(nil)
+	m := NewMasker("sekret")
 
 	cases := []struct {
 		name string
@@ -414,22 +405,79 @@ func TestMaskValue(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := MaskValue(tc.in); !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("MaskValue(%#v) = %#v, want %#v", tc.in, got, tc.want)
+			if got := m.Value(tc.in); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("m.Value(%#v) = %#v, want %#v", tc.in, got, tc.want)
 			}
 		})
 	}
 }
 
-// TestMaskValueEmptyRegistry pins that a value survives the walk unchanged
+// TestMaskValueWithNothingRegistered pins that a value survives the walk unchanged
 // when nothing is registered, so the listing renders identically for a recipe
 // that declares no secrets.
-func TestMaskValueEmptyRegistry(t *testing.T) {
-	SetGlobalSensitive(nil)
-	defer SetGlobalSensitive(nil)
+func TestMaskValueWithNothingRegistered(t *testing.T) {
+	m := NewMasker()
 
 	in := map[string]interface{}{"user": "alice", "ports": []interface{}{80, "443"}}
-	if got := MaskValue(in); !reflect.DeepEqual(got, in) {
+	if got := m.Value(in); !reflect.DeepEqual(got, in) {
 		t.Errorf("MaskValue with an empty registry = %#v, want input unchanged", got)
+	}
+}
+
+// TestMaskerSurvivesAnotherRunFinishing is the fail-open case #501 exists to
+// close. The registry this replaced was process-wide and the API that filled
+// it *replaced* the set, so a second run's teardown - a deferred clear - blanked
+// the first run's secrets while it was still writing output. A Masker is owned
+// by its run and never cleared, so a run that finishes cannot affect one that
+// has not.
+func TestMaskerSurvivesAnotherRunFinishing(t *testing.T) {
+	t.Parallel()
+
+	first := NewMasker("first-secret")
+
+	// A second run starts, does its work, and ends. Under the old registry
+	// this is the point the first run's secrets were lost.
+	func() {
+		second := NewMasker("second-secret")
+		if got := second.String("second-secret"); got != MaskPlaceholder {
+			t.Errorf("second run masked %q, want %q", got, MaskPlaceholder)
+		}
+	}()
+
+	if got := first.String("first-secret"); got != MaskPlaceholder {
+		t.Errorf("first run masked %q after the second finished, want %q", got, MaskPlaceholder)
+	}
+}
+
+// TestContextMaskerRoundTrip pins the carrier the layers with no other reason
+// to know about a run use to reach it.
+func TestContextMaskerRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	m := NewMasker("secret")
+	if got := MaskerFromContext(ContextWithMasker(context.Background(), m)); got != m {
+		t.Errorf("MaskerFromContext returned %p, want %p", got, m)
+	}
+}
+
+// TestNilMaskerMasksNothing pins the property that lets every masking site skip
+// a nil check: a caller that registered no secrets has nothing to hide.
+func TestNilMaskerMasksNothing(t *testing.T) {
+	t.Parallel()
+
+	var m *Masker
+	if got := m.String("secret"); got != "secret" {
+		t.Errorf("nil masker changed %q to %q", "secret", got)
+	}
+	if got := m.Value([]string{"secret"}); !reflect.DeepEqual(got, []string{"secret"}) {
+		t.Errorf("nil masker changed %v", got)
+	}
+	if got := m.Values(); got != nil {
+		t.Errorf("nil masker has values: %v", got)
+	}
+	m.Add("ignored") // must not panic
+	// A context carrying nothing yields the same nil masker.
+	if got := MaskerFromContext(context.Background()); got != nil {
+		t.Errorf("empty context yielded a masker: %v", got)
 	}
 }

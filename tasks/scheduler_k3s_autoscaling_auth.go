@@ -61,7 +61,7 @@ func planSchedulerK3sAutoscalingAuthSet(ctx context.Context, spec schedulerK3sAu
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
-	registerSensitiveMapValues(current)
+	registerSensitiveMapValues(ctx, current)
 
 	drifted, allNew := driftedKeys(spec.Metadata, current)
 	if len(drifted) == 0 {
@@ -99,7 +99,7 @@ func planSchedulerK3sAutoscalingAuthUnset(ctx context.Context, spec schedulerK3s
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
-	registerSensitiveMapValues(current)
+	registerSensitiveMapValues(ctx, current)
 
 	toClear := intersectingKeys(spec.Metadata, current)
 	if len(toClear) == 0 {

@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/dokku/docket/subprocess"
@@ -77,13 +78,13 @@ func CollectPlaySensitiveValues(plays []*Play) []string {
 	return out
 }
 
-// registerSensitiveMapValues adds every non-empty value of m to the global
-// mask registry at plan time. It is for values that are secret but only become
+// registerSensitiveMapValues adds every non-empty value of m to the run's
+// masker at plan time. It is for values that are secret but only become
 // known after a server probe - the pre-run collection in commands/apply.go and
 // commands/plan.go walks task structs, so it cannot see them (e.g. a
 // scheduler-k3s trigger's surviving metadata read back from the server). The
 // keys are not masked; only the values.
-func registerSensitiveMapValues(m map[string]string) {
+func registerSensitiveMapValues(ctx context.Context, m map[string]string) {
 	if len(m) == 0 {
 		return
 	}
@@ -91,7 +92,7 @@ func registerSensitiveMapValues(m map[string]string) {
 	for _, v := range m {
 		values = append(values, v)
 	}
-	subprocess.AddGlobalSensitive(values...)
+	subprocess.MaskerFromContext(ctx).Add(values...)
 }
 
 // sensitiveValuesFromTask returns the masked-value set for a single task.

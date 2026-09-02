@@ -39,7 +39,10 @@ func TestSchedulerK3sAutoscalingAuthTaskSensitiveValuesAbsentEmpty(t *testing.T)
 }
 
 func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
-	isolateMaskRegistry(t)
+	// The probed secrets are registered with whatever masker the planning
+	// context carries, so the test supplies one and reads back through it.
+	masker := subprocess.NewMasker()
+	ctx := subprocess.ContextWithMasker(testCtx(), masker)
 
 	// The server holds two metadata keys; the task clears one, so the other
 	// survives and is read back (with its secret value) for the restore call.
@@ -53,14 +56,14 @@ func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
 		Metadata: map[string]string{"secretName": ""},
 		State:    StateAbsent,
 	}
-	result := task.Plan(testCtx())
+	result := task.Plan(ctx)
 	if result.Error != nil {
 		t.Fatalf("Plan returned error: %v", result.Error)
 	}
 
 	// Both the cleared key's old value and the surviving key's value are
 	// server-probed secrets; they must be registered so every sink masks them.
-	registered := subprocess.GlobalSensitive()
+	registered := masker.Values()
 	for _, secret := range []string{"my-secret", "REALSECRET"} {
 		found := false
 		for _, v := range registered {
@@ -76,7 +79,7 @@ func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
 	// The rendered mutations (unset ... (was "my-secret"), restore ...=REALSECRET)
 	// must mask to *** once the probed values are registered.
 	for _, m := range result.Mutations {
-		if masked := subprocess.MaskString(m); strings.Contains(masked, "REALSECRET") || strings.Contains(masked, "my-secret") {
+		if masked := masker.String(m); strings.Contains(masked, "REALSECRET") || strings.Contains(masked, "my-secret") {
 			t.Errorf("mutation leaked a probed secret after masking: %q -> %q", m, masked)
 		}
 	}

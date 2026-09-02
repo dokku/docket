@@ -140,7 +140,7 @@ func (ecr ExecCommandResponse) StdoutBytes() []byte {
 func ResolveCommandString(ctx context.Context, input ExecCommandInput) string {
 	target := TargetFromContext(ctx)
 	if target.Host != "" && input.Command == "dokku" {
-		return resolveSshCommandString(input.Command, input.Args)
+		return resolveSshCommandString(MaskerFromContext(ctx), input.Command, input.Args)
 	}
 	cmd := input.Command
 	args := input.Args
@@ -148,25 +148,25 @@ func ResolveCommandString(ctx context.Context, input ExecCommandInput) string {
 		args = append([]string{"-n", "-u", "root", cmd}, args...)
 		cmd = "sudo"
 	}
-	return resolveLocalCommandString(cmd, args)
+	return resolveLocalCommandString(MaskerFromContext(ctx), cmd, args)
 }
 
 // resolveLocalCommandString joins a local command and args into the masked
 // form CallExecCommand records on the response.
-func resolveLocalCommandString(command string, args []string) string {
+func resolveLocalCommandString(m *Masker, command string, args []string) string {
 	if len(args) == 0 {
-		return MaskString(command)
+		return m.String(command)
 	}
-	return MaskString(command + " " + strings.Join(args, " "))
+	return m.String(command + " " + strings.Join(args, " "))
 }
 
 // resolveSshCommandString renders the bare `cmd arg1 arg2 ...` form the SSH
 // transport reports (sudo wrapping happens remotely and is not displayed).
-func resolveSshCommandString(command string, args []string) string {
+func resolveSshCommandString(m *Masker, command string, args []string) string {
 	if len(args) == 0 {
-		return MaskString(command)
+		return m.String(command)
 	}
-	return MaskString(command + " " + strings.Join(args, " "))
+	return m.String(command + " " + strings.Join(args, " "))
 }
 
 // ExecRunner is the shape of the executor CallExecCommand delegates to. A test
@@ -269,6 +269,7 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 	if target.Host != "" && input.Command == "dokku" {
 		return CallSshCommand(ctx, target, input)
 	}
+	masker := MaskerFromContext(ctx)
 
 	// isatty reports whether our own stdout is a terminal, which is the
 	// signal used below to decide whether the child may read the terminal.
@@ -300,7 +301,7 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		if len(cmd.Args) > 0 {
 			argsSt = strings.Join(cmd.Args, " ")
 		}
-		log.Printf("exec: %s %s", MaskString(cmd.Command), MaskString(argsSt))
+		log.Printf("exec: %s %s", masker.String(cmd.Command), masker.String(argsSt))
 	}
 
 	if input.Stdin != nil {
@@ -325,7 +326,7 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		cmd.StdErrWriter = input.StderrWriter
 	}
 
-	resolved := resolveLocalCommandString(command, commandArgs)
+	resolved := resolveLocalCommandString(masker, command, commandArgs)
 
 	res, err := cmd.Execute(ctx)
 	if err != nil {

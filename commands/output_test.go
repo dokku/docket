@@ -15,9 +15,9 @@ import (
 // newTestFormatter returns a formatter wired to a fresh MockUi with
 // color forced off. Tests that need colored output set f.color = true
 // explicitly.
-func newTestFormatter(verbose bool) (*Formatter, *cli.MockUi) {
+func newTestFormatter(verbose bool, sensitive ...string) (*Formatter, *cli.MockUi) {
 	ui := cli.NewMockUi()
-	f := NewFormatter(ui, verbose)
+	f := NewFormatter(ui, verbose, subprocess.NewMasker(sensitive...))
 	f.color = false
 	return f, ui
 }
@@ -55,10 +55,8 @@ func TestFormatterPlayHeaderWithHostEmptyDelegates(t *testing.T) {
 func TestFormatterTaskLineMasksSensitiveName(t *testing.T) {
 	// A loop over a sensitive value expands the task name to
 	// `<name> (item=<secret>)`; the name must be masked (#312).
-	subprocess.SetGlobalSensitive([]string{"hunter2"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	f, ui := newTestFormatter(false)
+	f, ui := newTestFormatter(false, "hunter2")
 	f.TaskLine(MarkerChanged, "create auth users (item=hunter2)", "")
 	got := ui.OutputWriter.String()
 	if strings.Contains(got, "hunter2") {
@@ -73,10 +71,8 @@ func TestFormatterPlaySkippedMasksWhenSource(t *testing.T) {
 	// A play predicate that interpolates a sensitive input has the secret
 	// substituted into the recipe text; the echoed when: source must be
 	// masked (#335).
-	subprocess.SetGlobalSensitive([]string{"tok_abc123"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	f, ui := newTestFormatter(false)
+	f, ui := newTestFormatter(false, "tok_abc123")
 	f.PlaySkipped("deploy", `"tok_abc123" == "expected"`)
 	got := ui.OutputWriter.String()
 	if strings.Contains(got, "tok_abc123") {
@@ -90,10 +86,8 @@ func TestFormatterPlaySkippedMasksWhenSource(t *testing.T) {
 func TestFormatterPlaySkippedMasksWhenEvalError(t *testing.T) {
 	// apply/plan route play-level when-eval errors through PlaySkipped as
 	// `<when> (error: <err>)`; the same masking must cover them (#335).
-	subprocess.SetGlobalSensitive([]string{"tok_abc123"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	f, ui := newTestFormatter(false)
+	f, ui := newTestFormatter(false, "tok_abc123")
 	f.PlaySkipped("deploy", `"tok_abc123" == foo (error: unknown name foo)`)
 	got := ui.OutputWriter.String()
 	if strings.Contains(got, "tok_abc123") {
@@ -321,7 +315,7 @@ func TestFormatterColorOnEmitsAnsi(t *testing.T) {
 	t.Cleanup(func() { color.NoColor = prev })
 
 	ui := cli.NewMockUi()
-	f := NewFormatter(ui, false)
+	f := NewFormatter(ui, false, nil)
 	f.color = true
 	f.TaskLine(MarkerChanged, "task", "")
 	got := ui.OutputWriter.String()
@@ -402,10 +396,8 @@ func TestFormatterTaskWarningRendersDeprecatedMarker(t *testing.T) {
 // reason renders the [warning] marker (not [deprecated]) on stdout, and masks
 // the message. (#353)
 func TestFormatterTaskWarningRendersWarningMarker(t *testing.T) {
-	subprocess.SetGlobalSensitive([]string{"s3cr3t"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	f, ui := newTestFormatter(false)
+	f, ui := newTestFormatter(false, "s3cr3t")
 	f.TaskWarning("tasks", "set token", "probe_rejected", "rejected probe near value s3cr3t")
 	got := ui.OutputWriter.String()
 	if !strings.Contains(got, "[warning]") {

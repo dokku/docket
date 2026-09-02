@@ -13,9 +13,9 @@ import (
 )
 
 // emitterTestUI returns a fresh MockUi and the emitter under test.
-func emitterTestUI() (*JSONEmitter, *cli.MockUi) {
+func emitterTestUI(sensitive ...string) (*JSONEmitter, *cli.MockUi) {
 	ui := cli.NewMockUi()
-	return NewJSONEmitter(ui), ui
+	return NewJSONEmitter(ui, subprocess.NewMasker(sensitive...)), ui
 }
 
 // decodeOnly parses the captured stdout as a single JSON-lines event and
@@ -366,10 +366,8 @@ func TestJSONEmitterPlanSummary(t *testing.T) {
 }
 
 func TestJSONEmitterMasksSensitiveValues(t *testing.T) {
-	subprocess.SetGlobalSensitive([]string{"topsecret"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	e, ui := emitterTestUI()
+	e, ui := emitterTestUI("topsecret")
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "tasks",
 		Name: "set config",
@@ -392,10 +390,8 @@ func TestJSONEmitterMasksSensitiveValues(t *testing.T) {
 func TestJSONEmitterMasksTaskNameAndPlay(t *testing.T) {
 	// A loop over a sensitive value expands the task name; the name and play
 	// fields must be masked in JSON too (#312).
-	subprocess.SetGlobalSensitive([]string{"hunter2"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	e, ui := emitterTestUI()
+	e, ui := emitterTestUI("hunter2")
 	e.ApplyTask(ApplyTaskEvent{
 		Play: "play-hunter2",
 		Name: "create auth users (item=hunter2)",
@@ -417,10 +413,8 @@ func TestJSONEmitterMasksTaskNameAndPlay(t *testing.T) {
 func TestJSONEmitterPlaySkippedMasksWhen(t *testing.T) {
 	// The play_skipped when/reason fields carry the raw predicate source; a
 	// secret interpolated into it must be masked (#335).
-	subprocess.SetGlobalSensitive([]string{"tok_abc123"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	e, ui := emitterTestUI()
+	e, ui := emitterTestUI("tok_abc123")
 	e.PlaySkipped("deploy", `"tok_abc123" == "expected"`)
 	ev := decodeOnly(t, ui.OutputWriter.String())
 	if got := ev["when"].(string); strings.Contains(got, "tok_abc123") {
@@ -489,10 +483,8 @@ func TestJSONEmitterTaskWarningEmptyIsNoOp(t *testing.T) {
 // TestJSONEmitterTaskWarningProbeReason pins that a non-deprecation warning
 // carries its own reason through the event and that the message is masked. (#353)
 func TestJSONEmitterTaskWarningProbeReason(t *testing.T) {
-	subprocess.SetGlobalSensitive([]string{"s3cr3t"})
-	t.Cleanup(func() { subprocess.SetGlobalSensitive(nil) })
 
-	e, ui := emitterTestUI()
+	e, ui := emitterTestUI("s3cr3t")
 	e.TaskWarning("tasks", "set token", "probe_rejected", "rejected probe near value s3cr3t")
 	ev := decodeOnly(t, ui.OutputWriter.String())
 

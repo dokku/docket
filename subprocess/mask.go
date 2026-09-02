@@ -1,6 +1,7 @@
 package subprocess
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -19,59 +20,185 @@ import (
 // value has been registered here.
 const MaskPlaceholder = "***"
 
-var (
-	sensitiveMu     sync.RWMutex
-	sensitiveValues []string
-)
-
-// SetGlobalSensitive registers the set of literal string values that must be
-// masked anywhere they appear in user-facing output. Pass nil or an empty
-// slice to clear the registry. Empty entries in values are dropped (matching
-// every empty substring would otherwise mask everything).
+// Masker holds the set of literal string values that must not appear in
+// user-facing output, and replaces them with MaskPlaceholder wherever they
+// would.
 //
-// Callers (typically commands/apply.go and commands/plan.go) collect this set
-// from input values declared `sensitive: true` and from task struct fields
-// tagged `sensitive:"true"` before any subprocess runs, then defer a clear.
-// Note on scope: this registry is process-wide, and SetGlobalSensitive
-// *replaces* it, which is the one part of masking that does not survive two
-// runs sharing a process - the first run's deferred clear would blank the
-// second run's secrets while it is still writing output. AddGlobalSensitive
-// has no such problem. Masking stayed global when the target moved onto the
-// context because it is output rendering rather than routing: a shared
-// registry over-masks, which is fail-closed, and sensitiveMu already makes it
-// race-safe. Making it per-invocation is #501.
-func SetGlobalSensitive(values []string) {
-	cleaned := cleanSensitive(values)
-
-	sensitiveMu.Lock()
-	defer sensitiveMu.Unlock()
-	if len(cleaned) == 0 {
-		sensitiveValues = nil
-		return
-	}
-	sensitiveValues = cleaned
+// One Masker belongs to one run. That is the whole point of the type: the
+// registry it replaces was process-wide, and the API that populated it
+// *replaced* the set rather than adding to it, so two runs sharing a process
+// had the first one's teardown blank the second one's secrets while it was
+// still writing output. A Masker is never cleared - it goes out of scope with
+// the run that owns it - so there is no teardown to get wrong.
+//
+// A nil *Masker masks nothing and is safe to use. That is deliberate: a caller
+// that registered no secrets has nothing to hide, so code paths reached with
+// or without a masker need no branch of their own.
+type Masker struct {
+	mu     sync.RWMutex
+	values []string
 }
 
-// AddGlobalSensitive appends values to the sensitive registry, keeping the
-// entries already registered. Use it when a value that must be masked only
-// becomes known after the registry was first populated - typically a secret
-// read back from the server during Plan() (a drifted property's old value, or
-// scheduler-k3s trigger metadata), which the pre-run collection in
-// commands/apply.go and commands/plan.go cannot see. Values are de-duplicated
-// against the existing set, empties are dropped, and the whole registry is
-// re-sorted length-descending. A no-op when values contribute nothing new.
-func AddGlobalSensitive(values ...string) {
-	if len(values) == 0 {
+// NewMasker returns a Masker holding values, in the spellings cleanSensitive
+// derives. A Masker built with no values is still usable; more can be added.
+func NewMasker(values ...string) *Masker {
+	m := &Masker{}
+	m.Add(values...)
+	return m
+}
+
+// Add registers more values to mask, keeping the ones already there.
+//
+// There is no Set. Replacing the set is what made the old registry fail open,
+// and nothing needs it: a run's secrets only ever accumulate, as tasks read
+// values back off the server that the pre-run collection could not see - a
+// drifted property's old value, scheduler-k3s trigger metadata.
+func (m *Masker) Add(values ...string) {
+	if m == nil || len(values) == 0 {
 		return
 	}
-	sensitiveMu.Lock()
-	defer sensitiveMu.Unlock()
-	merged := cleanSensitive(append(append([]string{}, sensitiveValues...), values...))
-	if len(merged) == 0 {
-		sensitiveValues = nil
-		return
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.values = cleanSensitive(append(m.values, values...))
+}
+
+// Values returns a snapshot of the registered spellings, longest first.
+func (m *Masker) Values() []string {
+	if m == nil {
+		return nil
 	}
-	sensitiveValues = merged
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.values) == 0 {
+		return nil
+	}
+	out := make([]string, len(m.values))
+	copy(out, m.values)
+	return out
+}
+
+// String replaces every occurrence of a registered value in s with `***`.
+func (m *Masker) String(s string) string {
+	if m == nil || s == "" {
+		return s
+	}
+	m.mu.RLock()
+	values := m.values
+	m.mu.RUnlock()
+	for _, v := range values {
+		if v == "" {
+			continue
+		}
+		s = strings.ReplaceAll(s, v, MaskPlaceholder)
+	}
+	return s
+}
+
+// Value returns v with every registered value replaced by `***` in every
+// string it contains, walking slices and maps recursively. Non-string scalars
+// - numbers, booleans, nil - are returned unchanged: masking is substring
+// replacement over text, and a value that carried a secret would have been
+// rendered as a string before it got here.
+//
+// Map keys are masked as well as map values. A recipe is rendered as one
+// template before it is parsed, so a key is interpolated user data exactly as
+// a value is. Two keys that differ only inside a secret therefore collapse
+// into a single `***` entry - the same "two distinct values become
+// indistinguishable" trade-off masking already makes for task names.
+//
+// It exists for the values that reach a stream as interface{} - today the
+// `loop_item` field of `--list-tasks --json`, which carries whatever the
+// recipe's `loop:` resolved to: a scalar, a list, or a mapping. Masking the
+// value rather than the marshalled line is deliberate: a secret containing a
+// quote or a backslash is escaped in the serialised form, and String cannot be
+// relied on to match it there.
+func (m *Masker) Value(v interface{}) interface{} {
+	switch t := v.(type) {
+	case nil:
+		return nil
+	case string:
+		return m.String(t)
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i, item := range t {
+			out[i] = m.Value(item)
+		}
+		return out
+	case []string:
+		out := make([]string, len(t))
+		for i, item := range t {
+			out[i] = m.String(item)
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(t))
+		for k, item := range t {
+			out[m.String(k)] = m.Value(item)
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]string, len(t))
+		for k, item := range t {
+			out[m.String(k)] = m.String(item)
+		}
+		return out
+	}
+	return m.reflectValue(v)
+}
+
+// reflectValue is the fallback for the container types the switch in Value
+// does not name - the typed slices and maps an expr-evaluated `loop:` can
+// produce, and the map[interface{}]interface{} shape a hand-built value can
+// carry. It mirrors the reflect normalisation tasks.resolveLoopList already
+// applies on the way in. The copy is interface{}-shaped because the only
+// consumer serialises it to JSON, where an object key is a string regardless.
+// Anything that is not a slice, array, or map is returned unchanged: a
+// non-string scalar cannot carry a secret.
+func (m *Masker) reflectValue(v interface{}) interface{} {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.String:
+		return m.String(rv.String())
+	case reflect.Slice, reflect.Array:
+		out := make([]interface{}, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			out[i] = m.Value(rv.Index(i).Interface())
+		}
+		return out
+	case reflect.Map:
+		out := make(map[string]interface{}, rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			out[m.String(fmt.Sprint(iter.Key().Interface()))] = m.Value(iter.Value().Interface())
+		}
+		return out
+	case reflect.Ptr, reflect.Interface:
+		if rv.IsNil() {
+			return nil
+		}
+		return m.Value(rv.Elem().Interface())
+	}
+	return v
+}
+
+// maskerKey is the context key a run's Masker travels under.
+type maskerKey struct{}
+
+// ContextWithMasker returns a copy of ctx carrying m, so the layers that mask
+// text but have no other reason to know about a run - the subprocess
+// transports, a task registering a secret it just read back - can reach it.
+func ContextWithMasker(ctx context.Context, m *Masker) context.Context {
+	return context.WithValue(ctx, maskerKey{}, m)
+}
+
+// MaskerFromContext returns the Masker ctx carries, or nil when it carries
+// none. A nil Masker masks nothing, so callers need not check.
+func MaskerFromContext(ctx context.Context) *Masker {
+	if ctx == nil {
+		return nil
+	}
+	m, _ := ctx.Value(maskerKey{}).(*Masker)
+	return m
 }
 
 // cleanSensitive drops empty and duplicate entries and returns the values
@@ -135,124 +262,4 @@ func cleanSensitive(values []string) []string {
 func escapedSpelling(v string) string {
 	quoted := strconv.Quote(v)
 	return quoted[1 : len(quoted)-1]
-}
-
-// GlobalSensitive returns a snapshot of the current sensitive value set.
-func GlobalSensitive() []string {
-	sensitiveMu.RLock()
-	defer sensitiveMu.RUnlock()
-	if len(sensitiveValues) == 0 {
-		return nil
-	}
-	out := make([]string, len(sensitiveValues))
-	copy(out, sensitiveValues)
-	return out
-}
-
-// MaskString replaces every occurrence of any registered sensitive value in s
-// with `***`. Returns s unchanged when the registry is empty.
-func MaskString(s string) string {
-	if s == "" {
-		return s
-	}
-	sensitiveMu.RLock()
-	values := sensitiveValues
-	sensitiveMu.RUnlock()
-	if len(values) == 0 {
-		return s
-	}
-	for _, v := range values {
-		if v == "" {
-			continue
-		}
-		s = strings.ReplaceAll(s, v, MaskPlaceholder)
-	}
-	return s
-}
-
-// MaskValue returns v with every registered sensitive value replaced by `***`
-// in every string it contains, walking slices and maps recursively. Non-string
-// scalars - numbers, booleans, nil - are returned unchanged: masking is
-// substring replacement over text, and a value that carried a secret would
-// have been rendered as a string before it got here.
-//
-// Map keys are masked as well as map values. A recipe is rendered as one
-// template before it is parsed, so a key is interpolated user data exactly as
-// a value is. Two keys that differ only inside a secret therefore collapse
-// into a single `***` entry - the same "two distinct values become
-// indistinguishable" trade-off masking already makes for task names.
-//
-// It exists for the values that reach a stream as interface{} - today the
-// `loop_item` field of `--list-tasks --json`, which carries whatever the
-// recipe's `loop:` resolved to: a scalar, a list, or a mapping. Masking the
-// value rather than the marshalled line is deliberate: a secret containing a
-// quote or a backslash is escaped in the serialised form, and MaskString
-// cannot be relied on to match it there.
-func MaskValue(v interface{}) interface{} {
-	switch t := v.(type) {
-	case nil:
-		return nil
-	case string:
-		return MaskString(t)
-	case []interface{}:
-		out := make([]interface{}, len(t))
-		for i, item := range t {
-			out[i] = MaskValue(item)
-		}
-		return out
-	case []string:
-		out := make([]string, len(t))
-		for i, item := range t {
-			out[i] = MaskString(item)
-		}
-		return out
-	case map[string]interface{}:
-		out := make(map[string]interface{}, len(t))
-		for k, item := range t {
-			out[MaskString(k)] = MaskValue(item)
-		}
-		return out
-	case map[string]string:
-		out := make(map[string]string, len(t))
-		for k, item := range t {
-			out[MaskString(k)] = MaskString(item)
-		}
-		return out
-	}
-	return maskReflectValue(v)
-}
-
-// maskReflectValue is the fallback for the container types the switch in
-// MaskValue does not name - the typed slices and maps an expr-evaluated
-// `loop:` can produce, and the map[interface{}]interface{} shape a
-// hand-built value can carry. It mirrors the reflect normalisation
-// tasks.resolveLoopList already applies on the way in. The copy is
-// interface{}-shaped because the only consumer serialises it to JSON, where
-// an object key is a string regardless. Anything that is not a slice, array,
-// or map is returned unchanged: a non-string scalar cannot carry a secret.
-func maskReflectValue(v interface{}) interface{} {
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.String:
-		return MaskString(rv.String())
-	case reflect.Slice, reflect.Array:
-		out := make([]interface{}, rv.Len())
-		for i := 0; i < rv.Len(); i++ {
-			out[i] = MaskValue(rv.Index(i).Interface())
-		}
-		return out
-	case reflect.Map:
-		out := make(map[string]interface{}, rv.Len())
-		iter := rv.MapRange()
-		for iter.Next() {
-			out[MaskString(fmt.Sprint(iter.Key().Interface()))] = MaskValue(iter.Value().Interface())
-		}
-		return out
-	case reflect.Ptr, reflect.Interface:
-		if rv.IsNil() {
-			return nil
-		}
-		return MaskValue(rv.Elem().Interface())
-	}
-	return v
 }
