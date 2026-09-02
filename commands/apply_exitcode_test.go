@@ -15,6 +15,7 @@ import (
 // TestApplyDetailedExitCodeChanged: a task that changes state exits 2
 // with the flag and 0 without it.
 func TestApplyDetailedExitCodeChanged(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
@@ -33,6 +34,7 @@ func TestApplyDetailedExitCodeChanged(t *testing.T) {
 
 // TestApplyDetailedExitCodeUnchanged: an in-sync task exits 0 either way.
 func TestApplyDetailedExitCodeUnchanged(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
@@ -53,6 +55,7 @@ func TestApplyDetailedExitCodeUnchanged(t *testing.T) {
 // a later task errored, the exit code is 1, not 2. A wrapper must never
 // read a failure as "changed".
 func TestApplyDetailedExitCodeErrorsWinOverChanges(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 	stubSet(t, "b", StubFixture{ExecuteError: errors.New("boom")})
 
@@ -76,6 +79,7 @@ func TestApplyDetailedExitCodeErrorsWinOverChanges(t *testing.T) {
 // swallowed by ignore_errors is not an error for exit-code purposes, so
 // a change elsewhere in the run still surfaces as 2.
 func TestApplyDetailedExitCodeIgnoredErrorStillCountsChanges(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 	stubSet(t, "b", StubFixture{ExecuteError: errors.New("boom")})
 
@@ -96,6 +100,7 @@ func TestApplyDetailedExitCodeIgnoredErrorStillCountsChanges(t *testing.T) {
 // TestApplyDetailedExitCodeListTasksUnaffected: --list-tasks returns
 // before any task runs, so it cannot report a change.
 func TestApplyDetailedExitCodeListTasksUnaffected(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---

@@ -60,6 +60,7 @@ func helpText(t *testing.T, name, path string) string {
 // `docket apply --help`, on a path no MaskString could reach: help is rendered
 // before any recipe is parsed, so subprocess's registry is still empty.
 func TestHelpMasksSensitiveInputDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: token, default: helpdefaultzzz, sensitive: true }
@@ -89,6 +90,7 @@ func TestHelpMasksSensitiveInputDefault(t *testing.T) {
 // help page is for - and a sensitive input with nothing to hide gains no
 // spurious placeholder.
 func TestHelpKeepsNonSensitiveInputDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: app, default: web }
@@ -115,6 +117,7 @@ func TestHelpKeepsNonSensitiveInputDefault(t *testing.T) {
 // is the declared default - which reaches the mask registry through
 // Argument.StringValue() exactly as a --vars-file or CLI value would.
 func TestListTasksMasksSensitiveInputResolvedFromDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, default: defaultsecretzzz, sensitive: true }

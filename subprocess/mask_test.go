@@ -9,6 +9,7 @@ import (
 )
 
 func TestMaskStringWithNothingRegistered(t *testing.T) {
+	t.Parallel()
 	m := NewMasker()
 
 	if got := m.String("hello world"); got != "hello world" {
@@ -17,6 +18,7 @@ func TestMaskStringWithNothingRegistered(t *testing.T) {
 }
 
 func TestMaskStringReplacesAllOccurrences(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("secret")
 
 	got := m.String("a secret and another secret")
@@ -27,6 +29,7 @@ func TestMaskStringReplacesAllOccurrences(t *testing.T) {
 }
 
 func TestMaskStringEmptyEntriesSkipped(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("", "tok")
 
 	got := m.String("xtoky")
@@ -40,6 +43,7 @@ func TestMaskStringEmptyEntriesSkipped(t *testing.T) {
 }
 
 func TestMaskStringLongerBeforeShorter(t *testing.T) {
+	t.Parallel()
 	// "ab" is a substring of "abcdef"; the longer one must be masked first
 	// so we don't see "***cdef" instead of a single "***".
 	m := NewMasker("ab", "abcdef")
@@ -51,6 +55,7 @@ func TestMaskStringLongerBeforeShorter(t *testing.T) {
 }
 
 func TestMaskerSetDeduplicates(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("a", "a", "b")
 
 	values := m.Values()
@@ -84,6 +89,7 @@ func TestMaskersAreIndependent(t *testing.T) {
 }
 
 func TestMaskerAddAppendsKeepingExisting(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("first")
 
 	m.Add("second")
@@ -95,6 +101,7 @@ func TestMaskerAddAppendsKeepingExisting(t *testing.T) {
 }
 
 func TestMaskerAddDeduplicatesAgainstExisting(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("tok")
 
 	m.Add("tok", "", "tok")
@@ -111,6 +118,7 @@ func TestMaskerAddDeduplicatesAgainstExisting(t *testing.T) {
 }
 
 func TestMaskerAddKeepsLengthDescOrder(t *testing.T) {
+	t.Parallel()
 	// "ab" registered first; adding the longer "abcdef" must still mask the
 	// longer match first so a substring secret does not leak its remainder.
 	m := NewMasker("ab")
@@ -123,6 +131,7 @@ func TestMaskerAddKeepsLengthDescOrder(t *testing.T) {
 }
 
 func TestMaskerAddOnEmptyRegistry(t *testing.T) {
+	t.Parallel()
 	m := NewMasker()
 
 	m.Add("late")
@@ -133,6 +142,7 @@ func TestMaskerAddOnEmptyRegistry(t *testing.T) {
 }
 
 func TestMaskerAddNoValuesIsNoop(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("keep")
 
 	m.Add()
@@ -147,6 +157,7 @@ func TestMaskerAddNoValuesIsNoop(t *testing.T) {
 // docket builds text - the `(item=<value>)` loop suffix on a task name - and
 // masking is literal substring replacement, so both spellings must register.
 func TestMaskerSetRegistersTrimmedSpelling(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("  padded  ")
 
 	if got := m.String("deploy (item=padded)"); got != "deploy (item=***)" {
@@ -161,6 +172,7 @@ func TestMaskerSetRegistersTrimmedSpelling(t *testing.T) {
 // late-registration path, which is how a task-declared secret joins the
 // registry - after the recipe has parsed and already named its expansions.
 func TestMaskerAddRegistersTrimmedSpelling(t *testing.T) {
+	t.Parallel()
 	m := NewMasker()
 
 	m.Add("\tlate\n")
@@ -175,6 +187,7 @@ func TestMaskerAddRegistersTrimmedSpelling(t *testing.T) {
 // replaced first, so text holding the full value masks to a single `***`
 // rather than leaving the padding behind around an inner match.
 func TestSensitiveTrimmedSpellingSortsAfterLiteral(t *testing.T) {
+	t.Parallel()
 	m := NewMasker(" tok ")
 
 	values := m.Values()
@@ -193,6 +206,7 @@ func TestSensitiveTrimmedSpellingSortsAfterLiteral(t *testing.T) {
 // reintroducing the empty entry the masker drops: an all-whitespace
 // value trims to "", which would otherwise match every position in a string.
 func TestSensitiveWhitespaceOnlyValueIsDropped(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("   ")
 
 	if got := m.Values(); len(got) != 1 || got[0] != "   " {
@@ -206,6 +220,7 @@ func TestSensitiveWhitespaceOnlyValueIsDropped(t *testing.T) {
 // TestSensitiveUnpaddedValueRegistersOnce keeps the common case free of a
 // duplicate entry: a value that is already trimmed contributes one spelling.
 func TestSensitiveUnpaddedValueRegistersOnce(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("plain")
 
 	if got := m.Values(); len(got) != 1 || got[0] != "plain" {
@@ -218,6 +233,7 @@ func TestSensitiveUnpaddedValueRegistersOnce(t *testing.T) {
 // not parse back, which escapes the double quote the value carries, so the
 // registered literal no longer matches inside the address it produced.
 func TestMaskerSetRegistersEscapedSpelling(t *testing.T) {
+	t.Parallel()
 	m := NewMasker(`quo"ted`)
 
 	if got := m.String(`dokku_stub[key="quo\"ted"]`); got != `dokku_stub[key="***"]` {
@@ -232,6 +248,7 @@ func TestMaskerSetRegistersEscapedSpelling(t *testing.T) {
 // late-registration path, which is how a task-declared secret joins the
 // registry - after the recipe has parsed and already named its tasks.
 func TestMaskerAddRegistersEscapedSpelling(t *testing.T) {
+	t.Parallel()
 	m := NewMasker()
 
 	m.Add(`la"te`)
@@ -246,6 +263,7 @@ func TestMaskerAddRegistersEscapedSpelling(t *testing.T) {
 // longer one, so it is replaced first; the reverse order would leave the
 // escaping backslash stranded next to a `***`.
 func TestSensitiveEscapedSpellingSortsBeforeLiteral(t *testing.T) {
+	t.Parallel()
 	m := NewMasker(`a"b`)
 
 	values := m.Values()
@@ -265,6 +283,7 @@ func TestSensitiveEscapedSpellingSortsBeforeLiteral(t *testing.T) {
 // own, so it reaches an address escaped only when the value also carries a
 // comma, a bracket, or a quote. Both spellings register either way.
 func TestSensitiveBackslashValueRegistersEscapedSpelling(t *testing.T) {
+	t.Parallel()
 	m := NewMasker(`a,b\c`)
 
 	if got := m.String(`dokku_stub[key="a,b\\c"]`); got != `dokku_stub[key="***"]` {
@@ -280,6 +299,7 @@ func TestSensitiveBackslashValueRegistersEscapedSpelling(t *testing.T) {
 // escaping inside those quotes, so the literal still matches there and the
 // registry stays at one entry.
 func TestSensitiveCommaValueRegistersOnce(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("a,b")
 
 	if got := m.Values(); len(got) != 1 || got[0] != "a,b" {
@@ -294,6 +314,7 @@ func TestSensitiveCommaValueRegistersOnce(t *testing.T) {
 // derivations compose. A value that is both padded and escape-bearing is
 // printed four ways, and every one of them masks.
 func TestSensitivePaddedEscapedValueRegistersEverySpelling(t *testing.T) {
+	t.Parallel()
 	m := NewMasker(` p"q `)
 
 	values := m.Values()
@@ -312,6 +333,7 @@ func TestSensitivePaddedEscapedValueRegistersEverySpelling(t *testing.T) {
 // registering the escaped spelling must not widen masking to a value that
 // merely shares a prefix with a secret.
 func TestSensitiveEscapedSpellingLeavesLookalikesAlone(t *testing.T) {
+	t.Parallel()
 	m := NewMasker(`a"b`)
 
 	if got := m.String(`dokku_stub[key=keepzzz]`); got != `dokku_stub[key=keepzzz]` {
@@ -320,6 +342,7 @@ func TestSensitiveEscapedSpellingLeavesLookalikesAlone(t *testing.T) {
 }
 
 func TestMaskStringConcurrent(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("secret")
 
 	var wg sync.WaitGroup
@@ -343,6 +366,7 @@ func TestMaskStringConcurrent(t *testing.T) {
 }
 
 func TestMaskerValuesReturnsCopy(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("a")
 
 	values := m.Values()
@@ -358,6 +382,7 @@ func TestMaskerValuesReturnsCopy(t *testing.T) {
 // `loop:` can resolve to a scalar, a list, or a mapping, so a secret can sit
 // at any depth and on either side of a map entry.
 func TestMaskValue(t *testing.T) {
+	t.Parallel()
 	m := NewMasker("sekret")
 
 	cases := []struct {
@@ -416,6 +441,7 @@ func TestMaskValue(t *testing.T) {
 // when nothing is registered, so the listing renders identically for a recipe
 // that declares no secrets.
 func TestMaskValueWithNothingRegistered(t *testing.T) {
+	t.Parallel()
 	m := NewMasker()
 
 	in := map[string]interface{}{"user": "alice", "ports": []interface{}{80, "443"}}

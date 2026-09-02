@@ -45,6 +45,7 @@ func runPlan(t *testing.T, path string, args ...string) (string, string, int) {
 // TestMultiPlayPlanRunsAllPlaysInOrder is the headline multi-play case:
 // two plays both produce a `==> Play:` header in source order.
 func TestMultiPlayPlanRunsAllPlaysInOrder(t *testing.T) {
+	t.Parallel()
 	path := writeMultiPlayTasks(t, `---
 - name: api
   tasks:
@@ -72,6 +73,7 @@ func TestMultiPlayPlanRunsAllPlaysInOrder(t *testing.T) {
 // matched play should produce a header; the other play's tasks should
 // not appear.
 func TestMultiPlayPlayFilterRunsOnlyNamedPlay(t *testing.T) {
+	t.Parallel()
 	path := writeMultiPlayTasks(t, `---
 - name: api
   tasks:
@@ -100,6 +102,7 @@ func TestMultiPlayPlayFilterRunsOnlyNamedPlay(t *testing.T) {
 // useful diagnostic when --play does not match any play, including the
 // available play names so they can correct the typo.
 func TestMultiPlayPlayFilterUnknownNameErrors(t *testing.T) {
+	t.Parallel()
 	path := writeMultiPlayTasks(t, `---
 - name: api
   tasks:
@@ -127,6 +130,7 @@ func TestMultiPlayPlayFilterUnknownNameErrors(t *testing.T) {
 // composition: --play narrows to one play, --tags then filters tasks
 // within that play.
 func TestMultiPlayPlayFilterComposesWithTags(t *testing.T) {
+	t.Parallel()
 	path := writeMultiPlayTasks(t, `---
 - name: api
   tasks:
@@ -159,6 +163,7 @@ func TestMultiPlayPlayFilterComposesWithTags(t *testing.T) {
 // with no per-task tag still passes a --tags filter that matches the
 // play tag.
 func TestMultiPlayPlayLevelTagsPropagateToTasks(t *testing.T) {
+	t.Parallel()
 	path := writeMultiPlayTasks(t, `---
 - name: api
   tags: [api]
@@ -185,6 +190,7 @@ func TestMultiPlayPlayLevelTagsPropagateToTasks(t *testing.T) {
 // same way it does in apply: the second task's `when:` evaluates
 // against the synthesized TaskOutputState of the first.
 func TestPlanRegisteredVisibleToFollowUp(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 	stubSet(t, "b", StubFixture{Changed: false})
 
@@ -210,6 +216,7 @@ func TestPlanRegisteredVisibleToFollowUp(t *testing.T) {
 // rewrites the synthesized TaskOutputState's Error so the plan
 // classifier no longer treats the task as a probe error.
 func TestPlanFailedWhenClearsError(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{
 		PlanError: errors.New("App nonexistent does not exist"),
 		Stderr:    "App nonexistent does not exist",
@@ -236,6 +243,7 @@ func TestPlanFailedWhenClearsError(t *testing.T) {
 // 1, not 2). This is the end-to-end guard for #328: a probe that could
 // not run must not be reported as absent with an optimistic [+] create.
 func TestPlanProbeErrorRendersMarkerAndExits(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{
 		PlanError: errors.New(`exec: "dokku": executable file not found in $PATH`),
 	})
@@ -269,6 +277,7 @@ func TestPlanProbeErrorRendersMarkerAndExits(t *testing.T) {
 // would-change verdict, not leave the stale [ok] / "status":"ok" the
 // probe returned.
 func TestPlanChangedWhenTrueRecomputesStatus(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false}) // Plan() -> InSync, PlanStatusOK
 
 	path := writeMultiPlayTasks(t, `---
@@ -318,6 +327,7 @@ func TestPlanChangedWhenTrueRecomputesStatus(t *testing.T) {
 // failed_when clearing a probe error leaves a would-change line marked
 // [~], not the stale [!] the probe returned.
 func TestPlanFailedWhenClearingErrorRecomputesStatus(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{
 		PlanError: errors.New("App nonexistent does not exist"),
 		Stderr:    "App nonexistent does not exist",
@@ -348,6 +358,7 @@ func TestPlanFailedWhenClearingErrorRecomputesStatus(t *testing.T) {
 // register name reused across tasks at load time (the same rule validate
 // enforces) instead of silently merging results.
 func TestPlanRejectsDuplicateRegisterName(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 	stubSet(t, "b", StubFixture{Changed: false})
 
@@ -374,6 +385,7 @@ func TestPlanRejectsDuplicateRegisterName(t *testing.T) {
 // predicate that reads it plans normally instead of failing with an
 // index-out-of-range error.
 func TestPlanSingleIterationLoopRegisterResultsIndex(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: true})
 	stubSet(t, "b", StubFixture{Changed: false})
 
@@ -402,6 +414,7 @@ func TestPlanSingleIterationLoopRegisterResultsIndex(t *testing.T) {
 // TestMultiPlayWhenSkippedShowsInSummary: skipped plays count toward
 // the new "n play skipped" summary segment.
 func TestMultiPlayWhenSkippedShowsInSummary(t *testing.T) {
+	t.Parallel()
 	path := writeMultiPlayTasks(t, `---
 - inputs:
     - name: env

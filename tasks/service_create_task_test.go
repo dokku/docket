@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 // serviceMissing stubs every dokku call as a clean non-zero exit, which is how
@@ -38,6 +37,7 @@ func planCreateCommand(t *testing.T, ctx context.Context, task ServiceCreateTask
 }
 
 func TestServiceCreateTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := ServiceCreateTask{Service: "redis", Name: "test-service", State: "invalid"}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
@@ -46,6 +46,7 @@ func TestServiceCreateTaskInvalidState(t *testing.T) {
 }
 
 func TestGetTasksServiceCreateTaskParsedCorrectly(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: create redis service
@@ -86,6 +87,7 @@ func TestGetTasksServiceCreateTaskParsedCorrectly(t *testing.T) {
 }
 
 func TestGetTasksServiceCreateWithTemplateContext(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: create {{ .service_type }} service
@@ -131,6 +133,7 @@ func TestGetTasksServiceCreateWithTemplateContext(t *testing.T) {
 // they are what lets a recipe pin an image without depending on environment
 // variables that would not survive the trip to a remote shell.
 func TestServiceCreateTaskCreateFlags(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		task ServiceCreateTask
@@ -188,12 +191,12 @@ func TestServiceCreateTaskCreateFlags(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(serviceMissing())()
+			ctx := subprocess.ContextWithRunner(testCtx(), serviceMissing())
 			// The recipe default, applied by SetDefaults on the parse path;
 			// a struct built in Go has to state it for DispatchPlan.
 			task := tc.task
 			task.State = StatePresent
-			if got := planCreateCommand(t, testCtx(), task); got != tc.want {
+			if got := planCreateCommand(t, ctx, task); got != tc.want {
 				t.Errorf("command = %q, want %q", got, tc.want)
 			}
 		})
@@ -204,6 +207,7 @@ func TestServiceCreateTaskCreateFlags(t *testing.T) {
 // in the plan. Text `docket plan` renders Mutations and never Commands, so a
 // pin that only reached the argv would not show up in a plan at all.
 func TestServiceCreateTaskMutationNamesPinnedImage(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		task ServiceCreateTask
@@ -216,10 +220,10 @@ func TestServiceCreateTaskMutationNamesPinnedImage(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(serviceMissing())()
+			ctx := subprocess.ContextWithRunner(testCtx(), serviceMissing())
 			task := tc.task
 			task.State = StatePresent
-			plan := task.Plan(testCtx())
+			plan := task.Plan(ctx)
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -234,6 +238,7 @@ func TestServiceCreateTaskMutationNamesPinnedImage(t *testing.T) {
 // and every custom_env value are registered as sensitive, so they never reach
 // the JSON `commands` stream or `apply --verbose` in the clear.
 func TestServiceCreateTaskMasksSecretsInCommands(t *testing.T) {
+	t.Parallel()
 	task := ServiceCreateTask{
 		Service:      "postgres",
 		Name:         "db",
@@ -245,7 +250,7 @@ func TestServiceCreateTaskMasksSecretsInCommands(t *testing.T) {
 
 	masker := subprocess.NewMasker(sensitiveValuesFromTask(&task)...)
 	ctx := subprocess.ContextWithMasker(testCtx(), masker)
-	defer subprocess.SetExecRunner(serviceMissing())()
+	ctx = subprocess.ContextWithRunner(ctx, serviceMissing())
 
 	got := planCreateCommand(t, ctx, task)
 	for _, secret := range []string{"env-secret", "user-secret", "root-secret"} {
@@ -260,6 +265,7 @@ func TestServiceCreateTaskMasksSecretsInCommands(t *testing.T) {
 }
 
 func TestServiceCreateTaskValidate(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		task    ServiceCreateTask
@@ -352,6 +358,7 @@ func TestServiceCreateTaskValidate(t *testing.T) {
 }
 
 func TestServiceCreateTaskValidateAcceptsDestroyWithoutOptions(t *testing.T) {
+	t.Parallel()
 	task := ServiceCreateTask{Service: "redis", Name: "cache", State: StateAbsent}
 	if err := task.Validate(); err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -359,6 +366,7 @@ func TestServiceCreateTaskValidateAcceptsDestroyWithoutOptions(t *testing.T) {
 }
 
 func TestGetTasksServiceCreateCreateOptionsParsed(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: create postgres service
@@ -423,6 +431,7 @@ func TestGetTasksServiceCreateCreateOptionsParsed(t *testing.T) {
 // TestGetTasksServiceCreateImageDriftParsed covers the drift fields a recipe
 // sets explicitly. The defaulted case is covered by the test above.
 func TestGetTasksServiceCreateImageDriftParsed(t *testing.T) {
+	t.Parallel()
 	data := []byte(`---
 - tasks:
     - name: upgrade redis service
@@ -525,16 +534,18 @@ func planImageWarning(t *testing.T, plan PlanResult) PlanWarning {
 // recipe, so every task built in Go - ExportGlobal, Examples, the integration
 // tests - carries the empty string and depends on this.
 func TestServiceCreateTaskImageDriftDefaultsToWarn(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
 
 	task := driftTask()
 	if got := task.imageDriftMode(); got != imageDriftWarn {
 		t.Errorf("imageDriftMode() = %q, want %q", got, imageDriftWarn)
 	}
-	planImageWarning(t, task.Plan(testCtx()))
+	planImageWarning(t, task.Plan(ctx))
 }
 
 func TestServiceCreateTaskImageDriftInSyncWhenPinsMatch(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		task    ServiceCreateTask
@@ -559,8 +570,8 @@ func TestServiceCreateTaskImageDriftInSyncWhenPinsMatch(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", tc.running)))()
-			plan := tc.task.Plan(testCtx())
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", tc.running)))
+			plan := tc.task.Plan(ctx)
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -575,11 +586,12 @@ func TestServiceCreateTaskImageDriftInSyncWhenPinsMatch(t *testing.T) {
 }
 
 func TestServiceCreateTaskImageDriftWarnStaysInSync(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
 
 	task := driftTask()
 	task.ImageDrift = imageDriftWarn
-	w := planImageWarning(t, task.Plan(testCtx()))
+	w := planImageWarning(t, task.Plan(ctx))
 	for _, want := range []string{"redis:7.2.4", "redis:7.2.5", "image_drift: upgrade"} {
 		if !strings.Contains(w.Message, want) {
 			t.Errorf("warning message %q does not mention %q", w.Message, want)
@@ -588,7 +600,7 @@ func TestServiceCreateTaskImageDriftWarnStaysInSync(t *testing.T) {
 
 	// ExecutePlan carries plan warnings out of the in-sync branch, so apply
 	// reports the same diagnostic plan did.
-	state := task.Execute(testCtx())
+	state := task.Execute(ctx)
 	if state.Error != nil {
 		t.Fatalf("unexpected execute error: %v", state.Error)
 	}
@@ -605,12 +617,13 @@ func TestServiceCreateTaskImageDriftWarnStaysInSync(t *testing.T) {
 // Reporting in sync silently would tell a recipe that asked for drift to be
 // caught that everything is fine.
 func TestServiceCreateTaskImageDriftWarnsOnUnreadableImage(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{imageDriftWarn, imageDriftError, imageDriftUpgrade} {
 		t.Run(mode, func(t *testing.T) {
-			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "")))()
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "")))
 			task := driftTask()
 			task.ImageDrift = mode
-			w := planImageWarning(t, task.Plan(testCtx()))
+			w := planImageWarning(t, task.Plan(ctx))
 			if !strings.Contains(w.Message, "no running image") {
 				t.Errorf("warning message %q does not say the image could not be read", w.Message)
 			}
@@ -619,12 +632,13 @@ func TestServiceCreateTaskImageDriftWarnsOnUnreadableImage(t *testing.T) {
 }
 
 func TestServiceCreateTaskImageDriftIgnoreSkipsTheProbe(t *testing.T) {
+	t.Parallel()
 	var calls []string
-	defer subprocess.SetExecRunner(recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))()
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))
 
 	task := driftTask()
 	task.ImageDrift = imageDriftIgnore
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if !plan.InSync || len(plan.Warnings) != 0 {
 		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
 	}
@@ -639,11 +653,12 @@ func TestServiceCreateTaskImageDriftIgnoreSkipsTheProbe(t *testing.T) {
 // unpinned recipe costs no extra round trip: with no declared image there is
 // nothing to compare the running one against.
 func TestServiceCreateTaskImageDriftSkipsTheProbeWithoutAPin(t *testing.T) {
+	t.Parallel()
 	var calls []string
-	defer subprocess.SetExecRunner(recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))()
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))
 
 	task := ServiceCreateTask{Service: "redis", Name: "cache", State: StatePresent}
-	if plan := task.Plan(testCtx()); !plan.InSync || len(plan.Warnings) != 0 {
+	if plan := task.Plan(ctx); !plan.InSync || len(plan.Warnings) != 0 {
 		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
 	}
 	for _, call := range calls {
@@ -654,11 +669,12 @@ func TestServiceCreateTaskImageDriftSkipsTheProbeWithoutAPin(t *testing.T) {
 }
 
 func TestServiceCreateTaskImageDriftErrorReportsMismatch(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
 
 	task := driftTask()
 	task.ImageDrift = imageDriftError
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Error == nil {
 		t.Fatal("expected a plan error, got none")
 	}
@@ -675,6 +691,7 @@ func TestServiceCreateTaskImageDriftErrorReportsMismatch(t *testing.T) {
 }
 
 func TestServiceCreateTaskImageDriftUpgradeCommand(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		task    ServiceCreateTask
@@ -747,10 +764,10 @@ func TestServiceCreateTaskImageDriftUpgradeCommand(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", tc.running)))()
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", tc.running)))
 			task := tc.task
 			task.ImageDrift = imageDriftUpgrade
-			plan := task.Plan(testCtx())
+			plan := task.Plan(ctx)
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -771,10 +788,11 @@ func TestServiceCreateTaskImageDriftUpgradeCommand(t *testing.T) {
 // the plan's prose names the reference the upgrade will actually use, not the
 // half the recipe happened to write.
 func TestServiceCreateTaskImageDriftUpgradeReportsTheEffectiveTarget(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "custom/redis:7.2.4")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "custom/redis:7.2.4")))
 
 	task := ServiceCreateTask{Service: "redis", Name: "cache", ImageVersion: "7.2.5", ImageDrift: imageDriftUpgrade, State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if want := "image drift: custom/redis:7.2.4 -> custom/redis:7.2.5"; plan.Reason != want {
 		t.Errorf("reason = %q, want %q", plan.Reason, want)
 	}
@@ -789,6 +807,7 @@ func TestServiceCreateTaskImageDriftUpgradeReportsTheEffectiveTarget(t *testing.
 // blanks them when it is given none, and docket has no read command for either,
 // so an undeclared value is lost with no flag on the argv to hint at it.
 func TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		task ServiceCreateTask
@@ -807,10 +826,10 @@ func TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))()
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
 			task := tc.task
 			task.ImageDrift = imageDriftUpgrade
-			plan := task.Plan(testCtx())
+			plan := task.Plan(ctx)
 			if len(plan.Mutations) != 2 || plan.Mutations[1] != tc.want {
 				t.Errorf("mutations = %v, want %q as the second entry", plan.Mutations, tc.want)
 			}
@@ -818,18 +837,19 @@ func TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets(t *testing.T) {
 	}
 
 	t.Run("both declared", func(t *testing.T) {
-		defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))()
+		ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
 		task := driftTask()
 		task.ImageDrift = imageDriftUpgrade
 		task.ConfigOptions = "--cpus 2"
 		task.CustomEnv = map[string]string{"A": "one"}
-		if plan := task.Plan(testCtx()); len(plan.Mutations) != 1 {
+		if plan := task.Plan(ctx); len(plan.Mutations) != 1 {
 			t.Errorf("nothing is reset when the recipe declares both, got %v", plan.Mutations)
 		}
 	})
 }
 
 func TestServiceCreateTaskImageDriftUpgradeRestartsOnlyLinkedApps(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name        string
 		restartApps bool
@@ -844,12 +864,12 @@ func TestServiceCreateTaskImageDriftUpgradeRestartsOnlyLinkedApps(t *testing.T) 
 		t.Run(tc.name, func(t *testing.T) {
 			responses := driftFixture("redis", "cache", "redis:7.2.4")
 			responses["--quiet redis:links cache"] = tc.links
-			defer subprocess.SetExecRunner(fakeDokku(responses))()
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(responses))
 
 			task := driftTask()
 			task.ImageDrift = imageDriftUpgrade
 			task.RestartApps = tc.restartApps
-			plan := task.Plan(testCtx())
+			plan := task.Plan(ctx)
 			if plan.Error != nil {
 				t.Fatalf("unexpected plan error: %v", plan.Error)
 			}
@@ -869,12 +889,13 @@ func TestServiceCreateTaskImageDriftUpgradeRestartsOnlyLinkedApps(t *testing.T) 
 }
 
 func TestServiceCreateTaskImageDriftUpgradeMasksSecrets(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
 
 	task := driftTask()
 	task.ImageDrift = imageDriftUpgrade
 	task.CustomEnv = map[string]string{"GREETING": "s3cret"}
-	ctx := subprocess.ContextWithMasker(testCtx(), subprocess.NewMasker(sensitiveValuesFromTask(&task)...))
+	ctx = subprocess.ContextWithMasker(ctx, subprocess.NewMasker(sensitiveValuesFromTask(&task)...))
 
 	plan := task.Plan(ctx)
 	if len(plan.Commands) != 1 {
@@ -894,10 +915,11 @@ func TestServiceCreateTaskImageDriftUpgradeMasksSecrets(t *testing.T) {
 // dokku. Refusing beats rendering a reference that fails only after the old
 // container has already been removed.
 func TestServiceCreateTaskImageDriftUpgradeRefusesADigestRef(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeDokku(driftFixture("redis", "cache", "redis@sha256:abc123")))()
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis@sha256:abc123")))
 
 	task := ServiceCreateTask{Service: "redis", Name: "cache", ImageVersion: "7.2.5", ImageDrift: imageDriftUpgrade, State: StatePresent}
-	plan := task.Plan(testCtx())
+	plan := task.Plan(ctx)
 	if plan.Error == nil {
 		t.Fatal("expected a plan error, got none")
 	}
@@ -910,12 +932,13 @@ func TestServiceCreateTaskImageDriftUpgradeRefusesADigestRef(t *testing.T) {
 }
 
 func TestServiceCreateTaskImageDriftAppliesUpgrade(t *testing.T) {
+	t.Parallel()
 	var calls []string
-	defer subprocess.SetExecRunner(recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))()
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))
 
 	task := driftTask()
 	task.ImageDrift = imageDriftUpgrade
-	state := task.Execute(testCtx())
+	state := task.Execute(ctx)
 	if state.Error != nil {
 		t.Fatalf("unexpected execute error: %v", state.Error)
 	}
@@ -931,6 +954,7 @@ func TestServiceCreateTaskImageDriftAppliesUpgrade(t *testing.T) {
 // failure on either read becomes a probe error rather than being mistaken for
 // "no image" or "no linked apps".
 func TestServiceCreateTaskImageDriftPropagatesSSHErrors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		fail string
@@ -943,17 +967,17 @@ func TestServiceCreateTaskImageDriftPropagatesSSHErrors(t *testing.T) {
 			responses := driftFixture("redis", "cache", "redis:7.2.4")
 			responses["--quiet redis:links cache"] = "my-app\n"
 			inner := fakeDokku(responses)
-			defer subprocess.SetExecRunner(func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+			ctx := subprocess.ContextWithRunner(testCtx(), func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 				if strings.Join(in.Args, " ") == tc.fail {
 					return subprocess.ExecCommandResponse{}, &subprocess.SSHError{}
 				}
 				return inner(ctx, in)
-			})()
+			})
 
 			task := driftTask()
 			task.ImageDrift = imageDriftUpgrade
 			task.RestartApps = true
-			plan := task.Plan(testCtx())
+			plan := task.Plan(ctx)
 			var sshErr *subprocess.SSHError
 			if !errors.As(plan.Error, &sshErr) {
 				t.Fatalf("expected an SSHError, got %v", plan.Error)

@@ -33,12 +33,13 @@ func failingExecRunner(responses map[string]string, failing string, err error) f
 // deliberate: it pins that masking happens when the warning is printed, after
 // the whole read, rather than when it is appended.
 func TestExportCommandWarningMasksAConfigValue(t *testing.T) {
-	defer subprocess.SetExecRunner(failingExecRunner(
+	t.Parallel()
+	runner := failingExecRunner(
 		exportCommandFixture(),
 		"--quiet apps:locked web",
 		errors.New(`apps:locked: unreadable lock state "abc123"`),
-	))()
-	c, ui := newExportCommand(t.TempDir())
+	)
+	c, ui := exportWithRunner(runner, t.TempDir())
 	if code := c.Run(nil); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -67,14 +68,15 @@ func TestExportCommandWarningMasksAConfigValue(t *testing.T) {
 // placeholder there, so the vars map holds nothing to mask with - while the
 // real value was still read off the server and is still in the warning.
 func TestExportCommandRedactWarningMasksAConfigValue(t *testing.T) {
-	defer subprocess.SetExecRunner(failingExecRunner(
+	t.Parallel()
+	runner := failingExecRunner(
 		exportCommandFixture(),
 		"--quiet apps:locked web",
 		errors.New(`apps:locked: unreadable lock state "abc123"`),
-	))()
+	)
 	dir := t.TempDir()
 
-	c, ui := newExportCommand(dir)
+	c, ui := exportWithRunner(runner, dir)
 	if code := c.Run([]string{"--redact"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -96,14 +98,15 @@ func TestExportCommandRedactWarningMasksAConfigValue(t *testing.T) {
 // exported before apps:list runs, so by the time the failure is printed the
 // export is already holding the cluster token it read.
 func TestExportCommandFailureMasksASecretReadBeforeTheAppList(t *testing.T) {
-	defer subprocess.SetExecRunner(failingExecRunner(
+	t.Parallel()
+	runner := failingExecRunner(
 		map[string]string{
 			"--quiet scheduler-k3s:report --global --format json": `{"global-token":"s3cr3ttoken"}`,
 		},
 		"--quiet apps:list",
 		errors.New("apps:list: server rejected cluster token s3cr3ttoken"),
-	))()
-	c, ui := newExportCommand(t.TempDir())
+	)
+	c, ui := exportWithRunner(runner, t.TempDir())
 	if code := c.Run(nil); code != 1 {
 		t.Fatalf("Run exit = %d, want 1: %s", code, ui.ErrorWriter.String())
 	}
@@ -126,10 +129,11 @@ func TestExportCommandFailureMasksASecretReadBeforeTheAppList(t *testing.T) {
 // masked Ui, so an export whose every config value is registered still writes
 // a vars-file the operator can apply.
 func TestExportCommandMaskingLeavesTheVarsFileInTheClear(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+	t.Parallel()
+	runner := fakeExecRunner(exportCommandFixture())
 	dir := t.TempDir()
 
-	c, ui := newExportCommand(dir)
+	c, ui := exportWithRunner(runner, dir)
 	if code := c.Run(nil); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
@@ -151,10 +155,11 @@ func TestExportCommandMaskingLeavesTheVarsFileInTheClear(t *testing.T) {
 // point at the typo - which "*** not found on server" would not do. It stays
 // unmasked even when it collides with a value the export registered.
 func TestExportCommandMissingAppNameStaysReadable(t *testing.T) {
+	t.Parallel()
 	responses := exportCommandFixture()
 	responses["--quiet config:export --format json web"] = `{"API_KEY":"nope-app"}`
-	defer subprocess.SetExecRunner(fakeExecRunner(responses))()
-	c, ui := newExportCommand(t.TempDir())
+	runner := fakeExecRunner(responses)
+	c, ui := exportWithRunner(runner, t.TempDir())
 	if code := c.Run([]string{"--app", "web", "--app", "nope-app"}); code != 1 {
 		t.Fatalf("Run exit = %d, want 1: %s", code, ui.ErrorWriter.String())
 	}

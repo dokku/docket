@@ -9,7 +9,6 @@ import (
 
 	"github.com/dokku/docket/commands"
 
-	_ "github.com/gliderlabs/sigil/builtin"
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/mitchellh/cli"
 )

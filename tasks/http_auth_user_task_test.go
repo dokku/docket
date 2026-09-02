@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
-
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 func TestHttpAuthUserTaskInvalidState(t *testing.T) {

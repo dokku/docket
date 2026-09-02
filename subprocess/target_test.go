@@ -57,16 +57,17 @@ func TestChildContextOverridesTheTarget(t *testing.T) {
 // this was not expressible at all - the second caller to set it silently
 // redirected the first one's commands.
 func TestConcurrentTargetsDoNotInterfere(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	seen := map[string][]string{}
 
-	defer SetExecRunner(func(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
+	base := ContextWithRunner(context.Background(), func(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
 		host := TargetFromContext(ctx).Host
 		mu.Lock()
 		defer mu.Unlock()
 		seen[host] = append(seen[host], input.Args[len(input.Args)-1])
 		return ExecCommandResponse{}, nil
-	})()
+	})
 
 	const perHost = 25
 	hosts := []string{"alice@one", "bob@two"}
@@ -77,7 +78,7 @@ func TestConcurrentTargetsDoNotInterfere(t *testing.T) {
 			wg.Add(1)
 			go func(host string, i int) {
 				defer wg.Done()
-				ctx := ContextWithTarget(context.Background(), Target{Host: host})
+				ctx := ContextWithTarget(base, Target{Host: host})
 				_, err := CallExecCommand(ctx, ExecCommandInput{
 					Command: "dokku",
 					Args:    []string{"apps:create", fmt.Sprintf("%s-%d", host, i)},
@@ -135,32 +136,36 @@ func TestContextRunnerIsPerInvocation(t *testing.T) {
 	}
 }
 
-// TestContextRunnerBeatsThePackageRunner pins the precedence the two seams
-// have while both exist, so the tests still using SetExecRunner keep working
-// and a context-scoped one is never quietly ignored.
-func TestContextRunnerBeatsThePackageRunner(t *testing.T) {
-	defer SetExecRunner(func(context.Context, ExecCommandInput) (ExecCommandResponse, error) {
-		return ExecCommandResponse{Stdout: "package"}, nil
-	})()
-
-	ctx := ContextWithRunner(context.Background(), func(context.Context, ExecCommandInput) (ExecCommandResponse, error) {
-		return ExecCommandResponse{Stdout: "context"}, nil
+// TestChildContextRunnerOverridesTheParents pins that a runner installed on a
+// derived context wins over the one its parent carries. This used to be
+// TestContextRunnerBeatsThePackageRunner, pinning the precedence between the
+// context seam and the package-level setter; with the setter gone the only
+// precedence left to get wrong is between two contexts.
+func TestChildContextRunnerOverridesTheParents(t *testing.T) {
+	t.Parallel()
+	parent := ContextWithRunner(context.Background(), func(context.Context, ExecCommandInput) (ExecCommandResponse, error) {
+		return ExecCommandResponse{Stdout: "parent"}, nil
 	})
-	resp, err := CallExecCommand(ctx, ExecCommandInput{Command: "dokku"})
+	child := ContextWithRunner(parent, func(context.Context, ExecCommandInput) (ExecCommandResponse, error) {
+		return ExecCommandResponse{Stdout: "child"}, nil
+	})
+
+	resp, err := CallExecCommand(child, ExecCommandInput{Command: "dokku"})
 	if err != nil {
 		t.Fatalf("CallExecCommand: %v", err)
 	}
-	if resp.Stdout != "context" {
-		t.Errorf("stdout = %q, want the context runner to win", resp.Stdout)
+	if resp.Stdout != "child" {
+		t.Errorf("stdout = %q, want the child runner to win", resp.Stdout)
 	}
 
-	// And a context without one still falls back to the package runner.
-	resp, err = CallExecCommand(context.Background(), ExecCommandInput{Command: "dokku"})
+	// And the parent keeps its own, so deriving a context does not disturb
+	// anything still holding the original.
+	resp, err = CallExecCommand(parent, ExecCommandInput{Command: "dokku"})
 	if err != nil {
 		t.Fatalf("CallExecCommand: %v", err)
 	}
-	if resp.Stdout != "package" {
-		t.Errorf("stdout = %q, want the package runner as the fallback", resp.Stdout)
+	if resp.Stdout != "parent" {
+		t.Errorf("stdout = %q, want the parent runner untouched", resp.Stdout)
 	}
 }
 

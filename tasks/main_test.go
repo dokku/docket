@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/gliderlabs/sigil/builtin"
 	yaml "gopkg.in/yaml.v3"
 )
 

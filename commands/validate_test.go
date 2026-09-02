@@ -15,6 +15,7 @@ import (
 )
 
 func TestValidateCommandMetadata(t *testing.T) {
+	t.Parallel()
 	c := &ValidateCommand{}
 	if c.Name() != "validate" {
 		t.Errorf("Name = %q, want \"validate\"", c.Name())
@@ -25,6 +26,7 @@ func TestValidateCommandMetadata(t *testing.T) {
 }
 
 func TestValidateCommandExamples(t *testing.T) {
+	t.Parallel()
 	c := &ValidateCommand{}
 	examples := c.Examples()
 	if len(examples) == 0 {
@@ -38,6 +40,7 @@ func TestValidateCommandExamples(t *testing.T) {
 }
 
 func TestValidateCommandHelpDoesNotPanic(t *testing.T) {
+	t.Parallel()
 	c := &ValidateCommand{}
 	defer func() {
 		if r := recover(); r != nil {
@@ -51,6 +54,7 @@ func TestValidateCommandHelpDoesNotPanic(t *testing.T) {
 // the issue's example output (line N column M, "did you mean" hint) keeps
 // rendering as documented.
 func TestFormatProblemHumanOutput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		p    tasks.Problem
@@ -104,6 +108,7 @@ func TestFormatProblemHumanOutput(t *testing.T) {
 // an Ansible failure, so a renamed field or an unlisted `code` must fail
 // here rather than in the wrapper.
 func TestValidateJSONEventShape(t *testing.T) {
+	t.Parallel()
 	recipes := map[string]struct {
 		recipe string
 		codes  []string
@@ -201,6 +206,7 @@ func TestValidateJSONEventShape(t *testing.T) {
 // contract: a clean recipe produces an empty stdout and exit 0, so a
 // wrapper can treat "any output at all" as failure.
 func TestValidateJSONEmitsNothingOnSuccess(t *testing.T) {
+	t.Parallel()
 	exit, out := runValidateOverStdin(t, stdinYAMLRecipe, []string{"-", "--json"})
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0; output:\n%s", exit, out)
@@ -215,6 +221,7 @@ func TestValidateJSONEmitsNothingOnSuccess(t *testing.T) {
 // with a tasks.json sitting next to it that is wrong. The warning goes
 // to stderr, so a --json consumer reading stdout is unaffected.
 func TestValidateWarnsOnAmbiguousDefaultProbe(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeAmbiguousRecipes(t, dir)
 
@@ -239,6 +246,7 @@ func TestValidateWarnsOnAmbiguousDefaultProbe(t *testing.T) {
 // remedy the warning suggests, so it must not fire once the user has
 // taken it. Nor should a directory with a single candidate warn.
 func TestValidateDoesNotWarnWhenTasksIsExplicit(t *testing.T) {
+	t.Parallel()
 	t.Run("explicit --tasks", func(t *testing.T) {
 		dir := t.TempDir()
 		writeAmbiguousRecipes(t, dir)

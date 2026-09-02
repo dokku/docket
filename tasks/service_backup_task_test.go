@@ -3,8 +3,6 @@ package tasks
 import (
 	"strings"
 	"testing"
-
-	_ "github.com/gliderlabs/sigil/builtin"
 )
 
 func TestServiceBackupTaskInvalidState(t *testing.T) {

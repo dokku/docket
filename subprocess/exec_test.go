@@ -11,6 +11,7 @@ import (
 )
 
 func TestResolveCommandString(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
 		name      string
@@ -86,6 +87,7 @@ func TestResolveCommandStringWithoutATargetRunsLocally(t *testing.T) {
 }
 
 func TestExecCommandResponseStdoutContents(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		stdout string
@@ -108,6 +110,7 @@ func TestExecCommandResponseStdoutContents(t *testing.T) {
 }
 
 func TestExecCommandResponseStderrContents(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		stderr string
@@ -130,6 +133,7 @@ func TestExecCommandResponseStderrContents(t *testing.T) {
 }
 
 func TestExecCommandResponseStdoutBytes(t *testing.T) {
+	t.Parallel()
 	resp := ExecCommandResponse{Stdout: "  hello world  \n"}
 	got := resp.StdoutBytes()
 	want := []byte("hello world")
@@ -144,6 +148,7 @@ func TestExecCommandResponseStdoutBytes(t *testing.T) {
 }
 
 func TestExecCommandResponseStderrBytes(t *testing.T) {
+	t.Parallel()
 	resp := ExecCommandResponse{Stderr: "  error msg  \n"}
 	got := resp.StderrBytes()
 	want := []byte("error msg")
@@ -158,6 +163,7 @@ func TestExecCommandResponseStderrBytes(t *testing.T) {
 }
 
 func TestCallExecCommandSuccess(t *testing.T) {
+	t.Parallel()
 	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",
 		Args:    []string{"hello"},
@@ -174,6 +180,7 @@ func TestCallExecCommandSuccess(t *testing.T) {
 }
 
 func TestCallExecCommandFailure(t *testing.T) {
+	t.Parallel()
 	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "false",
 	})
@@ -195,6 +202,7 @@ func TestCallExecCommandFailure(t *testing.T) {
 }
 
 func TestCallExecCommandNotFound(t *testing.T) {
+	t.Parallel()
 	_, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "nonexistent-binary-docket-test-12345",
 	})
@@ -218,6 +226,10 @@ func TestCallExecCommandNotFound(t *testing.T) {
 // own environment, and nothing is layered on top. The inheritance itself is
 // implicit - go-execute leaves cmd.Env nil when ExecTask.Env is empty - so it
 // is worth asserting rather than assuming.
+//
+// This one stays serial on purpose. Its subject is the process environment,
+// so a stubbed lookup of the kind parseDokkuHost takes would assert nothing -
+// the variable has to really be set for the child to really inherit it.
 func TestCallExecCommandInheritsProcessEnv(t *testing.T) {
 	t.Setenv("DOCKET_TEST_VAR", "test123")
 
@@ -231,6 +243,7 @@ func TestCallExecCommandInheritsProcessEnv(t *testing.T) {
 }
 
 func TestCallExecCommandWithContext(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
@@ -243,18 +256,22 @@ func TestCallExecCommandWithContext(t *testing.T) {
 	}
 }
 
-func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
+// TestContextRunnerReceivesInputAndFallsBackToTheReal covers both halves of
+// runnerFromContext: a context carrying a runner routes to it with the input
+// intact, and one carrying none reaches the real executor. It replaces
+// TestSetExecRunnerSwapsAndRestores, which pinned the same two halves against
+// the package-level setter #502 removed.
+func TestContextRunnerReceivesInputAndFallsBackToTheReal(t *testing.T) {
+	t.Parallel()
 	var gotInput ExecCommandInput
-	fake := func(_ context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
+	ctx := ContextWithRunner(context.Background(), func(_ context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
 		gotInput = input
 		return ExecCommandResponse{Stdout: "canned"}, nil
-	}
+	})
 
-	restore := SetExecRunner(fake)
-
-	// Both entry points route through the swapped runner without spawning a
-	// process (the command below does not exist on PATH).
-	resp, err := CallExecCommand(context.Background(), ExecCommandInput{Command: "dokku", Args: []string{"apps:list"}})
+	// The fake answers without spawning a process (the command below does
+	// not exist on PATH).
+	resp, err := CallExecCommand(ctx, ExecCommandInput{Command: "dokku", Args: []string{"apps:list"}})
 	if err != nil {
 		t.Fatalf("CallExecCommand with fake runner failed: %v", err)
 	}
@@ -265,12 +282,10 @@ func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
 		t.Errorf("fake runner did not receive the input: %+v", gotInput)
 	}
 
-	restore()
-
-	// After restore the real executor runs again: echo succeeds locally.
+	// A bare context reaches the real executor: echo succeeds locally.
 	resp, err = CallExecCommand(context.Background(), ExecCommandInput{Command: "echo", Args: []string{"hi"}})
 	if err != nil {
-		t.Fatalf("CallExecCommand after restore failed: %v", err)
+		t.Fatalf("CallExecCommand without a context runner failed: %v", err)
 	}
 	if resp.StdoutContents() != "hi" {
 		t.Errorf("expected real executor output %q, got %q", "hi", resp.StdoutContents())
@@ -278,6 +293,7 @@ func TestSetExecRunnerSwapsAndRestores(t *testing.T) {
 }
 
 func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
+	t.Parallel()
 	masker := NewMasker("topsecret123")
 
 	resp, err := CallExecCommand(ContextWithMasker(context.Background(), masker), ExecCommandInput{
@@ -300,6 +316,10 @@ func TestCallExecCommandResponseCommandIsMasked(t *testing.T) {
 	}
 }
 
+// TestCallExecCommandTraceLogIsMasked also stays serial, for a second reason
+// on top of DOKKU_TRACE: it swaps the standard logger's output to read the
+// trace back. Taking the environment as a parameter would not free it while
+// the sink is still a process-wide global.
 func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 	t.Setenv("DOKKU_TRACE", "1")
 	masker := NewMasker("topsecret123")
@@ -325,6 +345,7 @@ func TestCallExecCommandTraceLogIsMasked(t *testing.T) {
 }
 
 func TestCallExecCommandResponseCommandUnmaskedWhenNoSecrets(t *testing.T) {
+	t.Parallel()
 
 	resp, err := CallExecCommand(context.Background(), ExecCommandInput{
 		Command: "echo",

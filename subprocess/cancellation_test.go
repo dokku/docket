@@ -14,6 +14,7 @@ import (
 // signal handled inside this package, so a caller holding a cancelled context
 // had no way to prevent the next command from running to completion.
 func TestCallExecCommandHonorsAlreadyCancelledContext(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -36,6 +37,7 @@ func TestCallExecCommandHonorsAlreadyCancelledContext(t *testing.T) {
 // as absence would make a plan claim drift and an apply then mutate a server
 // it never successfully read.
 func TestProbePropagatesCancellation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -51,6 +53,9 @@ func TestProbePropagatesCancellation(t *testing.T) {
 // TestCallExecCommandDeadlineBoundsTheChild pins that a deadline actually
 // bounds a slow command, which is the property an embedding caller needs and
 // a signal handler cannot provide.
+//
+// Serial on purpose: the assertion is a wall-clock ceiling, and a timing
+// assertion under a loaded parallel run is how a suite acquires a flake.
 func TestCallExecCommandDeadlineBoundsTheChild(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -72,6 +77,12 @@ func TestCallExecCommandDeadlineBoundsTheChild(t *testing.T) {
 // signal.Notify without ever calling signal.Stop, and park a goroutine on that
 // channel that nothing ever woke - so a run leaked one goroutine, one channel
 // registration and one derived context per dokku command it issued.
+//
+// Serial on purpose, and the one test here that could not be made parallel
+// even in principle: runtime.NumGoroutine counts the whole process, so a test
+// running beside it would put its own goroutines in the delta. Go resumes
+// parallel tests only once every serial test has finished, so nothing else in
+// the package is running while this counts.
 func TestCallExecCommandDoesNotLeakGoroutines(t *testing.T) {
 	ctx := context.Background()
 	// Warm up so one-off runtime goroutines are not counted as growth.

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/mitchellh/cli"
 )
@@ -29,6 +28,7 @@ const canonicalTasksYAML = `---
 `
 
 func TestFmtCommandMetadata(t *testing.T) {
+	t.Parallel()
 	c := &FmtCommand{}
 	if c.Name() != "fmt" {
 		t.Errorf("Name = %q, want %q", c.Name(), "fmt")
@@ -39,6 +39,7 @@ func TestFmtCommandMetadata(t *testing.T) {
 }
 
 func TestFmtCommandExamples(t *testing.T) {
+	t.Parallel()
 	c := &FmtCommand{}
 	examples := c.Examples()
 	if len(examples) == 0 {
@@ -52,6 +53,7 @@ func TestFmtCommandExamples(t *testing.T) {
 }
 
 func TestFmtCommandHelpDoesNotPanic(t *testing.T) {
+	t.Parallel()
 	c := &FmtCommand{}
 	defer func() {
 		if r := recover(); r != nil {
@@ -93,6 +95,7 @@ const canonicalTasksJSON5 = `[
 `
 
 func TestFmtRewritesJSON5InPlace(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.json")
 	if err := os.WriteFile(path, []byte(messyTasksJSON5), 0o644); err != nil {
@@ -112,6 +115,7 @@ func TestFmtRewritesJSON5InPlace(t *testing.T) {
 }
 
 func TestFmtJSON5IdempotentOnCanonical(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.json")
 	if err := os.WriteFile(path, []byte(canonicalTasksJSON5), 0o644); err != nil {
@@ -124,6 +128,7 @@ func TestFmtJSON5IdempotentOnCanonical(t *testing.T) {
 }
 
 func TestFmtRewritesNonCanonicalInPlace(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -145,6 +150,7 @@ func TestFmtRewritesNonCanonicalInPlace(t *testing.T) {
 }
 
 func TestFmtNoOpPreservesMtime(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(canonicalTasksYAML), 0o644); err != nil {
@@ -175,6 +181,7 @@ func TestFmtNoOpPreservesMtime(t *testing.T) {
 }
 
 func TestFmtCheckExitsNonZeroOnNonCanonical(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -195,6 +202,7 @@ func TestFmtCheckExitsNonZeroOnNonCanonical(t *testing.T) {
 }
 
 func TestFmtCheckExitsZeroOnCanonical(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(canonicalTasksYAML), 0o644); err != nil {
@@ -207,6 +215,7 @@ func TestFmtCheckExitsZeroOnCanonical(t *testing.T) {
 }
 
 func TestFmtCheckAloneEmitsNoDiff(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -227,6 +236,7 @@ func TestFmtCheckAloneEmitsNoDiff(t *testing.T) {
 }
 
 func TestFmtDiffPrintsDiffAndDoesNotWrite(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -257,6 +267,7 @@ func TestFmtDiffPrintsDiffAndDoesNotWrite(t *testing.T) {
 }
 
 func TestFmtCheckDiffComposes(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -285,6 +296,7 @@ func TestFmtCheckDiffComposes(t *testing.T) {
 }
 
 func TestFmtColorNeverProducesPlainOutput(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -302,14 +314,9 @@ func TestFmtColorNeverProducesPlainOutput(t *testing.T) {
 }
 
 func TestFmtColorAlwaysProducesAnsiEvenInPipe(t *testing.T) {
-	// `--color always` turns color.NoColor off process-wide, so the previous
-	// value is saved and put back rather than assumed. Restoring a hardcoded
-	// `true` is right only for as long as nothing else can have changed it,
-	// which stops being true the moment tests run in parallel. Same shape as
-	// TestFormatterColorOnEmitsAnsi in output_test.go.
-	prev := color.NoColor
-	t.Cleanup(func() { color.NoColor = prev })
-
+	t.Parallel()
+	// No save-and-restore any more: --color resolves to a value this run
+	// carries, so the test cannot disturb anything else.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
@@ -327,6 +334,7 @@ func TestFmtColorAlwaysProducesAnsiEvenInPipe(t *testing.T) {
 }
 
 func TestFmtColorInvalidValueFails(t *testing.T) {
+	t.Parallel()
 	c := newTestFmtCommand()
 	if exit := c.Run([]string{"--color", "rainbow", "tasks.yml"}); exit != 1 {
 		t.Errorf("invalid --color exit = %d, want 1", exit)
@@ -334,6 +342,7 @@ func TestFmtColorInvalidValueFails(t *testing.T) {
 }
 
 func TestFmtStdinReadsAndWritesStdout(t *testing.T) {
+	t.Parallel()
 	captured, exit := withStdinAndStdout(t, messyTasksYAML, func(in io.Reader, out io.Writer) int {
 		c := newTestFmtCommand()
 		c.Stdin = in
@@ -349,6 +358,7 @@ func TestFmtStdinReadsAndWritesStdout(t *testing.T) {
 }
 
 func TestFmtStdinInvalidTasksFormatFails(t *testing.T) {
+	t.Parallel()
 	captured, exit := withStdinAndStdout(t, messyTasksYAML, func(in io.Reader, out io.Writer) int {
 		c := newTestFmtCommand()
 		c.Stdin = in
@@ -368,6 +378,7 @@ func TestFmtStdinInvalidTasksFormatFails(t *testing.T) {
 // with "[", so sniffStdinFormat calls it JSON5 and the JSON5 formatter
 // rewrites it into JSON5 syntax. --tasks-format yaml keeps it YAML.
 func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
+	t.Parallel()
 	const flowYAML = "[{tasks: [{name: flow, dokku_app: {app: api}}]}]\n"
 
 	sniffed, exit := withStdinAndStdout(t, flowYAML, func(in io.Reader, out io.Writer) int {
@@ -398,6 +409,7 @@ func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
 }
 
 func TestFmtTasksFormatOverridesFileExtension(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// A .yml extension would normally select the YAML formatter; the
 	// override sends this JSON5 body to the JSON5 formatter instead.
@@ -422,6 +434,7 @@ func TestFmtTasksFormatOverridesFileExtension(t *testing.T) {
 // be combined with named files. Without the guard the "-" fell through
 // to expandPaths, matched no glob, and died on os.ReadFile("-").
 func TestFmtRejectsStdinMixedWithPaths(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte(canonicalTasksYAML), 0o644); err != nil {
@@ -443,6 +456,7 @@ func TestFmtRejectsStdinMixedWithPaths(t *testing.T) {
 // about. A directory holding both candidates gets told which one was
 // picked.
 func TestFmtWarnsOnAmbiguousDefaultProbe(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(canonicalTasksYAML), 0o644); err != nil {
 		t.Fatalf("write tasks.yml: %v", err)
@@ -466,6 +480,7 @@ func TestFmtWarnsOnAmbiguousDefaultProbe(t *testing.T) {
 // TestFmtDoesNotWarnForNamedPaths: named arguments select their own
 // files, so there is no probe to be ambiguous about.
 func TestFmtDoesNotWarnForNamedPaths(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(canonicalTasksYAML), 0o644); err != nil {
 		t.Fatalf("write tasks.yml: %v", err)
@@ -484,6 +499,7 @@ func TestFmtDoesNotWarnForNamedPaths(t *testing.T) {
 }
 
 func TestFmtGlobExpandsMatches(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, name := range []string{"a.yml", "b.yml", "c.yaml"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(messyTasksYAML), 0o644); err != nil {
@@ -514,6 +530,7 @@ func TestFmtGlobExpandsMatches(t *testing.T) {
 }
 
 func TestFmtMultiFilePerFileErrorsDoNotAbort(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.yml")
 	bad := filepath.Join(dir, "missing.yml")
@@ -535,6 +552,7 @@ func TestFmtMultiFilePerFileErrorsDoNotAbort(t *testing.T) {
 }
 
 func TestFmtParseErrorReturnsExit1(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	if err := os.WriteFile(path, []byte("- a: [b\n"), 0o644); err != nil {

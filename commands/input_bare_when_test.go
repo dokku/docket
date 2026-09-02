@@ -57,6 +57,7 @@ func assertBareWhen(t *testing.T, path string, wantSkipped bool, args ...string)
 // spellings pflag accepts for false have to skip, and both for true have to
 // run; the zero value an omitted default resolves to is false and skips too.
 func TestBareWhenOnABoolInputFollowsTheValue(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, bareWhenRecipe("debug", "bool"))
 
 	assertBareWhen(t, path, true)
@@ -69,6 +70,7 @@ func TestBareWhenOnABoolInputFollowsTheValue(t *testing.T) {
 // TestBareWhenOnAnIntInputFollowsTheValue: an int has the same hole - the
 // pointer is never nil, so `when: replicas` was true at 0.
 func TestBareWhenOnAnIntInputFollowsTheValue(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, bareWhenRecipe("replicas", "int"))
 
 	assertBareWhen(t, path, true)
@@ -80,6 +82,7 @@ func TestBareWhenOnAnIntInputFollowsTheValue(t *testing.T) {
 // already behaved - an empty one reached the context as nil, which is falsy -
 // so this is the parity check that says all three types now read alike.
 func TestBareWhenOnAStringInputFollowsTheValue(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, bareWhenRecipe("env", ""))
 
 	assertBareWhen(t, path, true)
@@ -95,6 +98,7 @@ func TestBareWhenOnAStringInputFollowsTheValue(t *testing.T) {
 // assertion reads off the resource address the other input tests use, and it
 // stays inside a quoted scalar so validate and fmt still parse the raw file.
 func TestTemplateConditionalFollowsABoolInput(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: debug, type: bool }
@@ -128,6 +132,7 @@ func TestTemplateConditionalFollowsABoolInput(t *testing.T) {
 // with the bare predicate: a file-level input and a play-local one reach a
 // predicate as the same shape, so both halves skip or run together.
 func TestBareWhenReadsTheSameFromEitherInputLayer(t *testing.T) {
+	t.Parallel()
 	recipe := func(def string) string {
 		return `---
 - inputs:
@@ -177,6 +182,7 @@ func TestBareWhenReadsTheSameFromEitherInputLayer(t *testing.T) {
 // assertion does not depend on how the address renderer quotes a value ending
 // in a hyphen.
 func TestUnsetStringInputRendersEmpty(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: suffix }
@@ -208,6 +214,7 @@ func TestUnsetStringInputRendersEmpty(t *testing.T) {
 // fix: the map handed to the render and to every predicate holds values, not
 // the flag pointers registerInputFlags allocated.
 func TestBuildInputContextHoldsConcreteValues(t *testing.T) {
+	t.Parallel()
 	recipe := `---
 - inputs:
     - { name: debug, type: bool }

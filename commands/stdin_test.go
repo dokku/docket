@@ -10,14 +10,12 @@ import (
 	"github.com/mitchellh/cli"
 )
 
-// withStdinArgs drives a command the way the real CLI does: os.Args
-// carries the full argv (FlagSet reads it before pflag parses, to
-// preregister the recipe's inputs as flags) and os.Stdin carries the
-// recipe. Returns the MockUi so callers can assert on output.
-//
-// resetStdinRecipe bookends the swap because readStdinRecipe memoizes
-// its own pipe and argv, so two of these can no longer serve each other the
-// wrong bytes through a process-wide memo.
+// withStdinArgs drives a command the way the real CLI does: argv carries
+// the full command line (FlagSet reads it before pflag parses, to
+// preregister the recipe's inputs as flags) and a pipe carries the recipe.
+// Both are handed to fn rather than assigned to os.Args and os.Stdin, so
+// two of these can run at once without serving each other the wrong bytes.
+// Returns the MockUi so callers can assert on output.
 func withStdinArgs(t *testing.T, recipe string, args []string, fn func(stdin io.Reader, argv []string)) {
 	t.Helper()
 
@@ -70,6 +68,7 @@ const stdinJSON5Recipe = `[
 `
 
 func TestValidateReadsYAMLFromStdin(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"-"}, {"--tasks", "-"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			exit, out := runValidateOverStdin(t, stdinYAMLRecipe, args)
@@ -88,6 +87,7 @@ func TestValidateReadsYAMLFromStdin(t *testing.T) {
 }
 
 func TestValidateSniffsJSON5FromStdin(t *testing.T) {
+	t.Parallel()
 	exit, out := runValidateOverStdin(t, stdinJSON5Recipe, []string{"-"})
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0; output:\n%s", exit, out)
@@ -101,6 +101,7 @@ func TestValidateSniffsJSON5FromStdin(t *testing.T) {
 // cannot get right: a flow-style YAML recipe opens with "[" and would
 // be handed to the JSON5 parser without an explicit --tasks-format.
 func TestValidateStdinFormatOverridesSniff(t *testing.T) {
+	t.Parallel()
 	exit, out := runValidateOverStdin(t, stdinFlowYAMLRecipe, []string{"--tasks-format", "yaml", "-"})
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0; output:\n%s", exit, out)
@@ -111,6 +112,7 @@ func TestValidateStdinFormatOverridesSniff(t *testing.T) {
 }
 
 func TestValidateRejectsEmptyStdin(t *testing.T) {
+	t.Parallel()
 	exit, out := runValidateOverStdin(t, "", []string{"-"})
 	if exit != 1 {
 		t.Fatalf("exit = %d, want 1; output:\n%s", exit, out)
@@ -123,6 +125,7 @@ func TestValidateRejectsEmptyStdin(t *testing.T) {
 }
 
 func TestValidateRejectsUnknownTasksFormat(t *testing.T) {
+	t.Parallel()
 	exit, out := runValidateOverStdin(t, stdinYAMLRecipe, []string{"--tasks-format", "toml", "-"})
 	if exit != 1 {
 		t.Fatalf("exit = %d, want 1; output:\n%s", exit, out)
@@ -133,6 +136,7 @@ func TestValidateRejectsUnknownTasksFormat(t *testing.T) {
 }
 
 func TestValidateRejectsStdinTwice(t *testing.T) {
+	t.Parallel()
 	exit, out := runValidateOverStdin(t, stdinYAMLRecipe, []string{"--tasks", "-", "-"})
 	if exit != 1 {
 		t.Fatalf("exit = %d, want 1; output:\n%s", exit, out)
@@ -147,6 +151,7 @@ func TestValidateRejectsStdinTwice(t *testing.T) {
 // input flag only exists because FlagSet parsed the piped recipe, and
 // the strict check only passes because Run saw the same bytes.
 func TestValidateStdinRegistersRecipeInputs(t *testing.T) {
+	t.Parallel()
 	recipe := `---
 - inputs:
     - name: app
@@ -170,6 +175,7 @@ func TestValidateStdinRegistersRecipeInputs(t *testing.T) {
 // read must not stop the flag set being built - Run re-resolves and
 // reports the real error there.
 func TestPreloadRecipeForFlagsSkipsMissingFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	data, format, source := preloadRecipeForFlags(dir, []string{"docket", "validate"}, false, newStdinRecipeSource(nil))
 	if data != nil {

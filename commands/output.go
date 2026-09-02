@@ -206,19 +206,32 @@ func NewFormatter(ui cli.Ui, verbose bool, masker *subprocess.Masker) *Formatter
 		verbose: verbose,
 		color:   useColor,
 		masker:  masker,
-		paint: map[Marker]*color.Color{
-			MarkerOK:         color.New(color.FgGreen),
-			MarkerChanged:    color.New(color.FgYellow),
-			MarkerSkipped:    color.New(color.Faint),
-			MarkerError:      color.New(color.FgRed),
-			MarkerCreate:     color.New(color.FgGreen),
-			MarkerModify:     color.New(color.FgYellow),
-			MarkerDestroy:    color.New(color.FgRed),
-			MarkerProbeError: color.New(color.FgRed),
-			MarkerDeprecated: color.New(color.FgYellow, color.Faint),
-			MarkerWarning:    color.New(color.FgYellow, color.Faint),
-		},
+		paint:   newPaintMap(),
 	}
+}
+
+// newPaintMap builds this formatter's own marker colors. Each one has
+// color explicitly enabled, because a `*color.Color` left on its default
+// otherwise consults the package-global `color.NoColor` at print time -
+// which would put a second, process-wide switch behind `f.color` and make
+// a parallel test that flips it a data race. `f.color` is the only switch.
+func newPaintMap() map[Marker]*color.Color {
+	paint := map[Marker]*color.Color{
+		MarkerOK:         color.New(color.FgGreen),
+		MarkerChanged:    color.New(color.FgYellow),
+		MarkerSkipped:    color.New(color.Faint),
+		MarkerError:      color.New(color.FgRed),
+		MarkerCreate:     color.New(color.FgGreen),
+		MarkerModify:     color.New(color.FgYellow),
+		MarkerDestroy:    color.New(color.FgRed),
+		MarkerProbeError: color.New(color.FgRed),
+		MarkerDeprecated: color.New(color.FgYellow, color.Faint),
+		MarkerWarning:    color.New(color.FgYellow, color.Faint),
+	}
+	for _, c := range paint {
+		c.EnableColor()
+	}
+	return paint
 }
 
 // TaskWarning renders a `[<marker>] <name>  (<message>)` line above the

@@ -38,6 +38,7 @@ const issue493Recipe = `---
 `
 
 func TestRegisterInputFlagsBoolWithoutDefault(t *testing.T) {
+	t.Parallel()
 	f := flag.NewFlagSet("apply", flag.ContinueOnError)
 	arguments, err := registerInputFlags(f, []byte(issue493Recipe), tasks.FormatYAML)
 	if err != nil {
@@ -71,6 +72,7 @@ func TestRegisterInputFlagsBoolWithoutDefault(t *testing.T) {
 // TestRegisterInputFlagsZeroValueDefaults pins the documented "zero value for
 // the type" for every type that can omit a default.
 func TestRegisterInputFlagsZeroValueDefaults(t *testing.T) {
+	t.Parallel()
 	recipe := `---
 - inputs:
     - { name: b, type: bool }
@@ -114,6 +116,7 @@ func TestRegisterInputFlagsZeroValueDefaults(t *testing.T) {
 // so `--other=x` parses and the operator reads the real diagnostic instead of
 // "unknown flag".
 func TestRegisterInputFlagsKeepsSurfaceOnMalformedInput(t *testing.T) {
+	t.Parallel()
 	recipes := map[string]string{
 		"unknown type": `---
 - inputs:
@@ -159,6 +162,7 @@ func TestRegisterInputFlagsKeepsSurfaceOnMalformedInput(t *testing.T) {
 // TestApplyListTasksWithBoolInputWithoutDefault is the issue's own
 // reproduction: `--app_name=override` used to fail with "unknown flag".
 func TestApplyListTasksWithBoolInputWithoutDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, issue493Recipe)
 
 	stdout, stderr, exit := runApply(t, path, "--list-tasks", "--app_name=override")
@@ -171,6 +175,7 @@ func TestApplyListTasksWithBoolInputWithoutDefault(t *testing.T) {
 }
 
 func TestApplyParsesBoolInputFlagWithoutDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: debug, type: bool }
@@ -200,6 +205,7 @@ func TestApplyParsesBoolInputFlagWithoutDefault(t *testing.T) {
 // #493 symptom: neither input reached `--help` either. Asserted on all three
 // commands, which reach registerInputFlags through separate FlagSet() bodies.
 func TestHelpListsInputsAlongsideABoolWithoutDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, issue493Recipe)
 
 	for name := range helpCommands {
@@ -220,6 +226,7 @@ func TestHelpListsInputsAlongsideABoolWithoutDefault(t *testing.T) {
 // the problem, because yaml.v3 assigns an unquoted scalar to a string field
 // verbatim; the JSON5 path now normalises through YAML so both agree.
 func TestRegisterInputFlagsJSON5NonStringDefault(t *testing.T) {
+	t.Parallel()
 	recipe := `[
   { inputs: [{ name: "port", type: "int", default: 8080 },
              { name: "debug", type: "bool", default: true },
@@ -252,6 +259,7 @@ func TestRegisterInputFlagsJSON5NonStringDefault(t *testing.T) {
 // as unknown with no did-you-mean to offer. Every typed input with no default
 // used to be in that state.
 func TestVarsFileSuppliesInputWithNoDefault(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: debug, type: bool }
@@ -277,6 +285,7 @@ func TestVarsFileSuppliesInputWithNoDefault(t *testing.T) {
 // non-string input can omit its default. Registering the zero value as a secret
 // would hand the masker "0" and blank out every unrelated digit in the output.
 func TestSensitiveInputDoesNotRegisterAnImplicitZero(t *testing.T) {
+	t.Parallel()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: port, type: int, sensitive: true }

@@ -32,6 +32,7 @@ func chmodTempFile(t *testing.T, dir, name, content string, mode os.FileMode) st
 
 // TestApplyVarsFilesWarnsOnPermissiveSensitiveFile is the reading end of #489.
 func TestApplyVarsFilesWarnsOnPermissiveSensitiveFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := chmodTempFile(t, dir, "vars.yml", "api_key: s3cret\n", 0o644)
 
@@ -55,6 +56,7 @@ func TestApplyVarsFilesWarnsOnPermissiveSensitiveFile(t *testing.T) {
 // TestApplyVarsFilesQuietForPrivateSensitiveFile: the file docket export
 // itself writes must not warn about the mode docket export gave it.
 func TestApplyVarsFilesQuietForPrivateSensitiveFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := chmodTempFile(t, dir, "vars.yml", "api_key: s3cret\n", varsFileMode)
 
@@ -74,6 +76,7 @@ func TestApplyVarsFilesQuietForPrivateSensitiveFile(t *testing.T) {
 // ordinary per-environment file docs/inputs.md recommends. Its mode is the
 // user's business; nothing in it is a secret.
 func TestApplyVarsFilesQuietWithoutASensitiveInput(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := chmodTempFile(t, dir, "prod.yml", "app: api\nreplicas: 3\n", 0o644)
 
@@ -96,6 +99,7 @@ func TestApplyVarsFilesQuietWithoutASensitiveInput(t *testing.T) {
 // keys per file rather than only last-writer-wins: base.yml still holds the
 // secret on disk even though prod.yml's value is the one that gets used.
 func TestApplyVarsFilesWarnsOnOverriddenSensitiveKey(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	base := chmodTempFile(t, dir, "base.yml", "api_key: from-base\n", 0o644)
 	prod := chmodTempFile(t, dir, "prod.yml", "api_key: from-prod\n", varsFileMode)
@@ -121,6 +125,7 @@ func TestApplyVarsFilesWarnsOnOverriddenSensitiveKey(t *testing.T) {
 // TestApplyVarsFilesRepeatedPathWarnsOnce: passing the same file twice is
 // legal and must not double the warning.
 func TestApplyVarsFilesRepeatedPathWarnsOnce(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := chmodTempFile(t, dir, "vars.yml", "api_key: s3cret\n", 0o644)
 
@@ -157,6 +162,7 @@ func permissiveVarsRecipe(t *testing.T) (recipe string, vars string) {
 // TestApplyWarnsOnPermissiveVarsFile pins where the warning comes out: stderr,
 // through the same Ui.Warn the ambiguous-task-file notice uses.
 func TestApplyWarnsOnPermissiveVarsFile(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false})
 
 	recipe, vars := permissiveVarsRecipe(t)
@@ -177,6 +183,7 @@ func TestApplyWarnsOnPermissiveVarsFile(t *testing.T) {
 // schema's reason field is a closed enum. Routed to stderr it cannot reach the
 // stream at all, so every stdout line still parses.
 func TestApplyJSONKeepsVarsFileWarningOffTheStream(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "a", StubFixture{Changed: false})
 
 	recipe, vars := permissiveVarsRecipe(t)

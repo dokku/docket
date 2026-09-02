@@ -12,6 +12,7 @@ import (
 )
 
 func TestDetectTaskFileFormat(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"tasks.yml":         taskFileFormatYAML,
 		"tasks.yaml":        taskFileFormatYAML,
@@ -34,6 +35,7 @@ func TestDetectTaskFileFormat(t *testing.T) {
 }
 
 func TestParseRecipeFormatFlag(t *testing.T) {
+	t.Parallel()
 	valid := map[string]string{
 		"":      "",
 		"yaml":  taskFileFormatYAML,
@@ -81,6 +83,7 @@ func TestParseRecipeFormatFlag(t *testing.T) {
 // sniff. The return value must never be empty - tasks.IsJSON5Format("")
 // is false, so an empty format silently means YAML downstream.
 func TestTaskFileFormatFor(t *testing.T) {
+	t.Parallel()
 	jsonish := []byte("[{tasks: []}]")
 	yamlish := []byte("---\n- tasks: []\n")
 
@@ -114,6 +117,7 @@ func TestTaskFileFormatFor(t *testing.T) {
 // moves the default to tasks.json rather than writing a JSON5 document
 // into a file named tasks.yml.
 func TestResolveRecipeOutput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		output        string
@@ -150,6 +154,7 @@ func TestResolveRecipeOutput(t *testing.T) {
 // next, and that probes defaultTaskFileCandidates. A default output that
 // is not in that list would leave the scaffold unreachable.
 func TestResolveRecipeOutputDefaultsAreProbeCandidates(t *testing.T) {
+	t.Parallel()
 	for _, want := range []string{defaultRecipeOutput, defaultRecipeOutputJSON5} {
 		found := false
 		for _, candidate := range defaultTaskFileCandidates {
@@ -169,6 +174,7 @@ func TestResolveRecipeOutputDefaultsAreProbeCandidates(t *testing.T) {
 // one; stdout has no extension to disagree with, and no --format means
 // the extension was the source of truth in the first place.
 func TestRecipeOutputFormatMismatch(t *testing.T) {
+	t.Parallel()
 	quiet := [][2]string{
 		{"tasks.yml", ""},
 		{taskFileStdin, taskFileFormatJSON5},
@@ -200,6 +206,7 @@ func TestRecipeOutputFormatMismatch(t *testing.T) {
 // dropped by --output -. The cases exercise a real pflag.FlagSet so the
 // Changed-after-Parse contract is the one being tested.
 func TestStdoutInertFlagError(t *testing.T) {
+	t.Parallel()
 	inert := []stdoutInertFlag{
 		{name: "vars-output", reason: "a streamed recipe inlines its values"},
 		{name: "overwrite", reason: "a streamed recipe writes no files"},
@@ -259,6 +266,7 @@ func TestStdoutInertFlagError(t *testing.T) {
 }
 
 func TestTaskFileDisplayName(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		taskFileStdin: "<stdin>",
 		"tasks.yml":   "tasks.yml",
@@ -277,6 +285,7 @@ func TestTaskFileDisplayName(t *testing.T) {
 // the default candidate probe, which would silently prefer ./tasks.yml
 // over the recipe the user piped in.
 func TestResolveTaskFilePathStdin(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte("---\n"), 0o644); err != nil {
 		t.Fatalf("write yml: %v", err)
@@ -299,6 +308,7 @@ func TestResolveTaskFilePathStdin(t *testing.T) {
 // TestReadRecipeBytesURLPermission: validate is offline by contract, so
 // it passes allowURL=false and an http(s) --tasks must not be fetched.
 func TestReadRecipeBytesURLPermission(t *testing.T) {
+	t.Parallel()
 	const url = "https://example.invalid/tasks.yml"
 	if _, err := readRecipeBytes("", url, false, newStdinRecipeSource(nil)); err == nil {
 		t.Fatal("readRecipeBytes(url, false, newStdinRecipeSource(nil)) = nil error, want a local-read failure")
@@ -308,6 +318,7 @@ func TestReadRecipeBytesURLPermission(t *testing.T) {
 }
 
 func TestResolveTaskFileArg(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		explicit   string
@@ -341,6 +352,7 @@ func TestResolveTaskFileArg(t *testing.T) {
 }
 
 func TestResolveTaskFileFromArgsPositional(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "staging.yml")
 	if err := os.WriteFile(recipe, []byte("---\n- tasks: []\n"), 0o644); err != nil {
@@ -366,6 +378,7 @@ func TestResolveTaskFileFromArgsPositional(t *testing.T) {
 }
 
 func TestResolveTaskFilePathExplicit(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "custom.json")
 	if err := os.WriteFile(path, []byte("[]"), 0o644); err != nil {
@@ -387,6 +400,7 @@ func TestResolveTaskFilePathExplicit(t *testing.T) {
 }
 
 func TestResolveTaskFilePathDefaultPrefersYAML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte("---\n"), 0o644); err != nil {
 		t.Fatalf("write yml: %v", err)
@@ -410,6 +424,7 @@ func TestResolveTaskFilePathDefaultPrefersYAML(t *testing.T) {
 }
 
 func TestResolveTaskFilePathDefaultFallsThroughToJSON(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "tasks.json"), []byte("[]"), 0o644); err != nil {
 		t.Fatalf("write json: %v", err)
@@ -430,6 +445,7 @@ func TestResolveTaskFilePathDefaultFallsThroughToJSON(t *testing.T) {
 }
 
 func TestResolveTaskFilePathDefaultErrorsWhenNoneExist(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	_, _, _, err := resolveTaskFilePath(dir, "")
 	if err == nil {
@@ -446,6 +462,7 @@ func TestResolveTaskFilePathDefaultErrorsWhenNoneExist(t *testing.T) {
 // (#420) - before it existed the probe returned the winner and threw the
 // rest away silently.
 func TestProbeDefaultTaskFile(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		present    []string
@@ -498,6 +515,7 @@ func TestProbeDefaultTaskFile(t *testing.T) {
 }
 
 func TestAmbiguousTaskFileWarning(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		chosen string
@@ -533,6 +551,7 @@ func TestAmbiguousTaskFileWarning(t *testing.T) {
 // the message builder: it starts from a one-element slice rather than
 // appending to the caller's, so recipeSource.Ambiguous is untouched.
 func TestAmbiguousTaskFileWarningDoesNotMutateOthers(t *testing.T) {
+	t.Parallel()
 	others := make([]string, 1, 4)
 	others[0] = "tasks.json"
 	ambiguousTaskFileWarning("tasks.yml", others)
@@ -544,6 +563,7 @@ func TestAmbiguousTaskFileWarningDoesNotMutateOthers(t *testing.T) {
 // TestShellQuotePath pins the paste-safety of the paths init and export
 // print in their next-steps blocks.
 func TestShellQuotePath(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"tasks.yml":            "tasks.yml",
 		"staging/tasks.json":   "staging/tasks.json",
@@ -563,6 +583,7 @@ func TestShellQuotePath(t *testing.T) {
 }
 
 func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
+	t.Parallel()
 	path, format := resolveTaskFileFromArgs("", []string{"docket", "apply", "--tasks", "custom.json"})
 	if path != "custom.json" {
 		t.Errorf("path = %q, want custom.json", path)
@@ -586,6 +607,7 @@ func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
 // os.Stat("-") failed and fell through to the ./tasks.yml probe - which
 // would have preregistered inputs from the wrong recipe entirely.
 func TestResolveTaskFileFromArgsStdin(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		argv []string
@@ -621,6 +643,7 @@ func TestResolveTaskFileFromArgsStdin(t *testing.T) {
 // of a value-taking flag is that flag's value, not the recipe. Testing
 // the ordering of the bare-"-" check against the skipNext check.
 func TestResolveTaskFileFromArgsStdinNotAFlagValue(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "staging.yml")
 	if err := os.WriteFile(recipe, []byte("---\n- tasks: []\n"), 0o644); err != nil {
@@ -638,6 +661,7 @@ func TestResolveTaskFileFromArgsStdinNotAFlagValue(t *testing.T) {
 }
 
 func TestTasksFormatFromArgs(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		argv []string
@@ -663,6 +687,7 @@ func TestTasksFormatFromArgs(t *testing.T) {
 // be offered, a non-recipe file must not, and a directory must appear once
 // (the dedupe, since each per-extension sub-predictor lists it).
 func TestTaskFileAutocompleteMatchesRecipeExtensions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	recipes := []string{"tasks.yml", "config.yaml", "data.json", "recipe.json5"}
 	for _, name := range recipes {
@@ -703,6 +728,7 @@ func TestTaskFileAutocompleteMatchesRecipeExtensions(t *testing.T) {
 // TestPredictFilesByExtension proves the completion mechanism is generic and
 // not hard-wired to the recipe extensions.
 func TestPredictFilesByExtension(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, name := range []string{"readme.md", "todo.txt", "ignore.yml"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
@@ -727,6 +753,7 @@ func TestPredictFilesByExtension(t *testing.T) {
 }
 
 func TestHasTaskFileExtension(t *testing.T) {
+	t.Parallel()
 	yes := []string{"tasks.yml", "tasks.YAML", "path/to/c.json", "x.json5"}
 	no := []string{"notes.txt", "tasks", "archive.tar.gz", ""}
 	for _, p := range yes {

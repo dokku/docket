@@ -25,6 +25,7 @@ func fakePropertyTask(subcommand string, keys map[string]PropertyKeys) propertyT
 }
 
 func TestGetPropertyArgsPerApp(t *testing.T) {
+	t.Parallel()
 	got := getPropertyArgs("nginx", "myapp", false)
 	want := []string{"--quiet", "nginx:report", "myapp", "--format", "json"}
 	if !reflect.DeepEqual(got, want) {
@@ -33,6 +34,7 @@ func TestGetPropertyArgsPerApp(t *testing.T) {
 }
 
 func TestGetPropertyArgsGlobal(t *testing.T) {
+	t.Parallel()
 	got := getPropertyArgs("nginx", "", true)
 	want := []string{"--quiet", "nginx:report", "--global", "--format", "json"}
 	if !reflect.DeepEqual(got, want) {
@@ -41,16 +43,17 @@ func TestGetPropertyArgsGlobal(t *testing.T) {
 }
 
 func TestPlanPropertyMasksSensitiveDriftValue(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 
 	keys := map[string]PropertyKeys{
 		"secret-prop": {PerApp: "", Global: "global-secret-prop", Sensitive: true},
 	}
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet myplugin:report --global --format json": `{"global-secret-prop":"oldsecret"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), fakePropertyTask("myplugin:set", keys), StatePresent, "", true, "secret-prop", "newsecret")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), fakePropertyTask("myplugin:set", keys), StatePresent, "", true, "secret-prop", "newsecret")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -74,18 +77,19 @@ func TestPlanPropertyMasksSensitiveDriftValue(t *testing.T) {
 }
 
 func TestPlanPropertyAbsentMasksSensitiveOldValue(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 
 	keys := map[string]PropertyKeys{
 		"secret-prop": {PerApp: "", Global: "global-secret-prop", Sensitive: true},
 	}
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet myplugin:report --global --format json": `{"global-secret-prop":"livesecret"}`,
-	}))()
+	}))
 
 	// The absent path leaks the current server secret even without a sensitive
 	// recipe value (the value must be empty for absent).
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), fakePropertyTask("myplugin:set", keys), StateAbsent, "", true, "secret-prop", "")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), fakePropertyTask("myplugin:set", keys), StateAbsent, "", true, "secret-prop", "")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -95,16 +99,17 @@ func TestPlanPropertyAbsentMasksSensitiveOldValue(t *testing.T) {
 }
 
 func TestPlanPropertyDoesNotMaskBenignDriftValue(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 
 	keys := map[string]PropertyKeys{
 		"timeout": {PerApp: "", Global: "global-timeout"},
 	}
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet myplugin:report --global --format json": `{"global-timeout":"60s"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), fakePropertyTask("myplugin:set", keys), StatePresent, "", true, "timeout", "90s")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), fakePropertyTask("myplugin:set", keys), StatePresent, "", true, "timeout", "90s")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -115,6 +120,7 @@ func TestPlanPropertyDoesNotMaskBenignDriftValue(t *testing.T) {
 }
 
 func TestSecretPropertiesAreMarkedSensitive(t *testing.T) {
+	t.Parallel()
 	// Guard the marks that close #336 so they are not accidentally dropped.
 	if !traefikPropertyTable.Keys["basic-auth-password"].Sensitive {
 		t.Error("traefik basic-auth-password must be marked Sensitive")
@@ -125,23 +131,25 @@ func TestSecretPropertiesAreMarkedSensitive(t *testing.T) {
 }
 
 func TestReadPropertyReportUnparseableReportErrors(t *testing.T) {
+	t.Parallel()
 	// #329: the exec succeeds (plugin responded) but the payload is not clean
 	// JSON - e.g. a deprecation line before the JSON. This is "installed but
 	// unreadable" and must surface an error (which export turns into a warning),
 	// not be silently dropped.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet nginx:report web --format json": "Deprecated: use something else\n{\"x\":\"y\"}",
-	}))()
+	}))
 
-	if _, err := readPropertyReport(testCtx(), "nginx", "web", false); err == nil {
+	if _, err := readPropertyReport(ctx, "nginx", "web", false); err == nil {
 		t.Error("expected an error for an installed-but-unreadable report")
 	}
 }
 
 func TestReadPropertyReportNotInstalledIsQuietSkip(t *testing.T) {
+	t.Parallel()
 	// #329: when the report exec fails and the plugin is not installed, the skip
 	// is quiet (nil, nil) - no warning.
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		switch strings.Join(in.Args, " ") {
 		case "--quiet plugin:list":
 			return subprocess.ExecCommandResponse{Stdout: "nginx 1.0.0 enabled nginx"}, nil
@@ -149,9 +157,9 @@ func TestReadPropertyReportNotInstalledIsQuietSkip(t *testing.T) {
 			return subprocess.ExecCommandResponse{}, errors.New("caddy:report: command not found")
 		}
 		return subprocess.ExecCommandResponse{}, nil
-	})()
+	})
 
-	payload, err := readPropertyReport(testCtx(), "caddy", "web", false)
+	payload, err := readPropertyReport(ctx, "caddy", "web", false)
 	if err != nil {
 		t.Errorf("a not-installed plugin should be a quiet skip, got error: %v", err)
 	}
@@ -161,9 +169,10 @@ func TestReadPropertyReportNotInstalledIsQuietSkip(t *testing.T) {
 }
 
 func TestReadPropertyReportInstalledExecFailureErrors(t *testing.T) {
+	t.Parallel()
 	// #329: when the report exec fails but the plugin IS installed, the failure
 	// must surface an error rather than a silent drop.
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		switch strings.Join(in.Args, " ") {
 		case "--quiet plugin:list":
 			return subprocess.ExecCommandResponse{Stdout: "nginx 1.0.0 enabled nginx"}, nil
@@ -171,14 +180,15 @@ func TestReadPropertyReportInstalledExecFailureErrors(t *testing.T) {
 			return subprocess.ExecCommandResponse{}, errors.New("boom")
 		}
 		return subprocess.ExecCommandResponse{}, nil
-	})()
+	})
 
-	if _, err := readPropertyReport(testCtx(), "nginx", "web", false); err == nil {
+	if _, err := readPropertyReport(ctx, "nginx", "web", false); err == nil {
 		t.Error("expected an error when an installed plugin's report fails")
 	}
 }
 
 func TestUnknownPropertyWarningMissingKey(t *testing.T) {
+	t.Parallel()
 	err := &errUnknownProperty{
 		plugin:    "nginx",
 		property:  "selecte",
@@ -200,6 +210,7 @@ func TestUnknownPropertyWarningMissingKey(t *testing.T) {
 }
 
 func TestUnknownPropertyWarningInvalidFlag(t *testing.T) {
+	t.Parallel()
 	execErr := &subprocess.ExecError{
 		Response: subprocess.ExecCommandResponse{
 			Stderr: "Invalid flag passed, valid flags: --letsencrypt-email",
@@ -225,6 +236,7 @@ func TestUnknownPropertyWarningInvalidFlag(t *testing.T) {
 // secret that reaches it must mask at emit time. The message is stored raw
 // (like PlanResult.Reason) so the assertion masks it the way the emitter does.
 func TestUnknownPropertyWarningMasksSensitiveStderr(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 	masker.Add("s3cr3t")
 
@@ -247,6 +259,7 @@ func TestUnknownPropertyWarningMasksSensitiveStderr(t *testing.T) {
 }
 
 func TestUnknownPropertyWarningIgnoresOtherErrors(t *testing.T) {
+	t.Parallel()
 	if _, ok := unknownPropertyWarning("nginx", "bind-address-ipv4", nil); ok {
 		t.Error("nil error should not warn")
 	}
@@ -268,6 +281,7 @@ func TestUnknownPropertyWarningIgnoresOtherErrors(t *testing.T) {
 // letsencrypt's dns-provider-* family is probed now (#449) and its missing rows
 // never reach this branch; traefik is the family that still does.
 func TestUnknownPropertyWarningDynamicPropertySkipsWarning(t *testing.T) {
+	t.Parallel()
 	err := &errUnknownProperty{
 		plugin:    "traefik",
 		property:  "dns-provider-CLOUDFLARE_API_TOKEN",
@@ -283,15 +297,16 @@ func TestUnknownPropertyWarningDynamicPropertySkipsWarning(t *testing.T) {
 // report payload missing the probed key yields drift plus a PlanWarning the run
 // loop can drain. (#353)
 func TestPlanPropertyAttachesUnknownKeyWarning(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 	keys := map[string]PropertyKeys{
 		"hsts": {PerApp: "hsts", Global: ""},
 	}
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet nginx:report myapp --format json": `{"proxy-read-timeout":"60s"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), fakePropertyTask("nginx:set", keys), StatePresent, "myapp", false, "hsts", "true")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), fakePropertyTask("nginx:set", keys), StatePresent, "myapp", false, "hsts", "true")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -307,19 +322,20 @@ func TestPlanPropertyAttachesUnknownKeyWarning(t *testing.T) {
 // `:report --format json` fails with an "Invalid flag" stderr, so the probe
 // error becomes drift plus a probe_rejected PlanWarning. (#353)
 func TestPlanPropertyAttachesRejectedProbeWarning(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 	keys := map[string]PropertyKeys{
 		"hsts": {PerApp: "hsts", Global: ""},
 	}
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		resp := subprocess.ExecCommandResponse{
 			Stderr:   "Invalid flag passed, valid flags: --app, --global",
 			ExitCode: 1,
 		}
 		return resp, &subprocess.ExecError{Response: resp, Err: errors.New("exit status 1"), Ran: true}
-	})()
+	})
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), fakePropertyTask("nginx:set", keys), StatePresent, "myapp", false, "hsts", "true")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), fakePropertyTask("nginx:set", keys), StatePresent, "myapp", false, "hsts", "true")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -332,6 +348,7 @@ func TestPlanPropertyAttachesRejectedProbeWarning(t *testing.T) {
 }
 
 func TestIsDynamicProperty(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		plugin   string
 		property string
@@ -358,6 +375,7 @@ func TestIsDynamicProperty(t *testing.T) {
 }
 
 func TestDynamicPropertyKeys(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		plugin   string
 		property string
@@ -394,6 +412,7 @@ func TestDynamicPropertyKeys(t *testing.T) {
 // on: an app report also carries the global and computed variants of a key, and
 // only the bare row is the app's own value.
 func TestDynamicPropertiesFromReport(t *testing.T) {
+	t.Parallel()
 	appPayload := map[string]string{
 		"email":                                    "admin@example.com",
 		"dns-provider":                             "namecheap",
@@ -429,12 +448,13 @@ func TestDynamicPropertiesFromReport(t *testing.T) {
 // dns-provider-* credential that already matches the recipe plans as in sync
 // instead of reporting drift on every run.
 func TestPlanPropertyDynamicLetsencryptInSync(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"token123"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -447,12 +467,13 @@ func TestPlanPropertyDynamicLetsencryptInSync(t *testing.T) {
 }
 
 func TestPlanPropertyDynamicLetsencryptGlobalInSync(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-NAMECHEAP_API_USER":"deploy-bot"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), LetsencryptPropertyTask{}, StatePresent, "", true, "dns-provider-NAMECHEAP_API_USER", "deploy-bot")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), LetsencryptPropertyTask{}, StatePresent, "", true, "dns-provider-NAMECHEAP_API_USER", "deploy-bot")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -465,13 +486,14 @@ func TestPlanPropertyDynamicLetsencryptGlobalInSync(t *testing.T) {
 // mark on the synthesized keys: the probed credential reaches the drift reason
 // and must be registered with the masker.
 func TestPlanPropertyDynamicLetsencryptDriftMasksProbedValue(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"oldtoken"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "newtoken")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "newtoken")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -495,12 +517,13 @@ func TestPlanPropertyDynamicLetsencryptDriftMasksProbedValue(t *testing.T) {
 // state: the plugin only emits a row once the property holds a value, so an
 // absent row is an unset property and not a probe failure worth warning about.
 func TestPlanPropertyDynamicLetsencryptMissingRowPlansCreate(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), LetsencryptPropertyTask{}, StatePresent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -516,12 +539,13 @@ func TestPlanPropertyDynamicLetsencryptMissingRowPlansCreate(t *testing.T) {
 }
 
 func TestPlanPropertyDynamicLetsencryptAbsentMissingRowIsInSync(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"email":"admin@example.com"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), LetsencryptPropertyTask{}, StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), LetsencryptPropertyTask{}, StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -531,13 +555,14 @@ func TestPlanPropertyDynamicLetsencryptAbsentMissingRowIsInSync(t *testing.T) {
 }
 
 func TestPlanPropertyDynamicLetsencryptAbsentPlansDestroy(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet letsencrypt:report myapp --format json": `{"dns-provider-CLOUDFLARE_API_TOKEN":"livetoken"}`,
-	}))()
+	}))
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), LetsencryptPropertyTask{}, StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), LetsencryptPropertyTask{}, StateAbsent, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", "")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -553,14 +578,15 @@ func TestPlanPropertyDynamicLetsencryptAbsentPlansDestroy(t *testing.T) {
 // family on the unprobed path while dokku/dokku#8928 is open (#450): it must not
 // even attempt a report read.
 func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 	var ran []string
-	defer subprocess.SetExecRunner(func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		ran = append(ran, strings.Join(in.Args, " "))
 		return subprocess.ExecCommandResponse{}, nil
-	})()
+	})
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -579,13 +605,14 @@ func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
 // all the same, so the desired value must reach the masker before it lands in
 // the command echo or the plan mutation line.
 func TestPlanPropertyDynamicTraefikMasksCredential(t *testing.T) {
+	t.Parallel()
 	masker := subprocess.NewMasker()
 
-	defer subprocess.SetExecRunner(func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		return subprocess.ExecCommandResponse{}, nil
-	})()
+	})
 
-	res := planProperty(subprocess.ContextWithMasker(testCtx(), masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "traefiktoken")
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "traefiktoken")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
 	}
@@ -611,6 +638,7 @@ func TestPlanPropertyDynamicTraefikMasksCredential(t *testing.T) {
 // dynamic member is synthesized whole, and an unprobeable one carries the
 // family's Sensitive mark with no lookup keys (#457).
 func TestPropertyEntry(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		plugin   string
@@ -661,9 +689,10 @@ func TestPropertyEntry(t *testing.T) {
 }
 
 func TestValidateProperty(t *testing.T) {
+	t.Parallel()
 	keys := map[string]PropertyKeys{
-		"both":       {PerApp: "both", Global: "global-both"},
-		"app-only":   {PerApp: "app-only", Global: ""},
+		"both":        {PerApp: "both", Global: "global-both"},
+		"app-only":    {PerApp: "app-only", Global: ""},
 		"global-only": {PerApp: "", Global: "global-global-only"},
 	}
 
@@ -715,6 +744,7 @@ func rejectedFamilyTable() propertyTableTask {
 }
 
 func TestRejectedFamilyFor(t *testing.T) {
+	t.Parallel()
 	table := rejectedFamilyTable().table
 	cases := []struct {
 		property string
@@ -745,6 +775,7 @@ func TestRejectedFamilyFor(t *testing.T) {
 // it - never with the supported-name list, and never with a scoping error the
 // user would fix only to hit the refusal anyway (#458).
 func TestValidatePropertyInputRejectedFamily(t *testing.T) {
+	t.Parallel()
 	task := rejectedFamilyTable()
 	cases := []struct {
 		name     string
@@ -785,6 +816,7 @@ func TestValidatePropertyInputRejectedFamily(t *testing.T) {
 // published order is by prefix regardless of declaration order, so two runs of
 // the same binary agree and a reordered declaration is not a wire change.
 func TestRejectedPropertyFamiliesSorted(t *testing.T) {
+	t.Parallel()
 	table := PropertyTable{
 		Subcommand: "test:set",
 		Rejected: []RejectedPropertyFamily{
@@ -806,6 +838,7 @@ func TestRejectedPropertyFamiliesSorted(t *testing.T) {
 }
 
 func TestValidatePropertyDynamic(t *testing.T) {
+	t.Parallel()
 	keys := map[string]PropertyKeys{
 		"email": {PerApp: "email", Global: "global-email"},
 	}

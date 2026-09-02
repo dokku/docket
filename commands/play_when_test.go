@@ -59,6 +59,7 @@ func writePlayTasks(t *testing.T, body string) string {
 // TestPlayWhenSeesFileLevelInputDefault: the play's `when:` evaluates a
 // file-level input default. The truthy default runs the play.
 func TestPlayWhenSeesFileLevelInputDefault(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - inputs:
     - name: env
@@ -82,6 +83,7 @@ func TestPlayWhenSeesFileLevelInputDefault(t *testing.T) {
 // TestPlayWhenSeesFileLevelInputDefaultFalsy: file-level default does
 // not satisfy the predicate; the play is skipped.
 func TestPlayWhenSeesFileLevelInputDefaultFalsy(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - inputs:
     - name: env
@@ -102,6 +104,7 @@ func TestPlayWhenSeesFileLevelInputDefaultFalsy(t *testing.T) {
 // TestPlayWhenCLIOverridesFileDefault: --env=prod beats the file-level
 // staging default and the play runs.
 func TestPlayWhenCLIOverridesFileDefault(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - inputs:
     - name: env
@@ -125,6 +128,7 @@ func TestPlayWhenCLIOverridesFileDefault(t *testing.T) {
 // TestPlayWhenVarsFileOverridesFileDefault: --vars-file value beats the
 // file-level default.
 func TestPlayWhenVarsFileOverridesFileDefault(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - inputs:
     - name: env
@@ -153,6 +157,7 @@ func TestPlayWhenVarsFileOverridesFileDefault(t *testing.T) {
 // TestPlayWhenCLIBeatsVarsFile: vars-file says staging, CLI says prod;
 // the play runs (CLI wins).
 func TestPlayWhenCLIBeatsVarsFile(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - inputs:
     - name: env
@@ -184,6 +189,7 @@ func TestPlayWhenCLIBeatsVarsFile(t *testing.T) {
 // and the play is skipped. The play would run only if its own input
 // leaked into its own when context.
 func TestPlayWhenCannotSeeOwnInputs(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - name: api
   inputs:
@@ -206,6 +212,7 @@ func TestPlayWhenCannotSeeOwnInputs(t *testing.T) {
 // so the comparison resolves to nil == "api" → false and worker is
 // skipped.
 func TestPlayWhenCannotSeeSiblingPlayInputs(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - name: api
   inputs:
@@ -260,6 +267,7 @@ func playLines(out string) []string {
 // play names and --list-tasks does not, so a sensitive name would make
 // the two differ by design rather than by drift.
 func TestPlayWhenListTasksMatchesPlan(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - inputs:
     - name: env
@@ -318,6 +326,7 @@ func TestPlayWhenListTasksMatchesPlan(t *testing.T) {
 // it must not be available to a play-level `when:`. With `==` the
 // undefined identifier resolves to nil → comparison false → skipped.
 func TestPlayWhenCannotSeeLoopVars(t *testing.T) {
+	t.Parallel()
 	path := writePlayTasks(t, `---
 - name: api
   when: 'item == "expected"'

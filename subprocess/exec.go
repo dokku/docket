@@ -7,10 +7,9 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 
 	execute "github.com/alexellis/go-execute/v2"
-	"github.com/fatih/color"
+	"github.com/mattn/go-isatty"
 )
 
 // ExecCommandInput is the input for the ExecCommand function
@@ -178,10 +177,9 @@ type ExecRunner func(ctx context.Context, input ExecCommandInput) (ExecCommandRe
 type runnerKey struct{}
 
 // ContextWithRunner returns a copy of ctx whose dokku commands go to fn
-// instead of to a real process. It is the per-invocation form of
-// SetExecRunner: because the executor travels on the context rather than in a
-// package variable, two tests can install different fakes at the same time and
-// so can call t.Parallel().
+// instead of to a real process. It is the only seam there is: the executor
+// travels on the context rather than in a package variable, so two tests can
+// install different fakes at the same time and both can call t.Parallel().
 //
 // Production code must not use it. The seam exists so a test can drive a task
 // without a server; a caller that wants to change where commands actually run
@@ -191,53 +189,19 @@ func ContextWithRunner(ctx context.Context, fn ExecRunner) context.Context {
 }
 
 // runnerFromContext returns the executor for this call: the context's, when it
-// carries one, else the package-level fallback.
+// carries one, else the real one.
+//
+// There used to be a swappable package variable here as well, with a mutex
+// guarding it so that a test writing it could not race a test reading it. Both
+// are gone: nothing but a test ever wrote it, every test now carries its fake
+// on the context, and a fallback that cannot be reassigned needs no lock.
 func runnerFromContext(ctx context.Context) ExecRunner {
 	if ctx != nil {
 		if fn, ok := ctx.Value(runnerKey{}).(ExecRunner); ok && fn != nil {
 			return fn
 		}
 	}
-	return globalExecRunner()
-}
-
-// execRunner is the package-level fallback for calls whose context carries no
-// runner. It defaults to defaultExecRunner (the real implementation) and can be
-// swapped in tests via SetExecRunner. Production code must never reassign it.
-//
-// The mutex is not for correctness under normal use - production never writes
-// it - but so that a test which does write it cannot race a concurrent test
-// reading it, which is otherwise a data race the moment anything runs in
-// parallel. Prefer ContextWithRunner in new tests; this exists for the ones
-// written before the seam moved onto the context.
-var (
-	execRunnerMu sync.RWMutex
-	execRunner   ExecRunner = defaultExecRunner
-)
-
-func globalExecRunner() ExecRunner {
-	execRunnerMu.RLock()
-	defer execRunnerMu.RUnlock()
-	return execRunner
-}
-
-// SetExecRunner swaps the package-level executor and returns a function that
-// restores the previous one. Intended for tests:
-//
-//	defer subprocess.SetExecRunner(fake)()
-//
-// It replaces process-wide state, so a test using it still cannot call
-// t.Parallel(); ContextWithRunner is the form that can.
-func SetExecRunner(fn ExecRunner) func() {
-	execRunnerMu.Lock()
-	prev := execRunner
-	execRunner = fn
-	execRunnerMu.Unlock()
-	return func() {
-		execRunnerMu.Lock()
-		execRunner = prev
-		execRunnerMu.Unlock()
-	}
+	return defaultExecRunner
 }
 
 // CallExecCommand executes a command under ctx, locally or on the remote the
@@ -271,9 +235,9 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 	}
 	masker := MaskerFromContext(ctx)
 
-	// isatty reports whether our own stdout is a terminal, which is the
-	// signal used below to decide whether the child may read the terminal.
-	isatty := !color.NoColor
+	// Whether our own stdout is a terminal is the signal used below to decide
+	// whether the child may read ours.
+	interactive := stdoutIsTerminal()
 
 	command := input.Command
 	commandArgs := input.Args
@@ -306,7 +270,7 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 
 	if input.Stdin != nil {
 		cmd.Stdin = input.Stdin
-	} else if isatty {
+	} else if interactive {
 		cmd.Stdin = os.Stdin
 	}
 
@@ -362,4 +326,17 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		ExitCode:  res.ExitCode,
 		Cancelled: res.Cancelled,
 	}, nil
+}
+
+// stdoutIsTerminal reports whether this process's standard output is a
+// terminal. It decides whether a child may inherit our stdin: a run driven
+// from a terminal can let a subprocess read it, a piped one must not.
+//
+// It used to be spelled `!color.NoColor`, borrowing a colouring decision to
+// answer a terminal question. That coupled two unrelated things - NO_COLOR=1
+// silently stopped a child inheriting stdin, and `docket fmt --color never`
+// changed how a concurrent apply dispatched, because fatih/color's flag is
+// process-wide and this package read it.
+func stdoutIsTerminal() bool {
+	return isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
 }

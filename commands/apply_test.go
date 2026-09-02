@@ -10,6 +10,7 @@ import (
 )
 
 func TestApplyCommandMetadata(t *testing.T) {
+	t.Parallel()
 	c := &ApplyCommand{}
 	if c.Name() != "apply" {
 		t.Errorf("Name = %q, want \"apply\"", c.Name())
@@ -20,6 +21,7 @@ func TestApplyCommandMetadata(t *testing.T) {
 }
 
 func TestApplyCommandHelpDoesNotPanic(t *testing.T) {
+	t.Parallel()
 	c := &ApplyCommand{}
 	defer func() {
 		if r := recover(); r != nil {
@@ -33,6 +35,7 @@ func TestApplyCommandHelpDoesNotPanic(t *testing.T) {
 // expr context only injects `.item` / `.index` for loop expansions; a
 // non-loop envelope evaluates `when:` against the file-level inputs only.
 func TestEnvelopeExprContextSkipsNonLoopEnvelopes(t *testing.T) {
+	t.Parallel()
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x"}
 	got := envelopeExprContext(base, env, nil, nil, nil)
@@ -42,6 +45,7 @@ func TestEnvelopeExprContextSkipsNonLoopEnvelopes(t *testing.T) {
 }
 
 func TestEnvelopeExprContextInjectsLoopVars(t *testing.T) {
+	t.Parallel()
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x", IsLoopExpansion: true, LoopItem: "api", LoopIndex: 2}
 	got := envelopeExprContext(base, env, nil, nil, nil)
@@ -64,6 +68,7 @@ func TestEnvelopeExprContextInjectsLoopVars(t *testing.T) {
 // result, and `.registered` only when the registered map is
 // non-empty.
 func TestEnvelopeExprContextExposesResultAndRegistered(t *testing.T) {
+	t.Parallel()
 	base := map[string]interface{}{"env": "prod"}
 	env := &tasks.TaskEnvelope{Name: "x"}
 
@@ -91,6 +96,7 @@ func TestEnvelopeExprContextExposesResultAndRegistered(t *testing.T) {
 // in the tasks package keeps the command-side wiring trivial; this test
 // pins the behaviour the commands rely on.
 func TestFilterByTagsThroughCommandsLayer(t *testing.T) {
+	t.Parallel()
 	m := tasks.OrderedStringEnvelopeMap{}
 	m.Set("api", &tasks.TaskEnvelope{Name: "api", Tags: []string{"api"}})
 	m.Set("worker", &tasks.TaskEnvelope{Name: "worker", Tags: []string{"worker"}})
@@ -112,6 +118,7 @@ func TestFilterByTagsThroughCommandsLayer(t *testing.T) {
 // returns just the matched play; a miss returns an error that names the
 // available plays.
 func TestFilterPlaysByName(t *testing.T) {
+	t.Parallel()
 	plays := []*tasks.Play{
 		{Name: "api"},
 		{Name: "worker"},
@@ -162,6 +169,7 @@ func playNames(plays []*tasks.Play) []string {
 // out so internal flags (--tasks etc.) do not pollute the per-play
 // override set.
 func TestUserSetKeysMergesCLIAndVarsFile(t *testing.T) {
+	t.Parallel()
 	flags := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	flags.String("app", "default", "")
 	flags.String("env", "default", "")
@@ -187,6 +195,7 @@ func TestUserSetKeysMergesCLIAndVarsFile(t *testing.T) {
 // keys still flow through; no panic when callers haven't registered a
 // FlagSet yet.
 func TestUserSetKeysWithoutFlagSet(t *testing.T) {
+	t.Parallel()
 	got := userSetKeys(nil, map[string]bool{"env": true}, nil)
 	if !reflect.DeepEqual(got, map[string]bool{"env": true}) {
 		t.Errorf("userSetKeys(nil, ...) = %v, want only env", got)

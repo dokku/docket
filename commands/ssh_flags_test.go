@@ -2,23 +2,24 @@ package commands
 
 import (
 	"os"
+	"sort"
+	"strings"
 	"testing"
 )
 
-// clearSshEnv removes the three env vars resolveSshFlags reads so a test
-// starts from a known state whatever the developer's shell exports.
-func clearSshEnv(t *testing.T) {
-	t.Helper()
-	for _, name := range []string{"DOKKU_HOST", "DOKKU_SUDO", "DOKKU_SSH_ACCEPT_NEW_HOST_KEYS"} {
-		t.Setenv(name, "")
-		os.Unsetenv(name)
-	}
+// sshEnv turns a map into the lookup resolveSshFlags takes. It replaces a
+// clearSshEnv helper that wiped the three variables out of the process
+// environment with t.Setenv so a developer's exported DOKKU_HOST could not
+// reach the assertions - which made every test here serial, since t.Setenv
+// panics in a parallel test. A stub answers the same need and does not touch
+// the process at all.
+func sshEnv(vars map[string]string) func(string) string {
+	return func(key string) string { return vars[key] }
 }
 
 func TestResolveSshFlagsDefaultsToLocal(t *testing.T) {
-	clearSshEnv(t)
-
-	got := resolveSshFlags("", false, false)
+	t.Parallel()
+	got := resolveSshFlags(sshEnv(nil), "", false, false)
 	if got.Host != "" || got.Sudo || got.AcceptNewHostKeys {
 		t.Errorf("resolveSshFlags = %+v, want the zero Target", got)
 	}
@@ -31,12 +32,14 @@ func TestResolveSshFlagsDefaultsToLocal(t *testing.T) {
 // environment. Now that resolveSshFlags is the only reader, forgetting one
 // here is how they would silently stop working.
 func TestResolveSshFlagsReadsTheEnvironment(t *testing.T) {
-	clearSshEnv(t)
-	t.Setenv("DOKKU_HOST", "deploy@dokku.example.com")
-	t.Setenv("DOKKU_SUDO", "1")
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "1")
+	t.Parallel()
+	env := sshEnv(map[string]string{
+		"DOKKU_HOST":                     "deploy@dokku.example.com",
+		"DOKKU_SUDO":                     "1",
+		"DOKKU_SSH_ACCEPT_NEW_HOST_KEYS": "1",
+	})
 
-	got := resolveSshFlags("", false, false)
+	got := resolveSshFlags(env, "", false, false)
 	if got.Host != "deploy@dokku.example.com" {
 		t.Errorf("Host = %q, want it read from DOKKU_HOST", got.Host)
 	}
@@ -51,11 +54,13 @@ func TestResolveSshFlagsReadsTheEnvironment(t *testing.T) {
 // TestResolveSshFlagsOnlyHonorsTheDocumentedEnvValue pins that the two boolean
 // env vars mean "1", not "any value". `DOKKU_SUDO=0` reads as off.
 func TestResolveSshFlagsOnlyHonorsTheDocumentedEnvValue(t *testing.T) {
-	clearSshEnv(t)
-	t.Setenv("DOKKU_SUDO", "0")
-	t.Setenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS", "false")
+	t.Parallel()
+	env := sshEnv(map[string]string{
+		"DOKKU_SUDO":                     "0",
+		"DOKKU_SSH_ACCEPT_NEW_HOST_KEYS": "false",
+	})
 
-	got := resolveSshFlags("", false, false)
+	got := resolveSshFlags(env, "", false, false)
 	if got.Sudo {
 		t.Error("DOKKU_SUDO=0 must not enable sudo")
 	}
@@ -65,10 +70,10 @@ func TestResolveSshFlagsOnlyHonorsTheDocumentedEnvValue(t *testing.T) {
 }
 
 func TestResolveSshFlagsFlagWinsOverEnv(t *testing.T) {
-	clearSshEnv(t)
-	t.Setenv("DOKKU_HOST", "from-env")
+	t.Parallel()
+	env := sshEnv(map[string]string{"DOKKU_HOST": "from-env"})
 
-	got := resolveSshFlags("from-flag", true, true)
+	got := resolveSshFlags(env, "from-flag", true, true)
 	if got.Host != "from-flag" {
 		t.Errorf("Host = %q, want --host to win over DOKKU_HOST", got.Host)
 	}
@@ -82,14 +87,27 @@ func TestResolveSshFlagsFlagWinsOverEnv(t *testing.T) {
 // the process environment so the SSH argv builder could read them back, which
 // meant one invocation's flags applied to every later one in the same process
 // - the concrete reason these settings could not be per-invocation.
+//
+// It compares a snapshot rather than requiring the three variables be unset,
+// so it no longer has to clear them first.
+//
+// The snapshot is sorted because os.Environ()'s order is not stable across a
+// Setenv/Unsetenv round trip - restoring a variable appends it rather than
+// putting it back in its old slot - so an unsorted compare fails on a
+// reordering no one performed.
 func TestResolveSshFlagsDoesNotMutateProcessEnv(t *testing.T) {
-	clearSshEnv(t)
+	t.Parallel()
+	before := sortedEnv()
 
-	resolveSshFlags("deploy@dokku.example.com", true, true)
+	resolveSshFlags(os.Getenv, "deploy@dokku.example.com", true, true)
 
-	for _, name := range []string{"DOKKU_HOST", "DOKKU_SUDO", "DOKKU_SSH_ACCEPT_NEW_HOST_KEYS"} {
-		if v, ok := os.LookupEnv(name); ok && v != "" {
-			t.Errorf("%s = %q; resolving flags must not write the process environment", name, v)
-		}
+	if after := sortedEnv(); after != before {
+		t.Error("resolving flags must not write the process environment")
 	}
+}
+
+func sortedEnv() string {
+	env := os.Environ()
+	sort.Strings(env)
+	return strings.Join(env, "\n")
 }

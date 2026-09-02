@@ -112,6 +112,7 @@ func assertLinesMatchSchema(t *testing.T, path, out string) {
 // the schema ever stopped forbidding extra properties, every other
 // conformance assertion in this package would quietly become a no-op.
 func TestEventsSchemaRejectsUnknownField(t *testing.T) {
+	t.Parallel()
 	e, ui := emitterTestUI()
 	e.PlayStart("tasks", "")
 
@@ -151,6 +152,7 @@ var problemCodeCall = regexp.MustCompile(`\b(?:add)?[Pp]roblem\("([a-z0-9_]+)"`)
 // a wrapper that trusts it). The scan reads string literals, so a code
 // routed through a variable would be missed - keep them literal.
 func TestValidateSchemaCodeEnumCoversEmittedCodes(t *testing.T) {
+	t.Parallel()
 	emitted := map[string]bool{}
 	for _, dir := range []string{".", "../tasks"} {
 		entries, err := os.ReadDir(dir)
@@ -238,6 +240,7 @@ var taskWarningLiteral = regexp.MustCompile(`TaskWarning\([^,]+,\s*[^,]+,\s*"([a
 // rather than a field name. Same caveat as its sibling: the scan reads string
 // literals, so a reason routed through a variable would be missed.
 func TestEventsSchemaWarningReasonEnumCoversEmittedReasons(t *testing.T) {
+	t.Parallel()
 	emitted := map[string]bool{}
 	for dir, re := range map[string]*regexp.Regexp{"../tasks": warnReasonConst, ".": taskWarningLiteral} {
 		entries, err := os.ReadDir(dir)

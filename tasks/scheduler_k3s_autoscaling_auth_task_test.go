@@ -8,6 +8,7 @@ import (
 )
 
 func TestSchedulerK3sAutoscalingAuthTaskSensitiveValues(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:     "test-app",
 		Trigger: "aws-secret-manager",
@@ -25,6 +26,7 @@ func TestSchedulerK3sAutoscalingAuthTaskSensitiveValues(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskSensitiveValuesAbsentEmpty(t *testing.T) {
+	t.Parallel()
 	// On absent the values are empty (only keys matter), so nothing is
 	// contributed from the struct; probed values are registered at plan time.
 	task := SchedulerK3sAutoscalingAuthTask{
@@ -39,6 +41,7 @@ func TestSchedulerK3sAutoscalingAuthTaskSensitiveValuesAbsentEmpty(t *testing.T)
 }
 
 func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
+	t.Parallel()
 	// The probed secrets are registered with whatever masker the planning
 	// context carries, so the test supplies one and reads back through it.
 	masker := subprocess.NewMasker()
@@ -46,9 +49,9 @@ func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
 
 	// The server holds two metadata keys; the task clears one, so the other
 	// survives and is read back (with its secret value) for the restore call.
-	defer subprocess.SetExecRunner(fakeDokku(map[string]string{
+	ctx = subprocess.ContextWithRunner(ctx, fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:autoscaling-auth:report test-app --format json": `{"aws-secret-manager.secretName":"my-secret","aws-secret-manager.awsSecretAccessKey":"REALSECRET"}`,
-	}))()
+	}))
 
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:      "test-app",
@@ -86,6 +89,7 @@ func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskInvalidState(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:      "test-app",
 		Trigger:  "aws-secret-manager",
@@ -99,6 +103,7 @@ func TestSchedulerK3sAutoscalingAuthTaskInvalidState(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskMissingApp(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		Trigger:  "aws-secret-manager",
 		Metadata: map[string]string{"awsRegion": "us-east-1"},
@@ -114,6 +119,7 @@ func TestSchedulerK3sAutoscalingAuthTaskMissingApp(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskGlobalWithAppSet(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:      "test-app",
 		Global:   true,
@@ -131,6 +137,7 @@ func TestSchedulerK3sAutoscalingAuthTaskGlobalWithAppSet(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskMissingTrigger(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:      "test-app",
 		Metadata: map[string]string{"awsRegion": "us-east-1"},
@@ -146,6 +153,7 @@ func TestSchedulerK3sAutoscalingAuthTaskMissingTrigger(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskPresentWithoutMetadata(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:     "test-app",
 		Trigger: "aws-secret-manager",
@@ -161,6 +169,7 @@ func TestSchedulerK3sAutoscalingAuthTaskPresentWithoutMetadata(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskAbsentWithoutMetadata(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:     "test-app",
 		Trigger: "aws-secret-manager",
@@ -176,6 +185,7 @@ func TestSchedulerK3sAutoscalingAuthTaskAbsentWithoutMetadata(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskEmptyMetadataKey(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:      "test-app",
 		Trigger:  "aws-secret-manager",
@@ -192,6 +202,7 @@ func TestSchedulerK3sAutoscalingAuthTaskEmptyMetadataKey(t *testing.T) {
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskPresentEmptyValueRejected(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:      "test-app",
 		Trigger:  "aws-secret-manager",
@@ -208,6 +219,7 @@ func TestSchedulerK3sAutoscalingAuthTaskPresentEmptyValueRejected(t *testing.T) 
 }
 
 func TestSchedulerK3sAutoscalingAuthTaskAbsentEmptyValueAllowed(t *testing.T) {
+	t.Parallel()
 	task := SchedulerK3sAutoscalingAuthTask{
 		App:      "test-app",
 		Trigger:  "aws-secret-manager",

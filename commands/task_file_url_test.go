@@ -27,6 +27,7 @@ func serveRecipe(t *testing.T, body string) *httptest.Server {
 // TestReadTaskFileDataFetchesURL: readTaskFileData GETs an http(s) URL and
 // returns the response body verbatim.
 func TestReadTaskFileDataFetchesURL(t *testing.T) {
+	t.Parallel()
 	const recipe = "---\n- tasks:\n    - name: x\n      dokku_app: { app: demo }\n"
 	srv := serveRecipe(t, recipe)
 
@@ -42,6 +43,7 @@ func TestReadTaskFileDataFetchesURL(t *testing.T) {
 // TestReadTaskFileDataURLNon2xx: a non-2xx response is a clear error that
 // names the status and the URL rather than a silent empty read.
 func TestReadTaskFileDataURLNon2xx(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nope", http.StatusNotFound)
 	}))
@@ -62,6 +64,7 @@ func TestReadTaskFileDataURLNon2xx(t *testing.T) {
 
 // TestReadTaskFileDataLocalFile: a non-URL path still reads from disk.
 func TestReadTaskFileDataLocalFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tasks.yml")
 	const body = "---\n- tasks: []\n"
@@ -80,6 +83,7 @@ func TestReadTaskFileDataLocalFile(t *testing.T) {
 // TestReadTaskFileDataLocalMissing: a missing local path surfaces the
 // familiar os.ReadFile error (not a URL fetch error).
 func TestReadTaskFileDataLocalMissing(t *testing.T) {
+	t.Parallel()
 	_, err := readTaskFileData("", filepath.Join(t.TempDir(), "nope.yml"), newStdinRecipeSource(nil))
 	if err == nil {
 		t.Fatal("expected an error for a missing local file")
@@ -92,6 +96,7 @@ func TestReadTaskFileDataLocalMissing(t *testing.T) {
 // TestDetectTaskFileFormatURL: URLs resolve their format from the path
 // component so a trailing query string does not corrupt the extension.
 func TestDetectTaskFileFormatURL(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		path string
 		want string
@@ -114,6 +119,7 @@ func TestDetectTaskFileFormatURL(t *testing.T) {
 // TestPlanFetchesRecipeFromURL: plan reads a recipe served over HTTP and
 // runs it to completion (a read failure would exit 1 with "read error").
 func TestPlanFetchesRecipeFromURL(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "url-plan", StubFixture{})
 
 	srv := serveRecipe(t, `---
@@ -138,6 +144,7 @@ func TestPlanFetchesRecipeFromURL(t *testing.T) {
 // The stub key resolves to the overridden app value; only the "override"
 // key carries a changed fixture, so a propagated override yields 1 changed.
 func TestApplyURLRecipePreregistersInputFlags(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "override", StubFixture{Changed: true})
 
 	srv := serveRecipe(t, `---
@@ -162,6 +169,7 @@ func TestApplyURLRecipePreregistersInputFlags(t *testing.T) {
 // share a single fetch of a --tasks URL, so the recipe is requested once
 // per command rather than twice.
 func TestURLRecipeFetchedOncePerInvocation(t *testing.T) {
+	t.Parallel()
 	stubSet(t, "cache-key", StubFixture{})
 
 	var mu sync.Mutex

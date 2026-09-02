@@ -61,6 +61,7 @@ func catalogTasks(t *testing.T, doc map[string]interface{}) map[string]map[strin
 }
 
 func TestSchemaCommandMetadata(t *testing.T) {
+	t.Parallel()
 	c := &SchemaCommand{}
 	if c.Name() != "schema" {
 		t.Errorf("Name = %q, want %q", c.Name(), "schema")
@@ -71,6 +72,7 @@ func TestSchemaCommandMetadata(t *testing.T) {
 }
 
 func TestSchemaCommandExamples(t *testing.T) {
+	t.Parallel()
 	c := &SchemaCommand{}
 	examples := c.Examples()
 	if len(examples) == 0 {
@@ -84,6 +86,7 @@ func TestSchemaCommandExamples(t *testing.T) {
 }
 
 func TestSchemaCommandHelpDoesNotPanic(t *testing.T) {
+	t.Parallel()
 	c := &SchemaCommand{}
 	defer func() {
 		if r := recover(); r != nil {
@@ -94,6 +97,7 @@ func TestSchemaCommandHelpDoesNotPanic(t *testing.T) {
 }
 
 func TestSchemaCommandEmitsEveryRegisteredTask(t *testing.T) {
+	t.Parallel()
 	out, stderr, exit := runSchema(t)
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
@@ -119,6 +123,7 @@ func TestSchemaCommandEmitsEveryRegisteredTask(t *testing.T) {
 // the published JSON Schema, so a field that exists in the code but not in the
 // schema fails CI - the same contract the three JSON-lines streams have.
 func TestSchemaCommandMatchesSchema(t *testing.T) {
+	t.Parallel()
 	out, stderr, exit := runSchema(t)
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
@@ -130,6 +135,7 @@ func TestSchemaCommandMatchesSchema(t *testing.T) {
 // the schema stopped forbidding extra properties, TestSchemaCommandMatchesSchema
 // would quietly become a no-op.
 func TestTaskCatalogSchemaRejectsUnknownField(t *testing.T) {
+	t.Parallel()
 	out, _, exit := runSchema(t)
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
@@ -160,6 +166,7 @@ func TestTaskCatalogSchemaRejectsUnknownField(t *testing.T) {
 // reference pages could not express before: which names a property task's
 // free-form-looking `property` field actually accepts.
 func TestSchemaCommandPublishesPropertyTables(t *testing.T) {
+	t.Parallel()
 	out, _, exit := runSchema(t)
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
@@ -199,6 +206,7 @@ func TestSchemaCommandPublishesPropertyTables(t *testing.T) {
 // TestSchemaCommandMarksSensitiveFields guards the fact a consumer most needs
 // from the catalog: which values it must not echo.
 func TestSchemaCommandMarksSensitiveFields(t *testing.T) {
+	t.Parallel()
 	out, _, exit := runSchema(t)
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
@@ -226,6 +234,7 @@ func TestSchemaCommandMarksSensitiveFields(t *testing.T) {
 // reference pages publish, so a consumer does not have to scrape the markdown
 // to get them.
 func TestSchemaCommandIncludesExamples(t *testing.T) {
+	t.Parallel()
 	out, _, exit := runSchema(t)
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
@@ -252,6 +261,7 @@ func TestSchemaCommandIncludesExamples(t *testing.T) {
 // TestSchemaCommandOutputIsStable pins that two runs of the same binary agree,
 // so a consumer can diff catalogs across versions and see only real changes.
 func TestSchemaCommandOutputIsStable(t *testing.T) {
+	t.Parallel()
 	first, _, _ := runSchema(t)
 	second, _, _ := runSchema(t)
 	if first != second {
@@ -260,6 +270,7 @@ func TestSchemaCommandOutputIsStable(t *testing.T) {
 }
 
 func TestSchemaCommandWritesToFile(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "catalog.json")
 
 	out, stderr, exit := runSchema(t, "--output", path)
@@ -281,6 +292,7 @@ func TestSchemaCommandWritesToFile(t *testing.T) {
 }
 
 func TestSchemaCommandRejectsUnknownFlag(t *testing.T) {
+	t.Parallel()
 	_, stderr, exit := runSchema(t, "--nope")
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
@@ -291,6 +303,7 @@ func TestSchemaCommandRejectsUnknownFlag(t *testing.T) {
 }
 
 func TestSchemaCommandRejectsPositionalArgument(t *testing.T) {
+	t.Parallel()
 	_, stderr, exit := runSchema(t, "dokku_app")
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
@@ -301,6 +314,7 @@ func TestSchemaCommandRejectsPositionalArgument(t *testing.T) {
 }
 
 func TestSchemaCommandReportsAnUnwritableOutput(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "missing-dir", "catalog.json")
 
 	_, stderr, exit := runSchema(t, "--output", path)
@@ -335,6 +349,7 @@ func catalogTypeList(t *testing.T, doc map[string]interface{}) []string {
 // TestSchemaCommandFiltersToRequestedTaskTypes is the headline of #459: --task
 // narrows the catalog to the named types and nothing else.
 func TestSchemaCommandFiltersToRequestedTaskTypes(t *testing.T) {
+	t.Parallel()
 	out, stderr, exit := runSchema(t, "--task", "dokku_config", "--task", "dokku_domains")
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
@@ -354,6 +369,7 @@ func TestSchemaCommandFiltersToRequestedTaskTypes(t *testing.T) {
 // contract: a narrowed catalog is the same document shape, so the published
 // JSON Schema still covers it and a consumer parses one format either way.
 func TestSchemaCommandFilteredOutputMatchesSchema(t *testing.T) {
+	t.Parallel()
 	out, stderr, exit := runSchema(t, "--task", "dokku_config")
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
@@ -365,6 +381,7 @@ func TestSchemaCommandFilteredOutputMatchesSchema(t *testing.T) {
 // contract true for a narrowed run: tasks are sorted by type, so the bytes do
 // not depend on the order the flags were typed.
 func TestSchemaCommandFilterIgnoresFlagOrder(t *testing.T) {
+	t.Parallel()
 	forward, _, _ := runSchema(t, "--task", "dokku_config", "--task", "dokku_domains")
 	reverse, _, _ := runSchema(t, "--task", "dokku_domains", "--task", "dokku_config")
 	if forward != reverse {
@@ -375,6 +392,7 @@ func TestSchemaCommandFilterIgnoresFlagOrder(t *testing.T) {
 // TestSchemaCommandFilterDedupesRepeatedTypes: the document is a set keyed by
 // type, so naming one twice emits it once rather than failing.
 func TestSchemaCommandFilterDedupesRepeatedTypes(t *testing.T) {
+	t.Parallel()
 	out, _, exit := runSchema(t, "--task", "dokku_config", "--task", "dokku_config")
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
@@ -388,6 +406,7 @@ func TestSchemaCommandFilterDedupesRepeatedTypes(t *testing.T) {
 // which entries are emitted and nothing about any entry, so it is purely
 // additive for a consumer that already reads the whole catalog.
 func TestSchemaCommandFilteredEntryMatchesFullCatalog(t *testing.T) {
+	t.Parallel()
 	narrowed, _, exit := runSchema(t, "--task", "dokku_config")
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0", exit)
@@ -406,6 +425,7 @@ func TestSchemaCommandFilteredEntryMatchesFullCatalog(t *testing.T) {
 // already does. Emitting an empty tasks array would read as "docket has no
 // such task", which is exactly the wrong answer for a typo.
 func TestSchemaCommandRejectsUnknownTaskType(t *testing.T) {
+	t.Parallel()
 	out, stderr, exit := runSchema(t, "--task", "dokku_confg")
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
@@ -422,6 +442,7 @@ func TestSchemaCommandRejectsUnknownTaskType(t *testing.T) {
 }
 
 func TestSchemaCommandUnknownTaskTypeWithoutNearMatch(t *testing.T) {
+	t.Parallel()
 	_, stderr, exit := runSchema(t, "--task", "nonsense")
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
@@ -435,6 +456,7 @@ func TestSchemaCommandUnknownTaskTypeWithoutNearMatch(t *testing.T) {
 }
 
 func TestSchemaCommandRejectsEmptyTaskType(t *testing.T) {
+	t.Parallel()
 	_, stderr, exit := runSchema(t, "--task=")
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
@@ -447,6 +469,7 @@ func TestSchemaCommandRejectsEmptyTaskType(t *testing.T) {
 // TestSchemaCommandTaskTypeFilterIsCaseSensitive pins the decision: type keys
 // are case-sensitive at every other lookup, so --task does not case-fold.
 func TestSchemaCommandTaskTypeFilterIsCaseSensitive(t *testing.T) {
+	t.Parallel()
 	_, stderr, exit := runSchema(t, "--task", "DOKKU_CONFIG")
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)
@@ -457,6 +480,7 @@ func TestSchemaCommandTaskTypeFilterIsCaseSensitive(t *testing.T) {
 }
 
 func TestSchemaCommandFilterWritesToFile(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "catalog.json")
 
 	out, stderr, exit := runSchema(t, "--task", "dokku_config", "--output", path)
@@ -480,6 +504,7 @@ func TestSchemaCommandFilterWritesToFile(t *testing.T) {
 // TestSchemaCommandUnknownTaskTypeWritesNoFile is why the filter is validated
 // before anything is built: a typo must not leave a file behind.
 func TestSchemaCommandUnknownTaskTypeWritesNoFile(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "catalog.json")
 
 	_, _, exit := runSchema(t, "--task", "nonsense", "--output", path)
@@ -492,6 +517,7 @@ func TestSchemaCommandUnknownTaskTypeWritesNoFile(t *testing.T) {
 }
 
 func TestSchemaCommandAutocompletesTaskTypes(t *testing.T) {
+	t.Parallel()
 	c := &SchemaCommand{}
 	predictor, ok := c.AutocompleteFlags()["--task"]
 	if !ok || predictor == nil {
@@ -505,6 +531,7 @@ func TestSchemaCommandAutocompletesTaskTypes(t *testing.T) {
 // TestSchemaCommandPositionalTaskTypeSuggestsTheFlag: a bare task type is the
 // mistake --task invites, so the rejection points at the flag.
 func TestSchemaCommandPositionalTaskTypeSuggestsTheFlag(t *testing.T) {
+	t.Parallel()
 	_, stderr, exit := runSchema(t, "dokku_app")
 	if exit != 1 {
 		t.Errorf("exit = %d, want 1", exit)

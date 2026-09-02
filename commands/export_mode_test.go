@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dokku/docket/subprocess"
 )
 
 // assertPerm fails unless path has exactly the given permission bits.
@@ -43,13 +42,14 @@ func umaskPerm(t *testing.T, dir string) os.FileMode {
 // every config value in the clear, so it is written 0600 while the recipe -
 // which carries interpolations rather than values - stays public.
 func TestExportCommandVarsFileIsPrivate(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+	t.Parallel()
+	runner := fakeExecRunner(exportCommandFixture())
 
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
-	c, _ := newExportCommand()
+	c, _ := exportWithRunner(runner)
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0", code)
 	}
@@ -61,13 +61,14 @@ func TestExportCommandVarsFileIsPrivate(t *testing.T) {
 // TestExportCommandVarsOutputIsPrivate pins that the mode follows the file,
 // not the derived default path.
 func TestExportCommandVarsOutputIsPrivate(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+	t.Parallel()
+	runner := fakeExecRunner(exportCommandFixture())
 
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "secrets.yml")
 
-	c, _ := newExportCommand()
+	c, _ := exportWithRunner(runner)
 	if code := c.Run([]string{"--output", recipe, "--vars-output", vars}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0", code)
 	}
@@ -80,13 +81,14 @@ func TestExportCommandVarsOutputIsPrivate(t *testing.T) {
 // secrets, so splitting the mode by flag would hand them a 0644 file to type
 // credentials into.
 func TestExportCommandRedactedVarsFileIsPrivate(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+	t.Parallel()
+	runner := fakeExecRunner(exportCommandFixture())
 
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
-	c, _ := newExportCommand()
+	c, _ := exportWithRunner(runner)
 	if code := c.Run([]string{"--output", recipe, "--redact"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0", code)
 	}
@@ -99,7 +101,8 @@ func TestExportCommandRedactedVarsFileIsPrivate(t *testing.T) {
 // creates, so a vars-file an older docket left at 0644 would stay readable
 // forever.
 func TestExportCommandVarsFileModeResetOnOverwrite(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+	t.Parallel()
+	runner := fakeExecRunner(exportCommandFixture())
 
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
@@ -111,7 +114,7 @@ func TestExportCommandVarsFileModeResetOnOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, _ := newExportCommand()
+	c, _ := exportWithRunner(runner)
 	if code := c.Run([]string{"--output", recipe, "--overwrite"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0", code)
 	}
@@ -133,7 +136,8 @@ func TestExportCommandVarsFileModeResetOnOverwrite(t *testing.T) {
 // operator who locked one down keeps it that way. Only the vars-file's mode is
 // docket's business, because only the vars-file's contents ask for one.
 func TestExportCommandRecipeModeLeftAlone(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+	t.Parallel()
+	runner := fakeExecRunner(exportCommandFixture())
 
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
@@ -144,7 +148,7 @@ func TestExportCommandRecipeModeLeftAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, _ := newExportCommand()
+	c, _ := exportWithRunner(runner)
 	if code := c.Run([]string{"--output", recipe, "--overwrite"}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0", code)
 	}
@@ -157,13 +161,14 @@ func TestExportCommandRecipeModeLeftAlone(t *testing.T) {
 // The export still finishes, because the pair is what was asked for, but the
 // operator has to be told this half is in the clear.
 func TestExportCommandWarnsWhenTheModeCannotBeSet(t *testing.T) {
-	defer subprocess.SetExecRunner(fakeExecRunner(exportCommandFixture()))()
+	t.Parallel()
+	runner := fakeExecRunner(exportCommandFixture())
 
 	dir := t.TempDir()
 	recipe := filepath.Join(dir, "tasks.yml")
 	vars := filepath.Join(dir, "tasks.vars.yml")
 
-	c, ui := newExportCommand()
+	c, ui := exportWithRunner(runner)
 	c.ChmodVarsFile = func(*os.File, os.FileMode) error { return errors.New("operation not supported") }
 	if code := c.Run([]string{"--output", recipe}); code != 0 {
 		t.Fatalf("a mode that cannot be set must not fail the export, got exit %d", code)
