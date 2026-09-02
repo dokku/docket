@@ -14,7 +14,6 @@ import (
 	"github.com/dokku/docket/subprocess"
 	"github.com/dokku/docket/tasks"
 
-	sigil "github.com/gliderlabs/sigil"
 	flag "github.com/spf13/pflag"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -276,7 +275,7 @@ var valueTakingFlags = map[string]bool{
 
 func getInputVariables(data []byte, format string) (map[string]*tasks.Input, error) {
 	vars := make(map[string]interface{})
-	render, err := sigil.Execute(data, vars, "tasks")
+	render, err := tasks.RenderTemplate(data, vars, "tasks")
 	if err != nil {
 		return map[string]*tasks.Input{}, fmt.Errorf("sigil error: %v", err.Error())
 	}

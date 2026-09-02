@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	sigil "github.com/gliderlabs/sigil"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -51,7 +50,7 @@ func expandLoop(base *TaskEnvelope, bodyBytes []byte, typeKey string, sigilConte
 		iterCtx["item"] = item
 		iterCtx["index"] = i
 
-		rendered, err := sigil.Execute(bodyBytes, iterCtx, "loop")
+		rendered, err := RenderTemplate(bodyBytes, iterCtx, "loop")
 		if err != nil {
 			return nil, fmt.Errorf("loop iteration %d: render error: %w", i, err)
 		}
@@ -209,7 +208,7 @@ func expandLoopGroup(base *TaskEnvelope, blockNode, rescueNode, alwaysNode *yaml
 // parentName is this iteration's group name; an unnamed child group extends
 // it, so children of two iterations of the same loop do not collide.
 func renderAndDecodeGroupClause(body []byte, clause string, iterCtx, sigilContext, exprContext map[string]interface{}, parentName string, iter int) ([]*TaskEnvelope, error) {
-	rendered, err := sigil.Execute(body, iterCtx, "loop")
+	rendered, err := RenderTemplate(body, iterCtx, "loop")
 	if err != nil {
 		return nil, fmt.Errorf("loop iteration %d %s: render error: %w", iter, clause, err)
 	}

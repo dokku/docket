@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
-	sigil "github.com/gliderlabs/sigil"
 	"github.com/gobuffalo/flect"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -794,7 +793,7 @@ func decodePlayMeta(node *yaml.Node) (playMeta, error) {
 // passes.
 func renderRecipeBytes(data []byte, context map[string]interface{}) ([]byte, error) {
 	escaped, captured := escapeLoopVars(data)
-	render, err := sigil.Execute(escaped, context, "tasks")
+	render, err := RenderTemplate(escaped, context, "tasks")
 	if err != nil {
 		return nil, fmt.Errorf("re-render error: %v", err.Error())
 	}

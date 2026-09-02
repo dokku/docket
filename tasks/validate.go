@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	sigil "github.com/gliderlabs/sigil"
 	defaults "github.com/mcuadros/go-defaults"
 	json5 "github.com/titanous/json5"
 	yaml "gopkg.in/yaml.v3"
@@ -649,7 +648,7 @@ func validateTaskBody(registered Task, typeName string, body *yaml.Node, playLab
 // flag any reference in a non-loop task body.
 func renderForValidate(data []byte, context map[string]interface{}) ([]byte, *Problem) {
 	escaped, captured := escapeLoopVars(data)
-	rendered, err := sigil.Execute(escaped, context, "tasks.yml")
+	rendered, err := RenderTemplate(escaped, context, "tasks.yml")
 	if err != nil {
 		line, col := parseSigilErrorPosition(err.Error())
 		return nil, &Problem{
