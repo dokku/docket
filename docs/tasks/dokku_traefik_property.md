@@ -10,7 +10,7 @@ Supported.
 
 ## Probe support
 
-Partial - the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run.
+Supported.
 
 ## Identity
 
@@ -48,7 +48,7 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `letsencrypt-server` | global |  | `global-letsencrypt-server` |
 | `log-level` | global |  | `global-log-level` |
 
-Names starting with `dns-provider-` are also accepted. dokku validates them through `traefik:set` rather than through its report schema, so they cannot be listed above. The plugin does not report them, so they are applied on every run and never converge. Their values are treated as secrets and masked.
+Names starting with `dns-provider-` are also accepted in the global scope only. dokku validates them through `traefik:set` rather than through its report schema, so they cannot be listed above. The plugin reports each one it has been given, so they probe for drift like any listed property. Their values are treated as secrets and masked.
 
 ## Examples
 
@@ -70,6 +70,16 @@ dokku_traefik_property:
     global: true
     property: log-level
     value: INFO
+```
+
+### Setting a dns-provider-* env var globally
+
+```yaml
+dokku_traefik_property:
+    app: ""
+    global: true
+    property: dns-provider-CLOUDFLARE_DNS_API_TOKEN
+    value: cf-token
 ```
 
 ### Clearing the letsencrypt email globally

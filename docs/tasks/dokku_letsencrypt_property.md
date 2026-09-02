@@ -43,7 +43,7 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | `lego-docker-options` | app, global | `lego-docker-options` | `global-lego-docker-options` |
 | `server` | app, global | `server` | `global-server` |
 
-Names starting with `dns-provider-` are also accepted. dokku validates them through `letsencrypt:set` rather than through its report schema, so they cannot be listed above. The plugin reports each one it has been given, so they probe for drift like any listed property. Their values are treated as secrets and masked.
+Names starting with `dns-provider-` are also accepted in the app and global scopes. dokku validates them through `letsencrypt:set` rather than through its report schema, so they cannot be listed above. The plugin reports each one it has been given, so they probe for drift like any listed property. Their values are treated as secrets and masked.
 
 ## Examples
 

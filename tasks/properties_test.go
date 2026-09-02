@@ -277,9 +277,12 @@ func TestUnknownPropertyWarningIgnoresOtherErrors(t *testing.T) {
 	}
 }
 
-// TestUnknownPropertyWarningDynamicPropertySkipsWarning uses traefik because
-// letsencrypt's dns-provider-* family is probed now (#449) and its missing rows
-// never reach this branch; traefik is the family that still does.
+// TestUnknownPropertyWarningDynamicPropertySkipsWarning pins the helper
+// directly. Every declared family is probed now (#449, #450), so getProperty
+// reads a missing row as unset and no family reaches this branch through
+// planProperty any more - it is the guard a plugin that stops reporting a family
+// would fall back on, and a missing row must read as "not set yet", not as a
+// typo the user should be warned about.
 func TestUnknownPropertyWarningDynamicPropertySkipsWarning(t *testing.T) {
 	t.Parallel()
 	err := &errUnknownProperty{
@@ -391,9 +394,13 @@ func TestDynamicPropertyKeys(t *testing.T) {
 		// mapped property.
 		{"letsencrypt", "dns-provider", PropertyKeys{}, false},
 		{"letsencrypt", "email", PropertyKeys{}, false},
-		// traefik's family has the same shape but is still absent from
-		// traefik:report (#450), so it must stay unprobed.
-		{"traefik", "dns-provider-CLOUDFLARE_API_TOKEN", PropertyKeys{}, false},
+		// traefik's family reports the same way as of dokku 0.38.27, but
+		// `traefik:set` refuses it outside --global, so only the global half
+		// of the entry is synthesized (#450).
+		{"traefik", "dns-provider-CLOUDFLARE_API_TOKEN", PropertyKeys{
+			Global:    "global-dns-provider-CLOUDFLARE_API_TOKEN",
+			Sensitive: true,
+		}, true},
 		{"nginx", "dns-provider-X", PropertyKeys{}, false},
 	}
 	for _, tc := range cases {
@@ -438,9 +445,20 @@ func TestDynamicPropertiesFromReport(t *testing.T) {
 		t.Errorf("global scope = %v; want %v", got, want)
 	}
 
-	// traefik is not probeable, so its report rows are never lifted.
-	if got := dynamicPropertiesFromReport("traefik", map[string]string{"global-dns-provider-CLOUDFLARE_API_TOKEN": "token"}, true); got != nil {
-		t.Errorf("traefik = %v; want nil", got)
+	// traefik reports the same family, global-only. Its global rows lift, and
+	// an app report - which carries the same global- rows, since the traefik
+	// report is global state whichever scope it is asked for - lifts nothing,
+	// because the family synthesizes no per-app key to round-trip through.
+	traefikPayload := map[string]string{
+		"global-dns-provider-CLOUDFLARE_API_TOKEN": "token",
+		"global-dns-provider":                      "cloudflare",
+	}
+	got = dynamicPropertiesFromReport("traefik", traefikPayload, true)
+	if !reflect.DeepEqual(got, []string{"dns-provider-CLOUDFLARE_API_TOKEN"}) {
+		t.Errorf("traefik global scope = %v; want the one credential row", got)
+	}
+	if got := dynamicPropertiesFromReport("traefik", traefikPayload, false); got != nil {
+		t.Errorf("traefik app scope = %v; want nil for a global-only family", got)
 	}
 }
 
@@ -574,10 +592,124 @@ func TestPlanPropertyDynamicLetsencryptAbsentPlansDestroy(t *testing.T) {
 	}
 }
 
-// TestPlanPropertyDynamicTraefikStaysUnprobed keeps the traefik half of the
-// family on the unprobed path while dokku/dokku#8928 is open (#450): it must not
-// even attempt a report read.
-func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
+// TestPlanPropertyDynamicTraefikGlobalInSync is the core of #450: dokku 0.38.27
+// reports every set `dns-provider-<KEY>` credential as a `global-` row, so one
+// that already matches the recipe plans as in sync instead of reporting drift on
+// every run.
+func TestPlanPropertyDynamicTraefikGlobalInSync(t *testing.T) {
+	t.Parallel()
+	masker := subprocess.NewMasker()
+
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report --global --format json": `{"global-log-level":"INFO","global-dns-provider-CLOUDFLARE_API_TOKEN":"token123"}`,
+	}))
+
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if !res.InSync {
+		t.Errorf("expected in sync, got status %q reason %q", res.Status, res.Reason)
+	}
+	if res.Status != PlanStatusOK {
+		t.Errorf("status = %q; want %q", res.Status, PlanStatusOK)
+	}
+}
+
+// TestPlanPropertyDynamicTraefikDriftMasksProbedValue covers the drift half: the
+// value read back is a DNS provider credential and must not reach the
+// `(was %q)` reason in the clear (#457).
+func TestPlanPropertyDynamicTraefikDriftMasksProbedValue(t *testing.T) {
+	t.Parallel()
+	masker := subprocess.NewMasker()
+
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report --global --format json": `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"livetoken"}`,
+	}))
+
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "newtoken")
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if res.Status != PlanStatusModify {
+		t.Errorf("status = %q; want %q", res.Status, PlanStatusModify)
+	}
+	if masked := masker.String(res.Reason); strings.Contains(masked, "livetoken") {
+		t.Errorf("drift reason leaked the probed credential: %q -> %q", res.Reason, masked)
+	}
+}
+
+// TestPlanPropertyDynamicTraefikMissingRowPlansCreate pins the pre-set state: a
+// credential the server has never been given has no report row, which reads as
+// unset rather than as a stale key map, so it plans as a create with no
+// unknown_property warning.
+func TestPlanPropertyDynamicTraefikMissingRowPlansCreate(t *testing.T) {
+	t.Parallel()
+	masker := subprocess.NewMasker()
+
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report --global --format json": `{"global-log-level":"INFO"}`,
+	}))
+
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if res.Status != PlanStatusCreate {
+		t.Errorf("status = %q; want %q", res.Status, PlanStatusCreate)
+	}
+	if len(res.Warnings) != 0 {
+		t.Errorf("an unset dynamic property is not an unknown key: %v", res.Warnings)
+	}
+}
+
+// TestPlanPropertyDynamicTraefikAbsentMissingRowIsInSync completes the pair:
+// `state: absent` on a credential that was never set converges instead of
+// running an unset on every apply.
+func TestPlanPropertyDynamicTraefikAbsentMissingRowIsInSync(t *testing.T) {
+	t.Parallel()
+	masker := subprocess.NewMasker()
+
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report --global --format json": `{"global-log-level":"INFO"}`,
+	}))
+
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StateAbsent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "")
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if !res.InSync {
+		t.Errorf("expected in sync, got status %q reason %q", res.Status, res.Reason)
+	}
+}
+
+func TestPlanPropertyDynamicTraefikAbsentPlansDestroy(t *testing.T) {
+	t.Parallel()
+	masker := subprocess.NewMasker()
+
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report --global --format json": `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"livetoken"}`,
+	}))
+
+	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StateAbsent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "")
+	if res.Error != nil {
+		t.Fatalf("planProperty error: %v", res.Error)
+	}
+	if res.Status != PlanStatusDestroy {
+		t.Errorf("status = %q; want %q", res.Status, PlanStatusDestroy)
+	}
+	if masked := masker.String(res.Reason); strings.Contains(masked, "livetoken") {
+		t.Errorf("unset reason leaked the probed credential: %q -> %q", res.Reason, masked)
+	}
+}
+
+// TestPlanPropertyDynamicTraefikAppScopeIsRejected pins the other half of #450.
+// `traefik:set` refuses a `dns-provider-*` key outside --global, and the family
+// says so, so the app scope is turned away before any probe. Without it the
+// empty per-app lookup would read as unset: `state: present` would plan create
+// forever and `state: absent` would report in sync while never unsetting a live
+// credential.
+func TestPlanPropertyDynamicTraefikAppScopeIsRejected(t *testing.T) {
 	t.Parallel()
 	masker := subprocess.NewMasker()
 	var ran []string
@@ -586,38 +718,41 @@ func TestPlanPropertyDynamicTraefikStaysUnprobed(t *testing.T) {
 		return subprocess.ExecCommandResponse{}, nil
 	})
 
-	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "token123")
-	if res.Error != nil {
-		t.Fatalf("planProperty error: %v", res.Error)
-	}
-	if !strings.Contains(res.Reason, "(no probe key)") {
-		t.Errorf("reason = %q; want the unprobed reason", res.Reason)
-	}
-	for _, cmd := range ran {
-		if strings.Contains(cmd, "traefik:report") {
-			t.Errorf("traefik dynamic properties must not be probed, ran %q", cmd)
+	for _, tc := range []struct {
+		state State
+		value string
+	}{
+		{StatePresent, "token123"},
+		{StateAbsent, ""},
+	} {
+		res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, tc.state, "myapp", false, "dns-provider-CLOUDFLARE_API_TOKEN", tc.value)
+		if res.Error == nil {
+			t.Fatalf("state %q: expected an error, got status %q reason %q", tc.state, res.Status, res.Reason)
 		}
+		if !strings.Contains(res.Error.Error(), "no per-app form") {
+			t.Errorf("state %q: error = %v; want the no-per-app-form rejection", tc.state, res.Error)
+		}
+	}
+	if len(ran) != 0 {
+		t.Errorf("a rejected scope must not reach the server, ran %v", ran)
 	}
 }
 
-// TestPlanPropertyDynamicTraefikMasksCredential is the core of #457: the
-// traefik family cannot be probed, but its values are DNS provider credentials
-// all the same, so the desired value must reach the masker before it lands in
-// the command echo or the plan mutation line.
+// TestPlanPropertyDynamicTraefikMasksCredential is the core of #457: the desired
+// value is a DNS provider credential and must reach the masker before it lands
+// in the command echo or the plan mutation line. It stayed true when the family
+// could not be probed and has to stay true now that it can.
 func TestPlanPropertyDynamicTraefikMasksCredential(t *testing.T) {
 	t.Parallel()
 	masker := subprocess.NewMasker()
 
-	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
-		return subprocess.ExecCommandResponse{}, nil
-	})
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report --global --format json": `{}`,
+	}))
 
 	res := planProperty(subprocess.ContextWithMasker(ctx, masker), TraefikPropertyTask{}, StatePresent, "", true, "dns-provider-CLOUDFLARE_API_TOKEN", "traefiktoken")
 	if res.Error != nil {
 		t.Fatalf("planProperty error: %v", res.Error)
-	}
-	if !strings.Contains(res.Reason, "(no probe key)") {
-		t.Errorf("reason = %q; want the unprobed reason", res.Reason)
 	}
 	// Commands are masked as they are resolved, so a leak here means the value
 	// was never registered; mutations are masked by the emitter instead.
@@ -633,10 +768,37 @@ func TestPlanPropertyDynamicTraefikMasksCredential(t *testing.T) {
 	}
 }
 
-// TestPropertyEntry pins the three arms the export path and planProperty read
-// sensitivity through: a mapped property answers for itself, a probeable
-// dynamic member is synthesized whole, and an unprobeable one carries the
-// family's Sensitive mark with no lookup keys (#457).
+// TestRunUnprobedPlansMutateUnconditionally covers the half of the Probeable
+// contract no declared family reaches any more: a family its plugin does not
+// report skips the probe and runs the mutation on every apply. The helpers are
+// kept for the next such plugin, so they are exercised directly rather than
+// through a family that no longer exists (#450).
+func TestRunUnprobedPlansMutateUnconditionally(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithMasker(testCtx(), subprocess.NewMasker())
+
+	set := runUnprobedSet(ctx, "traefik:set", "--global", "secret-TOKEN", "value")
+	if set.InSync || set.Status != PlanStatusModify {
+		t.Errorf("set = {InSync:%v Status:%q}; want a modify that never converges", set.InSync, set.Status)
+	}
+	if !strings.Contains(set.Reason, "(no probe key)") {
+		t.Errorf("set reason = %q; want the unprobed reason", set.Reason)
+	}
+
+	unset := runUnprobedUnset(ctx, "traefik:set", "--global", "secret-TOKEN")
+	if unset.InSync || unset.Status != PlanStatusDestroy {
+		t.Errorf("unset = {InSync:%v Status:%q}; want a destroy that never converges", unset.InSync, unset.Status)
+	}
+	if !strings.Contains(unset.Reason, "(no probe key)") {
+		t.Errorf("unset reason = %q; want the unprobed reason", unset.Reason)
+	}
+}
+
+// TestPropertyEntry pins the arms the export path and planProperty read
+// sensitivity through: a mapped property answers for itself, and a dynamic
+// member is synthesized from its family, in the scopes that family declares.
+// The unprobeable arm has no live family left to use, so it is pinned against a
+// synthetic one in TestDynamicFamilySensitivityIsIndependentOfProbing (#457).
 func TestPropertyEntry(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -665,11 +827,14 @@ func TestPropertyEntry(t *testing.T) {
 			},
 		},
 		{
-			name:     "unprobeable dynamic member is still sensitive",
+			name:     "global-only dynamic member synthesizes only its global key",
 			plugin:   "traefik",
 			property: "dns-provider-CLOUDFLARE_API_TOKEN",
 			keys:     traefikPropertyTable.Keys,
-			want:     PropertyKeys{Sensitive: true},
+			want: PropertyKeys{
+				Global:    "global-dns-provider-CLOUDFLARE_API_TOKEN",
+				Sensitive: true,
+			},
 		},
 		{
 			name:     "unknown property has no entry",

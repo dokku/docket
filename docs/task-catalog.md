@@ -193,7 +193,8 @@ set subcommand rather than through its report schema. Those are published as pre
 consumer does not reject a legal recipe:
 
 ```json
-"dynamic": [ { "prefix": "dns-provider-", "probeable": true, "sensitive": true } ]
+"dynamic": [ { "prefix": "dns-provider-", "probeable": true, "sensitive": true,
+               "scopes": ["global"] } ]
 ```
 
 `probeable: false` means docket cannot read those values back, so a recipe using that family
@@ -202,6 +203,11 @@ reports drift on every run and never converges.
 `sensitive: true` means the members hold secrets: docket masks them in the command echo and lifts
 them into an input on export. It is independent of `probeable` - a credential docket cannot read
 back is still masked on the way out.
+
+`scopes` reads exactly as it does on an enumerable property: a family listed only under `global` may
+be used with `global: true` and is rejected for an app, matching dokku's own rejection. The
+`dns-provider-*` credentials are global-only on traefik and app-or-global on letsencrypt, so a
+consumer that ignored this would accept a recipe dokku refuses.
 
 A name can also be absent from `properties` because another task manages it. That is a different
 answer from "no such property", and the catalog says so rather than leaving a consumer to report an

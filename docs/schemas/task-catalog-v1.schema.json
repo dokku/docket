@@ -248,12 +248,19 @@
     "dynamic_property": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["prefix", "probeable"],
+      "required": ["prefix", "probeable", "scopes"],
       "properties": {
         "prefix": { "type": "string", "description": "What a member's name starts with." },
         "probeable": {
           "type": "boolean",
           "description": "Whether the plugin's report surfaces a row per set member, so docket can read the value back. `false` means a recipe using the family reports drift on every run and never converges."
+        },
+        "scopes": {
+          "type": "array",
+          "items": { "enum": ["app", "global"] },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Where a member of the family may be used. Using one in a scope it does not list is rejected at validate time, matching dokku's own rejection."
         },
         "sensitive": {
           "const": true,

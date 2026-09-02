@@ -436,19 +436,30 @@ func TestCatalogPropertySchemaSpotChecks(t *testing.T) {
 	if letsencrypt == nil {
 		t.Fatal("dokku_letsencrypt_property has no property schema")
 	}
-	want := []DynamicPropertySchema{{Prefix: "dns-provider-", Probeable: true, Sensitive: true}}
+	want := []DynamicPropertySchema{{
+		Prefix:    "dns-provider-",
+		Probeable: true,
+		Sensitive: true,
+		Scopes:    []string{PropertyScopeApp, PropertyScopeGlobal},
+	}}
 	if !reflect.DeepEqual(letsencrypt.Dynamic, want) {
 		t.Errorf("letsencrypt dynamic = %+v; want %+v", letsencrypt.Dynamic, want)
 	}
 
-	// traefik holds the same credentials, but the plugin does not report them,
-	// so a recipe using the family never converges - and the catalog has to say
-	// so without implying the values are any less secret (#457).
+	// traefik holds the same credentials and reports them the same way as of
+	// dokku 0.38.27 (#450), but `traefik:set` refuses the family outside
+	// --global, so the catalog has to publish it as global-only or a consumer
+	// validating offline accepts a recipe dokku will reject (#457, #458).
 	traefik := schemaFor(t, catalog, "dokku_traefik_property").PropertySchema
 	if traefik == nil {
 		t.Fatal("dokku_traefik_property has no property schema")
 	}
-	want = []DynamicPropertySchema{{Prefix: "dns-provider-", Probeable: false, Sensitive: true}}
+	want = []DynamicPropertySchema{{
+		Prefix:    "dns-provider-",
+		Probeable: true,
+		Sensitive: true,
+		Scopes:    []string{PropertyScopeGlobal},
+	}}
 	if !reflect.DeepEqual(traefik.Dynamic, want) {
 		t.Errorf("traefik dynamic = %+v; want %+v", traefik.Dynamic, want)
 	}

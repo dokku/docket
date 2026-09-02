@@ -362,12 +362,20 @@ Those are declared in `dynamicPropertyFamilies` in `tasks/properties.go`, which 
 validation accept a name the table has never heard of, and is published to consumers so a linter
 does not reject a legal recipe. How they plan depends on the plugin:
 
-- The plugin reports the family (letsencrypt on 0.25.0+ emits a row per set property): declare it
-  `Probeable`, and the scope keys are synthesized so the property probes like any mapped one.
-  Because the row only exists once the property has a value, an absent row reads as unset. Note the
-  minimum plugin version in `Requirements()`.
+- The plugin reports the family (letsencrypt on 0.25.0+ and traefik on dokku 0.38.27+ emit a row per
+  set property): declare it `Probeable`, and the scope keys are synthesized so the property probes
+  like any mapped one. Because the row only exists once the property has a value, an absent row reads
+  as unset. Note the minimum plugin version in `Requirements()`.
 - The plugin does not report it: leave `Probeable` false. The property skips probing and is applied
-  unconditionally, and the task is `ProbePartial` with a caveat naming the family.
+  unconditionally, and the task is `ProbePartial` with a caveat naming the family. No family declared
+  today is in this state, so `runUnprobedSet`/`runUnprobedUnset` have no live caller - they are the
+  other half of the contract, kept for the next plugin that takes a family it does not report.
+
+Every family also declares `Scopes`, the same `app`/`global` vocabulary an enumerable property states
+by leaving a `PropertyKeys` half empty. A mapped property has an entry to say it with and a dynamic
+one does not, so the family says it instead, and `validateProperty` holds a member to it: traefik's
+`traefik:set` refuses a `dns-provider-*` key outside `--global`, so an app-scoped one is rejected with
+the same sentence a mapped global-only property gets rather than probing a row that cannot exist.
 
 Mark the family `Sensitive` whenever its values are credentials, whichever of those two it is.
 Whether a value is a secret and whether docket can read it back are separate questions, and
