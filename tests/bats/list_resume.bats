@@ -325,9 +325,10 @@ EOF
   write_tasks_file <<EOF
 ---
 - tasks:
-    - name: git auth
-      dokku_git_auth:
-        host: github.com
+    - name: registry auth
+      dokku_registry_auth:
+        global: true
+        server: docker.io
         username: deploy-bot
         password: examplepassword
     - name: create app
@@ -335,7 +336,7 @@ EOF
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
   assert_success
-  assert_output --partial "git auth  (never converges)"
+  assert_output --partial "registry auth  (never converges)"
   refute_output --partial "create app  (never converges)"
 }
 
@@ -357,9 +358,10 @@ EOF
   write_tasks_file <<EOF
 ---
 - tasks:
-    - name: git auth
-      dokku_git_auth:
-        host: github.com
+    - name: registry auth
+      dokku_registry_auth:
+        global: true
+        server: docker.io
         username: deploy-bot
         password: examplepassword
 EOF

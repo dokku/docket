@@ -2,15 +2,21 @@
 
 load test_helper
 
+# SSH_GIT_AUTH_HOST is a hostname docket never contacts; it only ever names a
+# netrc entry on the dokku server.
+SSH_GIT_AUTH_HOST="docket-test-ssh.example.com"
+
 setup() {
   require_remote_dokku
   docket_build
   ssh_clean_app
+  ssh_clean_git_auth
 }
 
 teardown() {
   if [ -n "${DOCKET_TEST_REMOTE_HOST:-}" ]; then
     ssh_clean_app || true
+    ssh_clean_git_auth || true
   fi
 }
 
@@ -22,6 +28,14 @@ ssh_clean_app() {
   if ssh -o BatchMode=yes "$DOCKET_TEST_REMOTE_HOST" "dokku apps:exists $app" >/dev/null 2>&1; then
     ssh -o BatchMode=yes "$DOCKET_TEST_REMOTE_HOST" "dokku --force apps:destroy $app" >/dev/null 2>&1 || true
   fi
+}
+
+# ssh_clean_git_auth drops the per-test netrc entry on the remote host.
+# git:auth with no username clears the host, and is a no-op when there is
+# nothing to clear.
+ssh_clean_git_auth() {
+  ssh -o BatchMode=yes "$DOCKET_TEST_REMOTE_HOST" \
+    "dokku --quiet git:auth $SSH_GIT_AUTH_HOST" >/dev/null 2>&1 || true
 }
 
 @test "DOKKU_HOST routes apply through ssh" {
@@ -143,6 +157,37 @@ EOF
   run ssh -o BatchMode=yes "$DOCKET_TEST_REMOTE_HOST" "dokku ps:report docket-test-ssh --format json"
   assert_success
   assert_output --partial "npm run start"
+}
+
+# The netrc password reaches dokku on stdin rather than on argv, and dokku only
+# reads it when stdin is a pipe. Locally that is guaranteed by os/exec; over ssh
+# it depends on how sshd wires the remote command's stdin, which nothing else in
+# the suite exercises. A converging re-plan is the proof: the probe could only
+# have matched if git:auth-status received the same password git:auth stored.
+@test "dokku_git_auth converges over ssh with the password on stdin" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: configure git auth
+      dokku_git_auth:
+        host: $SSH_GIT_AUTH_HOST
+        username: deploy-bot
+        password: ghp_examplepat
+EOF
+  DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "[changed]"
+
+  DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "0 would change"
+  refute_output --partial "[~]"
+
+  # The password is masked in the run's own output, but it must not be on the
+  # remote argv either - that is what stdin buys.
+  DOKKU_TRACE=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  refute_output --partial "ghp_examplepat"
 }
 
 # argv_recipe is the one-task recipe the transport-argv cases below plan

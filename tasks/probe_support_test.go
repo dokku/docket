@@ -40,12 +40,12 @@ func TestTaskProbeSupportSupported(t *testing.T) {
 }
 
 func TestTaskProbeSupportUnsupportedCarriesCaveat(t *testing.T) {
-	support, ok := TaskProbeSupport(&GitAuthTask{})
+	support, ok := TaskProbeSupport(&RegistryAuthTask{})
 	if !ok {
-		t.Fatal("expected GitAuthTask to declare ProbeSupport()")
+		t.Fatal("expected RegistryAuthTask to declare ProbeSupport()")
 	}
 	if support.Status != ProbeUnsupported {
-		t.Errorf("expected GitAuthTask to be %q, got %q", ProbeUnsupported, support.Status)
+		t.Errorf("expected RegistryAuthTask to be %q, got %q", ProbeUnsupported, support.Status)
 	}
 	if !contains(support.Caveat, "no read command") {
 		t.Errorf("expected the caveat to explain the missing read command, got %q", support.Caveat)

@@ -404,7 +404,7 @@ running anything:
 $ docket apply --list-tasks
 ==> Play: api
 [0] dokku apps:create api  [tags=core]
-[1] dokku git:auth github.com  (never converges)
+[1] dokku registry:login docker.io  (never converges)
 [2] dokku git:from-image api  (partial probe)
 ```
 

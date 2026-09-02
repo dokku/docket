@@ -30,7 +30,7 @@ A task marked `(never converges)` cannot read its own state, so it plans as drif
 - [dokku_docker_options](dokku_docker_options.md) - Manages docker-options for a given dokku application
 - [dokku_domains](dokku_domains.md) - Manages the domains for a given dokku application or globally
 - [dokku_domains_toggle](dokku_domains_toggle.md) - Enables or disables the domains plugin for a given dokku application
-- [dokku_git_auth](dokku_git_auth.md) - Manages netrc credentials for a git host (never converges)
+- [dokku_git_auth](dokku_git_auth.md) - Manages netrc credentials for a git host
 - [dokku_git_from_archive](dokku_git_from_archive.md) - Deploys a git repository from an archive URL
 - [dokku_git_from_image](dokku_git_from_image.md) - Deploys a git repository from a docker image
 - [dokku_git_property](dokku_git_property.md) - Manages the git configuration for a given dokku application
