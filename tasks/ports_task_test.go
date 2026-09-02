@@ -1,6 +1,8 @@
 package tasks
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -148,12 +150,12 @@ func TestPortsTaskValidatePerItem(t *testing.T) {
 }
 
 // portsReportKey is the fakeDokku key for the probe getPorts runs.
-const portsReportKey = "--quiet ports:report web --ports-map"
+const portsReportKey = "--quiet ports:report web --ports-map-json"
 
 func TestPortsSetPlansFullReplacement(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "http:80:5000 https:443:5000",
+		portsReportKey: `[{"container_port":5000,"host_port":80,"scheme":"http"},{"container_port":5000,"host_port":443,"scheme":"https"}]`,
 	}))
 
 	plan := PortsTask{
@@ -186,7 +188,7 @@ func TestPortsSetPlansFullReplacement(t *testing.T) {
 func TestPortsSetOnAppWithNoMappingsIsACreate(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "",
+		portsReportKey: "null",
 	}))
 
 	plan := PortsTask{
@@ -205,7 +207,7 @@ func TestPortsSetOnAppWithNoMappingsIsACreate(t *testing.T) {
 func TestPortsSetConvergesWhenReportMatches(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "https:443:5000 http:80:5000",
+		portsReportKey: `[{"container_port":5000,"host_port":443,"scheme":"https"},{"container_port":5000,"host_port":80,"scheme":"http"}]`,
 	}))
 
 	plan := PortsTask{
@@ -230,7 +232,7 @@ func TestPortsSetConvergesWhenReportMatches(t *testing.T) {
 func TestPortsClearPlansEveryMapping(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "http:80:5000 https:443:5000",
+		portsReportKey: `[{"container_port":5000,"host_port":80,"scheme":"http"},{"container_port":5000,"host_port":443,"scheme":"https"}]`,
 	}))
 
 	plan := PortsTask{App: "web", State: StateClear}.Plan(ctx)
@@ -259,7 +261,7 @@ func TestPortsClearPlansEveryMapping(t *testing.T) {
 func TestPortsClearIsInSyncWithoutMappings(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "",
+		portsReportKey: "null",
 	}))
 
 	plan := PortsTask{App: "web", State: StateClear}.Plan(ctx)
@@ -277,7 +279,7 @@ func TestPortsClearIsInSyncWithoutMappings(t *testing.T) {
 func TestPortsPresentPlansOnlyTheMissingMappings(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "http:80:5000",
+		portsReportKey: `[{"container_port":5000,"host_port":80,"scheme":"http"}]`,
 	}))
 
 	plan := PortsTask{
@@ -309,7 +311,7 @@ func TestPortsPresentPlansOnlyTheMissingMappings(t *testing.T) {
 func TestPortsPresentRejectsCollisionWithAnExistingMapping(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "http:80:5000",
+		portsReportKey: `[{"container_port":5000,"host_port":80,"scheme":"http"}]`,
 	}))
 
 	plan := PortsTask{
@@ -331,7 +333,7 @@ func TestPortsPresentRejectsCollisionWithAnExistingMapping(t *testing.T) {
 func TestPortsPresentAllowsTheSameHostPortUnderAnotherScheme(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "http:80:5000",
+		portsReportKey: `[{"container_port":5000,"host_port":80,"scheme":"http"}]`,
 	}))
 
 	plan := PortsTask{
@@ -353,7 +355,7 @@ func TestPortsPresentAllowsTheSameHostPortUnderAnotherScheme(t *testing.T) {
 func TestPortsAbsentPlansOnlyThePresentMappings(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		portsReportKey: "http:80:5000",
+		portsReportKey: `[{"container_port":5000,"host_port":80,"scheme":"http"}]`,
 	}))
 
 	plan := PortsTask{
@@ -495,5 +497,188 @@ func TestGetTasksPortsTaskClearWithoutMappings(t *testing.T) {
 	}
 	if err := portsTask.Validate(); err != nil {
 		t.Errorf("clear without port_mappings should validate, got: %v", err)
+	}
+}
+
+// TestPortsReportArgs pins the probe's argv. fakeDokku keys on the joined
+// args, so a flag change that slipped through here would turn every ports
+// fixture lookup into a miss and leave the "no mappings" tests passing for the
+// wrong reason.
+func TestPortsReportArgs(t *testing.T) {
+	t.Parallel()
+	want := []string{"--quiet", "ports:report", "web", "--ports-map-json"}
+	if got := portsReportArgs("web"); !reflect.DeepEqual(got, want) {
+		t.Errorf("portsReportArgs() = %v, want %v", got, want)
+	}
+}
+
+func TestParsePortsMapReport(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		raw     string
+		want    map[string]PortMapping
+		wantErr string
+	}{
+		{
+			name: "single mapping",
+			raw:  `[{"container_port":5000,"host_port":80,"scheme":"http"}]`,
+			want: map[string]PortMapping{
+				"http:80:5000": {Scheme: "http", Host: 80, Container: 5000},
+			},
+		},
+		{
+			name: "several mappings",
+			raw:  `[{"container_port":5000,"host_port":80,"scheme":"http"},{"container_port":5000,"host_port":443,"scheme":"https"}]`,
+			want: map[string]PortMapping{
+				"http:80:5000":   {Scheme: "http", Host: 80, Container: 5000},
+				"https:443:5000": {Scheme: "https", Host: 443, Container: 5000},
+			},
+		},
+		{
+			// dokku marshals a nil slice for an app with no mappings.
+			name: "null is no mappings",
+			raw:  "null",
+			want: map[string]PortMapping{},
+		},
+		{
+			// dokku reports [] when it could not read the map property.
+			name: "empty array is no mappings",
+			raw:  "[]",
+			want: map[string]PortMapping{},
+		},
+		{
+			name: "empty payload is no mappings",
+			raw:  "",
+			want: map[string]PortMapping{},
+		},
+		{
+			// dokku records a bare host port under the __internal__ scheme with
+			// no container port. It round-trips unchanged, as it did under the
+			// scheme:host:container text form this replaced.
+			name: "internal scheme round-trips",
+			raw:  `[{"container_port":0,"host_port":5000,"scheme":"__internal__"}]`,
+			want: map[string]PortMapping{
+				"__internal__:5000:0": {Scheme: "__internal__", Host: 5000, Container: 0},
+			},
+		},
+		{
+			name: "duplicate entries collapse on the mapping key",
+			raw:  `[{"container_port":5000,"host_port":80,"scheme":"http"},{"container_port":5000,"host_port":80,"scheme":"http"}]`,
+			want: map[string]PortMapping{
+				"http:80:5000": {Scheme: "http", Host: 80, Container: 5000},
+			},
+		},
+		{
+			// The text parse dropped every token it could not read; the decode
+			// says so instead.
+			name:    "malformed payload errors",
+			raw:     "not json",
+			wantErr: "parse ports:report --ports-map-json",
+		},
+		{
+			// A report polluted by a banner is rejected whole rather than
+			// having the banner silently skipped and the mappings kept.
+			name:    "banner-prefixed payload errors",
+			raw:     "Deprecated: use something else\n[{\"container_port\":5000,\"host_port\":80,\"scheme\":\"http\"}]",
+			wantErr: "parse ports:report --ports-map-json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePortsMapReport([]byte(tt.raw))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error %q, got: %v", tt.wantErr, err)
+				}
+				if got != nil {
+					t.Errorf("expected no mappings alongside the error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parsePortsMapReport() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPortsProbeSurfacesSSHError pins that an unreachable host is a plan error
+// rather than an app that happens to have no mappings, which would have
+// state 'clear' and 'absent' report in sync against a server never contacted.
+func TestPortsProbeSurfacesSSHError(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		return subprocess.ExecCommandResponse{ExitCode: 255}, &subprocess.SSHError{
+			Host:   "dokku@unreachable",
+			Stderr: "ssh: connect to host unreachable port 22: Connection refused",
+		}
+	})
+
+	plan := PortsTask{App: "web", State: StateClear}.Plan(ctx)
+	if plan.Error == nil {
+		t.Fatal("expected a plan error when the transport fails")
+	}
+	var sshErr *subprocess.SSHError
+	if !errors.As(plan.Error, &sshErr) {
+		t.Errorf("expected the SSHError to survive, got %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Error("expected drift rather than in-sync when the probe could not run")
+	}
+}
+
+// TestPortsProbeTreatsDokkuFailureAsNoMappings pins the deliberate other half
+// of the split: a dokku-level non-zero exit means the app does not exist yet,
+// so plan reports the full list as an add rather than failing outright.
+func TestPortsProbeTreatsDokkuFailureAsNoMappings(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		return subprocess.ExecCommandResponse{ExitCode: 1}, &subprocess.ExecError{
+			Response: subprocess.ExecCommandResponse{ExitCode: 1, Stderr: "App web does not exist"},
+			Err:      errors.New("exit status 1"),
+			Ran:      true,
+		}
+	})
+
+	plan := PortsTask{
+		App:          "web",
+		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 5000}},
+		State:        StatePresent,
+	}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.Status != PlanStatusCreate {
+		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusCreate)
+	}
+	want := []string{"add http:80:5000"}
+	if !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+// TestPortsProbeSurfacesMalformedReport is the behaviour the JSON report buys:
+// a report dokku could not have produced is an error, where the text parse
+// dropped the unreadable mappings and reported the rest as the whole truth.
+func TestPortsProbeSurfacesMalformedReport(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		portsReportKey: "not json",
+	}))
+
+	plan := PortsTask{App: "web", State: StateClear}.Plan(ctx)
+	if plan.Error == nil {
+		t.Fatal("expected a plan error when the report does not decode")
+	}
+	if !strings.Contains(plan.Error.Error(), "parse ports:report --ports-map-json") {
+		t.Errorf("unexpected error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Error("expected drift rather than in-sync when the report could not be read")
 	}
 }

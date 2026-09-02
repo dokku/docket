@@ -1,6 +1,8 @@
 package tasks
 
 import (
+	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -9,17 +11,27 @@ import (
 )
 
 // getReportedPorts queries dokku ports:report to get the current mappings for
-// an app, so assertions do not lean on the task's own probe.
+// an app, so assertions do not lean on the task's own probe. It decodes the
+// report itself rather than calling getPorts or parsePortsMapReport: a bug in
+// either would otherwise be masked by the assertion that is meant to catch it.
 func getReportedPorts(appName string) []string {
 	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"--quiet", "ports:report", appName, "--ports-map"},
+		Args:    []string{"--quiet", "ports:report", appName, "--ports-map-json"},
 	})
 	if err != nil {
 		return nil
 	}
 
-	mappings := strings.Fields(result.StdoutContents())
+	var entries []portsMapEntry
+	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
+		return nil
+	}
+
+	mappings := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		mappings = append(mappings, fmt.Sprintf("%s:%d:%d", entry.Scheme, entry.HostPort, entry.ContainerPort))
+	}
 	sort.Strings(mappings)
 	return mappings
 }
