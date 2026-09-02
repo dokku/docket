@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dokku/docket/commands/templates"
 	"github.com/dokku/docket/tasks"
 
 	"github.com/josegonzalez/cli-skeleton/command"
@@ -465,16 +466,39 @@ func TestInitJSON5RoundTripsThroughGetPlays(t *testing.T) {
 func TestSelectInitTemplate(t *testing.T) {
 	t.Parallel()
 	cases := map[[2]string]string{
-		{tasks.FormatYAML, "false"}:      "default.yml.tmpl",
-		{tasks.FormatYAML, "true"}:       "minimal.yml.tmpl",
+		{tasks.FormatYAML, "false"}:      "default.yaml.tmpl",
+		{tasks.FormatYAML, "true"}:       "minimal.yaml.tmpl",
 		{tasks.FormatNameJSON5, "false"}: "default.json5.tmpl",
 		{tasks.FormatNameJSON5, "true"}:  "minimal.json5.tmpl",
-		{"", "false"}:                    "default.yml.tmpl",
+		// An alias and an unknown value both resolve through the codec
+		// registry, the alias to its codec and the unknown to the default.
+		{"json", "false"}: "default.json5.tmpl",
+		{"", "false"}:     "default.yaml.tmpl",
+		{"toml", "true"}:  "minimal.yaml.tmpl",
 	}
 	for key, want := range cases {
 		minimal := key[1] == "true"
 		if got := selectInitTemplate(key[0], minimal); got != want {
 			t.Errorf("selectInitTemplate(%q, %v) = %q, want %q", key[0], minimal, got, want)
+		}
+	}
+}
+
+// TestEveryCodecHasInitTemplates is the guard the open-ended //go:embed
+// glob gave up. selectInitTemplate derives its filename from the codec
+// name, and parseRecipeFormatFlag accepts anything in the registry, so a
+// codec registered without a matching pair of templates compiles fine and
+// then fails at runtime: `docket init --format <new>` dies on "read
+// template default.<new>.tmpl: file does not exist". Catch it here
+// instead.
+func TestEveryCodecHasInitTemplates(t *testing.T) {
+	t.Parallel()
+	for _, codec := range tasks.Codecs() {
+		for _, minimal := range []bool{false, true} {
+			name := selectInitTemplate(codec.Name(), minimal)
+			if _, err := templates.FS.ReadFile(name); err != nil {
+				t.Errorf("codec %q has no init template %s: %v", codec.Name(), name, err)
+			}
 		}
 	}
 }

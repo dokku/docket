@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +14,6 @@ import (
 	"github.com/dokku/docket/tasks"
 
 	flag "github.com/spf13/pflag"
-	yaml "gopkg.in/yaml.v3"
 )
 
 type Argument struct {
@@ -600,49 +598,24 @@ func loadVarsFiles(paths []string) (map[string]interface{}, map[string]string, m
 	return merged, sources, perFile, nil
 }
 
+// parseVarsFile decodes a --vars-file with the codec its extension names,
+// falling back to the default codec for an extension no codec claims -
+// which is every extension a vars-file usually carries, since the file is
+// named after the recipe rather than after a format.
+//
+// This used to be a bare `filepath.Ext(path) == ".json"` compare, which
+// meant a .json5 vars-file was handed to the YAML parser and died on the
+// first comment or trailing comma. A plain .json file decodes to the same
+// Go values it always has: the JSON5 codec reads it with json5.Unmarshal,
+// a superset of encoding/json.
 func parseVarsFile(path string, data []byte) (map[string]interface{}, error) {
-	out := map[string]interface{}{}
-	if strings.EqualFold(filepath.Ext(path), ".json") {
-		if err := json.Unmarshal(data, &out); err != nil {
-			return nil, fmt.Errorf("--vars-file %s: %v", path, err)
-		}
-		return out, nil
-	}
-	// YAML decodes mapping keys as interface{}; convert to string keys and
-	// recursively normalise nested maps so JSON-like consumers see the same
-	// shape regardless of source format.
-	var raw interface{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("--vars-file %s: %v", path, err)
-	}
-	if raw == nil {
-		return out, nil
-	}
-	asMap, ok := raw.(map[string]interface{})
+	codec, ok := tasks.CodecForExtension(filepath.Ext(path))
 	if !ok {
-		// yaml.v3 returns map[string]interface{} for the common case but
-		// older fixtures sometimes round-trip as map[interface{}]interface{};
-		// normalise that path too.
-		if generic, ok2 := raw.(map[interface{}]interface{}); ok2 {
-			converted, err := normaliseYAMLMap(generic)
-			if err != nil {
-				return nil, fmt.Errorf("--vars-file %s: %v", path, err)
-			}
-			return converted, nil
-		}
-		return nil, fmt.Errorf("--vars-file %s: top-level document must be a mapping of input names to values", path)
+		codec = tasks.DefaultCodec()
 	}
-	return asMap, nil
-}
-
-func normaliseYAMLMap(in map[interface{}]interface{}) (map[string]interface{}, error) {
-	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		ks, ok := k.(string)
-		if !ok {
-			return nil, fmt.Errorf("non-string key %v", k)
-		}
-		out[ks] = v
+	out, err := codec.UnmarshalVars(data)
+	if err != nil {
+		return nil, fmt.Errorf("--vars-file %s: %v", path, err)
 	}
 	return out, nil
 }

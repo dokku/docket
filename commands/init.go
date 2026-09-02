@@ -97,7 +97,7 @@ func (c *InitCommand) ParsedArguments(args []string) (map[string]command.Argumen
 func (c *InitCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.output, "output", defaultRecipeOutput, "path to write the scaffold to; pass - to write to stdout")
-	f.StringVar(&c.formatFlag, "format", "", "write the scaffold as this format (yaml or json5) instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputJSON5+"; this is also the only way to get JSON5 on stdout.")
+	f.StringVar(&c.formatFlag, "format", "", "write the scaffold as this format ("+recipeFormatList()+") instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputFor(tasks.FormatNameJSON5)+"; this is also the only way to get JSON5 on stdout.")
 	f.BoolVar(&c.force, "force", false, "overwrite an existing output file")
 	f.BoolVar(&c.minimal, "minimal", false, "emit a minimal one-task scaffold without an inputs block")
 	f.StringVar(&c.name, "name", defaultName(c.baseDir()), "play name and default app input value")
@@ -237,18 +237,18 @@ type initOptions struct {
 	Name    string
 	Repo    string
 	Minimal bool
-	// Format selects the on-disk shape of the rendered scaffold. Valid
-	// values are tasks.FormatYAML (default) and tasks.FormatNameJSON5; the
-	// empty string is treated as YAML so existing callers (and tests
-	// that drive renderInit directly) keep their behaviour.
+	// Format selects the on-disk shape of the rendered scaffold: any
+	// canonical codec name. The empty string resolves to the default
+	// codec, so existing callers (and tests that drive renderInit
+	// directly) keep their behaviour.
 	Format string
 }
 
 // renderInit reads the right embedded template, parses it with custom
 // delimiters so sigil syntax in the body survives untouched, and returns
-// the rendered bytes. YAML scaffolds are prefixed with the `---\n`
-// document marker; JSON5 scaffolds are emitted as a top-level array
-// (the docket recipe shape) with no marker.
+// the rendered bytes. Anything a format needs at the top of the document -
+// the YAML `---` marker, the JSON5 opening bracket - lives in that
+// format's own templates rather than in a branch here.
 //
 // Exposed at package scope so unit tests can drive it directly without
 // going through the cli-skeleton UI plumbing.
@@ -286,25 +286,24 @@ func renderInit(opts initOptions) ([]byte, error) {
 		return nil, fmt.Errorf("render template %s: %w", templateName, err)
 	}
 
-	var out bytes.Buffer
-	if !tasks.IsJSON5Format(opts.Format) {
-		out.WriteString("---\n")
-	}
-	out.Write(body.Bytes())
-	return out.Bytes(), nil
+	return body.Bytes(), nil
 }
 
 // selectInitTemplate returns the embedded template name for (format,
-// minimal). YAML / unknown format -> .yml.tmpl, JSON5 -> .json5.tmpl.
+// minimal). The name is derived from the codec, so a format is scaffolded
+// by dropping default.<name>.tmpl and minimal.<name>.tmpl next to the
+// others - there is no branch to extend. An unknown format resolves to the
+// default codec and gets its templates.
+//
+// The embedded FS is not checked here; a missing template surfaces as the
+// read error in renderInit. TestEveryCodecHasInitTemplates is what stops a
+// codec from shipping without one.
 func selectInitTemplate(format string, minimal bool) string {
-	suffix := "yml"
-	if tasks.IsJSON5Format(format) {
-		suffix = "json5"
-	}
+	base := "default"
 	if minimal {
-		return "minimal." + suffix + ".tmpl"
+		base = "minimal"
 	}
-	return "default." + suffix + ".tmpl"
+	return fmt.Sprintf("%s.%s.tmpl", base, tasks.CodecFor(format).Name())
 }
 
 // defaultName returns the basename of dir, or "app" if it cannot be derived to

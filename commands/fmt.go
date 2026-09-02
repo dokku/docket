@@ -111,7 +111,7 @@ func (c *FmtCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.check, "check", false, "exit non-zero if any file is not canonically formatted; do not write")
 	f.BoolVar(&c.diff, "diff", false, "print a unified diff for any file that is not canonically formatted; do not write")
 	f.StringVar(&c.color, "color", "auto", "when to colorize diff output: auto, always, never")
-	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "format the recipe as this format (yaml or json5) instead of detecting it from the file extension, or from the first byte when reading stdin. Needed for a flow-style YAML recipe, which starts with [ and would otherwise sniff as JSON5.")
+	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "format the recipe as this format ("+recipeFormatList()+") instead of detecting it from the file extension, or from the first byte when reading stdin. Needed for a flow-style YAML recipe, which starts with [ and would otherwise sniff as JSON5.")
 	return f
 }
 
@@ -206,7 +206,7 @@ func (c *FmtCommand) runStdin(formatOverride string) int {
 		c.Ui.Error(fmt.Sprintf("read stdin: %v", err))
 		return 1
 	}
-	formatted, err := formatTaskFileBytes(src, taskFileFormatFor("", formatOverride, src))
+	formatted, err := tasks.CodecFor(taskFileFormatFor("", formatOverride, src)).Format(src)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("format error: %v", err))
 		return 1
@@ -248,7 +248,7 @@ func (c *FmtCommand) formatPath(path, formatOverride string) int {
 		return 1
 	}
 
-	formatted, err := formatTaskFileBytes(src, taskFileFormatFor(detectTaskFileFormat(path), formatOverride, src))
+	formatted, err := tasks.CodecFor(taskFileFormatFor(detectTaskFileFormat(path), formatOverride, src)).Format(src)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("%s: %v", path, err))
 		return 1
@@ -285,39 +285,6 @@ func (c *FmtCommand) formatPath(path, formatOverride string) int {
 	}
 	c.Ui.Output(fmt.Sprintf("==> Formatted %s", path))
 	return 0
-}
-
-// formatTaskFileBytes dispatches to the YAML or JSON5 formatter based
-// on format. Centralised so the in-place and stdin paths stay byte-
-// identical for the same logical operation.
-func formatTaskFileBytes(src []byte, format string) ([]byte, error) {
-	if format == taskFileFormatJSON5 {
-		return tasks.FormatJSON5(src)
-	}
-	return tasks.Format(src)
-}
-
-// sniffStdinFormat picks a format for stdin input. JSON5 input always
-// starts (after optional whitespace and comments) with `[` or `{`;
-// YAML recipes start with `-`, `---`, or a key, none of which collide.
-// On ambiguity the function defaults to YAML so existing pipelines
-// keep their pre-#218 behaviour.
-func sniffStdinFormat(src []byte) string {
-	for i := 0; i < len(src); i++ {
-		c := src[i]
-		if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
-			continue
-		}
-		if c == '/' && i+1 < len(src) && (src[i+1] == '/' || src[i+1] == '*') {
-			// Skip a leading line/block comment - JSON5 idiom.
-			return taskFileFormatJSON5
-		}
-		if c == '[' || c == '{' {
-			return taskFileFormatJSON5
-		}
-		return taskFileFormatYAML
-	}
-	return taskFileFormatYAML
 }
 
 // expandPaths resolves the positional arguments to a sorted, deduped

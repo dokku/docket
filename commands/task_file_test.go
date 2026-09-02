@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dokku/docket/tasks"
+
 	"github.com/posener/complete"
 	flag "github.com/spf13/pflag"
 )
@@ -14,18 +16,18 @@ import (
 func TestDetectTaskFileFormat(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"tasks.yml":         taskFileFormatYAML,
-		"tasks.yaml":        taskFileFormatYAML,
-		"tasks.YML":         taskFileFormatYAML,
-		"tasks.json":        taskFileFormatJSON5,
-		"tasks.JSON":        taskFileFormatJSON5,
-		"tasks.json5":       taskFileFormatJSON5,
-		"path/to/tasks.yml": taskFileFormatYAML,
-		"recipe.txt":        taskFileFormatYAML,
-		"":                  taskFileFormatYAML,
+		"tasks.yml":         tasks.FormatYAML,
+		"tasks.yaml":        tasks.FormatYAML,
+		"tasks.YML":         tasks.FormatYAML,
+		"tasks.json":        tasks.FormatNameJSON5,
+		"tasks.JSON":        tasks.FormatNameJSON5,
+		"tasks.json5":       tasks.FormatNameJSON5,
+		"path/to/tasks.yml": tasks.FormatYAML,
+		"recipe.txt":        tasks.FormatYAML,
+		"":                  tasks.FormatYAML,
 		// stdin has no extension; detection defaults to YAML here and
 		// the caller sniffs instead. See taskFileFormatFor.
-		taskFileStdin: taskFileFormatYAML,
+		taskFileStdin: tasks.FormatYAML,
 	}
 	for path, want := range cases {
 		if got := detectTaskFileFormat(path); got != want {
@@ -38,13 +40,13 @@ func TestParseRecipeFormatFlag(t *testing.T) {
 	t.Parallel()
 	valid := map[string]string{
 		"":      "",
-		"yaml":  taskFileFormatYAML,
-		"YAML":  taskFileFormatYAML,
-		"yml":   taskFileFormatYAML,
-		"json":  taskFileFormatJSON5,
-		"json5": taskFileFormatJSON5,
-		"JSON5": taskFileFormatJSON5,
-		" yaml": taskFileFormatYAML,
+		"yaml":  tasks.FormatYAML,
+		"YAML":  tasks.FormatYAML,
+		"yml":   tasks.FormatYAML,
+		"json":  tasks.FormatNameJSON5,
+		"json5": tasks.FormatNameJSON5,
+		"JSON5": tasks.FormatNameJSON5,
+		" yaml": tasks.FormatYAML,
 	}
 	for value, want := range valid {
 		got, err := parseRecipeFormatFlag("--tasks-format", value)
@@ -57,11 +59,32 @@ func TestParseRecipeFormatFlag(t *testing.T) {
 		}
 	}
 
+	// The rejection enumerates the registry, so a new codec becomes an
+	// accepted value and reaches this message without anyone editing it.
+	wantList := strings.Join(tasks.CodecNames(), ", ")
+	if wantList != "yaml, json5" {
+		t.Errorf("CodecNames() renders as %q; docs/command-reference.md and the bats suites spell it \"yaml, json5\"", wantList)
+	}
 	for _, value := range []string{"toml", "hcl", "ini", "yamlish"} {
 		if _, err := parseRecipeFormatFlag("--tasks-format", value); err == nil {
 			t.Errorf("parseRecipeFormatFlag(%q) = nil error, want a rejection", value)
-		} else if !strings.Contains(err.Error(), "yaml, json5") {
-			t.Errorf("parseRecipeFormatFlag(%q) error %q should name the valid values", value, err)
+		} else if !strings.Contains(err.Error(), wantList) {
+			t.Errorf("parseRecipeFormatFlag(%q) error %q should name the valid values %q", value, err, wantList)
+		}
+	}
+
+	// Every canonical name and alias the registry advertises must parse.
+	for _, codec := range tasks.Codecs() {
+		spellings := append([]string{codec.Name()}, codec.Aliases()...)
+		for _, spelling := range spellings {
+			got, err := parseRecipeFormatFlag("--tasks-format", spelling)
+			if err != nil {
+				t.Errorf("parseRecipeFormatFlag(%q) returned error: %v", spelling, err)
+				continue
+			}
+			if got != codec.Name() {
+				t.Errorf("parseRecipeFormatFlag(%q) = %q, want %q", spelling, got, codec.Name())
+			}
 		}
 	}
 
@@ -80,8 +103,8 @@ func TestParseRecipeFormatFlag(t *testing.T) {
 
 // TestTaskFileFormatFor pins the precedence rule: an explicit
 // --tasks-format beats extension detection, which beats a content
-// sniff. The return value must never be empty - tasks.IsJSON5Format("")
-// is false, so an empty format silently means YAML downstream.
+// sniff. The return value must never be empty - an empty format resolves
+// to tasks.DefaultCodec() downstream, so it would silently mean YAML.
 func TestTaskFileFormatFor(t *testing.T) {
 	t.Parallel()
 	jsonish := []byte("[{tasks: []}]")
@@ -94,12 +117,12 @@ func TestTaskFileFormatFor(t *testing.T) {
 		data     []byte
 		want     string
 	}{
-		{name: "override beats detection", detected: taskFileFormatYAML, override: taskFileFormatJSON5, data: yamlish, want: taskFileFormatJSON5},
-		{name: "override beats sniff", detected: "", override: taskFileFormatYAML, data: jsonish, want: taskFileFormatYAML},
-		{name: "detection beats sniff", detected: taskFileFormatYAML, data: jsonish, want: taskFileFormatYAML},
-		{name: "sniff picks json5 for stdin", detected: "", data: jsonish, want: taskFileFormatJSON5},
-		{name: "sniff picks yaml for stdin", detected: "", data: yamlish, want: taskFileFormatYAML},
-		{name: "empty stdin defaults to yaml", detected: "", data: nil, want: taskFileFormatYAML},
+		{name: "override beats detection", detected: tasks.FormatYAML, override: tasks.FormatNameJSON5, data: yamlish, want: tasks.FormatNameJSON5},
+		{name: "override beats sniff", detected: "", override: tasks.FormatYAML, data: jsonish, want: tasks.FormatYAML},
+		{name: "detection beats sniff", detected: tasks.FormatYAML, data: jsonish, want: tasks.FormatYAML},
+		{name: "sniff picks json5 for stdin", detected: "", data: jsonish, want: tasks.FormatNameJSON5},
+		{name: "sniff picks yaml for stdin", detected: "", data: yamlish, want: tasks.FormatYAML},
+		{name: "empty stdin defaults to yaml", detected: "", data: nil, want: tasks.FormatYAML},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -126,17 +149,17 @@ func TestResolveRecipeOutput(t *testing.T) {
 		wantPath      string
 		wantFormat    string
 	}{
-		{name: "default with no override", output: defaultRecipeOutput, wantPath: defaultRecipeOutput, wantFormat: taskFileFormatYAML},
-		{name: "default with json5 moves the path", output: defaultRecipeOutput, override: taskFileFormatJSON5, wantPath: defaultRecipeOutputJSON5, wantFormat: taskFileFormatJSON5},
-		{name: "default with yaml stays put", output: defaultRecipeOutput, override: taskFileFormatYAML, wantPath: defaultRecipeOutput, wantFormat: taskFileFormatYAML},
-		{name: "explicit path is never rewritten", output: "deploy/prod.yml", override: taskFileFormatJSON5, outputChanged: true, wantPath: "deploy/prod.yml", wantFormat: taskFileFormatJSON5},
-		{name: "explicit default path is never rewritten", output: defaultRecipeOutput, override: taskFileFormatJSON5, outputChanged: true, wantPath: defaultRecipeOutput, wantFormat: taskFileFormatJSON5},
-		{name: "override beats a json extension", output: "tasks.json", override: taskFileFormatYAML, outputChanged: true, wantPath: "tasks.json", wantFormat: taskFileFormatYAML},
-		{name: "extension decides with no override", output: "tasks.json5", outputChanged: true, wantPath: "tasks.json5", wantFormat: taskFileFormatJSON5},
-		{name: "unknown extension falls back to yaml", output: "recipe.txt", outputChanged: true, wantPath: "recipe.txt", wantFormat: taskFileFormatYAML},
-		{name: "stdin with no override is yaml", output: taskFileStdin, outputChanged: true, wantPath: taskFileStdin, wantFormat: taskFileFormatYAML},
-		{name: "stdin honours the override", output: taskFileStdin, override: taskFileFormatJSON5, outputChanged: true, wantPath: taskFileStdin, wantFormat: taskFileFormatJSON5},
-		{name: "stdin is never rewritten to a path", output: taskFileStdin, override: taskFileFormatJSON5, wantPath: taskFileStdin, wantFormat: taskFileFormatJSON5},
+		{name: "default with no override", output: defaultRecipeOutput, wantPath: defaultRecipeOutput, wantFormat: tasks.FormatYAML},
+		{name: "default with json5 moves the path", output: defaultRecipeOutput, override: tasks.FormatNameJSON5, wantPath: "tasks.json", wantFormat: tasks.FormatNameJSON5},
+		{name: "default with yaml stays put", output: defaultRecipeOutput, override: tasks.FormatYAML, wantPath: defaultRecipeOutput, wantFormat: tasks.FormatYAML},
+		{name: "explicit path is never rewritten", output: "deploy/prod.yml", override: tasks.FormatNameJSON5, outputChanged: true, wantPath: "deploy/prod.yml", wantFormat: tasks.FormatNameJSON5},
+		{name: "explicit default path is never rewritten", output: defaultRecipeOutput, override: tasks.FormatNameJSON5, outputChanged: true, wantPath: defaultRecipeOutput, wantFormat: tasks.FormatNameJSON5},
+		{name: "override beats a json extension", output: "tasks.json", override: tasks.FormatYAML, outputChanged: true, wantPath: "tasks.json", wantFormat: tasks.FormatYAML},
+		{name: "extension decides with no override", output: "tasks.json5", outputChanged: true, wantPath: "tasks.json5", wantFormat: tasks.FormatNameJSON5},
+		{name: "unknown extension falls back to yaml", output: "recipe.txt", outputChanged: true, wantPath: "recipe.txt", wantFormat: tasks.FormatYAML},
+		{name: "stdin with no override is yaml", output: taskFileStdin, outputChanged: true, wantPath: taskFileStdin, wantFormat: tasks.FormatYAML},
+		{name: "stdin honours the override", output: taskFileStdin, override: tasks.FormatNameJSON5, outputChanged: true, wantPath: taskFileStdin, wantFormat: tasks.FormatNameJSON5},
+		{name: "stdin is never rewritten to a path", output: taskFileStdin, override: tasks.FormatNameJSON5, wantPath: taskFileStdin, wantFormat: tasks.FormatNameJSON5},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -149,22 +172,25 @@ func TestResolveRecipeOutput(t *testing.T) {
 	}
 }
 
-// TestResolveRecipeOutputDefaultsAreProbeCandidates is what makes the
-// path swap safe: init tells the user to run a bare `docket validate`
-// next, and that probes defaultTaskFileCandidates. A default output that
-// is not in that list would leave the scaffold unreachable.
-func TestResolveRecipeOutputDefaultsAreProbeCandidates(t *testing.T) {
+// TestDefaultRecipeOutputForEveryCodec is what makes the path swap safe:
+// init tells the user to run a bare `docket validate` next, and that
+// probes defaultTaskFileCandidates. A default output that is not in that
+// list would leave the scaffold unreachable.
+//
+// defaultRecipeOutputFor now derives its answer from that same list, so
+// membership is true by construction and no longer worth asserting. What
+// is still worth asserting - and is what the old membership check was
+// really guarding - is that every registered codec has a candidate of its
+// own. A codec with none silently falls back to the head of the list, and
+// `docket init --format <it>` would write a scaffold under a name that
+// reads back as some other format.
+func TestDefaultRecipeOutputForEveryCodec(t *testing.T) {
 	t.Parallel()
-	for _, want := range []string{defaultRecipeOutput, defaultRecipeOutputJSON5} {
-		found := false
-		for _, candidate := range defaultTaskFileCandidates {
-			if candidate == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("%q is a default --output but not in defaultTaskFileCandidates %v", want, defaultTaskFileCandidates)
+	for _, codec := range tasks.Codecs() {
+		got := defaultRecipeOutputFor(codec.Name())
+		if detectTaskFileFormat(got) != codec.Name() {
+			t.Errorf("defaultRecipeOutputFor(%q) = %q, which reads back as %q; %q has no candidate in defaultTaskFileCandidates %v",
+				codec.Name(), got, detectTaskFileFormat(got), codec.Name(), defaultTaskFileCandidates)
 		}
 	}
 }
@@ -177,11 +203,11 @@ func TestRecipeOutputFormatMismatch(t *testing.T) {
 	t.Parallel()
 	quiet := [][2]string{
 		{"tasks.yml", ""},
-		{taskFileStdin, taskFileFormatJSON5},
-		{"tasks.json", taskFileFormatJSON5},
-		{"tasks.json5", taskFileFormatJSON5},
-		{"tasks.yml", taskFileFormatYAML},
-		{"recipe.txt", taskFileFormatYAML},
+		{taskFileStdin, tasks.FormatNameJSON5},
+		{"tasks.json", tasks.FormatNameJSON5},
+		{"tasks.json5", tasks.FormatNameJSON5},
+		{"tasks.yml", tasks.FormatYAML},
+		{"recipe.txt", tasks.FormatYAML},
 	}
 	for _, c := range quiet {
 		if got := recipeOutputFormatMismatch(c[0], c[1]); got != "" {
@@ -189,7 +215,7 @@ func TestRecipeOutputFormatMismatch(t *testing.T) {
 		}
 	}
 
-	got := recipeOutputFormatMismatch("tasks.yml", taskFileFormatJSON5)
+	got := recipeOutputFormatMismatch("tasks.yml", tasks.FormatNameJSON5)
 	if got == "" {
 		t.Fatal("recipeOutputFormatMismatch(tasks.yml, json5) = no warning, want one")
 	}
@@ -391,8 +417,8 @@ func TestResolveTaskFilePathExplicit(t *testing.T) {
 	if gotPath != path {
 		t.Errorf("path = %q, want %q", gotPath, path)
 	}
-	if gotFormat != taskFileFormatJSON5 {
-		t.Errorf("format = %q, want %q", gotFormat, taskFileFormatJSON5)
+	if gotFormat != tasks.FormatNameJSON5 {
+		t.Errorf("format = %q, want %q", gotFormat, tasks.FormatNameJSON5)
 	}
 	if len(ambiguous) != 0 {
 		t.Errorf("ambiguous = %v, want none; an explicit path never runs the probe", ambiguous)
@@ -415,7 +441,7 @@ func TestResolveTaskFilePathDefaultPrefersYAML(t *testing.T) {
 	if path != "tasks.yml" {
 		t.Errorf("path = %q, want tasks.yml", path)
 	}
-	if format != taskFileFormatYAML {
+	if format != tasks.FormatYAML {
 		t.Errorf("format = %q, want yaml", format)
 	}
 	if !slices.Equal(ambiguous, []string{"tasks.json"}) {
@@ -436,7 +462,7 @@ func TestResolveTaskFilePathDefaultFallsThroughToJSON(t *testing.T) {
 	if path != "tasks.json" {
 		t.Errorf("path = %q, want tasks.json", path)
 	}
-	if format != taskFileFormatJSON5 {
+	if format != tasks.FormatNameJSON5 {
 		t.Errorf("format = %q, want json5", format)
 	}
 	if len(ambiguous) != 0 {
@@ -588,7 +614,7 @@ func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
 	if path != "custom.json" {
 		t.Errorf("path = %q, want custom.json", path)
 	}
-	if format != taskFileFormatJSON5 {
+	if format != tasks.FormatNameJSON5 {
 		t.Errorf("format = %q, want json5", format)
 	}
 
@@ -596,7 +622,7 @@ func TestResolveTaskFileFromArgsUsesExplicitFlag(t *testing.T) {
 	if path != "other.yml" {
 		t.Errorf("path = %q, want other.yml", path)
 	}
-	if format != taskFileFormatYAML {
+	if format != tasks.FormatYAML {
 		t.Errorf("format = %q, want yaml", format)
 	}
 }
@@ -689,7 +715,15 @@ func TestTasksFormatFromArgs(t *testing.T) {
 func TestTaskFileAutocompleteMatchesRecipeExtensions(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	recipes := []string{"tasks.yml", "config.yaml", "data.json", "recipe.json5"}
+	// Seeded from the registry rather than a fixed list, so a codec that
+	// claims a new extension is covered without editing this test.
+	var recipes []string
+	for _, ext := range tasks.CodecExtensions() {
+		recipes = append(recipes, "recipe."+ext)
+	}
+	if len(recipes) == 0 {
+		t.Fatal("no codec claims any extension; completion would offer nothing")
+	}
 	for _, name := range recipes {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("---\n"), 0o644); err != nil {
 			t.Fatalf("seed %s: %v", name, err)

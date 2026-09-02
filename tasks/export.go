@@ -2,14 +2,12 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
-	yaml "gopkg.in/yaml.v3"
 )
 
 // AppExporter is implemented by a task type that can reconstruct its recipe
@@ -870,36 +868,17 @@ func sanitizeIdent(s string) string {
 	return b.String()
 }
 
-// MarshalRecipe renders the assembled recipe as canonical YAML (or JSON5 when
-// format is a JSON5 alias), using the same formatter as `docket fmt`.
+// MarshalRecipe renders the assembled recipe in the codec keyed by format,
+// canonicalised by the same formatter as `docket fmt`.
 func (res *ExportResult) MarshalRecipe(format string) ([]byte, error) {
-	raw, err := yaml.Marshal(res.plays)
-	if err != nil {
-		return nil, err
-	}
-	if IsJSON5Format(format) {
-		// Round-trip through YAML so the struct yaml tags drive the keys, then
-		// re-encode as JSON for the JSON5 formatter.
-		var generic interface{}
-		if err := yaml.Unmarshal(raw, &generic); err != nil {
-			return nil, err
-		}
-		jsonRaw, err := json.Marshal(generic)
-		if err != nil {
-			return nil, err
-		}
-		return FormatJSON5(jsonRaw)
-	}
-	return Format(raw)
+	return CodecFor(format).Marshal(res.plays)
 }
 
 // MarshalVars renders the companion vars-file (a flat mapping of input name to
-// value) in YAML or JSON to match the vars-output extension.
+// value) in the codec keyed by format, which the caller takes from --format or
+// from the vars-output extension.
 func (res *ExportResult) MarshalVars(format string) ([]byte, error) {
-	if IsJSON5Format(format) {
-		return json.MarshalIndent(res.Vars, "", "  ")
-	}
-	return yaml.Marshal(res.Vars)
+	return CodecFor(format).MarshalVars(res.Vars)
 }
 
 // HasVars reports whether the export lifted any values into the vars map.

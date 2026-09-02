@@ -13,25 +13,14 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-// Task file format identifiers shared with the commands package.
-//
-// The empty string and any unrecognised value are treated as YAML so
-// existing call sites that pass no format keep their pre-#218 behaviour.
-const (
-	FormatYAML       = "yaml"
-	FormatNameJSON5  = "json5"
-)
-
-// IsJSON5Format returns true when format is one of the JSON5 aliases.
-// Centralised so the json/json5 split lives in exactly one place.
-func IsJSON5Format(format string) bool {
-	return format == FormatNameJSON5 || format == "json"
-}
-
-// UnmarshalRecipe decodes data as a Recipe using the parser keyed by
+// UnmarshalRecipe decodes data as a Recipe using the codec keyed by
 // format. Exposed because the commands package's input-extraction path
 // (parseInputDocument) needs the same dispatch and there is no benefit
-// to duplicating the switch.
+// to duplicating it.
+//
+// The codec's ToYAML runs but its Lint deliberately does not: this path
+// feeds parseInputDocument and countTasks, which accept a duplicate-keyed
+// JSON5 recipe today. normalizeRecipeBytes is the one that lints.
 //
 // JSON5 is normalised to YAML bytes and decoded by yaml.v3 rather than fed to
 // json5.Unmarshal directly, which is what the loader and the validator already
@@ -43,13 +32,12 @@ func IsJSON5Format(format string) bool {
 // declared - the #493 symptom reached through a second door.
 func UnmarshalRecipe(data []byte, format string) (Recipe, error) {
 	recipe := Recipe{}
-	if IsJSON5Format(format) {
-		converted, err := json5ToYAMLBytes(data)
-		if err != nil {
-			return nil, fmt.Errorf("json5 unmarshal error: %v", err.Error())
-		}
-		data = converted
+	codec := CodecFor(format)
+	converted, problem := codec.ToYAML(data)
+	if problem != nil {
+		return nil, fmt.Errorf("%s unmarshal error: %v", codec.Name(), problem.Message)
 	}
+	data = converted
 	if err := yaml.Unmarshal(data, &recipe); err != nil {
 		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
 	}
@@ -576,7 +564,7 @@ func GetTasks(data []byte, context map[string]interface{}) (OrderedStringEnvelop
 // the evaluation context (file-level only, per the spec - the play's own
 // inputs are not visible to its own when).
 func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
-	return GetPlaysWithFormat(data, FormatYAML, context, userSet)
+	return GetPlaysWithFormat(data, DefaultCodec().Name(), context, userSet)
 }
 
 // GetPlaysWithFormat is the format-aware variant of GetPlays. format is
