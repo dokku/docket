@@ -157,8 +157,7 @@ func permissiveVarsRecipe(t *testing.T) (recipe string, vars string) {
 // TestApplyWarnsOnPermissiveVarsFile pins where the warning comes out: stderr,
 // through the same Ui.Warn the ambiguous-task-file notice uses.
 func TestApplyWarnsOnPermissiveVarsFile(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: false})
 
 	recipe, vars := permissiveVarsRecipe(t)
 	stdout, stderr, exit := runApply(t, recipe, "--vars-file", vars)
@@ -178,8 +177,7 @@ func TestApplyWarnsOnPermissiveVarsFile(t *testing.T) {
 // schema's reason field is a closed enum. Routed to stderr it cannot reach the
 // stream at all, so every stdout line still parses.
 func TestApplyJSONKeepsVarsFileWarningOffTheStream(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: false})
 
 	recipe, vars := permissiveVarsRecipe(t)
 	stdout, stderr, exit := runApply(t, recipe, "--json", "--vars-file", vars)

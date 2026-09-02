@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,7 +22,7 @@ func runApply(t *testing.T, path string, args ...string) (string, string, int) {
 	t.Helper()
 	argv := []string{"docket-test", "apply", "--tasks", path}
 
-	c := &ApplyCommand{Argv: argv}
+	c := &ApplyCommand{Argv: argv, Ctx: withStubFixtures(context.Background(), stubsFor(t))}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
 	all := append([]string{"--tasks", path}, args...)
 	exit := c.Run(all)
@@ -44,9 +45,8 @@ func writeTasksFile(t *testing.T, body string) string {
 // `registered.first.Changed`. The follow-up should run when first
 // changed and skip otherwise.
 func TestApplyRegisterMakesPriorResultAvailable(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -73,9 +73,8 @@ func TestApplyRegisterMakesPriorResultAvailable(t *testing.T) {
 // not change, the follow-up's when: predicate is falsy and the task
 // renders as [skipped].
 func TestApplyRegisterFalseSkipsFollowUp(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: false})
-	stubSet("b", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: false})
+	stubSet(t, "b", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -98,8 +97,7 @@ func TestApplyRegisterFalseSkipsFollowUp(t *testing.T) {
 // TestApplyChangedWhenFalseFlipsToOK: changed_when: false flips a
 // self-reported-changed task to [ok].
 func TestApplyChangedWhenFalseFlipsToOK(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -122,8 +120,7 @@ func TestApplyChangedWhenFalseFlipsToOK(t *testing.T) {
 // TestApplyChangedWhenTrueFlipsToChanged: changed_when: true converts
 // an in-sync task to [changed].
 func TestApplyChangedWhenTrueFlipsToChanged(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -143,8 +140,7 @@ func TestApplyChangedWhenTrueFlipsToChanged(t *testing.T) {
 // TestApplyFailedWhenSuppressesExpectedError: failed_when matching the
 // stderr pattern clears the error, exit is 0.
 func TestApplyFailedWhenSuppressesExpectedError(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{
+	stubSet(t, "a", StubFixture{
 		ExecuteError: stubExecError("App nonexistent does not exist"),
 		Stderr:       "App nonexistent does not exist",
 	})
@@ -167,8 +163,7 @@ func TestApplyFailedWhenSuppressesExpectedError(t *testing.T) {
 // TestApplyFailedWhenTrueMarksSuccessAsError: failed_when: true on a
 // successful task flips it to [error] and the run aborts (exit 1).
 func TestApplyFailedWhenTrueMarksSuccessAsError(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: false})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -190,8 +185,7 @@ func TestApplyFailedWhenTrueMarksSuccessAsError(t *testing.T) {
 // and aborts the run with a non-zero exit. This is the baseline the
 // group path is expected to match (see TestApplyGroupBlockStateMismatchFailsGroup).
 func TestApplyLeafStateMismatchFailsRun(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{MismatchState: true})
+	stubSet(t, "a", StubFixture{MismatchState: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -211,8 +205,7 @@ func TestApplyLeafStateMismatchFailsRun(t *testing.T) {
 // also normalizes State to DesiredState so the state-mismatch branch
 // does not re-flag the task.
 func TestApplyFailedWhenFalseClearsStateMismatch(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{MismatchState: true, Changed: true})
+	stubSet(t, "a", StubFixture{MismatchState: true, Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -233,9 +226,8 @@ func TestApplyFailedWhenFalseClearsStateMismatch(t *testing.T) {
 // the run going past an erroring task. The error event is still
 // emitted but the second task runs and the exit code is 0.
 func TestApplyIgnoreErrorsContinuesPastFailure(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{ExecuteError: errors.New("boom")})
-	stubSet("b", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{ExecuteError: errors.New("boom")})
+	stubSet(t, "b", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -261,8 +253,7 @@ func TestApplyIgnoreErrorsContinuesPastFailure(t *testing.T) {
 // successful task is a no-op; the task still renders as [ok] /
 // [changed] and the run exits 0.
 func TestApplyIgnoreErrorsNoOpOnSuccess(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -286,9 +277,8 @@ func TestApplyIgnoreErrorsNoOpOnSuccess(t *testing.T) {
 // accumulates per-iteration states into Results, and the aggregate
 // Changed reflects "any iteration changed."
 func TestApplyLoopRegisterAccumulatesResults(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: false})
-	stubSet("b", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: false})
+	stubSet(t, "b", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:

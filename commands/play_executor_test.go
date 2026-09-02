@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func runPlan(t *testing.T, path string, args ...string) (string, string, int) {
 	t.Helper()
 	argv := []string{"docket-test", "plan", "--tasks", path}
 
-	c := &PlanCommand{Argv: argv}
+	c := &PlanCommand{Argv: argv, Ctx: withStubFixtures(context.Background(), stubsFor(t))}
 	c.Meta = command.Meta{Ui: cli.NewMockUi()}
 	all := append([]string{"--tasks", path}, args...)
 	exit := c.Run(all)
@@ -184,9 +185,8 @@ func TestMultiPlayPlayLevelTagsPropagateToTasks(t *testing.T) {
 // same way it does in apply: the second task's `when:` evaluates
 // against the synthesized TaskOutputState of the first.
 func TestPlanRegisteredVisibleToFollowUp(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: false})
 
 	path := writeMultiPlayTasks(t, `---
 - tasks:
@@ -210,8 +210,7 @@ func TestPlanRegisteredVisibleToFollowUp(t *testing.T) {
 // rewrites the synthesized TaskOutputState's Error so the plan
 // classifier no longer treats the task as a probe error.
 func TestPlanFailedWhenClearsError(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{
+	stubSet(t, "a", StubFixture{
 		PlanError: errors.New("App nonexistent does not exist"),
 		Stderr:    "App nonexistent does not exist",
 	})
@@ -237,8 +236,7 @@ func TestPlanFailedWhenClearsError(t *testing.T) {
 // 1, not 2). This is the end-to-end guard for #328: a probe that could
 // not run must not be reported as absent with an optimistic [+] create.
 func TestPlanProbeErrorRendersMarkerAndExits(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{
+	stubSet(t, "a", StubFixture{
 		PlanError: errors.New(`exec: "dokku": executable file not found in $PATH`),
 	})
 
@@ -271,8 +269,7 @@ func TestPlanProbeErrorRendersMarkerAndExits(t *testing.T) {
 // would-change verdict, not leave the stale [ok] / "status":"ok" the
 // probe returned.
 func TestPlanChangedWhenTrueRecomputesStatus(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: false}) // Plan() -> InSync, PlanStatusOK
+	stubSet(t, "a", StubFixture{Changed: false}) // Plan() -> InSync, PlanStatusOK
 
 	path := writeMultiPlayTasks(t, `---
 - tasks:
@@ -321,8 +318,7 @@ func TestPlanChangedWhenTrueRecomputesStatus(t *testing.T) {
 // failed_when clearing a probe error leaves a would-change line marked
 // [~], not the stale [!] the probe returned.
 func TestPlanFailedWhenClearingErrorRecomputesStatus(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{
+	stubSet(t, "a", StubFixture{
 		PlanError: errors.New("App nonexistent does not exist"),
 		Stderr:    "App nonexistent does not exist",
 	})
@@ -352,9 +348,8 @@ func TestPlanFailedWhenClearingErrorRecomputesStatus(t *testing.T) {
 // register name reused across tasks at load time (the same rule validate
 // enforces) instead of silently merging results.
 func TestPlanRejectsDuplicateRegisterName(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: false})
 
 	path := writeMultiPlayTasks(t, `---
 - tasks:
@@ -379,9 +374,8 @@ func TestPlanRejectsDuplicateRegisterName(t *testing.T) {
 // predicate that reads it plans normally instead of failing with an
 // index-out-of-range error.
 func TestPlanSingleIterationLoopRegisterResultsIndex(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: false})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: false})
 
 	path := writeMultiPlayTasks(t, `---
 - tasks:

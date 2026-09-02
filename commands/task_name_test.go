@@ -40,7 +40,6 @@ func jsonTaskNames(t *testing.T, path string) []string {
 // change an unnamed task carried eight random bytes and a consumer diffing one
 // run against another could line nothing up.
 func TestApplyJSONTaskNamesAreStableAcrossRuns(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - dokku_stub: { key: a }
@@ -65,7 +64,6 @@ func TestApplyJSONTaskNamesAreStableAcrossRuns(t *testing.T) {
 // task could not be named on the command line at all before, because its name
 // was different every run.
 func TestApplyStartAtTaskAcceptsGeneratedName(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - dokku_stub: { key: a }
@@ -91,7 +89,6 @@ func TestApplyStartAtTaskAcceptsGeneratedName(t *testing.T) {
 // is usable: when the name matches nothing, the available names it prints are
 // the addresses the user would have to type.
 func TestApplyStartAtTaskUnknownNameListsGeneratedNames(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - dokku_stub: { key: a }

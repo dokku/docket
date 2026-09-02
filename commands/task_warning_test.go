@@ -32,8 +32,7 @@ const warningRecipe = `---
 `
 
 func TestPlanSurfacesProbeWarning(t *testing.T) {
-	defer stubReset()
-	stubSet("a", stubWithWarning())
+	stubSet(t, "a", stubWithWarning())
 	path := writeTasksFile(t, warningRecipe)
 
 	stdout, _, _ := runPlan(t, path)
@@ -53,8 +52,7 @@ func TestPlanSurfacesProbeWarning(t *testing.T) {
 }
 
 func TestApplySurfacesProbeWarning(t *testing.T) {
-	defer stubReset()
-	stubSet("a", stubWithWarning())
+	stubSet(t, "a", stubWithWarning())
 	path := writeTasksFile(t, warningRecipe)
 
 	stdout, _, _ := runApply(t, path)
@@ -116,8 +114,7 @@ func stubWithInSyncWarning() StubFixture {
 }
 
 func TestPlanSurfacesWarningOnInSyncTask(t *testing.T) {
-	defer stubReset()
-	stubSet("a", stubWithInSyncWarning())
+	stubSet(t, "a", stubWithInSyncWarning())
 	path := writeTasksFile(t, warningRecipe)
 
 	stdout, _, _ := runPlan(t, path)
@@ -134,8 +131,7 @@ func TestPlanSurfacesWarningOnInSyncTask(t *testing.T) {
 }
 
 func TestApplySurfacesWarningOnInSyncTask(t *testing.T) {
-	defer stubReset()
-	stubSet("a", stubWithInSyncWarning())
+	stubSet(t, "a", stubWithInSyncWarning())
 	path := writeTasksFile(t, warningRecipe)
 
 	stdout, _, _ := runApply(t, path)

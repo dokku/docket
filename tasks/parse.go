@@ -730,6 +730,21 @@ func problemToError(p Problem) error {
 // nil pointer (the historical loader allocation panicked in SetDefaults
 // on `dokku_app:` with no body). Shared by the loader's direct and loop
 // decode paths and by the validator's body checks.
+// go-defaults builds its filler lazily into an unsynchronised package
+// variable, so the first two goroutines to call SetDefaults race on creating
+// it. Every recipe decode goes through SetDefaults, so any two tests that load
+// a recipe at the same time trip the detector on a library global neither of
+// them can see.
+//
+// Warming it here settles the variable on the goroutine that imports the
+// package, before any test has started one of its own. After that first write
+// it is only ever read, and goroutine creation orders those reads behind it.
+func init() {
+	defaults.SetDefaults(&struct {
+		Warm string `default:"warm"`
+	}{})
+}
+
 func decodeTaskBytes(typeKey string, body []byte) (Task, error) {
 	registered, ok := RegisteredTasks[typeKey]
 	if !ok {

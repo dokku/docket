@@ -27,7 +27,7 @@ func runApplyWithTarget(t *testing.T, path string, args ...string) (map[string][
 		})
 
 	ui := cli.NewMockUi()
-	c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
+	c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: withStubFixtures(ctx, stubsFor(t))}
 	c.Run(append([]string{"--tasks", path}, args...))
 	return seen, ui.OutputWriter.String()
 }
@@ -126,7 +126,7 @@ func TestApplyPlaySudoInheritsAndDeclines(t *testing.T) {
 			return subprocess.ExecCommandResponse{}, nil
 		})
 
-	c := &ApplyCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv, Ctx: ctx}
+	c := &ApplyCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv, Ctx: withStubFixtures(ctx, stubsFor(t))}
 	c.Run([]string{"--tasks", path, "--sudo"})
 
 	if !sudoByHost["deploy@one.example.com"] {
@@ -153,7 +153,7 @@ func TestPlanRoutesEachPlayToItsOwnHost(t *testing.T) {
 		})
 
 	ui := cli.NewMockUi()
-	c := &PlanCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: ctx}
+	c := &PlanCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: withStubFixtures(ctx, stubsFor(t))}
 	c.Run([]string{"--tasks", path})
 
 	if !seen[""] || !seen["deploy@remote.example.com"] {

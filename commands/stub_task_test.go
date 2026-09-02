@@ -3,7 +3,9 @@ package commands
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
+	"testing"
 
 	"github.com/dokku/docket/tasks"
 )
@@ -59,7 +61,7 @@ func (t StubTask) ProbeSupport() tasks.ProbeSupport {
 }
 
 func (t StubTask) Plan(ctx context.Context) tasks.PlanResult {
-	fixture := stubGet(t.Key)
+	fixture := stubFixtureFor(ctx, t.Key)
 	if fixture.Hook != nil {
 		fixture.Hook()
 	}
@@ -93,7 +95,7 @@ func (t StubTask) Plan(ctx context.Context) tasks.PlanResult {
 }
 
 func (t StubTask) Execute(ctx context.Context) tasks.TaskOutputState {
-	fixture := stubGet(t.Key)
+	fixture := stubFixtureFor(ctx, t.Key)
 	if fixture.Hook != nil {
 		fixture.Hook()
 	}
@@ -157,27 +159,69 @@ type StubFixture struct {
 	Hook func()
 }
 
+// stubFixtures is one test's set of stub answers, keyed the way that test
+// chose. It travels to the task on the run context, so two tests can use the
+// same key for different answers.
+type stubFixtures map[string]StubFixture
+
+// stubFixturesKey is the context key a test's fixture set travels under.
+type stubFixturesKey struct{}
+
+// withStubFixtures returns a context carrying f, which is how the stub task
+// finds its answers without a package-level map.
+func withStubFixtures(ctx context.Context, f stubFixtures) context.Context {
+	if len(f) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, stubFixturesKey{}, f)
+}
+
+// stubFixtureFor returns the fixture registered for key on ctx, or the zero
+// fixture when none is - which is the "nothing to do, task is in sync" answer.
+func stubFixtureFor(ctx context.Context, key string) StubFixture {
+	if ctx == nil {
+		return StubFixture{}
+	}
+	f, _ := ctx.Value(stubFixturesKey{}).(stubFixtures)
+	return f[key]
+}
+
+// pendingStubs collects what each test registered before it started a run.
+// Keyed by the test rather than by fixture name, so the names tests pick -
+// "a" appears in 38 of them - cannot collide, and finishing one test cannot
+// wipe another's answers the way the single shared map it replaced did.
 var (
-	stubMu       sync.Mutex
-	stubFixtures = map[string]StubFixture{}
+	pendingMu sync.Mutex
+	pending   = map[*testing.T]stubFixtures{}
 )
 
-func stubSet(key string, f StubFixture) {
-	stubMu.Lock()
-	defer stubMu.Unlock()
-	stubFixtures[key] = f
+// stubSet registers a fixture for this test. The run helpers lift what a test
+// registered onto the context they build, so it reaches the task from there.
+func stubSet(t *testing.T, key string, f StubFixture) {
+	t.Helper()
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+	if pending[t] == nil {
+		pending[t] = stubFixtures{}
+		t.Cleanup(func() {
+			pendingMu.Lock()
+			defer pendingMu.Unlock()
+			delete(pending, t)
+		})
+	}
+	pending[t][key] = f
 }
 
-func stubGet(key string) StubFixture {
-	stubMu.Lock()
-	defer stubMu.Unlock()
-	return stubFixtures[key]
-}
-
-func stubReset() {
-	stubMu.Lock()
-	defer stubMu.Unlock()
-	stubFixtures = map[string]StubFixture{}
+// stubsFor returns a copy of what t registered, so the run reads a set nothing
+// can mutate underneath it.
+func stubsFor(t *testing.T) stubFixtures {
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+	out := stubFixtures{}
+	for k, v := range pending[t] {
+		out[k] = v
+	}
+	return out
 }
 
 // stubExecError returns an error that, when threaded through the
@@ -189,4 +233,38 @@ func stubExecError(stderr string) error {
 
 func init() {
 	tasks.RegisterTask(&StubTask{})
+}
+
+// TestStubFixturesDoNotCollideAcrossTests is the property #506 exists for.
+// The registry this replaced was a single process-wide map keyed by whatever
+// name each test picked, and the names collide hard - "a" appears in 38 tests.
+// Two of them running at once clobbered each other, and either one finishing
+// wiped the whole map while the other was still running.
+//
+// Both subtests register "a" with opposite answers and run in parallel. Under
+// the old map one of them would have read the other's fixture, or none at all.
+func TestStubFixturesDoNotCollideAcrossTests(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]bool{"changed": true, "unchanged": false}
+	for name, changed := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			stubSet(t, "a", StubFixture{Changed: changed})
+
+			path := writeTasksFile(t, `---
+- tasks:
+    - name: only
+      dokku_stub: { key: a }
+`)
+			stdout, _, exit := runApply(t, path, "--detailed-exitcode")
+			if exit != map[bool]int{true: 2, false: 0}[changed] {
+				t.Errorf("exit = %d for Changed=%v; the other subtest's fixture answered", exit, changed)
+			}
+			want := map[bool]string{true: "[changed]", false: "[ok]"}[changed]
+			if !strings.Contains(stdout, want) {
+				t.Errorf("output should contain %q for Changed=%v:\n%s", want, changed, stdout)
+			}
+		})
+	}
 }

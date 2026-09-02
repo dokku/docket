@@ -115,7 +115,6 @@ func TestHelpKeepsNonSensitiveInputDefault(t *testing.T) {
 // is the declared default - which reaches the mask registry through
 // Argument.StringValue() exactly as a --vars-file or CLI value would.
 func TestListTasksMasksSensitiveInputResolvedFromDefault(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - inputs:
     - { name: secret_value, default: defaultsecretzzz, sensitive: true }

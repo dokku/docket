@@ -11,7 +11,6 @@ import (
 // unset so a stray Execute() call would render as a [changed] line and
 // trip one of the assertions below.
 func TestApplyListTasksPrintsResolvedPlan(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: create api
@@ -45,7 +44,6 @@ func TestApplyListTasksPrintsResolvedPlan(t *testing.T) {
 // the loader produced `task #1 <hex>` and this display substituted the task
 // type plus one guessed field.
 func TestApplyListTasksUnnamedTasksShowResourceAddress(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - dokku_app: { app: docket-test-list-1 }
@@ -69,7 +67,6 @@ func TestApplyListTasksUnnamedTasksShowResourceAddress(t *testing.T) {
 // heuristic got wrong: it keyed on the first App-like field, so every phase
 // and option of one app's docker options collapsed onto the same label.
 func TestApplyListTasksDistinguishesSameAppTasks(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - dokku_docker_options: { app: api, phase: deploy, option: "--memory=512m" }
@@ -96,7 +93,6 @@ func TestApplyListTasksDistinguishesSameAppTasks(t *testing.T) {
 // things: `(never converges)` is total, `(partial probe)` converges for the
 // fields it does read. A task that probes everything it manages is unmarked.
 func TestApplyListTasksMarksProbeSupport(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: unprobeable
@@ -133,7 +129,6 @@ func TestApplyListTasksMarksProbeSupport(t *testing.T) {
 // listing should omit tasks the tag filter would drop, just like the
 // executor does.
 func TestApplyListTasksHonorsTags(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: api task
@@ -159,7 +154,6 @@ func TestApplyListTasksHonorsTags(t *testing.T) {
 // expanded in the listing - one line per iteration, with the iteration
 // suffix already rendered into the name.
 func TestApplyListTasksLoopExpansion(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: deploy
@@ -181,7 +175,6 @@ func TestApplyListTasksLoopExpansion(t *testing.T) {
 // envelopes whose static when: predicate evaluates false against the
 // inputs context.
 func TestApplyListTasksWhenFalseShowsSkipped(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: gated
@@ -202,7 +195,6 @@ func TestApplyListTasksWhenFalseShowsSkipped(t *testing.T) {
 // that depend on prior task state, so the line renders [unknown]
 // rather than [skipped].
 func TestApplyListTasksWhenRegisteredShowsUnknown(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: first
@@ -228,7 +220,6 @@ func TestApplyListTasksWhenRegisteredShowsUnknown(t *testing.T) {
 // `failed_task` only once a block child has failed. It renders
 // [unknown], not the [when?] that reports a valid recipe as broken.
 func TestApplyListTasksRescueWhenFailedTaskShowsUnknown(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: deploy
@@ -259,7 +250,6 @@ func TestApplyListTasksRescueWhenFailedTaskShowsUnknown(t *testing.T) {
 // run time exactly as it does here. That is a broken predicate, so it
 // renders [when?] and fails the listing.
 func TestApplyListTasksFailedTaskOutsideRescueShowsWhenError(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: misplaced
@@ -280,7 +270,6 @@ func TestApplyListTasksFailedTaskOutsideRescueShowsWhenError(t *testing.T) {
 // each child indented with the [block] / [rescue] / [always] phase
 // label.
 func TestApplyListTasksGroupRendersChildren(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: deploy with rollback
@@ -311,8 +300,7 @@ func TestApplyListTasksGroupRendersChildren(t *testing.T) {
 // listing should appear without any plan-time probe being run. We
 // verify by confirming a stub key's PlanError is never surfaced.
 func TestPlanListTasksWorks(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{PlanError: stubExecError("plan must not run")})
+	stubSet(t, "a", StubFixture{PlanError: stubExecError("plan must not run")})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -338,7 +326,6 @@ func TestPlanListTasksWorks(t *testing.T) {
 // carries `play` where the run stream's carries `name`, and it has no
 // `ts` - which is why it has its own schema file.
 func TestListTasksJSONMatchesSchema(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - name: skipped play
   when: 'false'
@@ -420,7 +407,6 @@ func TestListTasksJSONMatchesSchema(t *testing.T) {
 // --start-at-task pointing at a name that does not exist returns 1
 // with the available-names hint.
 func TestApplyStartAtTaskUnknownErrors(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: first
@@ -470,7 +456,6 @@ const playWhenErrorTasks = `---
 // The rest of the listing still renders: the walk is not short-circuited,
 // only the exit code carries the failure.
 func TestListTasksPlayWhenErrorExitsOne(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, playWhenErrorTasks)
 
 	stdout, stderr, exit := runApply(t, path, "--list-tasks")
@@ -498,7 +483,6 @@ func TestListTasksPlayWhenErrorExitsOne(t *testing.T) {
 // The schema has always documented both forms; only `when: <src>` was
 // reachable from a test before this.
 func TestListTasksPlayWhenErrorJSONExitsOne(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, playWhenErrorTasks)
 
 	stdout, stderr, exit := runApply(t, path, "--list-tasks", "--json")
@@ -528,7 +512,6 @@ func TestListTasksPlayWhenErrorJSONExitsOne(t *testing.T) {
 // As with a play, the walk is not short-circuited: the rest of the play
 // still lists and only the exit code carries the failure.
 func TestListTasksTaskWhenErrorExitsOne(t *testing.T) {
-	defer stubReset()
 	path := writeTasksFile(t, `---
 - tasks:
     - name: broken predicate
@@ -566,7 +549,6 @@ func TestListTasksTaskWhenErrorUnderUnreachableGroupDoesNotAffectExit(t *testing
 		{"unknown group", `'registered.earlier.Changed'`, "[unknown] gate"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			defer stubReset()
 			path := writeTasksFile(t, `---
 - tasks:
     - name: gate
@@ -627,10 +609,9 @@ func TestWhenReferencesRuntimeValue(t *testing.T) {
 // [skipped] for tasks before the target and runs the matched task plus
 // successors. The stub fixtures track which tasks actually execute.
 func TestApplyStartAtTaskSkipsEarlier(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: true})
-	stubSet("c", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: true})
+	stubSet(t, "c", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -662,10 +643,9 @@ func TestApplyStartAtTaskSkipsEarlier(t *testing.T) {
 // / always per normal block semantics. We verify the matched child
 // runs and the earlier child does not.
 func TestApplyStartAtTaskInsideBlock(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: true})
-	stubSet("c", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: true})
+	stubSet(t, "c", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -699,10 +679,9 @@ func TestApplyStartAtTaskInsideBlock(t *testing.T) {
 // silently no-oped. The documented order selects the resume point
 // first, then narrows by tags, so a later tag-matching task runs.
 func TestApplyStartAtTaskThenTags(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: true})
-	stubSet("c", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: true})
+	stubSet(t, "c", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -739,10 +718,9 @@ func TestApplyStartAtTaskThenTags(t *testing.T) {
 // --skip-tags path: the resume target is dropped by --skip-tags but the
 // gate still resumes so a later surviving task runs.
 func TestApplyStartAtTaskThenSkipTags(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: true})
-	stubSet("c", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: true})
+	stubSet(t, "c", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
@@ -776,9 +754,8 @@ func TestApplyStartAtTaskThenSkipTags(t *testing.T) {
 // fail the filter: descent into the resume-point group bypasses tag
 // filtering so an explicitly named child is never hidden by --tags.
 func TestApplyStartAtTaskGroupChildWithTags(t *testing.T) {
-	defer stubReset()
-	stubSet("a", StubFixture{Changed: true})
-	stubSet("b", StubFixture{Changed: true})
+	stubSet(t, "a", StubFixture{Changed: true})
+	stubSet(t, "b", StubFixture{Changed: true})
 
 	path := writeTasksFile(t, `---
 - tasks:
