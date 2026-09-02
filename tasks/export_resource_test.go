@@ -222,3 +222,44 @@ func TestExportedRecipeLoadsWithoutNameCollisions(t *testing.T) {
 		}
 	}
 }
+
+// TestExportResourceGlobalAddressSurvivesAppNarrowing is the regression lock on
+// #518. `--app foo` alone means "this app, not the server", so the global play
+// is skipped - but an address that names a global resource is asking for it by
+// name, and the global play is the only place it can come from. The two
+// together used to export nothing and report the address as missing from a
+// server that had it.
+func TestExportResourceGlobalAddressSurvivesAppNarrowing(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet apps:list": "app-one",
+		"--quiet plugin:list --format json": `[
+			{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"","branch":""}
+		]`,
+	}))
+	selectors, err := ParseResourceSelectors([]string{"dokku_plugin[name=redis]"})
+	if err != nil {
+		t.Fatalf("ParseResourceSelectors: %v", err)
+	}
+
+	res, err := ExportRecipe(ctx, ExportOptions{Apps: []string{"app-one"}, Resources: selectors, Inline: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+
+	if !strings.Contains(string(recipe), "dokku_plugin") {
+		t.Errorf("the addressed global resource is missing from the recipe; got:\n%s", recipe)
+	}
+	if len(res.Report.MissingResources) > 0 {
+		t.Errorf("address reported as unmatched against a server that has it: %v", res.Report.MissingResources)
+	}
+	// --app still keeps the run off other apps: the address named no app-scoped
+	// resource, so no app play should be emitted at all.
+	if strings.Contains(string(recipe), "name: app-one") {
+		t.Errorf("a global-only address must not emit app plays; got:\n%s", recipe)
+	}
+}

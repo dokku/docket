@@ -21,5 +21,6 @@ Complete documentation for docket, a declarative way to pre-package and ship app
 - [Migration](migration.md) -- move a Dokku setup to a new server
 - [JSON output](json-output.md) -- the `--json` event schema for `apply` and `plan`
 - [Wrapping docket from ansible-dokku](ansible-dokku.md) -- the contract for driving docket from another tool
+- [Embedding docket in Go](embedding.md) -- reading a server back as structured data from Go
 - [Writing tasks](writing-tasks.md) -- contribute a new task type
 - [Roadmap](roadmap.md) -- ideas for where docket could go next

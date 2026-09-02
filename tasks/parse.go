@@ -745,6 +745,44 @@ func init() {
 	}{})
 }
 
+// NewTask allocates a task of the given registry type-key with its `default:`
+// tags applied, ready to have its fields set.
+//
+// Building a task by struct literal is the documented way to drive the engine
+// from Go, and it skips the defaults the loader applies - a literal with no
+// State gets "" rather than "present", which falls into the `invalid state: ""`
+// branch of DispatchPlan instead of behaving the way the field tag says it
+// should. The only code that got this right was decodeTaskBytes, which is
+// unexported and needs YAML to go through. This is the same allocation without
+// the round trip (#425).
+//
+// The returned Task is a pointer to the registered type, so a caller sets
+// fields through a type assertion:
+//
+//	task, err := tasks.NewTask("dokku_app")
+//	app := task.(*tasks.AppTask)
+//	app.App = "api"
+func NewTask(typeKey string) (Task, error) {
+	registered, ok := RegisteredTasks[typeKey]
+	if !ok {
+		return nil, fmt.Errorf("unknown task type %q", typeKey)
+	}
+	v := reflect.New(reflect.TypeOf(registered).Elem())
+	defaults.SetDefaults(v.Interface())
+	task, ok := v.Interface().(Task)
+	if !ok {
+		return nil, fmt.Errorf("registered type for %q does not implement Task", typeKey)
+	}
+	return task, nil
+}
+
+// DecodeTask builds a task of the given type-key from a YAML task body, with
+// defaults applied - the loader's own path, exported so a caller holding a
+// recipe fragment does not have to reimplement it (#425).
+func DecodeTask(typeKey string, body []byte) (Task, error) {
+	return decodeTaskBytes(typeKey, body)
+}
+
 func decodeTaskBytes(typeKey string, body []byte) (Task, error) {
 	registered, ok := RegisteredTasks[typeKey]
 	if !ok {
