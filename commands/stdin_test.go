@@ -10,14 +10,12 @@ import (
 	"github.com/mitchellh/cli"
 )
 
-// withStdinArgs drives a command the way the real CLI does: os.Args
-// carries the full argv (FlagSet reads it before pflag parses, to
-// preregister the recipe's inputs as flags) and os.Stdin carries the
-// recipe. Returns the MockUi so callers can assert on output.
-//
-// resetStdinRecipe bookends the swap because readStdinRecipe memoizes
-// its own pipe and argv, so two of these can no longer serve each other the
-// wrong bytes through a process-wide memo.
+// withStdinArgs drives a command the way the real CLI does: argv carries
+// the full command line (FlagSet reads it before pflag parses, to
+// preregister the recipe's inputs as flags) and a pipe carries the recipe.
+// Both are handed to fn rather than assigned to os.Args and os.Stdin, so
+// two of these can run at once without serving each other the wrong bytes.
+// Returns the MockUi so callers can assert on output.
 func withStdinArgs(t *testing.T, recipe string, args []string, fn func(stdin io.Reader, argv []string)) {
 	t.Helper()
 
