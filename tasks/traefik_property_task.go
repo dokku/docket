@@ -30,8 +30,12 @@ func (t TraefikPropertyTask) ExportSupport() ExportSupport {
 }
 
 // ProbeSupport reports whether Plan() can read this task's current state.
+//
+// Supported without a caveat because dokku 0.38.27+ reports the dynamic
+// `dns-provider-*` family alongside the mapped properties, so every property
+// this task manages is readable and converges (#450).
 func (t TraefikPropertyTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "the mapped properties are probed; the dynamic `dns-provider-*` family has no report key and plans as drift on every run"}
+	return ProbeSupport{Status: ProbeSupported}
 }
 
 // Examples returns the examples for the traefik property task
@@ -54,6 +58,14 @@ func (t TraefikPropertyTask) Examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Setting a dns-provider-* env var globally",
+			TraefikPropertyTask: TraefikPropertyTask{
+				Global:   true,
+				Property: "dns-provider-CLOUDFLARE_DNS_API_TOKEN",
+				Value:    "cf-token",
+			},
+		},
+		{
 			Name: "Clearing the letsencrypt email globally",
 			TraefikPropertyTask: TraefikPropertyTask{
 				Global:   true,
@@ -71,8 +83,9 @@ func (t TraefikPropertyTask) Execute(ctx context.Context) TaskOutputState {
 
 // traefikPropertyTable maps traefik property names to the JSON keys emitted
 // by `dokku traefik:report --format json` on dokku 0.38.8+. All properties
-// are global-only. The `dns-provider-*` family is dynamic and handled by
-// isDynamicProperty without a map entry.
+// are global-only. The `dns-provider-*` family takes an arbitrary provider env
+// var name, so it cannot be enumerated here; its global-only key is synthesized
+// per property by dynamicPropertyKeys, which dokku 0.38.27+ reports.
 var traefikPropertyTable = PropertyTable{
 	Subcommand: "traefik:set",
 	Keys: map[string]PropertyKeys{

@@ -148,15 +148,19 @@ setup() {
   assert_success
   echo "$output" |
     jq -e '.tasks[] | select(.type == "dokku_letsencrypt_property") | .property_schema.dynamic[]
-           | select(.prefix == "dns-provider-") | .probeable == true and .sensitive == true' >/dev/null ||
+           | select(.prefix == "dns-provider-")
+           | .probeable == true and .sensitive == true and .scopes == ["app", "global"]' >/dev/null ||
     fail "letsencrypt does not publish its dns-provider- family"
 
-  # traefik holds the same credentials but does not report them, so the family
-  # is sensitive without being probeable (#457).
+  # traefik holds the same credentials and reports them the same way, but
+  # traefik:set refuses the family outside --global, so it is published
+  # global-only (#450). A consumer that ignored scopes would accept a recipe
+  # dokku rejects.
   echo "$output" |
     jq -e '.tasks[] | select(.type == "dokku_traefik_property") | .property_schema.dynamic[]
-           | select(.prefix == "dns-provider-") | .probeable == false and .sensitive == true' >/dev/null ||
-    fail "traefik does not publish its dns-provider- family as sensitive"
+           | select(.prefix == "dns-provider-")
+           | .probeable == true and .sensitive == true and .scopes == ["global"]' >/dev/null ||
+    fail "traefik does not publish its dns-provider- family as global-only"
 }
 
 @test "docket schema publishes property name families a task refuses (#458)" {

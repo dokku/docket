@@ -317,6 +317,13 @@ type DynamicPropertySchema struct {
 
 	// Sensitive is true when docket treats members as secrets.
 	Sensitive bool `json:"sensitive,omitempty"`
+
+	// Scopes is a non-empty subset of ["app", "global"], in that order, read
+	// the same way as PropertyEntrySchema.Scopes: a family listed only under
+	// "global" is rejected for an app at validate time, matching dokku's own
+	// rejection. traefik's `dns-provider-*` credentials are global-only that
+	// way, while letsencrypt's identically named family takes both.
+	Scopes []string `json:"scopes"`
 }
 
 // RejectedPropertySchema is a family of property names the task refuses,

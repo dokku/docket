@@ -246,10 +246,15 @@ func TestDynamicPropertyFamiliesArePublished(t *testing.T) {
 			continue
 		}
 		for _, family := range families {
-			want := DynamicPropertySchema{Prefix: family.Prefix, Probeable: family.Probeable, Sensitive: family.Sensitive}
+			want := DynamicPropertySchema{
+				Prefix:    family.Prefix,
+				Probeable: family.Probeable,
+				Sensitive: family.Sensitive,
+				Scopes:    family.Scopes,
+			}
 			found := false
 			for _, got := range published {
-				if got == want {
+				if reflect.DeepEqual(got, want) {
 					found = true
 				}
 			}
@@ -270,6 +275,32 @@ func TestDynamicPropertyFamiliesArePublished(t *testing.T) {
 	}
 }
 
+// TestDynamicPropertyFamiliesDeclareTheirScopes asserts every family names the
+// scopes its members may be used in. The field is what validateProperty holds a
+// dynamic name to and what keysFor synthesizes from, so a family that leaves it
+// empty accepts its members nowhere while still publishing them as legal names.
+func TestDynamicPropertyFamiliesDeclareTheirScopes(t *testing.T) {
+	valid := map[string]bool{PropertyScopeApp: true, PropertyScopeGlobal: true}
+	for plugin, families := range dynamicPropertyFamilies {
+		for _, family := range families {
+			if len(family.Scopes) == 0 {
+				t.Errorf("plugin %q family %q declares no scopes", plugin, family.Prefix)
+				continue
+			}
+			seen := map[string]bool{}
+			for _, scope := range family.Scopes {
+				if !valid[scope] {
+					t.Errorf("plugin %q family %q declares unknown scope %q", plugin, family.Prefix, scope)
+				}
+				if seen[scope] {
+					t.Errorf("plugin %q family %q repeats scope %q", plugin, family.Prefix, scope)
+				}
+				seen[scope] = true
+			}
+		}
+	}
+}
+
 // TestDynamicFamilySensitivityIsIndependentOfProbing asserts every family's
 // Sensitive mark survives the lookup planProperty and the exporters make.
 // Sensitivity used to be read off an entry only a probeable family ever got, so
@@ -284,6 +315,19 @@ func TestDynamicFamilySensitivityIsIndependentOfProbing(t *testing.T) {
 					plugin, property, got, family.Sensitive, family.Probeable)
 			}
 		}
+	}
+
+	// Every declared family is probeable today, so the loop above can no longer
+	// reach the arm that regressed: sensitivity read off an entry only a
+	// probeable family ever got. Pin it against a synthetic family so the
+	// coupling cannot come back with the next unreported plugin (#457).
+	unprobeable := dynamicPropertyFamily{Prefix: "secret-", Sensitive: true, Scopes: []string{PropertyScopeGlobal}}
+	entry := unprobeable.keysFor("secret-TOKEN")
+	if !entry.Sensitive {
+		t.Error("an unprobeable family must still mark its members sensitive")
+	}
+	if entry.PerApp != "" || entry.Global != "" {
+		t.Errorf("an unprobeable family must synthesize no lookup keys, got %+v", entry)
 	}
 }
 

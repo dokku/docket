@@ -1089,6 +1089,133 @@ func TestExportGlobalTraefikPasswordLiftedAsSensitiveInput(t *testing.T) {
 	}
 }
 
+// TestExportGlobalTraefikDynamicProperties covers the export half of #450:
+// dokku 0.38.27 reports every set `dns-provider-<KEY>` credential as a `global-`
+// row, so the exporter lifts them straight out of the payload instead of
+// dropping the whole family.
+func TestExportGlobalTraefikDynamicProperties(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report --global --format json": `{"global-log-level":"","global-dns-provider":"cloudflare","global-dns-provider-CLOUDFLARE_API_TOKEN":"globaltoken"}`,
+	}))
+
+	bodies, err := exportGlobalProperties(ctx, TraefikPropertyTask{}, func(property, value string) interface{} {
+		return TraefikPropertyTask{Global: true, Property: property, Value: value}
+	})
+	if err != nil {
+		t.Fatalf("exportGlobalProperties: %v", err)
+	}
+	got := map[string]string{}
+	for _, b := range bodies {
+		p := b.(TraefikPropertyTask)
+		if !p.Global {
+			t.Errorf("expected Global:true for %q", p.Property)
+		}
+		got[p.Property] = p.Value
+	}
+	if got["dns-provider-CLOUDFLARE_API_TOKEN"] != "globaltoken" {
+		t.Errorf("dns-provider-CLOUDFLARE_API_TOKEN = %q, want globaltoken", got["dns-provider-CLOUDFLARE_API_TOKEN"])
+	}
+	if got["dns-provider"] != "cloudflare" {
+		t.Errorf("mapped properties should still export, got %v", got)
+	}
+	if _, ok := got["log-level"]; ok {
+		t.Error("an empty global property must be skipped")
+	}
+}
+
+// TestExportTraefikDynamicPropertiesSkipAppScope pins the global-only half. A
+// traefik report is global state whichever scope it is asked for, so the app
+// payload carries the same `global-dns-provider-*` rows; none of them are the
+// app's own value, and the family synthesizes no per-app key to lift them with.
+func TestExportTraefikDynamicPropertiesSkipAppScope(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet traefik:report web --format json": `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"globaltoken","computed-dns-provider":"cloudflare"}`,
+	}))
+
+	bodies, err := exportProperties(ctx, TraefikPropertyTask{}, "web", func(app, property, value string) interface{} {
+		return TraefikPropertyTask{App: app, Property: property, Value: value}
+	})
+	if err != nil {
+		t.Fatalf("exportProperties: %v", err)
+	}
+	if len(bodies) != 0 {
+		t.Errorf("a global-only family must export nothing per app, got %+v", bodies)
+	}
+}
+
+// TestExportGlobalTraefikCredentialLiftedAsSensitiveInput proves the newly
+// exported credential never lands in the recipe in cleartext. Unlike the
+// letsencrypt property task, this one is not built from
+// SensitivePropertyFields, so nothing but the family's Sensitive mark says the
+// value is a secret - which is exactly the coupling #457 broke.
+func TestExportGlobalTraefikCredentialLiftedAsSensitiveInput(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet traefik:report --global --format json": `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"cf-s3cr3t"}`,
+	}))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if got := res.Vars["global_dns_provider_CLOUDFLARE_API_TOKEN"]; got != "cf-s3cr3t" {
+		t.Errorf("vars[global_dns_provider_CLOUDFLARE_API_TOKEN] = %q, want the credential lifted (%v)", got, res.Vars)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	if strings.Contains(out, "cf-s3cr3t") {
+		t.Errorf("recipe leaked the traefik dns provider credential:\n%s", out)
+	}
+	for _, want := range []string{
+		"dokku_traefik_property",
+		"dns-provider-CLOUDFLARE_API_TOKEN",
+		"{{ .global_dns_provider_CLOUDFLARE_API_TOKEN }}",
+		"sensitive: true",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestExportGlobalDynamicCredentialsCollideDeterministically covers a case only
+// reachable now that both families export: the same provider env var name set
+// under letsencrypt and under traefik wants the same input name. Export order
+// is fixed, so the second one is suffixed rather than overwriting the first, and
+// both values survive.
+func TestExportGlobalDynamicCredentialsCollideDeterministically(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet apps:list": "",
+		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"le-token"}`,
+		"--quiet traefik:report --global --format json":     `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"traefik-token"}`,
+	}))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	values := map[string]bool{}
+	for _, value := range res.Vars {
+		values[value] = true
+	}
+	for _, want := range []string{"le-token", "traefik-token"} {
+		if !values[want] {
+			t.Errorf("expected %q lifted into its own input, got %v", want, res.Vars)
+		}
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	for _, unwanted := range []string{"le-token", "traefik-token"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("recipe leaked %q:\n%s", unwanted, out)
+		}
+	}
+}
+
 func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{

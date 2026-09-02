@@ -21,6 +21,11 @@ func TestIntegrationTraefikPropertyAll(t *testing.T) {
 		{"challenge-mode", "tls"},
 		{"dashboard-enabled", "true"},
 		{"dns-provider", "cloudflare"},
+		// A dns-provider-<ENV> credential has no map entry - its global key is
+		// synthesized from the property name - so it exercises the dynamic
+		// probe path added in #450. dokku 0.38.27+ reports it, so it converges
+		// like any mapped property.
+		{"dns-provider-CLOUDFLARE_API_TOKEN", "token123"},
 		{"http-entry-point", "http"},
 		{"https-entry-point", "https"},
 		{"image", "traefik:v3.7.1"},
@@ -39,17 +44,4 @@ func TestIntegrationTraefikPropertyAll(t *testing.T) {
 			})
 		})
 	}
-
-	// dns-provider-<ENV> are dynamic; exercise one to confirm the
-	// isDynamicProperty fallback path.
-	t.Run("dns-provider-CLOUDFLARE_API_TOKEN/dynamic", func(t *testing.T) {
-		set := TraefikPropertyTask{Global: true, Property: "dns-provider-CLOUDFLARE_API_TOKEN", Value: "token123", State: StatePresent}
-		if r := set.Execute(testCtx()); r.Error != nil {
-			t.Fatalf("set dynamic dns-provider key: %v", r.Error)
-		}
-		unset := TraefikPropertyTask{Global: true, Property: "dns-provider-CLOUDFLARE_API_TOKEN", State: StateAbsent}
-		if r := unset.Execute(testCtx()); r.Error != nil {
-			t.Fatalf("unset dynamic dns-provider key: %v", r.Error)
-		}
-	})
 }

@@ -137,8 +137,8 @@ func propertiesSection(schema *tasks.PropertySchema) string {
 	}
 
 	for _, family := range schema.Dynamic {
-		b.WriteString(fmt.Sprintf("\nNames starting with `%s` are also accepted. dokku validates them through `%s` rather than through its report schema, so they cannot be listed above. ",
-			family.Prefix, schema.Subcommand))
+		b.WriteString(fmt.Sprintf("\nNames starting with `%s` are also accepted %s. dokku validates them through `%s` rather than through its report schema, so they cannot be listed above. ",
+			family.Prefix, scopePhrase(family.Scopes), schema.Subcommand))
 		if family.Probeable {
 			b.WriteString("The plugin reports each one it has been given, so they probe for drift like any listed property.")
 		} else {
@@ -155,6 +155,17 @@ func propertiesSection(schema *tasks.PropertySchema) string {
 			family.Prefix, family.Replacement, family.Reason))
 	}
 	return b.String()
+}
+
+// scopePhrase renders a dynamic family's scopes as the clause that follows
+// "are also accepted": a family with one scope is spelled out as a restriction,
+// since that is the part a reader has to know, and one with both reads as no
+// restriction at all.
+func scopePhrase(scopes []string) string {
+	if len(scopes) == 1 {
+		return fmt.Sprintf("in the %s scope only", scopes[0])
+	}
+	return "in the " + strings.Join(scopes, " and ") + " scopes"
 }
 
 // codeOrBlank renders a report key as inline code, or an empty cell when the

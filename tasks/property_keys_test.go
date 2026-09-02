@@ -422,8 +422,12 @@ func TestTraefikPropertyKeys(t *testing.T) {
 	})
 	checkUnsupportedProperty(t, traefikPropertyTable)
 	checkScopeMismatch(t, traefikPropertyTable, "", "image")
-	// dns-provider-* are dynamic and should bypass map validation.
+	// dns-provider-* are dynamic and bypass the map's name check, but not its
+	// scope check: `traefik:set` refuses the family outside --global, so the
+	// app scope is rejected with the same sentence a mapped global-only
+	// property gets (#450).
 	if err := validateProperty("traefik", "dns-provider-CLOUDFLARE_API_TOKEN", true, traefikPropertyTable.Keys); err != nil {
 		t.Errorf("dynamic property should pass validation, got %v", err)
 	}
+	checkScopeMismatch(t, traefikPropertyTable, "", "dns-provider-CLOUDFLARE_API_TOKEN")
 }

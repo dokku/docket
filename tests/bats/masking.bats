@@ -198,10 +198,10 @@ EOF
 }
 
 @test "docket plan masks a traefik dns-provider credential" {
-  # traefik does not report its dns-provider-* family, so the property takes the
-  # unprobed path and no traefik state is read or written here. The value is a
-  # DNS provider credential all the same and must not reach the mutation line or
-  # the --json commands array (#457).
+  # The property is probed against traefik:report but never written here, so the
+  # plan reports it missing. The value is a DNS provider credential and must not
+  # reach the mutation line or the --json commands array, whether it is read back
+  # or not (#457).
   write_tasks_file <<'EOF'
 ---
 - tasks:

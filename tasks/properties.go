@@ -418,9 +418,11 @@ func unknownPropertyWarning(plugin, property string, err error) (PlanWarning, bo
 
 	var unknown *errUnknownProperty
 	if errors.As(err, &unknown) {
-		// Skip the warning for known dynamic-property families (e.g.
-		// traefik dns-provider-*) where missing-from-report is the
-		// normal pre-set state, not a typo.
+		// Skip the warning for known dynamic-property families, where
+		// missing-from-report is the normal pre-set state, not a typo.
+		// A probeable family no longer reaches this from planProperty -
+		// getProperty reads its absent row as unset - so this now only
+		// guards a family docket cannot probe at all.
 		if isDynamicProperty(plugin, property) {
 			return PlanWarning{}, false
 		}
@@ -462,16 +464,44 @@ type dynamicPropertyFamily struct {
 	// independent of Probeable: whether a value is a credential and whether
 	// docket can read it back are separate questions (#457).
 	Sensitive bool
+
+	// Scopes is the non-empty subset of ["app", "global"] the plugin accepts a
+	// member in, the same vocabulary PropertyEntrySchema.Scopes publishes for
+	// an enumerable property. A mapped property says this by leaving one of its
+	// PropertyKeys halves empty; a dynamic one has no map entry to say it with,
+	// so the family carries it and keysFor, validateProperty and the catalog all
+	// read this one field. traefik's `traefik:set` refuses a `dns-provider-*`
+	// key outside `--global`, so without it an app-scoped member would probe a
+	// row that cannot exist: `state: present` would plan create forever and
+	// `state: absent` would report in sync while never unsetting the credential.
+	Scopes []string
+}
+
+// scoped reports whether the family may be used in a scope.
+func (f dynamicPropertyFamily) scoped(scope string) bool {
+	for _, s := range f.Scopes {
+		if s == scope {
+			return true
+		}
+	}
+	return false
 }
 
 // keysFor returns the PropertyKeys one member of the family gets. The report
 // keys exist only when the plugin reports the family, so an unprobeable member
 // carries no lookup keys - but it still carries the family's Sensitive mark, so
-// its value is masked on the way out even though it can never be read back.
+// its value is masked on the way out even though it can never be read back. A
+// scope the family does not list gets no key either, which is how a global-only
+// family reaches validateProperty's existing "no per-app form" rejection.
 func (f dynamicPropertyFamily) keysFor(property string) PropertyKeys {
 	entry := PropertyKeys{Sensitive: f.Sensitive}
-	if f.Probeable {
+	if !f.Probeable {
+		return entry
+	}
+	if f.scoped(PropertyScopeApp) {
 		entry.PerApp = property
+	}
+	if f.scoped(PropertyScopeGlobal) {
 		entry.Global = "global-" + property
 	}
 	return entry
@@ -494,20 +524,33 @@ var dynamicPropertyFamilies = map[string][]dynamicPropertyFamily{
 	// credentials, hence Sensitive: planProperty registers both the desired
 	// value and, because this family is probed, the value read back before it
 	// can reach a `(was %q)` drift reason.
-	"letsencrypt": {{Prefix: "dns-provider-", Probeable: true, Sensitive: true}},
+	"letsencrypt": {{
+		Prefix:    "dns-provider-",
+		Probeable: true,
+		Sensitive: true,
+		Scopes:    []string{PropertyScopeApp, PropertyScopeGlobal},
+	}},
 
-	// traefik's family holds the same credentials but is still absent from
-	// `traefik:report` (dokku/dokku#8928, tracked for docket in #450), so it
-	// stays on the unprobed path. Sensitive is set anyway: there is no probed
-	// value to mask, but the desired one still reaches argv and the plan
-	// mutation line (#457).
-	"traefik": {{Prefix: "dns-provider-", Sensitive: true}},
+	// traefik's family holds the same credentials and reports them the same
+	// way, as of dokku 0.38.27 (dokku/dokku#8928, #450). It is global-only:
+	// `traefik:set` refuses a `dns-provider-*` key outside `--global`, so there
+	// is a `global-dns-provider-<KEY>` row and no per-app one. The version is
+	// not gated because docket's dokku floor is already 0.38.27; below it the
+	// rows are genuinely absent and a `state: absent` task would read an unset
+	// property as already gone.
+	"traefik": {{
+		Prefix:    "dns-provider-",
+		Probeable: true,
+		Sensitive: true,
+		Scopes:    []string{PropertyScopeGlobal},
+	}},
 }
 
 // isDynamicProperty reports whether a (plugin, property) pair belongs to a
 // dynamic property family. This is what lets validateProperty accept a name
-// that cannot be enumerated in the key map. It says nothing about whether the
-// property can be probed - that is the family's Probeable flag, read by
+// that cannot be enumerated in the key map - the scope it accepts it in still
+// comes from the family's Scopes. It says nothing about whether the property
+// can be probed - that is the family's Probeable flag, read by
 // dynamicPropertyKeys.
 func isDynamicProperty(plugin, property string) bool {
 	_, ok := dynamicPropertyFamilyFor(plugin, property)
@@ -525,10 +568,17 @@ func DynamicPropertyFamilies(plugin string) []DynamicPropertySchema {
 	}
 	out := make([]DynamicPropertySchema, 0, len(families))
 	for _, family := range families {
+		scopes := make([]string, 0, len(family.Scopes))
+		for _, scope := range []string{PropertyScopeApp, PropertyScopeGlobal} {
+			if family.scoped(scope) {
+				scopes = append(scopes, scope)
+			}
+		}
 		out = append(out, DynamicPropertySchema{
 			Prefix:    family.Prefix,
 			Probeable: family.Probeable,
 			Sensitive: family.Sensitive,
+			Scopes:    scopes,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Prefix < out[j].Prefix })
@@ -567,8 +617,8 @@ func dynamicPropertyFamilyFor(plugin, property string) (dynamicPropertyFamily, b
 
 // dynamicPropertyKeys returns the report keys for a dynamic property whose
 // plugin surfaces the family in its `:report` payload, synthesized from the
-// property name. A family the plugin does not report has no keys to synthesize
-// and falls through to the unprobed path.
+// property name and the scopes the family declares. A family the plugin does
+// not report has no keys to synthesize and falls through to the unprobed path.
 func dynamicPropertyKeys(plugin, property string) (PropertyKeys, bool) {
 	family, ok := dynamicPropertyFamilyFor(plugin, property)
 	if !ok || !family.Probeable {
@@ -833,13 +883,18 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 }
 
 // validateProperty rejects unsupported properties or scope mismatches before
-// any subprocess call. Dynamic property families bypass validation since they
-// can't be enumerated in the map.
+// any subprocess call. A dynamic property family bypasses the name check, since
+// its members can't be enumerated in the map, but not the scope check: the
+// family declares its scopes and a member is held to them the same way a mapped
+// property is, so an app-scoped traefik `dns-provider-*` is refused here rather
+// than planning forever and failing on `traefik:set`'s own rejection.
 func validateProperty(plugin, property string, global bool, keys map[string]PropertyKeys) error {
 	entry, ok := keys[property]
 	if !ok {
-		if isDynamicProperty(plugin, property) {
-			return nil
+		family, dynamic := dynamicPropertyFamilyFor(plugin, property)
+		if dynamic {
+			return validatePropertyScope(plugin, property, global,
+				family.scoped(PropertyScopeApp), family.scoped(PropertyScopeGlobal))
 		}
 		supported := make([]string, 0, len(keys))
 		for k := range keys {
@@ -848,17 +903,29 @@ func validateProperty(plugin, property string, global bool, keys map[string]Prop
 		sort.Strings(supported)
 		return fmt.Errorf("dokku %s: unsupported property %q (supported: %s)", plugin, property, strings.Join(supported, ", "))
 	}
-	if global && entry.Global == "" {
+	return validatePropertyScope(plugin, property, global, entry.PerApp != "", entry.Global != "")
+}
+
+// validatePropertyScope rejects a property used in a scope it has no form in,
+// matching dokku's own CLI rejection. Shared by the mapped and the dynamic arms
+// of validateProperty so both report the same sentence: a mapped property says
+// which scopes it has by leaving a PropertyKeys half empty, a dynamic family
+// says it in Scopes, and the user sees no difference.
+func validatePropertyScope(plugin, property string, global, hasApp, hasGlobal bool) error {
+	if global && !hasGlobal {
 		return fmt.Errorf("property %q on plugin %s has no global form", property, plugin)
 	}
-	if !global && entry.PerApp == "" {
+	if !global && !hasApp {
 		return fmt.Errorf("property %q on plugin %s has no per-app form", property, plugin)
 	}
 	return nil
 }
 
 // runUnprobedSet returns a PlanResult that runs `:set` unconditionally for
-// dynamic properties that have no probe key (e.g. traefik dns-provider-*).
+// dynamic properties that have no probe key. Every family docket knows about is
+// probeable today, so nothing reaches this; it is the other half of the
+// Probeable contract, kept for the next plugin that takes a family it does not
+// report. See dynamicPropertyFamilies.
 func runUnprobedSet(ctx context.Context, subcommand, target, property, value string) PlanResult {
 	inputs := propertySetInputs(subcommand, target, property, value)
 	return PlanResult{
@@ -872,7 +939,8 @@ func runUnprobedSet(ctx context.Context, subcommand, target, property, value str
 }
 
 // runUnprobedUnset returns a PlanResult that runs `:set` (no value, the unset
-// form) unconditionally for dynamic properties with no probe key.
+// form) unconditionally for dynamic properties with no probe key. Unreached for
+// the same reason runUnprobedSet is.
 func runUnprobedUnset(ctx context.Context, subcommand, target, property string) PlanResult {
 	inputs := propertyUnsetInputs(subcommand, target, property)
 	return PlanResult{
