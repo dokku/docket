@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"github.com/dokku/docket/subprocess"
 	"github.com/expr-lang/expr/vm"
 )
 
@@ -37,6 +38,20 @@ type Play struct {
 	// file-level defaults but below --vars-file / CLI overrides.
 	Inputs []Input
 
+	// Host is the server this play's tasks run against, as
+	// [user@]host[:port]. Empty means the play inherits the run-wide target
+	// from --host / DOKKU_HOST, which is what every recipe written before
+	// multi-host plays existed does.
+	Host string
+
+	// Sudo and AcceptNewHostKeys override the run-wide --sudo and
+	// --accept-new-host-keys for this play. They are pointers because unset
+	// and false mean different things here: an omitted key inherits whatever
+	// the run was given, while `sudo: false` actively declines it for this
+	// play alone. See ResolveTarget.
+	Sudo              *bool
+	AcceptNewHostKeys *bool
+
 	// Tasks is the per-play envelope map populated by GetPlays. Insertion
 	// order mirrors the play's tasks: source order.
 	Tasks OrderedStringEnvelopeMap
@@ -44,6 +59,28 @@ type Play struct {
 	// whenProgram is the pre-compiled expr program for When. Set by
 	// GetPlays so the executor does not re-compile per evaluation.
 	whenProgram *vm.Program
+}
+
+// ResolveTarget returns the target this play's tasks run against: base, with
+// each key the play declared overriding it.
+//
+// The override is per key rather than wholesale, so a run given --sudo keeps
+// sudo when a play sends its tasks to a different host. That is the reading
+// that matches the rest of the recipe format - a play's `inputs:` layer over
+// the file's rather than replacing them - and it means a two-server migration
+// does not have to restate the run's flags on every play. A play that wants
+// the opposite says so: `sudo: false` declines it.
+func (p *Play) ResolveTarget(base subprocess.Target) subprocess.Target {
+	if p == nil {
+		return base
+	}
+	out := base
+	if p.Host != "" {
+		out.Host = p.Host
+	}
+	out.Sudo = boolValue(p.Sudo, base.Sudo)
+	out.AcceptNewHostKeys = boolValue(p.AcceptNewHostKeys, base.AcceptNewHostKeys)
+	return out
 }
 
 // HasWhen reports whether the play carries a non-empty `when:` predicate

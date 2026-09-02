@@ -39,6 +39,29 @@ the key yourself:
 ssh-keyscan dokku.example.com >> ~/.ssh/known_hosts
 ```
 
+## A recipe that spans hosts
+
+The flags above set one target for the whole run. A play can name its own instead, which is how a
+migration or a fan-out deploy is written as a single recipe:
+
+```yaml
+---
+- name: drain the old server
+  host: deploy@old.example.com
+  tasks:
+    - dokku_maintenance: { app: api }
+
+- name: install on the new one
+  host: deploy@new.example.com
+  tasks:
+    - dokku_app: { app: api }
+```
+
+Each play opens its own multiplexed SSH connection and docket closes all of them at the end of the
+run. A play that names no `host:` uses the run-wide target, and `sudo` / `accept_new_host_keys`
+carry over to a play that redirects unless it overrides them. See
+[recipes](recipes.md#plays-on-different-servers) for the full rules.
+
 ## Argument quoting
 
 OpenSSH joins the words of a remote command into a single string that the remote login shell

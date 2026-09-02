@@ -1576,3 +1576,91 @@ func TestBuildSigilContextKeepsUnparseableDefaultText(t *testing.T) {
 		t.Errorf("debug = %#v, want the raw text %q", context["debug"], "mabye")
 	}
 }
+
+// TestValidateAcceptsTargetingPlayKeys pins that the three keys are on the
+// play allowlist. Adding them to canonicalPlayKeys without this would make
+// fmt reorder a recipe validate then rejects.
+func TestValidateAcceptsTargetingPlayKeys(t *testing.T) {
+	data := []byte(`---
+- name: remote
+  host: deploy@example.com:2222
+  sudo: true
+  accept_new_host_keys: true
+  tasks:
+    - dokku_app: { app: api }
+`)
+	problems := Validate(data, ValidateOptions{})
+	if len(problems) != 0 {
+		t.Errorf("targeting keys should validate cleanly; got %+v", problems)
+	}
+}
+
+// TestValidateRejectsUnusableHost pins the offline host check. A typo here
+// otherwise costs a run: it surfaces as an `ssh:` failure partway through,
+// against a server that was never going to answer.
+func TestValidateRejectsUnusableHost(t *testing.T) {
+	cases := map[string]string{
+		"scheme":     "ssh://example.com",
+		"empty":      "",
+		"whitespace": "   ",
+	}
+	for name, host := range cases {
+		t.Run(name, func(t *testing.T) {
+			data := []byte("---\n- host: \"" + host + "\"\n  tasks:\n    - dokku_app: { app: api }\n")
+			problems := Validate(data, ValidateOptions{})
+			p := findProblem(problems, "play_key_type")
+			if p == nil {
+				t.Fatalf("expected a play_key_type problem; got %+v", problems)
+			}
+			if !strings.Contains(p.Message, "host is not usable") {
+				t.Errorf("message = %q, want it to name the host", p.Message)
+			}
+			if p.Line == 0 {
+				t.Error("problem should carry the line the host was declared on")
+			}
+		})
+	}
+}
+
+// TestValidateRejectsNonBoolTargetingFlags pins that the bool keys report a
+// positioned diagnostic rather than the opaque decode error the loader would
+// otherwise produce. yaml.v3 already accepts yes/on/"yes" as true, so what
+// this actually catches is a number or a collection.
+func TestValidateRejectsNonBoolTargetingFlags(t *testing.T) {
+	data := []byte(`---
+- sudo: 1
+  accept_new_host_keys: [a]
+  tasks:
+    - dokku_app: { app: api }
+`)
+	problems := Validate(data, ValidateOptions{})
+	var got []string
+	for _, p := range problems {
+		if p.Code == "play_key_type" {
+			got = append(got, p.Message)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected both bool keys flagged; got %+v", problems)
+	}
+	for _, msg := range got {
+		if !strings.Contains(msg, "must be a bool") {
+			t.Errorf("message = %q, want it to say the key must be a bool", msg)
+		}
+	}
+}
+
+// TestValidateAcceptsYamlBoolSpellings guards the other direction: the check
+// must not reject spellings yaml.v3 itself accepts, or a recipe that used to
+// load would start failing validation.
+func TestValidateAcceptsYamlBoolSpellings(t *testing.T) {
+	for _, spelling := range []string{"true", "yes", "on", `"yes"`} {
+		t.Run(spelling, func(t *testing.T) {
+			data := []byte("---\n- sudo: " + spelling + "\n  tasks:\n    - dokku_app: { app: api }\n")
+			problems := Validate(data, ValidateOptions{})
+			if p := findProblem(problems, "play_key_type"); p != nil {
+				t.Errorf("sudo: %s should be accepted; got %q", spelling, p.Message)
+			}
+		})
+	}
+}

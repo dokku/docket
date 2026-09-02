@@ -106,6 +106,17 @@ type RecipeEntry struct {
 	// happens in GetPlays).
 	Inputs []Input `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 
+	// Host sends this play's tasks to a server other than the run-wide
+	// --host / DOKKU_HOST target. `[user@]host[:port]`, same spelling as the
+	// flag.
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	// Sudo and AcceptNewHostKeys override the run-wide flags of the same
+	// name for this play. Pointers so an omitted key inherits the run's
+	// setting and an explicit false declines it.
+	Sudo              *bool `yaml:"sudo,omitempty" json:"sudo,omitempty"`
+	AcceptNewHostKeys *bool `yaml:"accept_new_host_keys,omitempty" json:"accept_new_host_keys,omitempty"`
+
 	// Tasks is the raw per-play task list, decoded into envelopes by
 	// GetPlays via buildEnvelopesForEntry.
 	Tasks []map[string]interface{} `yaml:"tasks,omitempty" json:"tasks,omitempty"`
@@ -634,9 +645,12 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 		}
 
 		play := &Play{
-			Name:   meta.Name,
-			When:   meta.When,
-			Inputs: meta.Inputs,
+			Name:              meta.Name,
+			When:              meta.When,
+			Inputs:            meta.Inputs,
+			Host:              meta.Host,
+			Sudo:              meta.Sudo,
+			AcceptNewHostKeys: meta.AcceptNewHostKeys,
 		}
 		if play.Name == "" {
 			// Single-play recipes without a name keep the legacy
@@ -753,10 +767,13 @@ func parseRecipeForLoader(data []byte, format string) (*parsedRecipe, error) {
 // play's mapping node. Task entries are parsed separately through the
 // shared structural parser, so this struct deliberately omits `tasks:`.
 type playMeta struct {
-	Name   string      `yaml:"name"`
-	Tags   interface{} `yaml:"tags"`
-	When   string      `yaml:"when"`
-	Inputs []Input     `yaml:"inputs"`
+	Name              string      `yaml:"name"`
+	Tags              interface{} `yaml:"tags"`
+	When              string      `yaml:"when"`
+	Inputs            []Input     `yaml:"inputs"`
+	Host              string      `yaml:"host"`
+	Sudo              *bool       `yaml:"sudo"`
+	AcceptNewHostKeys *bool       `yaml:"accept_new_host_keys"`
 }
 
 // decodePlayMeta decodes a play mapping node's metadata fields.

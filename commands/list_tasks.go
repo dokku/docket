@@ -22,6 +22,11 @@ type listTasksOptions struct {
 	userSet       map[string]bool
 	context       map[string]interface{}
 	jsonOut       bool
+	// target is the run-wide target the plays resolve against, so the
+	// rendered plan can say which server each play would talk to. The JSON
+	// stream is deliberately left alone: it has no play_start event to hang a
+	// host on, and its schema forbids extra properties.
+	target subprocess.Target
 }
 
 // renderListTasks walks the resolved task plan and prints one line per
@@ -109,7 +114,11 @@ func renderListTasks(ui cli.Ui, opts listTasksOptions) int {
 		}
 
 		if !opts.jsonOut {
-			ui.Output(fmt.Sprintf("==> Play: %s", playName))
+			header := fmt.Sprintf("==> Play: %s", playName)
+			if host := play.ResolveTarget(opts.target).Host; host != "" {
+				header += fmt.Sprintf("  (host: %s)", host)
+			}
+			ui.Output(header)
 		}
 
 		rc := listRenderContext{

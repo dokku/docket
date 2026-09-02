@@ -59,7 +59,7 @@
         "ts": { "$ref": "#/$defs/timestamp" },
         "host": {
           "type": "string",
-          "description": "Remote target, present only when --host or DOKKU_HOST is in effect."
+          "description": "Remote target this play runs against, present when the play declares host: or when --host / DOKKU_HOST is in effect."
         }
       }
     },

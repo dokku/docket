@@ -144,6 +144,7 @@ reworded:
 | `unknown_task_type` | The task-type key is not registered. `hint` carries a did-you-mean. |
 | `unknown_key` | An unrecognized envelope key sits alongside the task-type key. |
 | `envelope_key_type` | An envelope key has the wrong type (for example `tags:` as a string). |
+| `play_key_type` | A play's targeting key has the wrong type or an unusable value (for example `sudo: yes`, which YAML 1.2 reads as a string, or a `host:` that is not `[user@]host[:port]`). |
 | `duplicate_task_name` | Two tasks in one play share a `name`. |
 | `block_shape` | A `block` / `rescue` / `always` clause is not a list of task entries. |
 | `block_empty` | A `block:` clause contains no child tasks. |
