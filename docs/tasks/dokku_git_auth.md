@@ -10,7 +10,7 @@ Not supported - netrc credentials are write-only and cannot be read back.
 
 ## Probe support
 
-Not supported - netrc state has no read command, so the task plans as drift on every run.
+Supported.
 
 ## Identity
 
@@ -22,7 +22,7 @@ Keyed by `host`.
 | --- | --- | --- | --- | --- | --- |
 | `host` | string | yes |  |  | Git server hostname (e.g. github.com) |
 | `username` | string | no |  |  | Netrc username. Required when state is present. |
-| `password` | string | no |  |  | Netrc password. Required when state is present. (sensitive) |
+| `password` | string | no |  |  | Netrc password. Required when state is present. Must not contain a newline. (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the netrc entry |
 
 ## Examples
