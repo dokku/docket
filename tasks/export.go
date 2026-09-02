@@ -229,10 +229,39 @@ type ExportReport struct {
 	MissingResources []string
 }
 
+// ExportedTask is one task in an exported play: the registry type-key it is
+// emitted under, and the task's own struct populated from the server.
+//
+// Body is the task value, not a marshalled form of it - `dokku_config` comes
+// back as a ConfigTask - so a Go caller can type-assert it and read fields
+// rather than parsing YAML the export just produced. It is `interface{}`
+// rather than Task because an exporter returns bodies by value and Task is
+// implemented on the pointer for most types; assert the concrete type.
+type ExportedTask struct {
+	Type string      `yaml:"-"`
+	Body interface{} `yaml:"-"`
+}
+
+// MarshalYAML emits the task the way a recipe spells it: a single-key mapping
+// from type-key to body. The exported fields are what a Go caller reads; this
+// is what the recipe file gets, and having one type produce both is what keeps
+// Plays() and MarshalRecipe from drifting apart.
+func (t ExportedTask) MarshalYAML() (interface{}, error) {
+	return map[string]interface{}{t.Type: t.Body}, nil
+}
+
+// ExportedPlay is one play of an exported recipe. Name is the app it describes,
+// or "global" for the leading play of not-app-scoped resources.
+type ExportedPlay struct {
+	Name   string                   `yaml:"name"`
+	Inputs []map[string]interface{} `yaml:"inputs,omitempty"`
+	Tasks  []ExportedTask           `yaml:"tasks"`
+}
+
 // ExportResult is the outcome of ExportRecipe: the assembled recipe (as a list
 // of plays), the companion vars map (empty in inline mode), and any warnings.
 type ExportResult struct {
-	plays  []map[string]interface{}
+	plays  []ExportedPlay
 	Vars   map[string]string
 	Report ExportReport
 
@@ -273,6 +302,20 @@ func (res *ExportResult) noteSensitive(values ...string) {
 	res.sensitive = append(res.sensitive, values...)
 }
 
+// Plays returns the exported recipe as structured values: the same plays
+// MarshalRecipe renders, with each task body still its own Go type.
+//
+// It exists because the only ways out of an export used to be MarshalRecipe
+// and MarshalVars, so a caller wanting data had to marshal to YAML and parse
+// it straight back - or call ExportApp on a task directly and reimplement the
+// ordering, warning collection and sensitive-value handling the engine already
+// does (#425).
+//
+// The slice is the result's own and must not be modified.
+func (res *ExportResult) Plays() []ExportedPlay {
+	return res.plays
+}
+
 // SensitiveValues returns the literal values this export read off the server
 // that must be masked in user-facing output. The caller registers them; the
 // slice is the result's own and must not be modified.
@@ -300,9 +343,15 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	// Global resources come first, in a leading "global" play. Skipped when
 	// the export is narrowed to specific apps with --app, and when every
 	// --resource address is app-scoped.
-	if len(opts.Apps) == 0 && res.filter.wantsGlobalScope(inGlobal) {
+	//
+	// An explicit global address outranks --app (#518). `--app foo` on its own
+	// means "this app, not the server", but naming `dokku_plugin[name=redis]`
+	// alongside it asks for that resource by name, and the global play is the
+	// only place it can come from - skipping it exported nothing and reported
+	// the address as missing from a server that had it.
+	if res.filter.wantsGlobalScope(inGlobal) && (len(opts.Apps) == 0 || res.filter.hasGlobalAddress(inGlobal)) {
 		if global := res.exportGlobalPlay(ctx, opts); global != nil {
-			res.plays = append(res.plays, global)
+			res.plays = append(res.plays, *global)
 		}
 	}
 
@@ -314,6 +363,10 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	selectedApps, restricted := res.filter.appNames(inApp)
 	if restricted {
 		if len(selectedApps) == 0 {
+			// No app-scoped address selected an app. That is a finished export
+			// rather than a failed one when the addresses were global and the
+			// global play has already answered them; only then does an
+			// unmatched address mean the server does not have it.
 			res.Report.MissingResources = res.filter.unmatchedAddresses()
 			return res, nil
 		}
@@ -336,7 +389,7 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	for _, app := range apps {
 		play := res.exportAppPlay(ctx, app, opts)
 		if play != nil {
-			res.plays = append(res.plays, play)
+			res.plays = append(res.plays, *play)
 		}
 	}
 
@@ -347,8 +400,8 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 
 // exportGlobalPlay builds the leading global play by running every registered
 // GlobalExporter. Returns nil when there are no global resources.
-func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOptions) map[string]interface{} {
-	var taskList []map[string]interface{}
+func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOptions) *ExportedPlay {
+	var taskList []ExportedTask
 	var inputs []map[string]interface{}
 
 	for _, typeKey := range globalExportOrder {
@@ -388,7 +441,7 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 				continue
 			}
 			body, ins := res.processBody("global", body, opts)
-			taskList = append(taskList, map[string]interface{}{typeKey: body})
+			taskList = append(taskList, ExportedTask{Type: typeKey, Body: body})
 			inputs = append(inputs, ins...)
 		}
 	}
@@ -397,18 +450,13 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 		return nil
 	}
 
-	play := map[string]interface{}{"name": "global"}
-	if len(inputs) > 0 {
-		play["inputs"] = inputs
-	}
-	play["tasks"] = taskList
-	return play
+	return &ExportedPlay{Name: "global", Inputs: inputs, Tasks: taskList}
 }
 
 // exportAppPlay builds one play for a single app by running each app-scoped
 // exporter in appExportOrder. Returns nil when the app yields no tasks.
-func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts ExportOptions) map[string]interface{} {
-	var taskList []map[string]interface{}
+func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts ExportOptions) *ExportedPlay {
+	var taskList []ExportedTask
 	var inputs []map[string]interface{}
 
 	for _, typeKey := range appExportOrder {
@@ -448,7 +496,7 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 				continue
 			}
 			body, ins := res.processBody(app, body, opts)
-			taskList = append(taskList, map[string]interface{}{typeKey: body})
+			taskList = append(taskList, ExportedTask{Type: typeKey, Body: body})
 			inputs = append(inputs, ins...)
 		}
 	}
@@ -457,12 +505,7 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 		return nil
 	}
 
-	play := map[string]interface{}{"name": app}
-	if len(inputs) > 0 {
-		play["inputs"] = inputs
-	}
-	play["tasks"] = taskList
-	return play
+	return &ExportedPlay{Name: app, Inputs: inputs, Tasks: taskList}
 }
 
 // processBody applies vars-extraction (file mode) or redaction (inline mode) to
@@ -875,10 +918,8 @@ func (res *ExportResult) PlayCount() int {
 // accurately.
 func (res *ExportResult) AppCount() int {
 	n := len(res.plays)
-	if n > 0 {
-		if name, _ := res.plays[0]["name"].(string); name == "global" {
-			n--
-		}
+	if n > 0 && res.plays[0].Name == "global" {
+		n--
 	}
 	return n
 }

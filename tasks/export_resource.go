@@ -167,6 +167,27 @@ func (f *resourceFilter) wantsGlobalScope(inGlobal map[string]bool) bool {
 	return false
 }
 
+// hasGlobalAddress reports whether any selector names a not-app-scoped type
+// without pinning an app. It is the narrower question wantsGlobalScope answers
+// for an unrestricted run: not "should globals be emitted" but "did the caller
+// ask for one by name", which is what lets an explicit address keep the global
+// play that --app would otherwise skip (#518).
+func (f *resourceFilter) hasGlobalAddress(inGlobal map[string]bool) bool {
+	if f == nil {
+		return false
+	}
+	for _, sel := range f.selectors {
+		if !inGlobal[sel.TypeKey] {
+			continue
+		}
+		if _, pinned := sel.Keys["app"]; pinned {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // appNames returns the app names the selectors pin, and whether that set is a
 // restriction at all. An app-scoped selector that names no app - `dokku_config`
 // on its own - means every app, so no restriction applies.
