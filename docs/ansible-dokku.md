@@ -246,7 +246,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_app` | `dokku_app` | | Direct. |
 | `dokku_builder` | `dokku_builder_property` | | Direct; both wrap `builder:set`. |
 | `dokku_buildpacks` | `dokku_buildpacks` | | Direct. |
-| `dokku_certs` | `dokku_certs` | | docket adds `cert_content` / `key_content` for inline PEM. |
+| `dokku_certs` | `dokku_certs` | | docket adds `cert_content` / `key_content` for inline PEM, and replaces an installed certificate whose material differs where the module leaves it alone. |
 | `dokku_checks` | `dokku_checks_toggle` | | `checks:enable` / `checks:disable`. |
 | `dokku_clone` | `dokku_app` and `dokku_git_sync` | | The module runs core `git:sync`, and creates the app first. Emit both tasks. `version` becomes `git_ref`. |
 | `dokku_config` | `dokku_config` | | docket also supports `state: absent` (`config:unset`). |

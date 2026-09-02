@@ -14,7 +14,7 @@ Partial - app and global certificate PEM material is exported (via certs:show an
 
 ## Probe support
 
-Partial - only whether a certificate is installed is probed; the certificate material is never read back, so replacing an existing certificate plans as in sync.
+Partial - the installed certificate is compared against the desired one via certs:show, but the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared.
 
 ## Identity
 

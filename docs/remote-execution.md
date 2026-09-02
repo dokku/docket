@@ -110,6 +110,12 @@ Some tasks offer an inline alternative that sidesteps this constraint. `dokku_ce
 instance, accepts `cert_content` and `key_content` strings; docket streams the PEM material to
 dokku as a tarball over stdin, so the bytes never have to live as files on the remote.
 
+The same constraint narrows what `plan` can tell you. `dokku_certs` compares the certificate a
+recipe pins against the one the server holds, so a renewal shows up as drift - but over SSH the
+`cert` path names a file docket cannot read, leaving nothing to compare it against, and the task
+reports in sync as long as some certificate is installed. The inline form carries its own material,
+so it is compared on every transport.
+
 ## See also
 
 - [Command reference](command-reference.md) - the commands you run over SSH

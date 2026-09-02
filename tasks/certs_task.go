@@ -4,8 +4,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -64,7 +66,7 @@ func (t CertsTask) ExportSupport() ExportSupport {
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t CertsTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "only whether a certificate is installed is probed; the certificate material is never read back, so replacing an existing certificate plans as in sync"}
+	return ProbeSupport{Status: ProbePartial, Caveat: "the installed certificate is compared against the desired one via certs:show, but the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -156,8 +158,15 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
+			drifted := false
 			if enabled {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				drifted, err = certsMaterialDrifted(ctx, t)
+				if err != nil {
+					return PlanResult{Status: PlanStatusError, Error: err}
+				}
+				if !drifted {
+					return PlanResult{InSync: true, Status: PlanStatusOK}
+				}
 			}
 			target := t.App
 			if t.Global {
@@ -183,6 +192,21 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 				}
 			}
 			inputs := []subprocess.ExecCommandInput{input}
+			if drifted {
+				// certs:add and certs:update are the same command in dokku, and
+				// both fn-certs-set and fn-global-cert-set overwrite what is
+				// there, so replacing a certificate needs no command of its own.
+				return PlanResult{
+					InSync:    false,
+					Status:    PlanStatusModify,
+					Reason:    "certificate material drift",
+					Mutations: []string{fmt.Sprintf("replace certificate for %s", target)},
+					Commands:  resolveCommands(ctx, inputs),
+					apply: func(ctx context.Context) TaskOutputState {
+						return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
+					},
+				}
+			}
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
@@ -295,6 +319,115 @@ func certsEnabled(ctx context.Context, t CertsTask) (bool, error) {
 	}
 
 	return strings.TrimSpace(result.StdoutContents()) == "true", nil
+}
+
+// certsMaterialDrifted reports whether the certificate installed for the task's
+// scope is a different one from the certificate the recipe pins. It answers true
+// only on positive evidence: material read back from the server that does not
+// match the desired material. Everything it cannot see reads as false, so a
+// scope it cannot compare keeps the coarse "a certificate is installed, so we
+// are in sync" answer Plan() gave before it compared anything.
+//
+// Two cases are deliberately not compared. Desired material docket cannot read
+// leaves nothing to compare against - see desiredCertPEM. And a
+// letsencrypt-managed certificate is left alone for the reason `docket export`
+// skips one (#337): it is ephemeral and re-issued on renewal, so treating a
+// fresh one as drift would have docket overwrite it with the recipe's stale pin
+// on every run. A non-SSH error from that probe means the letsencrypt plugin is
+// not installed, which is itself the answer that the certificate is not
+// letsencrypt-managed, so the comparison goes ahead.
+//
+// The private key is never read. Comparing the certificate catches renewal,
+// which is what re-running one of these tasks is almost always about; moving key
+// material off the server to also catch a key rotated under an unchanged
+// certificate is not a trade this makes.
+func certsMaterialDrifted(ctx context.Context, t CertsTask) (bool, error) {
+	desired, ok := desiredCertPEM(ctx, t)
+	if !ok {
+		return false, nil
+	}
+
+	if !t.Global {
+		active, err := letsencryptActive(ctx, t.App)
+		if err != nil {
+			var sshErr *subprocess.SSHError
+			if errors.As(err, &sshErr) {
+				return false, err
+			}
+		} else if active {
+			return false, nil
+		}
+	}
+
+	installed, err := certsShow(ctx, t, "crt")
+	if err != nil {
+		return false, err
+	}
+	return !samePEM(installed, desired), nil
+}
+
+// desiredCertPEM returns the certificate PEM the recipe pins, and whether docket
+// can read it from where it runs. Inline cert_content is always readable. The
+// `cert` field is a path on the dokku server, which is this machine's path only
+// when the run is local, so a run carrying a target host reports false rather
+// than comparing against whatever a local file of that name happens to hold. A
+// file docket's own user cannot read - what `--sudo` against a root-owned key
+// directory looks like - reports false for the same reason: no desired material,
+// nothing to compare.
+func desiredCertPEM(ctx context.Context, t CertsTask) (string, bool) {
+	if t.CertContent != "" {
+		return t.CertContent, true
+	}
+	if t.Cert == "" || subprocess.TargetFromContext(ctx).Host != "" {
+		return "", false
+	}
+	data, err := os.ReadFile(t.Cert)
+	if err != nil {
+		return "", false
+	}
+	return string(data), true
+}
+
+// samePEM reports whether two PEM documents carry the same certificate chain.
+// The comparison is over each block's type and decoded DER, in order, so a
+// trailing newline, CRLF line endings or different line wrapping between what a
+// recipe pins and what certs:show hands back - StdoutContents trims it - do not
+// read as drift. Bytes outside the blocks are ignored, which is what makes an
+// openssl text dump printed ahead of the certificate harmless.
+//
+// A document holding no PEM block at all is not something this can normalise, so
+// such a pair falls back to a whitespace-trimmed string comparison rather than
+// comparing equal on the strength of two empty block lists.
+func samePEM(a, b string) bool {
+	blocksA, okA := pemBlocks(a)
+	blocksB, okB := pemBlocks(b)
+	if !okA || !okB {
+		return strings.TrimSpace(a) == strings.TrimSpace(b)
+	}
+	if len(blocksA) != len(blocksB) {
+		return false
+	}
+	for i := range blocksA {
+		if blocksA[i].Type != blocksB[i].Type || !bytes.Equal(blocksA[i].Bytes, blocksB[i].Bytes) {
+			return false
+		}
+	}
+	return true
+}
+
+// pemBlocks decodes every PEM block in s, reporting false when it holds none.
+func pemBlocks(s string) ([]*pem.Block, bool) {
+	var blocks []*pem.Block
+	rest := []byte(s)
+	for {
+		block, remainder := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		blocks = append(blocks, block)
+		rest = remainder
+	}
+	return blocks, len(blocks) > 0
 }
 
 // ExportApp reconstructs an app's SSL certificate via certs:show. The cert and
