@@ -119,30 +119,21 @@ type parsedTaskEntry struct {
 }
 
 // normalizeRecipeBytes converts a recipe's on-disk surface syntax to YAML
-// bytes. JSON5 input is converted via json5ToYAMLBytes; YAML (and any
-// unknown format value) passes through unchanged. A conversion failure is
-// returned as a json5_parse problem.
+// bytes using the codec keyed by format, and reports the format-specific
+// findings that survive the conversion.
+//
+// Lint reads the original bytes, not the converted ones, because the
+// conversion is what threw the evidence away: json5.Unmarshal keeps the
+// last of a duplicated pair. Either failure returns nil bytes, so a caller
+// that ignores the problems cannot go on to parse a half-converted recipe.
 func normalizeRecipeBytes(data []byte, format string) ([]byte, []Problem) {
-	if !IsJSON5Format(format) {
-		return data, nil
+	codec := CodecFor(format)
+	converted, problem := codec.ToYAML(data)
+	if problem != nil {
+		return nil, []Problem{*problem}
 	}
-	converted, err := json5ToYAMLBytes(data)
-	if err != nil {
-		return nil, []Problem{{
-			Code:    "json5_parse",
-			Message: err.Error(),
-		}}
-	}
-	// json5.Unmarshal deduped any duplicate keys during the conversion
-	// above; scan the original bytes so a copy-pasted key is rejected the
-	// way yaml.v3 rejects a duplicate YAML key (#318).
-	if dup := detectJSON5DuplicateKeys(data); dup != nil {
-		return nil, []Problem{{
-			Code:    "duplicate_key",
-			Line:    dup.Line,
-			Column:  dup.Column,
-			Message: fmt.Sprintf("duplicate key %q", dup.Key),
-		}}
+	if problems := codec.Lint(data); len(problems) > 0 {
+		return nil, problems
 	}
 	return converted, nil
 }

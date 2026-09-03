@@ -1284,3 +1284,113 @@ func TestExportPortsEmitsNoTaskWithoutMappings(t *testing.T) {
 		t.Errorf("expected no exported task when the app has no mappings, got %v", bodies)
 	}
 }
+
+// TestMarshalRecipeJSON5 covers the format argument that every other
+// MarshalRecipe test passes as the literal "yaml": the JSON5 arm was only
+// ever reached end-to-end through `docket export`, so a codec-level
+// regression had nowhere to surface in this package.
+//
+// The assertions are about shape rather than an exact document: a
+// top-level array, unquoted identifier keys and a task type in the body,
+// none of which YAML output would satisfy.
+func TestMarshalRecipeJSON5(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	recipe, err := res.MarshalRecipe(FormatNameJSON5)
+	if err != nil {
+		t.Fatalf("MarshalRecipe(json5): %v", err)
+	}
+	out := string(recipe)
+
+	if !strings.HasPrefix(out, "[") {
+		t.Errorf("JSON5 recipe should open with a top-level array, got:\n%s", out)
+	}
+	if strings.HasPrefix(out, "---") {
+		t.Error("JSON5 recipe must not carry the YAML document marker")
+	}
+	if !strings.Contains(out, "dokku_app") {
+		t.Errorf("JSON5 recipe should name the app task type, got:\n%s", out)
+	}
+
+	// What Marshal emits is already canonical, and it reads back as a
+	// recipe - the two properties `docket export | docket apply` needs.
+	formatted, err := FormatJSON5(recipe)
+	if err != nil {
+		t.Fatalf("FormatJSON5: %v", err)
+	}
+	if string(formatted) != out {
+		t.Errorf("MarshalRecipe(json5) output is not canonical:\ngot:\n%s\nformatted:\n%s", out, formatted)
+	}
+	if _, err := UnmarshalRecipe(recipe, FormatNameJSON5); err != nil {
+		t.Fatalf("UnmarshalRecipe of the JSON5 export: %v", err)
+	}
+
+	// The YAML and JSON5 renderings must describe the same recipe.
+	yamlRecipe, err := res.MarshalRecipe(FormatYAML)
+	if err != nil {
+		t.Fatalf("MarshalRecipe(yaml): %v", err)
+	}
+	fromYAML, err := UnmarshalRecipe(yamlRecipe, FormatYAML)
+	if err != nil {
+		t.Fatalf("UnmarshalRecipe(yaml): %v", err)
+	}
+	fromJSON5, err := UnmarshalRecipe(recipe, FormatNameJSON5)
+	if err != nil {
+		t.Fatalf("UnmarshalRecipe(json5): %v", err)
+	}
+	if len(fromYAML) != len(fromJSON5) {
+		t.Errorf("YAML export = %d plays, JSON5 export = %d; the two renderings must agree", len(fromYAML), len(fromJSON5))
+	}
+}
+
+// TestMarshalVarsMatchesTheCodec pins the vars-file side of the same
+// dispatch. YAML gets a plain mapping; JSON5 gets indented JSON, which is
+// valid YAML too - which is why a .yml vars-file holding JSON still loads
+// and why recipeOutputFormatMismatch deliberately says nothing about it.
+func TestMarshalVarsMatchesTheCodec(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if !res.HasVars() {
+		t.Fatal("export fixture lifted no vars; nothing to marshal")
+	}
+
+	asYAML, err := res.MarshalVars(FormatYAML)
+	if err != nil {
+		t.Fatalf("MarshalVars(yaml): %v", err)
+	}
+	if strings.HasPrefix(strings.TrimSpace(string(asYAML)), "{") {
+		t.Errorf("YAML vars-file should be a plain mapping, got:\n%s", asYAML)
+	}
+
+	asJSON5, err := res.MarshalVars(FormatNameJSON5)
+	if err != nil {
+		t.Fatalf("MarshalVars(json5): %v", err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(asJSON5)), "{") {
+		t.Errorf("JSON5 vars-file should be a JSON object, got:\n%s", asJSON5)
+	}
+
+	// Both spellings must read back to the same values.
+	fromYAML, err := CodecFor(FormatYAML).UnmarshalVars(asYAML)
+	if err != nil {
+		t.Fatalf("UnmarshalVars(yaml): %v", err)
+	}
+	fromJSON5, err := CodecFor(FormatNameJSON5).UnmarshalVars(asJSON5)
+	if err != nil {
+		t.Fatalf("UnmarshalVars(json5): %v", err)
+	}
+	if !reflect.DeepEqual(fromYAML, fromJSON5) {
+		t.Errorf("vars round-trip differs by codec:\nyaml:  %#v\njson5: %#v", fromYAML, fromJSON5)
+	}
+}

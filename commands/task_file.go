@@ -11,18 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dokku/docket/tasks"
+
 	"github.com/mattn/go-isatty"
 	"github.com/posener/complete"
 	flag "github.com/spf13/pflag"
-)
-
-// Task file format identifiers used throughout the commands package and
-// passed through to tasks.GetPlaysWithFormat / tasks.Validate via
-// ValidateOptions.Format. Only these two values are valid; other strings
-// are treated as YAML by the dispatchers.
-const (
-	taskFileFormatYAML  = "yaml"
-	taskFileFormatJSON5 = "json5"
 )
 
 // taskFileStdin is the conventional path meaning "read the recipe from
@@ -38,25 +31,29 @@ const taskFileStdin = "-"
 // fall through to give JSON-native users a no-config setup.
 var defaultTaskFileCandidates = []string{"tasks.yml", "tasks.yaml", "tasks.json"}
 
-// parseRecipeFormatFlag normalises a recipe-format flag value to one of
-// the two canonical format identifiers. An empty value means "not set"
-// and leaves the decision to the caller. Anything else is rejected
-// naming the accepted values, the way an invalid --color is.
+// parseRecipeFormatFlag normalises a recipe-format flag value to a
+// canonical codec name. An empty value means "not set" and leaves the
+// decision to the caller - it is checked before the registry is asked,
+// because tasks.LookupCodec("") is a miss and rejecting it here would
+// fail every command that did not pass the flag. Anything else
+// unrecognised is rejected naming the accepted values, the way an invalid
+// --color is.
 //
 // flagName is the spelling to blame in that rejection: the input side
 // (apply / plan / validate / fmt) passes "--tasks-format", the output
 // side (init / export, #410) passes "--format". One normaliser keeps the
-// two flags accepting exactly the same spellings.
+// two flags accepting exactly the same spellings, and the registry keeps
+// that set in step with what the codecs actually implement.
 func parseRecipeFormatFlag(flagName, value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "":
+	if strings.TrimSpace(value) == "" {
 		return "", nil
-	case "yaml", "yml":
-		return taskFileFormatYAML, nil
-	case "json", "json5":
-		return taskFileFormatJSON5, nil
 	}
-	return "", fmt.Errorf("invalid %s %q: must be one of yaml, json5", flagName, value)
+	if codec, ok := tasks.LookupCodec(value); ok {
+		return codec.Name(), nil
+	}
+	// The raw value is echoed back, not the trimmed and lowered one, so
+	// the user sees what they typed.
+	return "", fmt.Errorf("invalid %s %q: must be one of %s", flagName, value, strings.Join(tasks.CodecNames(), ", "))
 }
 
 // taskFileFormatFor resolves the format of a recipe from the three
@@ -70,10 +67,10 @@ func parseRecipeFormatFlag(flagName, value string) (string, error) {
 //  3. data - a content sniff, the same one `docket fmt -` has always
 //     used for stdin
 //
-// The return value is never empty. That matters: tasks.IsJSON5Format("")
-// is false, so an empty format silently means YAML downstream, and a
-// caller that skipped the sniff would parse a JSON5 recipe with the YAML
-// parser and report a confusing error instead of an obvious one.
+// The return value is never empty. That matters: an empty format resolves
+// to tasks.DefaultCodec() downstream, so a caller that skipped the sniff
+// would parse a JSON5 recipe with the YAML parser and report a confusing
+// error instead of an obvious one.
 func taskFileFormatFor(detected, override string, data []byte) string {
 	if override != "" {
 		return override
@@ -81,7 +78,7 @@ func taskFileFormatFor(detected, override string, data []byte) string {
 	if detected != "" {
 		return detected
 	}
-	return sniffStdinFormat(data)
+	return tasks.SniffCodec(data).Name()
 }
 
 // taskFileDisplayName renders a recipe source for human output. stdin
@@ -120,9 +117,9 @@ func shellUnsafeRune(r rune) bool {
 	return true
 }
 
-// detectTaskFileFormat returns "json5" when path's extension is .json or
-// .json5 (case-insensitive), and "yaml" otherwise. Unknown extensions
-// default to YAML so explicit paths like `--tasks recipe.txt` keep the
+// detectTaskFileFormat resolves path's extension to a codec name. An
+// extension no codec claims - including none at all - falls back to the
+// default codec, so explicit paths like `--tasks recipe.txt` keep the
 // pre-#218 behaviour. For an http(s) URL the format is taken from the URL
 // path component so a trailing query string or fragment
 // (`tasks.json?ref=main`) does not get glued onto the extension.
@@ -133,24 +130,36 @@ func detectTaskFileFormat(path string) string {
 			ext = filepath.Ext(u.Path)
 		}
 	}
-	switch strings.ToLower(ext) {
-	case ".json", ".json5":
-		return taskFileFormatJSON5
-	default:
-		return taskFileFormatYAML
+	if codec, ok := tasks.CodecForExtension(ext); ok {
+		return codec.Name()
 	}
+	return tasks.DefaultCodec().Name()
 }
 
-// defaultRecipeOutput and defaultRecipeOutputJSON5 are the --output
-// defaults for the two commands that write a recipe (init, export).
-// resolveRecipeOutput swaps in the JSON5 spelling when --format json5 is
-// given without an explicit --output, so the file name matches its
-// contents and a later bare `docket validate` still finds it - both are
-// in defaultTaskFileCandidates.
-const (
-	defaultRecipeOutput      = "tasks.yml"
-	defaultRecipeOutputJSON5 = "tasks.json"
-)
+// defaultRecipeOutput is the --output default for the two commands that
+// write a recipe (init, export). It is the head of the probe list rather
+// than a constant of its own, so a scaffold written without --output is
+// by construction the file a later bare `docket validate` picks up.
+var defaultRecipeOutput = defaultTaskFileCandidates[0]
+
+// defaultRecipeOutputFor returns the --output default for a given format:
+// the first probe candidate that reads back as that format. Deriving it
+// from defaultTaskFileCandidates rather than listing per-format constants
+// is what guarantees the file resolveRecipeOutput swaps in is a file the
+// probe can find again - a default output outside that list would leave
+// the scaffold unreachable by a bare `docket validate`.
+//
+// A codec with no candidate of its own falls back to the head of the list;
+// TestDefaultRecipeOutputForEveryCodec fails if a registered codec ever
+// lands there.
+func defaultRecipeOutputFor(format string) string {
+	for _, candidate := range defaultTaskFileCandidates {
+		if detectTaskFileFormat(candidate) == format {
+			return candidate
+		}
+	}
+	return defaultTaskFileCandidates[0]
+}
 
 // resolveRecipeOutput reconciles an explicit --format with the --output
 // path a recipe-writing command is about to use, returning the path to
@@ -162,27 +171,27 @@ const (
 //     parseRecipeFormatFlag. It always wins, including over an --output
 //     extension that says otherwise.
 //  2. the --output extension, via detectTaskFileFormat.
-//  3. YAML - all that is left for stdout, which has no extension. This is
-//     the gap #410 exists to close: before --format, `--output -` could
-//     only ever emit YAML.
+//  3. the default codec - all that is left for stdout, which has no
+//     extension. This is the gap #410 exists to close: before --format,
+//     `--output -` could only ever emit YAML.
 //
 // outputChanged is flags.Changed("output"), which is only meaningful
-// after flags.Parse. When --format asks for JSON5 and --output was left
-// at its default, the default path moves to defaultRecipeOutputJSON5
-// rather than dropping a JSON5 document into a .yml file. A path the user
-// typed - including "-" - is never rewritten.
+// after flags.Parse. When --format asks for a non-default format and
+// --output was left at its default, the default path moves to that
+// format's own default rather than dropping, say, a JSON5 document into a
+// .yml file. A path the user typed - including "-" - is never rewritten.
 //
 // Callers must run this before their --force / --overwrite existence
 // checks: those have to test the path that will actually be written.
 func resolveRecipeOutput(output, override string, outputChanged bool) (string, string) {
 	if override == "" {
 		if output == taskFileStdin {
-			return output, taskFileFormatYAML
+			return output, tasks.DefaultCodec().Name()
 		}
 		return output, detectTaskFileFormat(output)
 	}
-	if output != taskFileStdin && !outputChanged && override == taskFileFormatJSON5 {
-		output = defaultRecipeOutputJSON5
+	if output != taskFileStdin && !outputChanged && override != tasks.DefaultCodec().Name() {
+		output = defaultRecipeOutputFor(override)
 	}
 	return output, override
 }
@@ -354,21 +363,12 @@ func fetchTaskFileURL(rawURL string) ([]byte, error) {
 	return data, nil
 }
 
-// taskFileExtensions lists the recipe file extensions docket recognises,
-// the single source of truth for hasTaskFileExtension and taskFileAutocomplete.
-var taskFileExtensions = []string{"yml", "yaml", "json", "json5"}
-
 // hasTaskFileExtension reports whether path carries one of the recipe
 // file extensions. Used to spot a positional recipe path in an argv the
 // flag parser has not yet processed.
 func hasTaskFileExtension(path string) bool {
-	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
-	for _, candidate := range taskFileExtensions {
-		if ext == candidate {
-			return true
-		}
-	}
-	return false
+	_, ok := tasks.CodecForExtension(filepath.Ext(path))
+	return ok
 }
 
 // probeDefaultTaskFile stats defaultTaskFileCandidates in order and
@@ -484,7 +484,7 @@ type recipeSource struct {
 	Display string
 	// Data is the recipe bytes.
 	Data []byte
-	// Format is always taskFileFormatYAML or taskFileFormatJSON5, never
+	// Format is always a canonical codec name (tasks.CodecNames()), never
 	// empty. See taskFileFormatFor.
 	Format string
 	// Ambiguous holds the default candidates the probe passed over
@@ -602,19 +602,26 @@ func predictFilesByExtension(extensions []string) complete.Predictor {
 	})
 }
 
-// recipeFormatAutocomplete offers the two canonical values shared by
+// recipeFormatAutocomplete offers the canonical values shared by
 // --tasks-format on the reading side and --format on the writing side.
-// The yml / json aliases parseRecipeFormatFlag also accepts are
-// deliberately left out so completion suggests one spelling per format.
+// The aliases parseRecipeFormatFlag also accepts are deliberately left
+// out so completion suggests one spelling per format.
 func recipeFormatAutocomplete() complete.Predictor {
-	return complete.PredictSet(taskFileFormatYAML, taskFileFormatJSON5)
+	return complete.PredictSet(tasks.CodecNames()...)
+}
+
+// recipeFormatList renders the accepted formats for flag help text, so a
+// new codec reaches --help without anyone remembering to edit six
+// strings.
+func recipeFormatList() string {
+	return strings.Join(tasks.CodecNames(), " or ")
 }
 
 // taskFileAutocomplete is the file-completion predictor shared by the
 // --tasks / --output / --vars-output flags and `docket fmt`'s positional
 // argument across apply / plan / validate / fmt / init / export.
 func taskFileAutocomplete() complete.Predictor {
-	return predictFilesByExtension(taskFileExtensions)
+	return predictFilesByExtension(tasks.CodecExtensions())
 }
 
 // commandArgv returns the argv a command should resolve its pre-parse flags

@@ -119,7 +119,7 @@ func (c *ApplyCommand) ParsedArguments(args []string) (map[string]command.Argume
 func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. Pass - to read the recipe from stdin. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory. An http(s):// URL is fetched over HTTP.")
-	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format (yaml or json5) instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
+	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format ("+recipeFormatList()+") instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
 	f.BoolVar(&c.verbose, "verbose", false, "echo the resolved dokku command for each task as a continuation line. Values from inputs declared `sensitive: true` and from task struct fields tagged `sensitive:\"true\"` are masked as `***`. Ignored when --json is set; the JSON output already includes the resolved commands.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")

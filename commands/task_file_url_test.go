@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/dokku/docket/tasks"
 )
 
 // serveRecipe starts an httptest server that returns body for any GET and
@@ -101,13 +103,13 @@ func TestDetectTaskFileFormatURL(t *testing.T) {
 		path string
 		want string
 	}{
-		{"http://h/docket/example.yml", taskFileFormatYAML},
-		{"https://h/recipes/tasks.yaml", taskFileFormatYAML},
-		{"http://h/tasks.json", taskFileFormatJSON5},
-		{"http://h/tasks.json5", taskFileFormatJSON5},
-		{"http://h/tasks.json?ref=main", taskFileFormatJSON5},
-		{"https://h/a/b/tasks.yml?token=abc#frag", taskFileFormatYAML},
-		{"http://h/tasks.json?download=recipe.yml", taskFileFormatJSON5},
+		{"http://h/docket/example.yml", tasks.FormatYAML},
+		{"https://h/recipes/tasks.yaml", tasks.FormatYAML},
+		{"http://h/tasks.json", tasks.FormatNameJSON5},
+		{"http://h/tasks.json5", tasks.FormatNameJSON5},
+		{"http://h/tasks.json?ref=main", tasks.FormatNameJSON5},
+		{"https://h/a/b/tasks.yml?token=abc#frag", tasks.FormatYAML},
+		{"http://h/tasks.json?download=recipe.yml", tasks.FormatNameJSON5},
 	}
 	for _, tc := range cases {
 		if got := detectTaskFileFormat(tc.path); got != tc.want {

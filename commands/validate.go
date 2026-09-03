@@ -107,7 +107,7 @@ func (c *ValidateCommand) ParsedArguments(args []string) (map[string]command.Arg
 func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. Pass - to read the recipe from stdin. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory.")
-	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format (yaml or json5) instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
+	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format ("+recipeFormatList()+") instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines problem event per finding")
 	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override, and check that --play / --start-at-task references resolve to real names in the file")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")

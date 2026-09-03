@@ -7,5 +7,12 @@ package templates
 
 import "embed"
 
-//go:embed *.yml.tmpl *.json5.tmpl
+// Names follow default.<codec>.tmpl / minimal.<codec>.tmpl, where <codec>
+// is a canonical recipe format name, so init picks a template without
+// branching on the format. The glob is deliberately open-ended to let a
+// new format add its pair without touching this file;
+// TestEveryCodecHasInitTemplates is what turns a missing pair into a test
+// failure rather than a runtime error at `docket init --format <new>`.
+//
+//go:embed *.tmpl
 var FS embed.FS

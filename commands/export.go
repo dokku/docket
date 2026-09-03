@@ -115,7 +115,7 @@ func (c *ExportCommand) ParsedArguments(args []string) (map[string]command.Argum
 func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.output, "output", defaultRecipeOutput, "path to write the recipe to; pass - to stream a self-contained recipe to stdout")
-	f.StringVar(&c.formatFlag, "format", "", "write the recipe and vars-file as this format (yaml or json5) instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputJSON5+"; this is also the only way to get JSON5 on stdout.")
+	f.StringVar(&c.formatFlag, "format", "", "write the recipe and vars-file as this format ("+recipeFormatList()+") instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputFor(tasks.FormatNameJSON5)+"; this is also the only way to get JSON5 on stdout.")
 	f.StringVar(&c.varsOutput, "vars-output", "", "path to write the companion vars-file to (defaults to <output-base>.vars.<ext>; --format overrides its format)")
 	f.BoolVar(&c.overwrite, "overwrite", false, "overwrite existing output files without prompting")
 	f.BoolVar(&c.redact, "redact", false, "write placeholder values into the vars-file instead of real secrets")

@@ -375,7 +375,7 @@ func TestFmtStdinInvalidTasksFormatFails(t *testing.T) {
 
 // TestFmtStdinTasksFormatOverridesSniff is the case sniffing alone
 // cannot get right: a top-level flow sequence is valid YAML but opens
-// with "[", so sniffStdinFormat calls it JSON5 and the JSON5 formatter
+// with "[", so the JSON5 codec's Sniff claims it and that formatter
 // rewrites it into JSON5 syntax. --tasks-format yaml keeps it YAML.
 func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
 	t.Parallel()
