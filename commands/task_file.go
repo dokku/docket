@@ -81,6 +81,37 @@ func taskFileFormatFor(detected, override string, data []byte) string {
 	return tasks.SniffCodec(data).Name()
 }
 
+// taskFileOutputFormatFor resolves the format a recipe should be WRITTEN
+// as, the counterpart to taskFileFormatFor on the reading side:
+//
+//  1. override - an explicit --format, already normalised by
+//     parseRecipeFormatFlag
+//  2. the extension of an explicit --output, when a codec claims it
+//  3. inFormat - the format it was read as, which is what `docket fmt`
+//     has always written back
+//
+// resolveRecipeOutput, which init and export use, cannot serve here. Its
+// stdout branch falls back to the default codec, because for those two
+// commands there is no input format to inherit - the recipe is being
+// generated. `docket fmt --output - tasks.json` does have one, and
+// answering "yaml" for it would silently convert a recipe the user only
+// asked to print.
+//
+// An --output extension no codec claims is passed over rather than
+// treated as the default format, for the same reason: `--output
+// recipe.txt` says nothing about format, so the input's format stands.
+func taskFileOutputFormatFor(override, output, inFormat string) string {
+	if override != "" {
+		return override
+	}
+	if output != "" && output != taskFileStdin {
+		if codec, ok := tasks.CodecForExtension(filepath.Ext(output)); ok {
+			return codec.Name()
+		}
+	}
+	return inFormat
+}
+
 // taskFileDisplayName renders a recipe source for human output. stdin
 // has no path, so it prints as <stdin> - the same spelling `docket fmt`
 // already uses in its diff headers.

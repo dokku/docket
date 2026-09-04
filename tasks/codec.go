@@ -1,6 +1,10 @@
 package tasks
 
-import "strings"
+import (
+	"strings"
+
+	yaml "gopkg.in/yaml.v3"
+)
 
 // Codec is everything docket needs to know about one recipe surface
 // syntax. A recipe's format is a string on the wire - the --tasks-format /
@@ -58,6 +62,38 @@ type Codec interface {
 	// Format returns the canonical rendering of data - what `docket fmt`
 	// writes back.
 	Format(data []byte) ([]byte, error)
+
+	// DecodeDocument parses data into a comment-carrying yaml.Node
+	// document. That tree is the neutral interchange every cross-format
+	// conversion passes through, which is what keeps conversion O(codecs)
+	// rather than O(codec pairs): a new format implements this pair and
+	// gets conversion to and from every other format for free.
+	//
+	// yaml.Node is the interchange rather than a tree of docket's own
+	// because it is the richest model in play - anchors, tags, styles and
+	// head/line/foot comments - so information is only ever lost on the
+	// way OUT of it, in EncodeDocument, where the codec that cannot
+	// represent something is the one deciding what to do about it. It also
+	// makes the YAML codec's own pair free.
+	//
+	// A nil node with a nil error means data holds no document at all, for
+	// a format that has an empty form: YAML's empty and comment-only
+	// files, which Format already returns untouched. A format with no
+	// empty representation returns an error instead, exactly as its Format
+	// does today - parseJSON5 rejects empty input, so `docket fmt
+	// empty.json` fails now and keeps failing.
+	DecodeDocument(data []byte) (*yaml.Node, error)
+
+	// EncodeDocument renders that document as a canonically formatted
+	// recipe in this surface syntax - the same bytes Format would produce
+	// for it. A nil document is an error; Convert screens for one first.
+	//
+	// This is where a format states what it cannot carry. JSON5 has no
+	// anchors, so Convert flattens them before calling; it has no date
+	// type, so a !!timestamp widens to a string; it has no complex keys,
+	// so a non-scalar mapping key is refused outright rather than
+	// stringified into something that means less.
+	EncodeDocument(doc *yaml.Node) ([]byte, error)
 
 	// Marshal renders v as a canonically formatted recipe document, the
 	// same bytes Format would produce for it.

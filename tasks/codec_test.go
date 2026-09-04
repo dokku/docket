@@ -85,6 +85,30 @@ func TestCodecConformance(t *testing.T) {
 			if len(recipe) != 1 {
 				t.Errorf("round-tripped recipe = %d plays, want 1", len(recipe))
 			}
+
+			// The interchange pair has to be faithful in both directions,
+			// or cross-format conversion silently loses whatever the walk
+			// dropped. Byte equality is the crispest available signal:
+			// marshalled is already canonical, and EncodeDocument ends in
+			// the same canonicaliser Format does, so anything the tree
+			// failed to carry shows up as a diff.
+			doc, err := codec.DecodeDocument(marshalled)
+			if err != nil {
+				t.Fatalf("DecodeDocument: %v", err)
+			}
+			if doc == nil {
+				t.Fatal("DecodeDocument returned no document for a non-empty recipe")
+			}
+			if documentBody(doc) == nil {
+				t.Fatal("DecodeDocument returned a document with no body")
+			}
+			encoded, err := codec.EncodeDocument(doc)
+			if err != nil {
+				t.Fatalf("EncodeDocument: %v", err)
+			}
+			if string(encoded) != string(marshalled) {
+				t.Errorf("EncodeDocument(DecodeDocument(x)) != x:\nwant:\n%s\ngot:\n%s", marshalled, encoded)
+			}
 		})
 	}
 }
@@ -340,5 +364,61 @@ func TestJSON5CodecLintReadsOriginalBytes(t *testing.T) {
 	}
 	if got := codec.Lint(converted); len(got) != 0 {
 		t.Errorf("Lint(converted) = %v; the duplicate should already be gone, which is why Lint takes the original", got)
+	}
+}
+
+// TestCodecDecodeDocumentRejectsGarbage pins that a codec reports a broken
+// recipe rather than handing back a half-built tree.
+func TestCodecDecodeDocumentRejectsGarbage(t *testing.T) {
+	t.Parallel()
+	for _, codec := range Codecs() {
+		codec := codec
+		t.Run(codec.Name(), func(t *testing.T) {
+			t.Parallel()
+			doc, err := codec.DecodeDocument([]byte("{[}\x00 not a recipe"))
+			if err == nil {
+				t.Fatalf("DecodeDocument accepted garbage, returned %v", doc)
+			}
+			if doc != nil {
+				t.Errorf("DecodeDocument returned a document alongside an error: %v", doc)
+			}
+		})
+	}
+}
+
+// TestCodecEncodeDocumentRejectsNil pins the other half of the contract:
+// Convert screens for an absent document, and a codec must not be relied
+// on to invent one.
+func TestCodecEncodeDocumentRejectsNil(t *testing.T) {
+	t.Parallel()
+	for _, codec := range Codecs() {
+		codec := codec
+		t.Run(codec.Name(), func(t *testing.T) {
+			t.Parallel()
+			if out, err := codec.EncodeDocument(nil); err == nil {
+				t.Errorf("EncodeDocument(nil) = %q, want an error", out)
+			}
+		})
+	}
+}
+
+// TestCodecDecodeDocumentEmptyInput records where the two codecs
+// deliberately differ. YAML has an empty document and answers (nil, nil)
+// for one, which is what lets `docket fmt` leave an empty file alone.
+// JSON5 has no such thing and errors, which is what `docket fmt
+// empty.json` already did before any of this existed.
+func TestCodecDecodeDocumentEmptyInput(t *testing.T) {
+	t.Parallel()
+
+	doc, err := CodecFor(FormatYAML).DecodeDocument(nil)
+	if err != nil {
+		t.Errorf("yaml DecodeDocument(empty) = %v, want no error", err)
+	}
+	if doc != nil {
+		t.Errorf("yaml DecodeDocument(empty) returned a document, want nil")
+	}
+
+	if _, err := CodecFor(FormatNameJSON5).DecodeDocument(nil); err == nil {
+		t.Error("json5 DecodeDocument(empty) = nil error, want a parse error")
 	}
 }
