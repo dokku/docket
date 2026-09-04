@@ -34,6 +34,23 @@ func (yamlCodec) Lint([]byte) []Problem { return nil }
 
 func (yamlCodec) Format(data []byte) ([]byte, error) { return Format(data) }
 
+// DecodeDocument and EncodeDocument are the two halves Format is built
+// from, so the interchange tree for a YAML recipe is the same tree the
+// formatter has always walked and there is no second parser to keep in
+// step.
+//
+// The one thing Format does that EncodeDocument does not is restore a
+// leading `---`, which it reads off the original bytes. A document handed
+// over from another format has no such bytes, so conversion into YAML
+// never emits a marker.
+func (yamlCodec) DecodeDocument(data []byte) (*yaml.Node, error) {
+	return decodeSingleYAMLDocument(data)
+}
+
+func (yamlCodec) EncodeDocument(doc *yaml.Node) ([]byte, error) {
+	return encodeCanonicalYAML(doc)
+}
+
 // Marshal renders v as YAML and then canonicalises it, so an exported
 // recipe comes out byte-identical to one `docket fmt` has been run over.
 func (yamlCodec) Marshal(v interface{}) ([]byte, error) {

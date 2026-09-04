@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -73,6 +74,40 @@ func (json5Codec) Lint(data []byte) []Problem {
 }
 
 func (json5Codec) Format(data []byte) ([]byte, error) { return FormatJSON5(data) }
+
+// DecodeDocument parses the JSON5 document with the same comment-carrying
+// parser the formatter uses, then walks it into the interchange tree. It
+// deliberately does not go through ToYAML, which decodes to plain Go
+// values and so arrives with every comment already gone.
+//
+// Empty input is an error rather than the (nil, nil) the YAML codec
+// answers with: JSON5 has no empty document, and parseJSON5 already
+// rejects it, so `docket fmt empty.json` fails today and keeps failing.
+func (json5Codec) DecodeDocument(data []byte) (*yaml.Node, error) {
+	root, err := parseJSON5(data)
+	if err != nil {
+		return nil, fmt.Errorf("json5 parse error: %w", err)
+	}
+	return json5DocumentToYAML(root)
+}
+
+// EncodeDocument walks the interchange tree back into the JSON5 AST, emits
+// it, and hands the bytes to FormatJSON5.
+//
+// Running the formatter over its own emitter's output costs one parse and
+// buys the canonical key order, the blank lines between plays and tasks,
+// and the round-trip guard, all of them verbatim rather than
+// reimplemented - so a converted recipe is canonical the moment it is
+// written and `docket fmt --check` passes over it.
+func (json5Codec) EncodeDocument(doc *yaml.Node) ([]byte, error) {
+	node, err := yamlDocumentToJSON5(doc)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	emitJSON5(&buf, node, 0)
+	return FormatJSON5(buf.Bytes())
+}
 
 // Marshal renders v as a canonically formatted JSON5 recipe.
 //

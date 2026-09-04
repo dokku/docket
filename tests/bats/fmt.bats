@@ -173,3 +173,130 @@ EOF
   run grep -c "configure the second app" tasks.yml
   assert_output "1"
 }
+
+@test "docket fmt --format json5 - converts a piped YAML recipe" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >input.yml <<'EOF'
+---
+- name: web
+  tasks:
+    # scale it up first
+    - name: scale
+      dokku_ps_scale:
+        app: web
+EOF
+  run bash -c "\"$(docket_bin)\" fmt --format json5 - <input.yml"
+  assert_success
+  assert_output --partial 'name: "web",'
+  assert_output --partial "// scale it up first"
+  refute_output --partial "# scale it up first"
+  assert [ ! -f tasks.yml ]
+}
+
+@test "docket fmt --format yaml - converts a piped JSON5 recipe" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >input.json5 <<'EOF'
+[
+  {
+    name: "web",
+    // scale it up first
+    tasks: [{ name: "scale", dokku_ps_scale: { app: "web" } }],
+  },
+]
+EOF
+  run bash -c "\"$(docket_bin)\" fmt --format yaml - <input.json5"
+  assert_success
+  assert_output --partial "- name: web"
+  assert_output --partial "# scale it up first"
+  refute_output --partial "// scale it up first"
+}
+
+@test "docket fmt --format converts a recipe in place and warns about the extension" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init
+  run "$(docket_bin)" fmt --format json5 tasks.yml
+  assert_success
+  assert_output --partial "does not match"
+  assert_output --partial "--tasks-format json5"
+  run head -n 1 tasks.yml
+  assert_output "["
+}
+
+@test "docket fmt --output writes a converted recipe that validate reads" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init
+  run "$(docket_bin)" fmt --format json5 --output tasks.json5 tasks.yml
+  assert_success
+  assert_output --partial "Wrote tasks.json5"
+  # The source is left exactly as it was.
+  run "$(docket_bin)" fmt --check tasks.yml
+  assert_success
+  # And the converted file is canonical and loadable on its own.
+  run "$(docket_bin)" fmt --check tasks.json5
+  assert_success
+  run "$(docket_bin)" validate --tasks tasks.json5
+  assert_success
+}
+
+@test "docket fmt --output refuses to overwrite without --force" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init
+  echo "// keep me" >tasks.json5
+  run "$(docket_bin)" fmt --format json5 --output tasks.json5 tasks.yml
+  assert_failure
+  assert_output --partial "pass --force to overwrite"
+  run cat tasks.json5
+  assert_output "// keep me"
+
+  run "$(docket_bin)" fmt --format json5 --output tasks.json5 --force tasks.yml
+  assert_success
+  run "$(docket_bin)" validate --tasks tasks.json5
+  assert_success
+}
+
+@test "docket fmt --check rejects a --format that would convert" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init
+  run "$(docket_bin)" fmt --check --format json5 tasks.yml
+  assert_failure
+  assert_output --partial "a conversion is never a no-op"
+  # The recipe is untouched: --check never writes.
+  run head -n 1 tasks.yml
+  assert_output "---"
+}
+
+@test "docket fmt round-trips a recipe through JSON5 and back" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init
+  "$(docket_bin)" fmt --format json5 --output tasks.json5 tasks.yml
+  run bash -c "\"$(docket_bin)\" fmt --format yaml - <tasks.json5 >back.yml"
+  assert_success
+  run "$(docket_bin)" validate --tasks back.yml
+  assert_success
+  run "$(docket_bin)" fmt --check back.yml
+  assert_success
+
+  # Equivalence is asserted by converting both to the same format rather
+  # than by diffing the YAML. A round trip is deliberately not byte-exact:
+  # the --- marker belongs to the bytes that were read, and quoting a value
+  # that needs no quotes, or writing a sequence in flow style, are choices
+  # the canonical form does not preserve.
+  run bash -c "\"$(docket_bin)\" fmt --format json5 - <back.yml >back.json5"
+  assert_success
+  run diff tasks.json5 back.json5
+  assert_success
+}
+
+@test "docket fmt keeps a dq interpolation double-quoted across a round trip" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init
+  "$(docket_bin)" fmt --format json5 --output tasks.json5 tasks.yml
+  run bash -c "\"$(docket_bin)\" fmt --format yaml - <tasks.json5 >back.yml"
+  assert_success
+  # The quotes around an interpolation are part of what the recipe means:
+  # dq escapes for a double-quoted scalar, and a single-quoted one would
+  # leave the backslashes in the rendered value.
+  run grep -c "\"{{ .app | dq }}\"" back.yml
+  refute_output "0"
+  refute_output --partial "'{{ .app | dq }}'"
+}

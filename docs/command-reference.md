@@ -42,9 +42,11 @@ overrides both. Reach for it when the extension is absent or misleading (`--task
 URL whose path carries no extension), or when a YAML recipe written in flow style would be sniffed
 as JSON5 because it opens with `[`.
 
-`--tasks-format` is the reading side. On the writing side, `init` and `export` take
-`--format yaml|json5` to state the format of what they emit. Without it, stdout can only ever be
-YAML, since there is no extension to infer from.
+`--tasks-format` is the reading side. On the writing side, `init`, `export`, and `fmt` take
+`--format yaml|json5` to state the format of what they emit. Without it, `init` and `export` can
+only ever write YAML to stdout, since there is no extension to infer from. On `fmt` the two flags
+compose: `--tasks-format` says what the recipe already is, `--format` says what to write it as, and
+naming a different one converts the recipe between the two.
 
 Reading the recipe from stdin consumes it, so a `dokku` command that would otherwise have inherited
 the terminal's stdin sees end-of-file instead. No task depends on this - every task that streams
@@ -146,6 +148,10 @@ between top-level plays and task entries. It works on both YAML and JSON5, detec
 the extension, and both formats share the same canonical key order so a YAML recipe and its JSON5
 twin lay out identically. Comments are preserved in both formats.
 
+`--format` makes it a converter as well as a formatter. It states the format to write, so naming
+one the recipe is not already in rewrites it into that format, comments and all - the thing a trip
+out to another tool and back cannot do.
+
 ```bash
 # Rewrite ./tasks.yml in place (probes tasks.yml -> tasks.yaml -> tasks.json with no argument).
 docket fmt
@@ -161,6 +167,16 @@ cat tasks.yml | docket fmt -
 
 # Same, but keep a flow-style YAML recipe as YAML instead of sniffing it as JSON5.
 cat tasks.yml | docket fmt --tasks-format yaml -
+
+# Convert a recipe to JSON5 and write it to stdout, touching nothing on disk.
+cat tasks.yml | docket fmt --format json5 -
+
+# Convert to a new file, leaving the original alone. The extension alone would
+# have been enough; --format is what a name like recipe.txt would need.
+docket fmt --format json5 --output tasks.json5 tasks.yml
+
+# Convert in place, keeping the name. See the warning this prints, below.
+docket fmt --format json5 tasks.json
 ```
 
 | Flag | Effect |
@@ -169,7 +185,10 @@ cat tasks.yml | docket fmt --tasks-format yaml -
 | `--check` | Exit 1 if any file is not canonical; no writes. Composes with `--diff`. |
 | `--diff` | Print a unified diff against canonical; no writes. Composes with `--check`. |
 | `--color <when>` | Colorize the diff: `auto` (default), `always`, or `never`. |
-| `--tasks-format <fmt>` | Format the recipe as `yaml` or `json5` instead of detecting it. |
+| `--tasks-format <fmt>` | Read the recipe as `yaml` or `json5` instead of detecting it. |
+| `--format <fmt>` | Write the recipe as `yaml` or `json5`, converting it when that is not what it was read as. Cannot be combined with `--check`. |
+| `--output <path>` | Write to this path instead of in place; `-` writes to stdout. Takes a single recipe, and cannot be combined with `--check` or `--diff`. |
+| `--force` | Overwrite an existing `--output` file. |
 | `-` | Read from stdin, write canonical to stdout. Cannot be combined with other paths. |
 | `<path...>` | Format the named files; each argument is expanded as a glob. |
 
@@ -180,6 +199,52 @@ the result does not match the input, so a formatting bug can never corrupt a rec
 `fmt` operates on single-document recipes. An empty or comment-only file is left untouched, and a
 YAML file containing more than one document (separated by `---`) is rejected rather than having its
 trailing documents silently dropped.
+
+### Converting between YAML and JSON5
+
+Without `--output`, `--format` converts the file in place and keeps its name, which leaves a
+`tasks.yml` holding JSON5. `fmt` says so once, on stderr, because nothing downstream can tell: a
+later `docket validate --tasks tasks.yml` picks its parser from the extension and fails. Prefer
+`--output` when the name should follow the format:
+
+```bash
+docket fmt --format json5 --output tasks.json5 tasks.yml && rm tasks.yml
+```
+
+`--output` never overwrites an existing file without `--force`, and takes a single recipe, so it
+cannot be combined with a glob. Writing back over the file that was read is the ordinary in-place
+case and needs no `--force`.
+
+`--check` cannot be combined with a `--format` that converts. It asks whether a recipe is already
+canonical, and a conversion is never a no-op, so every file would be reported as unformatted. To
+check a recipe whose extension is misleading, use `--tasks-format`. `--diff` does compose with a
+converting `--format`, and previews the conversion without writing anything.
+
+A conversion is not byte-reversible, and is not meant to be. Comments survive, and so does every
+value, but four things are normalised on the way:
+
+- **Comments change syntax.** A `# note` becomes `// note` and back. A JSON5 block comment
+  `/* note */` comes back as `// note`, since a line comment cannot be terminated early by its own
+  text.
+- **YAML anchors, aliases, and merge keys are inlined.** JSON5 has no way to write sharing down, so
+  `<<: *base` is expanded into the keys it merges in, following YAML's own precedence. The recipe
+  means the same thing; the fact that a block was written once does not survive.
+- **Numbers are normalised to decimal.** YAML accepts `0o17`, `0b1010`, and `1_000`, none of which
+  JSON5 has, so they are written as `15`, `10`, and `1000`. A JSON5 `0x1F` becomes `31` even though
+  YAML would take the hex, because that is what `validate` already reads it as, and `fmt` must not
+  disagree with `validate` about what a recipe says.
+- **A leading `---` is not restored.** The marker describes the bytes that were read, and a recipe
+  arriving from JSON5 had none.
+
+A YAML timestamp is the one value whose type changes: JSON5 has no date literal, so `2015-01-01`
+becomes the string `"2015-01-01"`. Nothing in a recipe reads it as anything else - every task field
+holding one is a string already.
+
+Quoting is preserved where it carries meaning. A value holding an interpolation stays double-quoted,
+because `"{{ .app | dq }}"` and `'{{ .app | dq }}'` do not render the same way - see
+[Inputs](inputs.md). The reverse has no safe spelling: canonical JSON5 has no single-quoted string,
+so a YAML `'{{ .app }}'` converts to `"{{ .app }}"`, which `docket validate` then reports as
+`unsafe_input_value`. Add `| dq` before converting such a recipe.
 
 ## docket plan
 

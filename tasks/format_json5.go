@@ -572,6 +572,21 @@ func (l *json5Lexer) readNumber() (json5Tok, error) {
 	if l.src[l.pos] == '+' || l.src[l.pos] == '-' {
 		l.pos++
 	}
+	// JSON5 spells the non-finite numbers Infinity and NaN, and allows a
+	// sign in front of them. They have to be recognised here rather than
+	// left to readIdent, because the sign has already been consumed: the
+	// digit loop below stops dead on the "I", which used to yield a lone
+	// "-" token with "Infinity" following it as a separate identifier.
+	// Nothing rejected that pair - parseArray and parseObject treat the
+	// comma between entries as optional (#537) - so `[-Infinity]` parsed as
+	// two elements. An unsigned Infinity / NaN never reaches here at all; it
+	// starts with a letter, so the lexer sends it to readIdent.
+	for _, word := range []string{"Infinity", "NaN"} {
+		if l.hasWordAt(l.pos, word) {
+			l.pos += len(word)
+			return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
+		}
+	}
 	if l.pos+1 < len(l.src) && l.src[l.pos] == '0' && (l.src[l.pos+1] == 'x' || l.src[l.pos+1] == 'X') {
 		l.pos += 2
 		for l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
@@ -591,6 +606,23 @@ func (l *json5Lexer) readNumber() (json5Tok, error) {
 		return json5Tok{}, fmt.Errorf("invalid number at offset %d", start)
 	}
 	return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
+}
+
+// hasWordAt reports whether the source holds word at pos and does not
+// continue into a longer identifier, so "NaN" matches but "NaNny" does
+// not.
+func (l *json5Lexer) hasWordAt(pos int, word string) bool {
+	if pos+len(word) > len(l.src) {
+		return false
+	}
+	if string(l.src[pos:pos+len(word)]) != word {
+		return false
+	}
+	if pos+len(word) == len(l.src) {
+		return true
+	}
+	r, _ := utf8.DecodeRune(l.src[pos+len(word):])
+	return !isIdentPart(r)
 }
 
 func (l *json5Lexer) readIdent() json5Tok {

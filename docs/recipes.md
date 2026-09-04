@@ -41,6 +41,23 @@ is equivalent to this JSON5 recipe:
 ]
 ```
 
+### Converting between the two
+
+`docket fmt --format` rewrites a recipe from either format into the other, keeping the comments:
+
+```bash
+# To stdout, touching nothing on disk.
+cat tasks.yml | docket fmt --format json5 -
+
+# To a new file, leaving the original in place.
+docket fmt --format json5 --output tasks.json5 tasks.yml
+```
+
+A conversion is not byte-reversible: comments change syntax, YAML anchors and merge keys are
+inlined, numbers are normalised to decimal, and a leading `---` is not restored. See
+[Converting between YAML and JSON5](command-reference.md#converting-between-yaml-and-json5) for the
+full list and for what happens to an interpolation's quoting.
+
 ## How docket finds your recipe
 
 When you do not pass `--tasks`, docket looks in the current directory for these files, in order,

@@ -319,3 +319,82 @@ func TestFormatJSON5RootInsideAndAfterComments(t *testing.T) {
 		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", body, again)
 	}
 }
+
+// TestLexJSON5SignedNonFiniteNumbers pins the fix for a lexer bug that
+// only surfaced once cross-format conversion started emitting JSON5:
+// readNumber consumed the sign and then stopped on the "I", handing back
+// a lone "-" token with "Infinity" trailing it as a separate identifier.
+// parseArray does not require a comma between elements, so nothing
+// rejected the pair and `[-Infinity]` silently parsed as two elements.
+func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
+	toks, err := lexJSON5([]byte("[-Infinity, +Infinity, Infinity, -NaN, NaN]"))
+	if err != nil {
+		t.Fatalf("lexJSON5: %v", err)
+	}
+	var values []string
+	for _, tok := range toks {
+		if tok.Kind == tokNumber || tok.Kind == tokIdent {
+			values = append(values, tok.Raw)
+		}
+	}
+	want := []string{"-Infinity", "+Infinity", "Infinity", "-NaN", "NaN"}
+	if len(values) != len(want) {
+		t.Fatalf("lexed %d value tokens %q, want %d %q", len(values), values, len(want), want)
+	}
+	for i := range want {
+		if values[i] != want[i] {
+			t.Errorf("token %d = %q, want %q", i, values[i], want[i])
+		}
+	}
+
+	node, err := parseJSON5([]byte("[-Infinity, +Infinity, Infinity, -NaN, NaN]"))
+	if err != nil {
+		t.Fatalf("parseJSON5: %v", err)
+	}
+	if len(node.Elements) != len(want) {
+		t.Errorf("parsed %d elements, want %d", len(node.Elements), len(want))
+	}
+}
+
+// TestLexJSON5SignedWordPrefixIsNotSwallowed guards the boundary check in
+// hasWordAt: an identifier that merely starts with Infinity or NaN is not
+// one of them, so the sign is not glued onto it.
+//
+// The assertion is on the tokens rather than on parseJSON5 returning an
+// error, because it does not: the lexer yields "-" and "Infinities" as
+// two tokens and parseArray accepts them as two elements, the comma
+// between entries being optional. That leniency is #537; what matters here
+// is that hasWordAt did not claim the longer word.
+func TestLexJSON5SignedWordPrefixIsNotSwallowed(t *testing.T) {
+	toks, err := lexJSON5([]byte("-Infinities"))
+	if err != nil {
+		t.Fatalf("lexJSON5: %v", err)
+	}
+	for _, tok := range toks {
+		if tok.Raw == "-Infinities" {
+			t.Errorf("hasWordAt swallowed a longer identifier: %q", tok.Raw)
+		}
+	}
+}
+
+// TestFormatJSON5RoundTripsNonFiniteNumbers is the formatter-level half:
+// the canonical form keeps the signed spellings and is idempotent.
+func TestFormatJSON5RoundTripsNonFiniteNumbers(t *testing.T) {
+	in := []byte("[-Infinity, Infinity, NaN]\n")
+	out, err := FormatJSON5(in)
+	if err != nil {
+		t.Fatalf("FormatJSON5: %v", err)
+	}
+	for _, want := range []string{"-Infinity", "Infinity", "NaN"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	again, err := FormatJSON5(out)
+	if err != nil {
+		t.Fatalf("FormatJSON5 second pass: %v", err)
+	}
+	if string(again) != string(out) {
+		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", out, again)
+	}
+}

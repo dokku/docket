@@ -601,3 +601,416 @@ func withStdinAndStdout(t *testing.T, input string, fn func(in io.Reader, out io
 	exit := fn(strings.NewReader(input), &buf)
 	return buf.String(), exit
 }
+
+// --- conversion (#418) ---------------------------------------------------
+
+// commentedTasksYAML and its JSON5 twin carry a comment at each anchor
+// point, so a conversion that drops or duplicates one is visible. The two
+// are exact images of each other: each converts to the other byte for
+// byte, which is what makes them usable as both directions' expectation.
+//
+// The file-level comment sits inside the [ ] rather than above it because
+// that is where it actually belongs - yaml.v3 attaches a comment above the
+// first list item to that item, not to the list - and the JSON5 rendering
+// keeps it attached to the same play.
+const commentedTasksYAML = `# top of file
+- name: web # the public app
+  tasks:
+    # scale it up first
+    - name: scale
+      dokku_ps_scale:
+        app: web
+        web: 2
+`
+
+const commentedTasksJSON5 = `[
+  // top of file
+  {
+    name: "web", // the public app
+    tasks: [
+      // scale it up first
+      {
+        name: "scale",
+        dokku_ps_scale: {
+          app: "web",
+          web: 2,
+        },
+      },
+    ],
+  },
+]
+`
+
+func TestFmtStdinConvertsYAMLToJSON5(t *testing.T) {
+	t.Parallel()
+	out, exit := withStdinAndStdout(t, commentedTasksYAML, func(in io.Reader, w io.Writer) int {
+		c := newTestFmtCommand()
+		c.Stdin, c.Stdout = in, w
+		return c.Run([]string{"--format", "json5", "-"})
+	})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if out != commentedTasksJSON5 {
+		t.Errorf("output mismatch:\nwant:\n%s\ngot:\n%s", commentedTasksJSON5, out)
+	}
+}
+
+func TestFmtStdinConvertsJSON5ToYAML(t *testing.T) {
+	t.Parallel()
+	out, exit := withStdinAndStdout(t, commentedTasksJSON5, func(in io.Reader, w io.Writer) int {
+		c := newTestFmtCommand()
+		c.Stdin, c.Stdout = in, w
+		return c.Run([]string{"--format", "yaml", "-"})
+	})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	// The `---` marker is not restored: it is a property of the bytes that
+	// were read, and these came from JSON5. Everything else round-trips.
+	if out != commentedTasksYAML {
+		t.Errorf("output mismatch:\nwant:\n%s\ngot:\n%s", commentedTasksYAML, out)
+	}
+}
+
+// TestFmtStdinFormatComposesWithTasksFormat covers the explicit both-sides
+// form: --tasks-format states what was read, --format what to write.
+func TestFmtStdinFormatComposesWithTasksFormat(t *testing.T) {
+	t.Parallel()
+	// Flow style opens with [, so the sniff would call it JSON5 without
+	// --tasks-format saying otherwise.
+	const flowYAML = "[{name: web, tasks: []}]\n"
+	out, exit := withStdinAndStdout(t, flowYAML, func(in io.Reader, w io.Writer) int {
+		c := newTestFmtCommand()
+		c.Stdin, c.Stdout = in, w
+		return c.Run([]string{"--tasks-format", "yaml", "--format", "json5", "-"})
+	})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if !strings.Contains(out, `name: "web"`) {
+		t.Errorf("output is not JSON5:\n%s", out)
+	}
+}
+
+func TestFmtConvertsInPlaceAndWarnsAboutTheExtension(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(commentedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--format", "json5", path}); exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != commentedTasksJSON5 {
+		t.Errorf("file mismatch:\nwant:\n%s\ngot:\n%s", commentedTasksJSON5, got)
+	}
+	stderr := c.Ui.(*cli.MockUi).ErrorWriter.String()
+	if !strings.Contains(stderr, "--tasks-format json5") {
+		t.Errorf("expected a warning that the extension now lies, got:\n%s", stderr)
+	}
+}
+
+// TestFmtNonConvertingWriteStaysSilent is the guard on the warning's
+// condition. A --tasks-format that disagrees with the extension has always
+// been legal and quiet; --format must not make it start warning.
+func TestFmtNonConvertingWriteStaysSilent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "recipe.yml")
+	if err := os.WriteFile(path, []byte(messyTasksJSON5), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--tasks-format", "json5", path}); exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if stderr := c.Ui.(*cli.MockUi).ErrorWriter.String(); strings.Contains(stderr, "does not match") {
+		t.Errorf("a non-converting write warned:\n%s", stderr)
+	}
+}
+
+func TestFmtOutputWritesNewFileAndLeavesSource(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	source := filepath.Join(dir, "tasks.yml")
+	target := filepath.Join(dir, "tasks.json5")
+	if err := os.WriteFile(source, []byte(commentedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--format", "json5", "--output", target, source}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(got) != commentedTasksJSON5 {
+		t.Errorf("target mismatch:\nwant:\n%s\ngot:\n%s", commentedTasksJSON5, got)
+	}
+	src, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	if string(src) != commentedTasksYAML {
+		t.Errorf("source was modified:\n%s", src)
+	}
+}
+
+// TestFmtOutputInfersFormatFromExtension covers the resolution step below
+// --format: the target's own extension says what to write.
+func TestFmtOutputInfersFormatFromExtension(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	source := filepath.Join(dir, "tasks.yml")
+	target := filepath.Join(dir, "tasks.json5")
+	if err := os.WriteFile(source, []byte(commentedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--output", target, source}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(got) != commentedTasksJSON5 {
+		t.Errorf("target mismatch:\nwant:\n%s\ngot:\n%s", commentedTasksJSON5, got)
+	}
+}
+
+// TestFmtOutputStdoutKeepsTheInputFormat pins why resolveRecipeOutput could
+// not be reused: its stdout branch answers "yaml", which would convert a
+// JSON5 recipe the user only asked to print.
+func TestFmtOutputStdoutKeepsTheInputFormat(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	source := filepath.Join(dir, "tasks.json")
+	if err := os.WriteFile(source, []byte(messyTasksJSON5), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	out, exit := captureStdout(t, func(w io.Writer) int {
+		c := newTestFmtCommand()
+		c.Stdout = w
+		return c.Run([]string{"--output", "-", source})
+	})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if out != canonicalTasksJSON5 {
+		t.Errorf("streamed output mismatch:\nwant:\n%s\ngot:\n%s", canonicalTasksJSON5, out)
+	}
+}
+
+func TestFmtOutputRefusesToOverwriteWithoutForce(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	source := filepath.Join(dir, "tasks.yml")
+	target := filepath.Join(dir, "tasks.json5")
+	if err := os.WriteFile(source, []byte(commentedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("// existing\n[]\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--format", "json5", "--output", target, source}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	if !strings.Contains(c.Ui.(*cli.MockUi).ErrorWriter.String(), "pass --force to overwrite") {
+		t.Errorf("expected the --force hint, got:\n%s", c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	kept, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(kept) != "// existing\n[]\n" {
+		t.Errorf("target was overwritten anyway:\n%s", kept)
+	}
+
+	forced := newTestFmtCommand()
+	if exit := forced.Run([]string{"--format", "json5", "--output", target, "--force", source}); exit != 0 {
+		t.Fatalf("forced exit = %d, want 0: %s", exit, forced.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(got) != commentedTasksJSON5 {
+		t.Errorf("target mismatch after --force:\n%s", got)
+	}
+}
+
+// TestFmtOutputEqualToSourceNeedsNoForce keeps the guard from firing on a
+// write that is in-place by another spelling.
+func TestFmtOutputEqualToSourceNeedsNoForce(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(messyTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--output", path, path}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != canonicalTasksYAML {
+		t.Errorf("file mismatch:\n%s", got)
+	}
+}
+
+func TestFmtRejectedFlagCombinations(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"force without output", []string{"--force"}, "--force only applies to --output"},
+		{"output with check", []string{"--output", "x.json5", "--check"}, "--output cannot be used with --check"},
+		{"output with diff", []string{"--output", "x.json5", "--diff"}, "--output cannot be used with --diff"},
+		{"force with stdout output", []string{"--output", "-", "--force"}, "--force cannot be used with --output -"},
+		{"invalid format", []string{"--format", "toml"}, `invalid --format "toml"`},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(messyTasksYAML), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			c := newTestFmtCommand(dir)
+			if exit := c.Run(tc.args); exit != 1 {
+				t.Fatalf("exit = %d, want 1", exit)
+			}
+			if stderr := c.Ui.(*cli.MockUi).ErrorWriter.String(); !strings.Contains(stderr, tc.want) {
+				t.Errorf("stderr = %q, want it to mention %q", stderr, tc.want)
+			}
+		})
+	}
+}
+
+func TestFmtOutputRejectsMultiplePaths(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for _, name := range []string{"a.yml", "b.yml"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(messyTasksYAML), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	c := newTestFmtCommand(dir)
+	if exit := c.Run([]string{"--output", "out.json5", "a.yml", "b.yml"}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	if !strings.Contains(c.Ui.(*cli.MockUi).ErrorWriter.String(), "--output takes a single recipe") {
+		t.Errorf("stderr = %q", c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+}
+
+// TestFmtCheckRejectsAConvertingFormat covers the rule chosen for #418:
+// --check asks whether a recipe is already canonical, which a conversion
+// cannot answer, so it is refused rather than always reporting a failure.
+func TestFmtCheckRejectsAConvertingFormat(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(canonicalTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--check", "--format", "json5", path}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	stderr := c.Ui.(*cli.MockUi).ErrorWriter.String()
+	if !strings.Contains(stderr, "a conversion is never a no-op") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if !strings.Contains(stderr, "--tasks-format json5") {
+		t.Errorf("expected the --tasks-format hint, got %q", stderr)
+	}
+}
+
+// TestFmtCheckAcceptsANonConvertingFormat is the other half: naming the
+// format a recipe is already in leaves --check doing exactly what it did.
+func TestFmtCheckAcceptsANonConvertingFormat(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(canonicalTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--check", "--format", "yaml", path}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+}
+
+// TestFmtDiffOnAConversionWritesNothing keeps --diff useful as a preview of
+// what a conversion would do.
+func TestFmtDiffOnAConversionWritesNothing(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(commentedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	out, exit := captureStdout(t, func(w io.Writer) int {
+		c := newTestFmtCommand()
+		c.Stdout = w
+		return c.Run([]string{"--diff", "--format", "json5", path})
+	})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if !strings.Contains(out, "@@") || !strings.Contains(out, `+    name: "web",`) {
+		t.Errorf("diff does not show the conversion:\n%s", out)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != commentedTasksYAML {
+		t.Errorf("--diff wrote to the file:\n%s", got)
+	}
+}
+
+// TestFmtOutputSpelledDifferentlyIsStillInPlace covers samePath: an
+// --output that names the source by another spelling is the in-place write
+// it looks like, not an overwrite of a third file.
+func TestFmtOutputSpelledDifferentlyIsStillInPlace(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "tasks.yml"), []byte(messyTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := newTestFmtCommand(dir)
+	if exit := c.Run([]string{"--output", "./tasks.yml", "tasks.yml"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, c.Ui.(*cli.MockUi).ErrorWriter.String())
+	}
+	if out := c.Ui.(*cli.MockUi).OutputWriter.String(); !strings.Contains(out, "Formatted") {
+		t.Errorf("output = %q, want it reported as an in-place format", out)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "tasks.yml"))
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != canonicalTasksYAML {
+		t.Errorf("file mismatch:\n%s", got)
+	}
+}

@@ -58,6 +58,42 @@ var envelopeKeySet = func() map[string]bool {
 //     canonical AST trees are structurally equivalent (defends against
 //     yaml.v3 emitter edge cases with anchors / complex flow scalars).
 func Format(data []byte) ([]byte, error) {
+	root, err := decodeSingleYAMLDocument(data)
+	if err != nil {
+		return nil, err
+	}
+	if root == nil {
+		// Empty or comment-only file: there is nothing to canonicalize.
+		// Return the input untouched so `docket fmt` is a no-op and
+		// `fmt --check` passes rather than failing the round-trip guard.
+		return data, nil
+	}
+
+	out, err := encodeCanonicalYAML(root)
+	if err != nil {
+		return nil, err
+	}
+
+	// The document marker is restored here rather than in
+	// encodeCanonicalYAML because it is a property of the bytes that were
+	// read, not of the tree. A document arriving from another format has
+	// no marker to preserve, so conversion into YAML never emits one.
+	if hasDocumentMarker(data) && !hasDocumentMarker(out) {
+		out = append([]byte("---\n"), out...)
+	}
+
+	return out, nil
+}
+
+// decodeSingleYAMLDocument is Format's reading half, split out so the YAML
+// codec's DecodeDocument and Format cannot drift apart on what counts as a
+// parse error, a multi-document file, or an empty one.
+//
+// A nil node with a nil error means the source holds no document at all -
+// an empty or comment-only file. That is not a failure: Format returns
+// such a file untouched, and Convert does the same rather than inventing
+// an empty recipe in the target format.
+func decodeSingleYAMLDocument(data []byte) (*yaml.Node, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var root yaml.Node
 	err := dec.Decode(&root)
@@ -67,10 +103,7 @@ func Format(data []byte) ([]byte, error) {
 
 	doc := documentBody(&root)
 	if err == io.EOF || isEmptyDocument(doc) {
-		// Empty or comment-only file: there is nothing to canonicalize.
-		// Return the input untouched so `docket fmt` is a no-op and
-		// `fmt --check` passes rather than failing the round-trip guard.
-		return data, nil
+		return nil, nil
 	}
 
 	// docket recipes are single-document. Reject a file with more than one
@@ -85,6 +118,22 @@ func Format(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("yaml parse error: %w", extraErr)
 	}
 
+	return &root, nil
+}
+
+// encodeCanonicalYAML is Format's writing half: canonical key order, a
+// 2-space indent, the whitespace pass, and the round-trip equivalence
+// guard. It takes the document node decodeSingleYAMLDocument returned, so
+// the YAML codec's EncodeDocument is this function and nothing else.
+func encodeCanonicalYAML(root *yaml.Node) ([]byte, error) {
+	if root == nil {
+		return nil, fmt.Errorf("cannot encode a nil document")
+	}
+
+	doc := documentBody(root)
+	if doc == nil {
+		return nil, fmt.Errorf("cannot encode an empty document")
+	}
 	if doc.Kind == yaml.SequenceNode {
 		canonicalizeRecipe(doc)
 	}
@@ -92,7 +141,7 @@ func Format(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
-	if err := enc.Encode(&root); err != nil {
+	if err := enc.Encode(root); err != nil {
 		_ = enc.Close()
 		return nil, fmt.Errorf("yaml encode error: %w", err)
 	}
@@ -102,10 +151,6 @@ func Format(data []byte) ([]byte, error) {
 
 	out := postProcess(buf.Bytes())
 
-	if hasDocumentMarker(data) && !hasDocumentMarker(out) {
-		out = append([]byte("---\n"), out...)
-	}
-
 	// Round-trip equivalence guard: re-parse the canonical output and
 	// require structural equivalence to the input. Catches yaml.v3
 	// emitter edge cases before the caller writes anything to disk.
@@ -113,7 +158,7 @@ func Format(data []byte) ([]byte, error) {
 	if err := yaml.Unmarshal(out, &roundTrip); err != nil {
 		return nil, fmt.Errorf("round-trip parse error: %w", err)
 	}
-	if !equivalentNodes(documentBody(&root), documentBody(&roundTrip)) {
+	if !equivalentNodes(doc, documentBody(&roundTrip)) {
 		return nil, fmt.Errorf("round-trip equivalence check failed; refusing to write")
 	}
 
