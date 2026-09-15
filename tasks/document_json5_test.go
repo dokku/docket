@@ -87,8 +87,11 @@ func TestJSON5ScalarToYAMLNode(t *testing.T) {
 	}
 }
 
-// TestJSON5ScalarToYAMLNodeRejects covers the tokens the lenient JSON5
-// parser accepts but no JSON5 reader does.
+// TestJSON5ScalarToYAMLNodeRejects covers the tokens the JSON5 parser used
+// to accept and no JSON5 reader does. None of them can reach this function
+// from a parse any more - `0x` and `-` stopped lexing and `web` and
+// `undefined` stopped parsing as values (#537) - so the rows are a guard on
+// the conversion rather than a live path.
 func TestJSON5ScalarToYAMLNodeRejects(t *testing.T) {
 	t.Parallel()
 	for _, raw := range []string{"web", "undefined", "0x", "-", ""} {

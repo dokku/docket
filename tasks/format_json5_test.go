@@ -572,3 +572,38 @@ func TestLexJSON5AcceptsJSON5NumberForms(t *testing.T) {
 		})
 	}
 }
+
+// TestParseJSON5RejectsUnquotedValues is the third shape of #537's
+// leniency: parseValue took any identifier as a scalar, so `{app: web}`
+// parsed and `docket fmt` rewrote it, while titanous/json5 stops at the "w"
+// and answers with a message about the literal false. Only the bare words
+// JSON5 actually defines are values.
+func TestParseJSON5RejectsUnquotedValues(t *testing.T) {
+	for _, in := range []string{`{app: web}`, `[undefined]`, `[web, "x"]`, `{a: 1, b: two}`} {
+		t.Run(in, func(t *testing.T) {
+			_, err := parseJSON5([]byte(in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%s) = nil error, want a rejection", in)
+			}
+			if !strings.Contains(err.Error(), "is not valid json5") {
+				t.Errorf("error = %q, want it to name the unquoted value", err.Error())
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+
+	// The five words that are values keep parsing, and an unquoted key is
+	// still an unquoted key - parseKey reads those, not parseValue.
+	node, err := parseJSON5([]byte(`[true, false, null, Infinity, NaN]`))
+	if err != nil {
+		t.Fatalf("parseJSON5 on the JSON5 keywords: %v", err)
+	}
+	if len(node.Elements) != 5 {
+		t.Errorf("parsed %d elements, want 5", len(node.Elements))
+	}
+	if _, err := parseJSON5([]byte(`{web: "x"}`)); err != nil {
+		t.Errorf("unquoted key should still parse: %v", err)
+	}
+}

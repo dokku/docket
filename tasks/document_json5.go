@@ -122,11 +122,11 @@ func json5ScalarToYAMLNode(raw string) (*yaml.Node, error) {
 		return json5NumberToYAMLNode(raw)
 	}
 
-	// A bare word that is not one of the JSON5 keywords. parseValue accepts
-	// any identifier as a scalar, so the AST will happily carry `web` where
-	// `"web"` was meant, but titanous/json5 rejects it and so does every
-	// other JSON5 reader - the file is already broken. Passing it through as
-	// a string would invent a value rather than report one.
+	// A bare word that is not one of the JSON5 keywords. parseValue refuses
+	// these now (#537), so a conversion no longer meets one; the check stays
+	// as the second line of defence it has always been, because passing an
+	// unquoted `web` through as a string would invent a value rather than
+	// report one.
 	return nil, fmt.Errorf("unquoted value %q is not valid json5", raw)
 }
 

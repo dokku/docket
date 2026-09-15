@@ -304,3 +304,23 @@ JSON5
   assert_failure
   assert_output --partial '"code":"json5_parse"'
 }
+
+@test "docket fmt and validate both reject an unquoted JSON5 value" {
+  write_tasks_file tasks.json <<'JSON5'
+[
+  {
+    tasks: [
+      { dokku_app: { app: web } },
+    ],
+  },
+]
+JSON5
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "json5 parse error"
+  assert_output --partial "is not valid json5"
+
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"json5_parse"'
+}

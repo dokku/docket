@@ -810,11 +810,34 @@ func (p *json5Parser) parseValue() (*json5Node, error) {
 		return p.parseObject()
 	case tokLBracket:
 		return p.parseArray()
-	case tokString, tokNumber, tokIdent:
+	case tokString, tokNumber:
+		p.advance()
+		return &json5Node{Kind: json5Scalar, Raw: t.Raw}, nil
+	case tokIdent:
+		// JSON5 gives a meaning to exactly five bare words. Every other
+		// identifier in value position is an unquoted string, which no JSON5
+		// reader accepts: titanous/json5, the one apply / plan / validate
+		// read a recipe with, stops at its first letter. Carrying `web`
+		// where `"web"` was meant let a recipe format cleanly and then fail
+		// to load (#537).
+		if !isJSON5Keyword(t.Raw) {
+			return nil, fmt.Errorf("unquoted value %q at offset %d is not valid json5", t.Raw, t.Offset)
+		}
 		p.advance()
 		return &json5Node{Kind: json5Scalar, Raw: t.Raw}, nil
 	}
 	return nil, fmt.Errorf("unexpected token %q while parsing value at offset %d", t.Raw, t.Offset)
+}
+
+// isJSON5Keyword reports whether s is one of the bare words JSON5 gives a
+// meaning to in value position. A signed Infinity is not here because the
+// lexer reads it as a single number token instead.
+func isJSON5Keyword(s string) bool {
+	switch s {
+	case "true", "false", "null", "Infinity", "NaN":
+		return true
+	}
+	return false
 }
 
 func (p *json5Parser) parseObject() (*json5Node, error) {

@@ -375,8 +375,13 @@ func TestFmtStdinInvalidTasksFormatFails(t *testing.T) {
 
 // TestFmtStdinTasksFormatOverridesSniff is the case sniffing alone
 // cannot get right: a top-level flow sequence is valid YAML but opens
-// with "[", so the JSON5 codec's Sniff claims it and that formatter
-// rewrites it into JSON5 syntax. --tasks-format yaml keeps it YAML.
+// with "[", so the JSON5 codec's Sniff claims it.
+//
+// A flow mapping's values are unquoted, which JSON5 has no reading for, so
+// the wrong guess is now a parse error naming the first one. It used to be
+// worse than an error: the JSON5 formatter carried `name: flow` through and
+// wrote a file the loader answers with `invalid character 'l' in literal
+// false` (#537). --tasks-format yaml is still the way to keep it YAML.
 func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
 	t.Parallel()
 	const flowYAML = "[{tasks: [{name: flow, dokku_app: {app: api}}]}]\n"
@@ -387,11 +392,11 @@ func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
 		c.Stdout = out
 		return c.Run([]string{"-"})
 	})
-	if exit != 0 {
-		t.Fatalf("sniffed exit = %d, want 0", exit)
+	if exit != 1 {
+		t.Fatalf("sniffed exit = %d, want 1", exit)
 	}
-	if !strings.Contains(sniffed, "dokku_app: {") {
-		t.Errorf("without an override the sniff should pick JSON5, got:\n%s", sniffed)
+	if sniffed != "" {
+		t.Errorf("nothing should be written when the sniff guesses wrong, got:\n%s", sniffed)
 	}
 
 	forced, exit := withStdinAndStdout(t, flowYAML, func(in io.Reader, out io.Writer) int {
@@ -403,8 +408,8 @@ func TestFmtStdinTasksFormatOverridesSniff(t *testing.T) {
 	if exit != 0 {
 		t.Fatalf("forced exit = %d, want 0", exit)
 	}
-	if forced == sniffed {
-		t.Errorf("--tasks-format yaml should not produce the JSON5 layout, got:\n%s", forced)
+	if !strings.Contains(forced, "tasks:") {
+		t.Errorf("--tasks-format yaml should format it as YAML, got:\n%s", forced)
 	}
 }
 
