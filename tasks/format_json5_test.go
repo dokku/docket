@@ -3,6 +3,8 @@ package tasks
 import (
 	"strings"
 	"testing"
+
+	json5 "github.com/titanous/json5"
 )
 
 func TestFormatJSON5IdempotentOnCanonicalInput(t *testing.T) {
@@ -191,7 +193,12 @@ func TestDecodeJSON5StringUnicodeAndControlEscapes(t *testing.T) {
 		{"line continuation lf", "'a\\\nb'", "ab", true},
 		{"unknown escape is literal", `'\q'`, "q", true},
 		{"bad hex", `'\xzz'`, "", false},
-		{"lone high surrogate", "'" + bs + "ud83d'", "", false},
+		// An unpaired surrogate is the replacement character rather than a
+		// refusal, because that is what the loader makes of it (#537).
+		{"lone high surrogate", "'" + bs + "ud83d'", "\uFFFD", true},
+		{"lone low surrogate", "'" + bs + "ude00'", "\uFFFD", true},
+		{"high surrogate then plain escape", "'" + bs + "ud83d" + bs + "u0041'", "\uFFFDA", true},
+		{"invalid utf-8 byte", "'a\xffb'", "a\uFFFDb", true},
 		{"truncated unicode", "'" + bs + "u00'", "", false},
 		{"nul followed by digit", `'\05'`, "", false},
 	}
@@ -697,6 +704,85 @@ func TestParseJSON5RejectsUnreadableKeys(t *testing.T) {
 		t.Run(in, func(t *testing.T) {
 			if _, err := parseJSON5([]byte(in)); err != nil {
 				t.Errorf("parseJSON5(%s): %v", in, err)
+			}
+		})
+	}
+}
+
+// TestJSON5ParserAgreesWithTitanous is #537's complaint stated as a test.
+//
+// docket reads a JSON5 recipe with two different parsers: this one, which
+// keeps comments and is what `docket fmt` uses, and titanous/json5, which
+// `apply`, `plan`, `validate` and `--vars-file` use. Every row a formatter
+// accepts and a loader refuses is a recipe that formats cleanly and then
+// fails to load with a parse error pointing somewhere else entirely, so the
+// two have to answer the same way.
+//
+// The corpus covers the shapes they used to disagree about: the separator
+// between entries, number literals, bare words in value position, string
+// literals, and object keys.
+func TestJSON5ParserAgreesWithTitanous(t *testing.T) {
+	docs := []string{
+		// separators
+		"[1, 2]", "[1, 2,]", "{a: 1, b: 2,}", "[]", "{}",
+		"[1, /* c */]", "[\n 1\n // note\n]", "[1 /* c */, 2]", "[1\n/* c */\n, 2]",
+		"[1 2]", "{ a: 1 b: 2 }", "[{a: 1} {b: 2}]", "[[1 2]]",
+		// numbers
+		"[0, 42, -42, +7, 1.5, -0.25, .5, 5., 1e3, 1.5e-3, 0x1F, -0x10, 0X0A]",
+		"[Infinity, +Infinity, -Infinity, NaN]",
+		"[-]", "[+]", "[.]", "[0x]", "[1e]", "[1e+]", "[01]", "[1.2.3]", "[-NaN]", "[--5]",
+		// bare words
+		"[true, false, null]", "{app: web}", "[undefined]", "[web, \"x\"]",
+		// string literals
+		`["plain", 'single', "esc: \n\t\b\f\r\\\/\"\'"]`,
+		`["caf` + bs + `u00e9", "` + bs + `ud83d` + bs + `ude00", "` + bs + `ud83d"]`,
+		"[\"a\\\nb\"]",
+		"[\"a\nb\"]", "[\"a\tb\"]", `["a\vb"]`, `["a\0b"]`, `["a\x41b"]`, `["a\qb"]`,
+		`["` + bs + `u12"]`, `["` + bs + `uZZZZ"]`,
+		// object keys
+		`{"café": 1}`, `{_a$b0: 1}`, `{"1": "x"}`, `{café: 1}`, `{1: "x"}`, `{1.5: "x"}`,
+	}
+	for _, doc := range docs {
+		t.Run(doc, func(t *testing.T) {
+			_, docketErr := parseJSON5([]byte(doc))
+			var loaded interface{}
+			loaderErr := json5.Unmarshal([]byte(doc), &loaded)
+
+			switch {
+			case docketErr == nil && loaderErr != nil:
+				t.Errorf("docket accepts what the loader refuses (%v); a recipe like this formats cleanly and then fails to load", loaderErr)
+			case docketErr != nil && loaderErr == nil:
+				t.Errorf("docket refuses (%v) what the loader reads; `docket fmt` would fail on a working recipe", docketErr)
+			}
+		})
+	}
+}
+
+// TestDecodeJSON5StringMatchesTitanous is the value half of the same claim.
+// Agreeing that a string parses is not enough when the two decoders make
+// different characters of it: the key a duplicate is compared against, and
+// the value a conversion writes out, both come from here.
+func TestDecodeJSON5StringMatchesTitanous(t *testing.T) {
+	for _, raw := range []string{
+		`"plain"`,
+		`"caf` + bs + `u00e9"`,
+		`"` + bs + `ud83d` + bs + `ude00"`,
+		`"` + bs + `ud83d"`,
+		`"` + bs + `ude00"`,
+		`"` + bs + `ud83d` + bs + `u0041"`,
+		"\"a\xffb\"",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			got, ok := decodeJSON5String(raw)
+			if !ok {
+				t.Fatalf("decodeJSON5String(%q) refused a literal the loader reads", raw)
+			}
+			var want string
+			if err := json5.Unmarshal([]byte(raw), &want); err != nil {
+				t.Fatalf("json5.Unmarshal(%q): %v", raw, err)
+			}
+			if got != want {
+				t.Errorf("decoded %q, loader decoded %q", got, want)
 			}
 		})
 	}

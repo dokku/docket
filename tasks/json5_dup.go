@@ -190,10 +190,20 @@ func (s *json5Scanner) parseArray() {
 // The returned key is the canonical (unquoted, unescaped) form so a
 // quoted and an unquoted spelling of the same key compare equal. ok is
 // false on malformed input so the caller can defer to the real parser.
+//
+// A quoted key is decoded by decodeJSON5String rather than by the scanner's
+// own best-effort readString, which does not combine a surrogate pair: two
+// spellings of the same astral key have to compare equal here, because they
+// compare equal to the loader, which silently keeps the last of the pair.
 func (s *json5Scanner) readKey() (string, bool) {
 	switch s.peek() {
 	case '"', '\'':
-		return s.readString(), true
+		start := s.pos
+		body := s.readString()
+		if decoded, ok := decodeJSON5String(string(s.data[start:s.pos])); ok {
+			return decoded, true
+		}
+		return body, true
 	}
 	start := s.pos
 	for !s.atEnd() {

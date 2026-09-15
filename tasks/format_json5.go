@@ -296,7 +296,22 @@ func decodeJSON5String(raw string) (string, bool) {
 	for i := 0; i < len(body); i++ {
 		c := body[i]
 		if c != '\\' {
-			b.WriteByte(c)
+			if c < utf8.RuneSelf {
+				b.WriteByte(c)
+				continue
+			}
+			// Invalid UTF-8 decodes to the replacement character, one byte at
+			// a time, which is what unquoteBytes - and so titanous/json5, and
+			// so the loader - makes of it. Copying the bytes through instead
+			// meant the value docket converted was not the value the loader
+			// read (#537).
+			r, size := utf8.DecodeRuneInString(body[i:])
+			if r == utf8.RuneError && size == 1 {
+				b.WriteRune(utf8.RuneError)
+				continue
+			}
+			b.WriteString(body[i : i+size])
+			i += size - 1
 			continue
 		}
 		i++
@@ -362,7 +377,14 @@ func decodeJSON5String(raw string) (string, bool) {
 // (the leading backslash already consumed). A high surrogate immediately
 // followed by \uYYYY that is a valid low surrogate is combined into the
 // astral code point. adv is the number of bytes consumed after the 'u'.
-// ok is false for a lone/invalid surrogate or truncated sequence.
+// ok is false only for a truncated or non-hex sequence, which the lexer
+// rejects outright and the loader rejects with it.
+//
+// An unpaired surrogate is not an error: it decodes to the replacement
+// character, consuming just the escape it read, so the escape after it is
+// still read on its own terms. That is encoding/json's rule and therefore
+// titanous/json5's, and refusing it here made `docket fmt` fail on a key
+// the loader reads quite happily (#537).
 func decodeJSON5Unicode(body string, i int) (r rune, adv int, ok bool) {
 	hi, ok := readHex4(body, i+1)
 	if !ok {
@@ -376,10 +398,10 @@ func decodeJSON5Unicode(body string, i int) (r rune, adv int, ok bool) {
 				return combined, 10, true
 			}
 		}
-		return 0, 0, false
+		return utf8.RuneError, 4, true
 	}
 	if hi >= 0xDC00 && hi <= 0xDFFF {
-		return 0, 0, false
+		return utf8.RuneError, 4, true
 	}
 	return rune(hi), 4, true
 }
