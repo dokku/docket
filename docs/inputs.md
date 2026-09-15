@@ -142,8 +142,11 @@ single quote.
 ```
 
 Note that `dq` must sit inside a double-quoted scalar. Do not leave the reference unquoted
-(`app: {{ .app | dq }}`): an unquoted `{{` is not valid YAML, so `docket validate` and `docket fmt`,
-which read the recipe before it is rendered, would reject the file.
+(`app: {{ .app | dq }}`). An unquoted `{{` is not the text it looks like: the braces are YAML's own
+flow syntax, so the value parses as a nested mapping and the template is gone before anything reads
+it. `docket validate`, `plan`, and `apply` render the recipe before parsing it and so never see the
+problem, but `docket fmt` reads the file as written - it reports the line and refuses, because
+writing YAML's reading back out would leave a recipe that no longer renders.
 
 ## Overriding inputs
 

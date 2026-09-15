@@ -69,6 +69,10 @@ func Format(data []byte) ([]byte, error) {
 		return data, nil
 	}
 
+	if line := unquotedInterpolationLine(documentBody(root), data); line > 0 {
+		return nil, fmt.Errorf("line %d: this interpolation is unquoted, so YAML reads the braces as its own flow syntax and the value is a nested mapping rather than the template text; quote it, as in app: \"{{ .app | dq }}\"", line)
+	}
+
 	out, err := encodeCanonicalYAML(root)
 	if err != nil {
 		return nil, err
@@ -163,6 +167,56 @@ func encodeCanonicalYAML(root *yaml.Node) ([]byte, error) {
 	}
 
 	return out, nil
+}
+
+// unquotedInterpolationLine returns the 1-based source line of an
+// interpolation YAML has read as a collection, or 0 when there is none.
+//
+// An unquoted `app: {{ .app }}` is not the text it looks like. The braces
+// are YAML's own flow syntax, so the value parses as a mapping whose single
+// key is the mapping `{.app: null}` - the template's own braces are gone
+// before docket ever sees them. Formatting that reading writes it back as
+// an explicit-key flow mapping, which is no longer a template at all: the
+// recipe would stop rendering. The round-trip guard catches the damage, but
+// only as "refusing to write", which says neither what is wrong nor how to
+// fix it.
+//
+// The tree alone cannot say a template was there, for the same reason the
+// braces are missing from it, so the structural signal - a mapping key that
+// is itself a collection, which a recipe has no other use for - is checked
+// against the line it came from. A complex key with no interpolation on its
+// line is left to the round-trip guard rather than claimed here.
+func unquotedInterpolationLine(node *yaml.Node, src []byte) int {
+	if node == nil {
+		return 0
+	}
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i]
+			if key.Kind != yaml.ScalarNode && sourceLineHasInterpolation(src, key.Line) {
+				return key.Line
+			}
+		}
+	}
+	for _, child := range node.Content {
+		if line := unquotedInterpolationLine(child, src); line > 0 {
+			return line
+		}
+	}
+	return 0
+}
+
+// sourceLineHasInterpolation reports whether the given 1-based line of src
+// opens an interpolation.
+func sourceLineHasInterpolation(src []byte, line int) bool {
+	if line < 1 {
+		return false
+	}
+	lines := strings.Split(string(src), "\n")
+	if line > len(lines) {
+		return false
+	}
+	return strings.Contains(lines[line-1], "{{")
 }
 
 // canonicalizeRecipe reorders the keys inside each play mapping and each

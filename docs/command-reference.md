@@ -150,7 +150,10 @@ twin lay out identically. Comments are preserved in both formats.
 
 A recipe it cannot parse is reported with the byte offset of the problem and left untouched. What
 `fmt` accepts is what `apply`, `plan`, and `validate` accept, so a file that formats is a file
-that loads, and a file it refuses would have failed later anyway.
+that loads, and a file it refuses would have failed later anyway. The one thing `fmt` objects to
+that the others do not is an unquoted interpolation: `fmt` reads the recipe as written, where
+`{{ .app }}` outside quotes is YAML flow syntax rather than template text, so it names the line
+instead of writing YAML's reading of it back out. See [Inputs](inputs.md).
 
 `--format` makes it a converter as well as a formatter. It states the format to write, so naming
 one the recipe is not already in rewrites it into that format, comments and all - the thing a trip

@@ -442,3 +442,58 @@ func TestFormatTargetingKeysStayValidatable(t *testing.T) {
 		t.Errorf("formatted output should still validate; got %+v", problems)
 	}
 }
+
+// TestFormatNamesAnUnquotedInterpolation covers the recipe shape that
+// cannot survive a format: the braces of an unquoted `{{ .app }}` are
+// YAML's own flow syntax, so the value parses as a nested mapping and the
+// template is gone before docket sees it. Re-emitting that reading would
+// leave a recipe that no longer renders, so `fmt` refuses - and says which
+// line to quote, instead of the round-trip guard's bare refusal.
+func TestFormatNamesAnUnquotedInterpolation(t *testing.T) {
+	in := []byte(`---
+- tasks:
+    - dokku_app:
+        app: {{.app | default ""}}
+`)
+	_, err := Format(in)
+	if err == nil {
+		t.Fatal("expected an error on an unquoted interpolation")
+	}
+	if !strings.Contains(err.Error(), "line 4") {
+		t.Errorf("error = %q, want it to name line 4", err.Error())
+	}
+	if !strings.Contains(err.Error(), "unquoted") {
+		t.Errorf("error = %q, want it to say the interpolation is unquoted", err.Error())
+	}
+	if strings.Contains(err.Error(), "round-trip") {
+		t.Errorf("error = %q, want the diagnosis rather than the round-trip guard", err.Error())
+	}
+}
+
+// TestFormatAcceptsQuotedInterpolations is the shape the docs prescribe and
+// `docket init` scaffolds: inside quotes the braces are just text, so the
+// recipe formats and keeps rendering.
+func TestFormatAcceptsQuotedInterpolations(t *testing.T) {
+	in := []byte(`---
+- tasks:
+    - dokku_app:
+        app: "{{ .app | dq }}"
+`)
+	out, err := Format(in)
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	if !strings.Contains(string(out), `app: "{{ .app | dq }}"`) {
+		t.Errorf("interpolation not preserved:\n%s", out)
+	}
+}
+
+// TestFormatLeavesAnOrdinaryComplexKeyAlone guards the narrowness of the
+// check above: a YAML complex key with no interpolation on its line is not
+// a misread template, and `docket fmt` has always formatted such a file.
+func TestFormatLeavesAnOrdinaryComplexKeyAlone(t *testing.T) {
+	in := []byte("? [a, b]\n: v\n")
+	if _, err := Format(in); err != nil {
+		t.Errorf("Format on a genuine complex key: %v", err)
+	}
+}

@@ -300,3 +300,27 @@ EOF
   refute_output "0"
   refute_output --partial "'{{ .app | dq }}'"
 }
+
+@test "docket fmt names the line of an unquoted interpolation" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF2'
+---
+- tasks:
+    - dokku_app:
+        app: {{.app | default ""}}
+EOF2
+  before=$(cat tasks.yml)
+  run "$(docket_bin)" fmt
+  assert_failure
+  assert_output --partial "line 4"
+  assert_output --partial "unquoted"
+  refute_output --partial "round-trip"
+  # The recipe is left alone: formatting it would have replaced the
+  # template with YAML's reading of it and stopped the recipe rendering.
+  assert [ "$(cat tasks.yml)" = "$before" ]
+}
+
+@test "docket fmt --check passes on the repository's own recipe" {
+  run "$(docket_bin)" fmt --check "$BATS_TEST_DIRNAME/../../tasks.yml"
+  assert_success
+}
