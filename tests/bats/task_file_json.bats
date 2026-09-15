@@ -261,3 +261,27 @@ EOF
   assert_success
   assert_output --partial "ensure docket-test-json5-mix"
 }
+
+@test "docket fmt and validate both reject a JSON5 recipe missing a comma" {
+  write_tasks_file tasks.json <<'JSON5'
+[
+  {
+    tasks: [
+      { dokku_app: { app: "a" } }
+      { dokku_app: { app: "b" } }
+    ],
+  },
+]
+JSON5
+  before="$(cat "$TASKS_FILE")"
+
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "json5 parse error"
+  # A recipe fmt cannot parse is left exactly as it was found.
+  assert [ "$(cat "$TASKS_FILE")" = "$before" ]
+
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"json5_parse"'
+}

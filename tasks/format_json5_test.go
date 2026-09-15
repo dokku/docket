@@ -324,8 +324,10 @@ func TestFormatJSON5RootInsideAndAfterComments(t *testing.T) {
 // only surfaced once cross-format conversion started emitting JSON5:
 // readNumber consumed the sign and then stopped on the "I", handing back
 // a lone "-" token with "Infinity" trailing it as a separate identifier.
-// parseArray does not require a comma between elements, so nothing
-// rejected the pair and `[-Infinity]` silently parsed as two elements.
+// parseArray did not require a comma between elements back then, so
+// nothing rejected the pair and `[-Infinity]` silently parsed as two
+// elements. The separator is required now (#537), which would catch the
+// pair a second time; the lexer still has to read it as one token.
 func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 	toks, err := lexJSON5([]byte("[-Infinity, +Infinity, Infinity, -NaN, NaN]"))
 	if err != nil {
@@ -360,11 +362,10 @@ func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 // hasWordAt: an identifier that merely starts with Infinity or NaN is not
 // one of them, so the sign is not glued onto it.
 //
-// The assertion is on the tokens rather than on parseJSON5 returning an
-// error, because it does not: the lexer yields "-" and "Infinities" as
-// two tokens and parseArray accepts them as two elements, the comma
-// between entries being optional. That leniency is #537; what matters here
-// is that hasWordAt did not claim the longer word.
+// The assertion is on the tokens rather than on the text of the parse
+// error: the lexer yields "-" and "Infinities" as two tokens, which
+// parseJSON5 now rejects for the missing comma between them (#537). What
+// matters here is that hasWordAt did not claim the longer word.
 func TestLexJSON5SignedWordPrefixIsNotSwallowed(t *testing.T) {
 	toks, err := lexJSON5([]byte("-Infinities"))
 	if err != nil {
@@ -396,5 +397,113 @@ func TestFormatJSON5RoundTripsNonFiniteNumbers(t *testing.T) {
 	}
 	if string(again) != string(out) {
 		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", out, again)
+	}
+}
+
+// TestParseJSON5RequiresSeparatorBetweenEntries pins #537: the comma
+// between two entries is not optional. parseArray and parseObject used to
+// consume one only if it happened to be there, so `[1 2]` read as a
+// two-element array and `{ a: 1 b: 2 }` as a two-member object - documents
+// titanous/json5 rejects, which is what apply / plan / validate read a
+// recipe with. A file could format cleanly and then fail to load.
+func TestParseJSON5RequiresSeparatorBetweenEntries(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"array scalars", "[1 2]", "expected , or ]"},
+		{"object members", "{ a: 1 b: 2 }", "expected , or }"},
+		{"array objects", "[{a: 1} {b: 2}]", "expected , or ]"},
+		{"after one good comma", "[1, 2 3]", "expected , or ]"},
+		{"nested array", "[[1 2]]", "expected , or ]"},
+		{"object value then member", "{a: {b: 1} c: 2}", "expected , or }"},
+		{"comment between entries", "[\n1\n// note\n2\n]", "expected , or ]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseJSON5([]byte(tc.in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%q) = nil error, want a missing-separator error", tc.in)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tc.want)
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+
+	// The offset is the one the reader needs: where the entry that should
+	// have been preceded by a comma starts.
+	_, err := parseJSON5([]byte("[1 2]"))
+	if err == nil {
+		t.Fatal("parseJSON5 = nil error")
+	}
+	if !strings.Contains(err.Error(), `got "2" at offset 3`) {
+		t.Errorf("error = %q, want it to name the second element at offset 3", err.Error())
+	}
+}
+
+// TestParseJSON5AcceptsValidSeparatorForms is the other half: requiring the
+// separator must not cost the trailing comma JSON5 does make optional, nor
+// any of the places a comment is allowed to sit around one.
+func TestParseJSON5AcceptsValidSeparatorForms(t *testing.T) {
+	cases := []struct {
+		name         string
+		in           string
+		wantElements int
+		wantMembers  int
+	}{
+		{"plain", "[1, 2]", 2, 0},
+		{"trailing comma", "[1, 2,]", 2, 0},
+		{"object trailing comma", "{a: 1, b: 2,}", 0, 2},
+		{"empty array", "[]", 0, 0},
+		{"empty object", "{}", 0, 0},
+		{"trailing comma then comment", "[1, /* c */]", 1, 0},
+		{"comment after last element", "[\n 1\n // note\n]", 1, 0},
+		{"comment before comma same line", "[1 /* c */, 2]", 2, 0},
+		{"comment before comma own line", "[1\n/* c */\n, 2]", 2, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			node, err := parseJSON5([]byte(tc.in))
+			if err != nil {
+				t.Fatalf("parseJSON5(%q): %v", tc.in, err)
+			}
+			if len(node.Elements) != tc.wantElements {
+				t.Errorf("parsed %d elements, want %d", len(node.Elements), tc.wantElements)
+			}
+			if len(node.Members) != tc.wantMembers {
+				t.Errorf("parsed %d members, want %d", len(node.Members), tc.wantMembers)
+			}
+		})
+	}
+
+	// A comment held over while the parser looked for the separator still
+	// reaches the output, wherever it sat relative to the comma.
+	for _, in := range []string{"[1, /* c */]", "[\n 1\n // note\n]", "[1\n/* c */\n, 2]"} {
+		out, err := FormatJSON5([]byte(in))
+		if err != nil {
+			t.Fatalf("FormatJSON5(%q): %v", in, err)
+		}
+		if !strings.Contains(string(out), "c */") && !strings.Contains(string(out), "// note") {
+			t.Errorf("comment lost formatting %q:\n%s", in, out)
+		}
+	}
+}
+
+// TestFormatJSON5RejectsMissingComma is the formatter-level half of #537:
+// the missing separator surfaces as the parse error `docket fmt` prints,
+// rather than as a silently rewritten file.
+func TestFormatJSON5RejectsMissingComma(t *testing.T) {
+	in := []byte(`[{ tasks: [{ dokku_app: { app: "a" } } { dokku_app: { app: "b" } }] }]`)
+	_, err := FormatJSON5(in)
+	if err == nil {
+		t.Fatal("expected an error on a missing comma between task entries")
+	}
+	if !strings.Contains(err.Error(), "json5 parse error") {
+		t.Errorf("error = %q, want json5 parse error", err.Error())
 	}
 }

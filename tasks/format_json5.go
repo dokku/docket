@@ -432,9 +432,10 @@ const (
 )
 
 type json5Tok struct {
-	Kind     json5TokKind
-	Raw      string // verbatim source slice
-	NewlineBefore bool // true if any newline preceded this token
+	Kind          json5TokKind
+	Raw           string // verbatim source slice
+	Offset        int    // byte offset of the token's first byte in the source
+	NewlineBefore bool   // true if any newline preceded this token
 }
 
 type json5Lexer struct {
@@ -463,7 +464,7 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 			for l.pos < len(l.src) && l.src[l.pos] != '\n' {
 				l.pos++
 			}
-			l.tokens = append(l.tokens, json5Tok{Kind: tokLineComment, Raw: string(l.src[start:l.pos]), NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokLineComment, Raw: string(l.src[start:l.pos]), Offset: start, NewlineBefore: pendingNewline})
 			pendingNewline = false
 			continue
 		}
@@ -477,39 +478,39 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 				return nil, fmt.Errorf("unterminated block comment at offset %d", start)
 			}
 			l.pos += 2
-			l.tokens = append(l.tokens, json5Tok{Kind: tokBlockComment, Raw: string(l.src[start:l.pos]), NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokBlockComment, Raw: string(l.src[start:l.pos]), Offset: start, NewlineBefore: pendingNewline})
 			pendingNewline = false
 			continue
 		}
 
 		switch c {
 		case '{':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokLBrace, Raw: "{", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokLBrace, Raw: "{", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case '}':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokRBrace, Raw: "}", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokRBrace, Raw: "}", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case '[':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokLBracket, Raw: "[", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokLBracket, Raw: "[", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case ']':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokRBracket, Raw: "]", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokRBracket, Raw: "]", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case ':':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokColon, Raw: ":", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokColon, Raw: ":", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case ',':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokComma, Raw: ",", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokComma, Raw: ",", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
@@ -545,7 +546,7 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 
 		return nil, fmt.Errorf("unexpected character %q at offset %d", c, l.pos)
 	}
-	l.tokens = append(l.tokens, json5Tok{Kind: tokEOF, NewlineBefore: pendingNewline})
+	l.tokens = append(l.tokens, json5Tok{Kind: tokEOF, Offset: len(l.src), NewlineBefore: pendingNewline})
 	return l.tokens, nil
 }
 
@@ -560,7 +561,7 @@ func (l *json5Lexer) readString(quote byte) (json5Tok, error) {
 		}
 		if c == quote {
 			l.pos++
-			return json5Tok{Kind: tokString, Raw: string(l.src[start:l.pos])}, nil
+			return json5Tok{Kind: tokString, Raw: string(l.src[start:l.pos]), Offset: start}, nil
 		}
 		l.pos++
 	}
@@ -577,14 +578,15 @@ func (l *json5Lexer) readNumber() (json5Tok, error) {
 	// left to readIdent, because the sign has already been consumed: the
 	// digit loop below stops dead on the "I", which used to yield a lone
 	// "-" token with "Infinity" following it as a separate identifier.
-	// Nothing rejected that pair - parseArray and parseObject treat the
-	// comma between entries as optional (#537) - so `[-Infinity]` parsed as
-	// two elements. An unsigned Infinity / NaN never reaches here at all; it
-	// starts with a letter, so the lexer sends it to readIdent.
+	// Nothing rejected that pair back then - parseArray and parseObject
+	// treated the comma between entries as optional, which is the leniency
+	// #537 removed - so `[-Infinity]` parsed as two elements. An unsigned
+	// Infinity / NaN never reaches here at all; it starts with a letter, so
+	// the lexer sends it to readIdent.
 	for _, word := range []string{"Infinity", "NaN"} {
 		if l.hasWordAt(l.pos, word) {
 			l.pos += len(word)
-			return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
+			return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}, nil
 		}
 	}
 	if l.pos+1 < len(l.src) && l.src[l.pos] == '0' && (l.src[l.pos+1] == 'x' || l.src[l.pos+1] == 'X') {
@@ -592,7 +594,7 @@ func (l *json5Lexer) readNumber() (json5Tok, error) {
 		for l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
 			l.pos++
 		}
-		return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
+		return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}, nil
 	}
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
@@ -605,7 +607,7 @@ func (l *json5Lexer) readNumber() (json5Tok, error) {
 	if l.pos == start {
 		return json5Tok{}, fmt.Errorf("invalid number at offset %d", start)
 	}
-	return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
+	return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}, nil
 }
 
 // hasWordAt reports whether the source holds word at pos and does not
@@ -634,7 +636,7 @@ func (l *json5Lexer) readIdent() json5Tok {
 		}
 		l.pos += sz
 	}
-	return json5Tok{Kind: tokIdent, Raw: string(l.src[start:l.pos])}
+	return json5Tok{Kind: tokIdent, Raw: string(l.src[start:l.pos]), Offset: start}
 }
 
 func isIdentStart(r rune) bool {
@@ -701,7 +703,7 @@ func parseJSON5(src []byte) (*json5Node, error) {
 		root.AfterComments = footComments
 	}
 	if p.peek().Kind != tokEOF {
-		return nil, fmt.Errorf("unexpected token %q after root value", p.peek().Raw)
+		return nil, fmt.Errorf("unexpected token %q after root value at offset %d", p.peek().Raw, p.peek().Offset)
 	}
 	return root, nil
 }
@@ -756,17 +758,22 @@ func (p *json5Parser) parseValue() (*json5Node, error) {
 		p.advance()
 		return &json5Node{Kind: json5Scalar, Raw: t.Raw}, nil
 	}
-	return nil, fmt.Errorf("unexpected token %q while parsing value", t.Raw)
+	return nil, fmt.Errorf("unexpected token %q while parsing value at offset %d", t.Raw, t.Offset)
 }
 
 func (p *json5Parser) parseObject() (*json5Node, error) {
 	if p.peek().Kind != tokLBrace {
-		return nil, fmt.Errorf("expected { at object start, got %q", p.peek().Raw)
+		return nil, fmt.Errorf("expected { at object start, got %q at offset %d", p.peek().Raw, p.peek().Offset)
 	}
 	p.advance()
 	node := &json5Node{Kind: json5Object}
+	// Comments consumed while looking for the separator after a member;
+	// they belong to whatever comes next, so they are held over to the top
+	// of the following iteration.
+	var pending []string
 	for {
-		head := p.consumeComments()
+		head := append(pending, p.consumeComments()...)
+		pending = nil
 		if p.peek().Kind == tokRBrace {
 			p.advance()
 			node.FootComments = head
@@ -777,7 +784,7 @@ func (p *json5Parser) parseObject() (*json5Node, error) {
 			return nil, err
 		}
 		if p.peek().Kind != tokColon {
-			return nil, fmt.Errorf("expected : after key %q, got %q", key, p.peek().Raw)
+			return nil, fmt.Errorf("expected : after key %q, got %q at offset %d", key, p.peek().Raw, p.peek().Offset)
 		}
 		p.advance()
 		val, err := p.parseValue()
@@ -787,11 +794,25 @@ func (p *json5Parser) parseObject() (*json5Node, error) {
 		member := &json5Member{Key: key, Value: val, HeadComments: head}
 		// Trailing comment on the same line as the value.
 		member.LineComment = p.consumeTrailingLineComment()
-		// Optional comma; trailing comma allowed.
+		// JSON5 makes only the trailing comma optional; a missing separator
+		// is an error. titanous/json5, which apply / plan / validate read a
+		// recipe with, rejects it too, so accepting it here meant a recipe
+		// could pass `docket fmt` and then fail to load (#537).
 		if p.peek().Kind == tokComma {
 			p.advance()
 			if member.LineComment == "" {
 				member.LineComment = p.consumeTrailingLineComment()
+			}
+		} else {
+			// A comment may sit between the member and its comma, or between
+			// the last member and the closing brace; either way it belongs to
+			// what follows, not to the member just parsed.
+			pending = p.consumeComments()
+			if p.peek().Kind == tokComma {
+				p.advance()
+			} else if p.peek().Kind != tokRBrace {
+				t := p.peek()
+				return nil, fmt.Errorf("expected , or } after object member, got %q at offset %d", t.Raw, t.Offset)
 			}
 		}
 		node.Members = append(node.Members, member)
@@ -800,12 +821,16 @@ func (p *json5Parser) parseObject() (*json5Node, error) {
 
 func (p *json5Parser) parseArray() (*json5Node, error) {
 	if p.peek().Kind != tokLBracket {
-		return nil, fmt.Errorf("expected [ at array start, got %q", p.peek().Raw)
+		return nil, fmt.Errorf("expected [ at array start, got %q at offset %d", p.peek().Raw, p.peek().Offset)
 	}
 	p.advance()
 	node := &json5Node{Kind: json5Array}
+	// See parseObject: comments found while looking for the separator are
+	// held over as the next element's head comments.
+	var pending []string
 	for {
-		head := p.consumeComments()
+		head := append(pending, p.consumeComments()...)
+		pending = nil
 		if p.peek().Kind == tokRBracket {
 			p.advance()
 			node.FootComments = head
@@ -822,6 +847,14 @@ func (p *json5Parser) parseArray() (*json5Node, error) {
 			if elem.LineComment == "" {
 				elem.LineComment = p.consumeTrailingLineComment()
 			}
+		} else {
+			pending = p.consumeComments()
+			if p.peek().Kind == tokComma {
+				p.advance()
+			} else if p.peek().Kind != tokRBracket {
+				t := p.peek()
+				return nil, fmt.Errorf("expected , or ] after array element, got %q at offset %d", t.Raw, t.Offset)
+			}
 		}
 		node.Elements = append(node.Elements, elem)
 	}
@@ -833,13 +866,13 @@ func (p *json5Parser) parseKey() (string, error) {
 	case tokString:
 		decoded, ok := decodeJSON5String(t.Raw)
 		if !ok {
-			return "", fmt.Errorf("invalid string key %q", t.Raw)
+			return "", fmt.Errorf("invalid string key %q at offset %d", t.Raw, t.Offset)
 		}
 		return decoded, nil
 	case tokIdent, tokNumber:
 		return t.Raw, nil
 	}
-	return "", fmt.Errorf("expected key, got %q", t.Raw)
+	return "", fmt.Errorf("expected key, got %q at offset %d", t.Raw, t.Offset)
 }
 
 // ---------------------------------------------------------------------
