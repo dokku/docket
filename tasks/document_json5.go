@@ -112,7 +112,9 @@ func json5ScalarToYAMLNode(raw string) (*yaml.Node, error) {
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: ".inf"}, nil
 	case "-Infinity":
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: "-.inf"}, nil
-	case "NaN", "+NaN", "-NaN":
+	case "NaN":
+		// Only the unsigned spelling: readNumber refuses a signed NaN,
+		// because titanous/json5 does (#537).
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: ".nan"}, nil
 	}
 

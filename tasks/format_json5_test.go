@@ -329,7 +329,7 @@ func TestFormatJSON5RootInsideAndAfterComments(t *testing.T) {
 // elements. The separator is required now (#537), which would catch the
 // pair a second time; the lexer still has to read it as one token.
 func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
-	toks, err := lexJSON5([]byte("[-Infinity, +Infinity, Infinity, -NaN, NaN]"))
+	toks, err := lexJSON5([]byte("[-Infinity, +Infinity, Infinity, NaN]"))
 	if err != nil {
 		t.Fatalf("lexJSON5: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 			values = append(values, tok.Raw)
 		}
 	}
-	want := []string{"-Infinity", "+Infinity", "Infinity", "-NaN", "NaN"}
+	want := []string{"-Infinity", "+Infinity", "Infinity", "NaN"}
 	if len(values) != len(want) {
 		t.Fatalf("lexed %d value tokens %q, want %d %q", len(values), values, len(want), want)
 	}
@@ -349,12 +349,19 @@ func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 		}
 	}
 
-	node, err := parseJSON5([]byte("[-Infinity, +Infinity, Infinity, -NaN, NaN]"))
+	node, err := parseJSON5([]byte("[-Infinity, +Infinity, Infinity, NaN]"))
 	if err != nil {
 		t.Fatalf("parseJSON5: %v", err)
 	}
 	if len(node.Elements) != len(want) {
 		t.Errorf("parsed %d elements, want %d", len(node.Elements), len(want))
+	}
+
+	// A signed NaN is the one spelling that does not come along. JSON5
+	// allows it and titanous/json5 does not, and the loader has the last
+	// word on what a recipe may say.
+	if _, err := parseJSON5([]byte("[-NaN]")); err == nil {
+		t.Error("parseJSON5(\"[-NaN]\") = nil error, want the loader's rejection")
 	}
 }
 
@@ -362,19 +369,23 @@ func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 // hasWordAt: an identifier that merely starts with Infinity or NaN is not
 // one of them, so the sign is not glued onto it.
 //
-// The assertion is on the tokens rather than on the text of the parse
-// error: the lexer yields "-" and "Infinities" as two tokens, which
-// parseJSON5 now rejects for the missing comma between them (#537). What
-// matters here is that hasWordAt did not claim the longer word.
+// A sign followed by a longer word is no longer a number at all: the sign
+// is consumed, the boundary check refuses the word, and the digit scan
+// finds nothing, so the whole thing is an invalid number rather than two
+// tokens the parser would have to reject separately (#537).
 func TestLexJSON5SignedWordPrefixIsNotSwallowed(t *testing.T) {
-	toks, err := lexJSON5([]byte("-Infinities"))
+	if _, err := lexJSON5([]byte("-Infinities")); err == nil {
+		t.Error("lexJSON5(\"-Infinities\") = nil error, want an invalid number")
+	}
+
+	// The other side of the boundary: the exact word still reads as one
+	// signed number token.
+	toks, err := lexJSON5([]byte("-Infinity"))
 	if err != nil {
 		t.Fatalf("lexJSON5: %v", err)
 	}
-	for _, tok := range toks {
-		if tok.Raw == "-Infinities" {
-			t.Errorf("hasWordAt swallowed a longer identifier: %q", tok.Raw)
-		}
+	if len(toks) != 2 || toks[0].Kind != tokNumber || toks[0].Raw != "-Infinity" {
+		t.Errorf("lexed %+v, want a single -Infinity number token", toks)
 	}
 }
 
@@ -505,5 +516,59 @@ func TestFormatJSON5RejectsMissingComma(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "json5 parse error") {
 		t.Errorf("error = %q, want json5 parse error", err.Error())
+	}
+}
+
+// TestParseJSON5RejectsMalformedNumbers covers the other half of #537's
+// leniency: readNumber used to hand back a token whenever it had consumed
+// any byte at all, so a lone sign, a digitless 0x, a second decimal point
+// and a bare exponent all lexed as numbers that `docket fmt` would rewrite
+// verbatim and titanous/json5 would then refuse.
+//
+// Some rows fail in the lexer and some in the parser - 1.2.3 and 01 now lex
+// as two adjacent number tokens, which the separator rule rejects - so
+// every row asserts on parseJSON5, which is where a caller meets either.
+func TestParseJSON5RejectsMalformedNumbers(t *testing.T) {
+	for _, in := range []string{
+		"[-]", "[+]", "[.]", "[0x]", "[0X]", "[1e]", "[1e+]", "[--5]",
+		"[-NaN]", "[+NaN]", "[1.2.3]", "[01]", "[1-2]",
+	} {
+		t.Run(in, func(t *testing.T) {
+			_, err := parseJSON5([]byte(in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%s) = nil error, want a rejection", in)
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+}
+
+// TestLexJSON5AcceptsJSON5NumberForms is the guard on the other side of the
+// tightening: every spelling document_json5.go already types has to keep
+// lexing as exactly one value token. Infinity and NaN arrive unsigned as
+// identifiers, which is how the lexer has always handed them over.
+func TestLexJSON5AcceptsJSON5NumberForms(t *testing.T) {
+	for _, in := range []string{
+		"0", "-0", "42", "-42", "+7", "0x1F", "-0x10", "0X0A",
+		"1.5", "-0.25", ".5", "5.", "1e3", "1.5e-3", "1E+3", "0.0",
+		"Infinity", "+Infinity", "-Infinity", "NaN",
+	} {
+		t.Run(in, func(t *testing.T) {
+			toks, err := lexJSON5([]byte(in))
+			if err != nil {
+				t.Fatalf("lexJSON5(%s): %v", in, err)
+			}
+			if len(toks) != 2 {
+				t.Fatalf("lexed %d tokens %+v, want one value token and EOF", len(toks), toks)
+			}
+			if toks[0].Kind != tokNumber && toks[0].Kind != tokIdent {
+				t.Errorf("token kind = %d, want a number or identifier", toks[0].Kind)
+			}
+			if toks[0].Raw != in {
+				t.Errorf("token = %q, want %q", toks[0].Raw, in)
+			}
+		})
 	}
 }

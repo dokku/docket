@@ -568,46 +568,102 @@ func (l *json5Lexer) readString(quote byte) (json5Tok, error) {
 	return json5Tok{}, fmt.Errorf("unterminated string starting at offset %d", start)
 }
 
+// readNumber reads a JSON5 NumericLiteral: an optional sign, then Infinity,
+// a hexadecimal integer, or a decimal number.
+//
+// What it accepts is deliberately the grammar titanous/json5 accepts - its
+// scanner states, plus the isValidNumber check its decoder applies
+// afterwards - because that is the parser apply / plan / validate read a
+// recipe with. A spelling the formatter passes through and the loader
+// refuses is a file that formats cleanly and then fails to run, which is
+// what a lone "-", a digitless "0x", "01", "1.2.3" and "1e" all used to be
+// (#537).
 func (l *json5Lexer) readNumber() (json5Tok, error) {
 	start := l.pos
 	if l.src[l.pos] == '+' || l.src[l.pos] == '-' {
 		l.pos++
 	}
-	// JSON5 spells the non-finite numbers Infinity and NaN, and allows a
-	// sign in front of them. They have to be recognised here rather than
-	// left to readIdent, because the sign has already been consumed: the
-	// digit loop below stops dead on the "I", which used to yield a lone
-	// "-" token with "Infinity" following it as a separate identifier.
-	// Nothing rejected that pair back then - parseArray and parseObject
-	// treated the comma between entries as optional, which is the leniency
-	// #537 removed - so `[-Infinity]` parsed as two elements. An unsigned
-	// Infinity / NaN never reaches here at all; it starts with a letter, so
-	// the lexer sends it to readIdent.
-	for _, word := range []string{"Infinity", "NaN"} {
-		if l.hasWordAt(l.pos, word) {
-			l.pos += len(word)
-			return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}, nil
-		}
+	// JSON5 spells the infinities Infinity and allows a sign in front. It
+	// has to be recognised here rather than left to readIdent, because the
+	// sign has already been consumed: the digit scan below stops dead on the
+	// "I", which used to yield a lone "-" token with "Infinity" following it
+	// as a separate identifier (#418). An unsigned Infinity never reaches
+	// here at all; it starts with a letter, so the lexer sends it to
+	// readIdent.
+	//
+	// NaN is deliberately absent. The JSON5 spec allows a sign in front of
+	// it, but titanous/json5 does not - after a sign its scanner takes a
+	// digit, a dot or an "I" and nothing else - so a signed NaN is a number
+	// the formatter would keep and the loader would refuse.
+	if l.hasWordAt(l.pos, "Infinity") {
+		l.pos += len("Infinity")
+		return l.numberTok(start), nil
 	}
-	if l.pos+1 < len(l.src) && l.src[l.pos] == '0' && (l.src[l.pos+1] == 'x' || l.src[l.pos+1] == 'X') {
-		l.pos += 2
-		for l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
+
+	intStart := l.pos
+	if l.pos < len(l.src) && l.src[l.pos] == '0' {
+		l.pos++
+		if l.pos < len(l.src) && (l.src[l.pos] == 'x' || l.src[l.pos] == 'X') {
 			l.pos++
+			if !l.readHexDigits() {
+				return json5Tok{}, fmt.Errorf("invalid hexadecimal number at offset %d", start)
+			}
+			return l.numberTok(start), nil
 		}
-		return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}, nil
+		// A leading zero is the whole integer part. JSON5 has no octal
+		// literal, so the integer part of 0123 ends at the 0 and the rest is
+		// a second token the parser will refuse for the comma that is not
+		// between them.
+	} else {
+		l.readDigits()
 	}
-	for l.pos < len(l.src) {
-		c := l.src[l.pos]
-		if (c >= '0' && c <= '9') || c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-' {
-			l.pos++
-			continue
-		}
-		break
+	hasInt := l.pos > intStart
+
+	hasFraction := false
+	if l.pos < len(l.src) && l.src[l.pos] == '.' {
+		l.pos++
+		hasFraction = l.readDigits()
 	}
-	if l.pos == start {
+	// 1. and .5 are both numbers; a bare ".", "-" or "+" is not.
+	if !hasInt && !hasFraction {
 		return json5Tok{}, fmt.Errorf("invalid number at offset %d", start)
 	}
-	return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}, nil
+
+	if l.pos < len(l.src) && (l.src[l.pos] == 'e' || l.src[l.pos] == 'E') {
+		l.pos++
+		if l.pos < len(l.src) && (l.src[l.pos] == '+' || l.src[l.pos] == '-') {
+			l.pos++
+		}
+		if !l.readDigits() {
+			return json5Tok{}, fmt.Errorf("invalid exponent in number at offset %d", start)
+		}
+	}
+	return l.numberTok(start), nil
+}
+
+// numberTok wraps the source between start and the current position as a
+// number token.
+func (l *json5Lexer) numberTok(start int) json5Tok {
+	return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}
+}
+
+// readDigits consumes a run of decimal digits and reports whether there was
+// at least one.
+func (l *json5Lexer) readDigits() bool {
+	start := l.pos
+	for l.pos < len(l.src) && l.src[l.pos] >= '0' && l.src[l.pos] <= '9' {
+		l.pos++
+	}
+	return l.pos > start
+}
+
+// readHexDigits is readDigits for a hexadecimal run.
+func (l *json5Lexer) readHexDigits() bool {
+	start := l.pos
+	for l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
+		l.pos++
+	}
+	return l.pos > start
 }
 
 // hasWordAt reports whether the source holds word at pos and does not
