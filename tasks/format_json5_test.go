@@ -607,3 +607,68 @@ func TestParseJSON5RejectsUnquotedValues(t *testing.T) {
 		t.Errorf("unquoted key should still parse: %v", err)
 	}
 }
+
+// TestParseJSON5RejectsInvalidStringLiterals covers the fourth shape of
+// #537: readString used to take any byte up to the closing quote, so a raw
+// newline and every escape JSON5 spells but titanous/json5 does not - \v,
+// \0, \xHH, and the identity escape - lexed fine and then failed to load.
+//
+// The \u rows are built from bs so this file never holds a real escape
+// sequence a text pipeline could fold into its character.
+func TestParseJSON5RejectsInvalidStringLiterals(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"raw newline", "[\"a\nb\"]"},
+		{"raw tab", "[\"a\tb\"]"},
+		{"vertical tab escape", `["a\vb"]`},
+		{"nul escape", `["a\0b"]`},
+		{"hex escape", `["a\x41b"]`},
+		{"identity escape", `["a\qb"]`},
+		{"short unicode escape", `["` + bs + `u12"]`},
+		{"non-hex unicode escape", `["` + bs + `uZZZZ"]`},
+		{"trailing backslash", `["a\`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseJSON5([]byte(tc.in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%q) = nil error, want a rejection", tc.in)
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+}
+
+// TestParseJSON5AcceptsValidStringEscapes is the guard on the other side:
+// every escape the loader does accept has to keep lexing, including the two
+// line continuations, which are the only way a JSON5 string spans lines.
+func TestParseJSON5AcceptsValidStringEscapes(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"short escapes", `["\b\f\n\r\t"]`},
+		{"backslash and slash", `["\\ \/"]`},
+		{"both quotes", `["\" \'"]`},
+		{"single quoted with escapes", `['it\'s \"quoted\"']`},
+		{"unicode escape", `["caf` + bs + `u00e9"]`},
+		{"surrogate pair", `["` + bs + `ud83d` + bs + `ude00"]`},
+		{"lf line continuation", "[\"a\\\nb\"]"},
+		{"crlf line continuation", "[\"a\\\r\nb\"]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			node, err := parseJSON5([]byte(tc.in))
+			if err != nil {
+				t.Fatalf("parseJSON5(%q): %v", tc.in, err)
+			}
+			if len(node.Elements) != 1 {
+				t.Errorf("parsed %d elements, want 1", len(node.Elements))
+			}
+		})
+	}
+}

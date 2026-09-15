@@ -277,8 +277,13 @@ func normaliseJSON5Scalar(raw string) string {
 // decodeJSON5String decodes a quoted JSON5 string token (single or double
 // quoted) into its actual character content, resolving every JSON5 escape
 // to the character it denotes. ok is false on a malformed escape (bad hex,
-// lone surrogate, truncated sequence); callers treat that as "leave the
-// original quoting untouched" so a formatting bug can never corrupt a recipe.
+// truncated sequence); callers treat that as "leave the original quoting
+// untouched" so a formatting bug can never corrupt a recipe.
+//
+// It knows the whole JSON5 escape set, including the \v, \0, \xHH and
+// identity escapes readString now refuses on the loader's behalf (#537).
+// Keeping them costs nothing and means the decoder still answers for a
+// string that reached it from somewhere other than the lexer.
 func decodeJSON5String(raw string) (string, bool) {
 	if len(raw) < 2 {
 		return "", false
@@ -550,22 +555,72 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 	return l.tokens, nil
 }
 
+// readString reads a quoted string literal, validating it as it goes.
+//
+// The rules are titanous/json5's, which are encoding/json's plus the single
+// quote and the line continuation: no raw control character inside the
+// quotes, and an escape drawn from a fixed set. JSON5 itself also spells
+// \v, \0 and \xHH and lets any other character escape to itself, but the
+// loader refuses all of those, and a string the formatter keeps and the
+// loader refuses is a recipe that formats cleanly and then fails to run
+// (#537).
 func (l *json5Lexer) readString(quote byte) (json5Tok, error) {
 	start := l.pos
 	l.pos++
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
-		if c == '\\' {
-			l.pos += 2
+		switch {
+		case c == '\\':
+			if err := l.readStringEscape(); err != nil {
+				return json5Tok{}, err
+			}
 			continue
-		}
-		if c == quote {
+		case c == quote:
 			l.pos++
 			return json5Tok{Kind: tokString, Raw: string(l.src[start:l.pos]), Offset: start}, nil
+		case c < 0x20:
+			// A newline or a tab has to be written as an escape. Reading one
+			// raw would also mean a runaway string swallowing the rest of the
+			// recipe before anything complained.
+			return json5Tok{}, fmt.Errorf("control character in string at offset %d", l.pos)
 		}
 		l.pos++
 	}
 	return json5Tok{}, fmt.Errorf("unterminated string starting at offset %d", start)
+}
+
+// readStringEscape consumes one backslash escape inside a string literal.
+// A backslash at the very end of the source is an error rather than a step
+// past it, which is what the old two-byte skip could do.
+func (l *json5Lexer) readStringEscape() error {
+	start := l.pos
+	l.pos++
+	if l.pos >= len(l.src) {
+		return fmt.Errorf("unterminated string escape at offset %d", start)
+	}
+	c := l.src[l.pos]
+	l.pos++
+	switch c {
+	case 'b', 'f', 'n', 'r', 't', '\\', '/', '"', '\'', '\n':
+		// The bare newline is a line continuation; it contributes nothing to
+		// the decoded value.
+		return nil
+	case '\r':
+		// The same, written CRLF: the LF belongs to this escape.
+		if l.pos < len(l.src) && l.src[l.pos] == '\n' {
+			l.pos++
+		}
+		return nil
+	case 'u':
+		for i := 0; i < 4; i++ {
+			if l.pos >= len(l.src) || !isHexDigit(l.src[l.pos]) {
+				return fmt.Errorf("invalid \\u escape in string at offset %d", start)
+			}
+			l.pos++
+		}
+		return nil
+	}
+	return fmt.Errorf("invalid string escape %q at offset %d", l.src[start:l.pos], start)
 }
 
 // readNumber reads a JSON5 NumericLiteral: an optional sign, then Infinity,
