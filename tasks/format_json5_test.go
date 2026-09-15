@@ -253,17 +253,24 @@ func TestFormatJSON5ReQuotesUnicodeValueWithoutCorruption(t *testing.T) {
 	}
 }
 
-func TestFormatJSON5DecodesUnicodeKey(t *testing.T) {
+// TestFormatJSON5QuotesNonASCIIKey is the corruption case of #537 as a
+// test. The key is decoded out of its escape, as it always was, but it stays
+// quoted: an unquoted café is not a key titanous/json5 can read, so emitting
+// one took a recipe the loader had been reading and made it unreadable.
+func TestFormatJSON5QuotesNonASCIIKey(t *testing.T) {
 	in := []byte("[{ tasks: [{ dokku_config: { 'caf" + bs + "u00e9': \"x\" } }] }]")
 	out, err := FormatJSON5(in)
 	if err != nil {
 		t.Fatalf("FormatJSON5: %v", err)
 	}
-	if !strings.Contains(string(out), "café:") {
-		t.Errorf("expected decoded unicode key in output:\n%s", out)
+	if !strings.Contains(string(out), `"café":`) {
+		t.Errorf("expected a quoted unicode key in output:\n%s", out)
 	}
 	if strings.Contains(string(out), bs+"u00e9") {
 		t.Errorf("output still carries the raw unicode escape in the key:\n%s", out)
+	}
+	if _, err := parseJSON5(out); err != nil {
+		t.Fatalf("formatted output does not re-parse: %v\n%s", err, out)
 	}
 }
 
@@ -668,6 +675,28 @@ func TestParseJSON5AcceptsValidStringEscapes(t *testing.T) {
 			}
 			if len(node.Elements) != 1 {
 				t.Errorf("parsed %d elements, want 1", len(node.Elements))
+			}
+		})
+	}
+}
+
+// TestParseJSON5RejectsUnreadableKeys is the read half of the same rule: a
+// key the loader cannot read is not one the formatter should accept either.
+func TestParseJSON5RejectsUnreadableKeys(t *testing.T) {
+	for _, in := range []string{`{café: 1}`, `{1: "x"}`, `{1.5: "x"}`, `{-1: "x"}`} {
+		t.Run(in, func(t *testing.T) {
+			if _, err := parseJSON5([]byte(in)); err == nil {
+				t.Errorf("parseJSON5(%s) = nil error, want a rejection", in)
+			}
+		})
+	}
+
+	// Quoted keys carry anything, and the ASCII identifier alphabet is
+	// exactly titanous/json5's [A-Za-z0-9_$].
+	for _, in := range []string{`{"café": 1}`, `{_a$b0: 1}`, `{"1": "x"}`, `{$: 1}`} {
+		t.Run(in, func(t *testing.T) {
+			if _, err := parseJSON5([]byte(in)); err != nil {
+				t.Errorf("parseJSON5(%s): %v", in, err)
 			}
 		})
 	}

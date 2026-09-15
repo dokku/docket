@@ -324,3 +324,28 @@ JSON5
   assert_failure
   assert_output --partial '"code":"json5_parse"'
 }
+
+@test "docket fmt keeps a non-ASCII JSON5 key quoted so it still loads" {
+  write_tasks_file tasks.json <<'JSON5'
+[
+  {
+    tasks: [
+      { dokku_config: { app: "api", config: { 'café': "au lait" } } },
+    ],
+  },
+]
+JSON5
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_success
+  run grep -F '"café"' "$TASKS_FILE"
+  assert_success
+
+  # The formatted recipe still loads: an unquoted café key would not.
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  run "$(docket_bin)" fmt --check "$TASKS_FILE"
+  assert_success
+}

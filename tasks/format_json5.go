@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -750,12 +749,18 @@ func (l *json5Lexer) readIdent() json5Tok {
 	return json5Tok{Kind: tokIdent, Raw: string(l.src[start:l.pos]), Offset: start}
 }
 
+// isIdentStart and isIdentPart spell the unquoted-key alphabet, and they
+// are ASCII on purpose. The JSON5 spec takes any Unicode letter, but
+// titanous/json5 takes [A-Za-z0-9_$] and nothing else, and it is the reader
+// apply / plan / validate use. Letting é through here meant `docket fmt`
+// unquoted a `café` key the loader had been reading quite happily and wrote
+// a recipe that no longer loaded (#537).
 func isIdentStart(r rune) bool {
-	return r == '_' || r == '$' || unicode.IsLetter(r)
+	return r == '_' || r == '$' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
 func isIdentPart(r rune) bool {
-	return isIdentStart(r) || unicode.IsDigit(r)
+	return isIdentStart(r) || (r >= '0' && r <= '9')
 }
 
 func isHexDigit(c byte) bool {
@@ -994,6 +999,10 @@ func (p *json5Parser) parseArray() (*json5Node, error) {
 	}
 }
 
+// parseKey reads an object key: a quoted string or an unquoted identifier,
+// which is the whole of what JSON5 allows. A number is not a key - titanous
+// /json5 refuses `{1: "x"}`, and the emitter already writes a numeric key
+// quoted, so nothing docket produces changes shape (#537).
 func (p *json5Parser) parseKey() (string, error) {
 	t := p.advance()
 	switch t.Kind {
@@ -1003,7 +1012,7 @@ func (p *json5Parser) parseKey() (string, error) {
 			return "", fmt.Errorf("invalid string key %q at offset %d", t.Raw, t.Offset)
 		}
 		return decoded, nil
-	case tokIdent, tokNumber:
+	case tokIdent:
 		return t.Raw, nil
 	}
 	return "", fmt.Errorf("expected key, got %q at offset %d", t.Raw, t.Offset)
