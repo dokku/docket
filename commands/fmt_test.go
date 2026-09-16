@@ -1169,3 +1169,50 @@ func TestFmtConvertsAnEscapedInterpolation(t *testing.T) {
 		t.Errorf("converted recipe does not carry the escaped interpolation:\n%s", out)
 	}
 }
+
+// TestFmtRefusesNonUTF8CommentAndLeavesTheFile covers #544 at the command
+// boundary. `--format yaml` is the invocation that used to die with
+// yaml.v3's `panic: unknown character width` partway through writing, so
+// the test cares as much about the file being untouched as about the exit
+// code. The plain in-place run is the same refusal from the other entry
+// point into the parser.
+func TestFmtRefusesNonUTF8CommentAndLeavesTheFile(t *testing.T) {
+	t.Parallel()
+
+	const recipe = "[\n  // n\x84te\n  { tasks: [] },\n]\n"
+
+	for _, tc := range []struct {
+		name string
+		args func(path string) []string
+	}{
+		{"in place", func(path string) []string { return []string{path} }},
+		{"converting", func(path string) []string { return []string{"--format", "yaml", path} }},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, "tasks.json5")
+			if err := os.WriteFile(path, []byte(recipe), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+
+			c := newTestFmtCommand()
+			if exit := c.Run(tc.args(path)); exit != 1 {
+				t.Fatalf("exit = %d, want 1", exit)
+			}
+			stderr := c.Ui.(*cli.MockUi).ErrorWriter.String()
+			if !strings.Contains(stderr, "invalid UTF-8 byte 0x84 in comment at offset 8") {
+				t.Errorf("expected the offending byte to be named, got:\n%s", stderr)
+			}
+
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if string(got) != recipe {
+				t.Errorf("file was rewritten:\nwant:\n%q\ngot:\n%q", recipe, got)
+			}
+		})
+	}
+}

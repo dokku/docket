@@ -499,6 +499,9 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 			for l.pos < len(l.src) && l.src[l.pos] != '\n' {
 				l.pos++
 			}
+			if err := json5CommentUTF8Error(l.src[start:l.pos], start); err != nil {
+				return nil, err
+			}
 			l.tokens = append(l.tokens, json5Tok{Kind: tokLineComment, Raw: string(l.src[start:l.pos]), Offset: start, NewlineBefore: pendingNewline})
 			pendingNewline = false
 			continue
@@ -513,6 +516,9 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 				return nil, fmt.Errorf("unterminated block comment at offset %d", start)
 			}
 			l.pos += 2
+			if err := json5CommentUTF8Error(l.src[start:l.pos], start); err != nil {
+				return nil, err
+			}
 			l.tokens = append(l.tokens, json5Tok{Kind: tokBlockComment, Raw: string(l.src[start:l.pos]), Offset: start, NewlineBefore: pendingNewline})
 			pendingNewline = false
 			continue
@@ -583,6 +589,39 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 	}
 	l.tokens = append(l.tokens, json5Tok{Kind: tokEOF, Offset: len(l.src), NewlineBefore: pendingNewline})
 	return l.tokens, nil
+}
+
+// json5CommentUTF8Error reports a comment whose bytes are not text. raw is
+// the comment token including its delimiters, and start its offset in the
+// source, so the error can name the offending byte rather than the token.
+//
+// The lexer keeps a comment verbatim, which is what lets `fmt` carry one
+// across a conversion, and nothing between here and yaml.v3's emitter looks
+// at those bytes again: a comment is written out raw, and the writer panics
+// outright on a byte that starts no rune, so `docket fmt --format yaml` died
+// rather than naming a problem with the file (#544).
+//
+// Only a comment needs this. decodeJSON5String already replaces an invalid
+// byte in a string with U+FFFD, the way the loader does, and an unquoted key
+// cannot hold one at all, isIdentPart being ASCII-only. A YAML source cannot
+// carry one either: yaml.v3 refuses it while reading.
+//
+// It is the one place the formatter's grammar is deliberately narrower than
+// titanous/json5's rather than identical to it (#537). It can afford to be:
+// the loader throws every comment away before it reads anything, so this
+// refuses no recipe the loader would have gone on to run. This is a fmt rule.
+func json5CommentUTF8Error(raw []byte, start int) error {
+	if utf8.Valid(raw) {
+		return nil
+	}
+	for i := 0; i < len(raw); {
+		r, size := utf8.DecodeRune(raw[i:])
+		if r == utf8.RuneError && size == 1 {
+			return fmt.Errorf("invalid UTF-8 byte %#x in comment at offset %d", raw[i], start+i)
+		}
+		i += size
+	}
+	return nil
 }
 
 // readString reads a quoted string literal, validating it as it goes.
