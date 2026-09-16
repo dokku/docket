@@ -40,7 +40,7 @@ code into it:
 
 - **Dokku >= 0.38.27.**
 - **dokku-letsencrypt >= 0.25.0.**
-- **dokku-http-auth >= 0.13.0**, if your recipe uses the `dokku_http_auth*` tasks.
+- **dokku-http-auth >= 0.14.0**, if your recipe uses the `dokku_http_auth*` tasks.
 
 ## Installation
 

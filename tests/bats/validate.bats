@@ -102,6 +102,63 @@ EOF
   assert_output --partial "'port_mappings' must not be empty for state 'set'"
 }
 
+@test "docket validate exits 0 on http auth allowed ip state clear without allowed_ips (#531)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_http_auth_allowed_ip:
+        app: web
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on http auth allowed ip state clear carrying allowed_ips" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_http_auth_allowed_ip:
+        app: web
+        state: clear
+        allowed_ips:
+          - 192.0.2.1
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'allowed_ips' must not be set for state 'clear'"
+}
+
+@test "docket validate exits 1 on http auth allowed ip state absent with an empty allowed_ips" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_http_auth_allowed_ip:
+        app: web
+        state: absent
+        allowed_ips: []
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'allowed_ips' must not be empty for state 'absent'"
+}
+
+@test "docket validate exits 1 on an http auth allowed ip that is not an address" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_http_auth_allowed_ip:
+        app: web
+        state: present
+        allowed_ips:
+          - 10.0.0.0/
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'allowed_ips' must be an ip address"
+}
+
 @test "docket validate exits 1 on two port mappings sharing a scheme and host port (#432)" {
   write_tasks_file <<EOF
 ---

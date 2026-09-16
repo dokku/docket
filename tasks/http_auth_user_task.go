@@ -86,10 +86,10 @@ func (t HttpAuthUserTask) Doc() string {
 //
 // Supported without a caveat because http-auth:export-users reads every user's
 // htpasswd entry back, so an exported recipe reproduces the users with no
-// operator-supplied credentials. That command is guaranteed by the >= 0.13.0
-// floor in Requirements(); the whole http-auth family already assumes it (a
-// credential-free http-auth:enable is a 0.13.0 behaviour too), so there is no
-// fallback for older plugins here.
+// operator-supplied credentials. That command is guaranteed by the floor in
+// Requirements(); the whole http-auth family already assumes it (export-users
+// and a credential-free http-auth:enable are both 0.13.0 behaviours), so there
+// is no fallback for older plugins here.
 func (t HttpAuthUserTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
 }
@@ -101,7 +101,7 @@ func (t HttpAuthUserTask) ProbeSupport() ProbeSupport {
 
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthUserTask) Requirements() []string {
-	return []string{"dokku-http-auth plugin >= 0.13.0"}
+	return []string{"dokku-http-auth plugin >= 0.14.0"}
 }
 
 // SensitiveValues returns the per-user credentials so they are masked in

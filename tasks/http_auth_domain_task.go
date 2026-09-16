@@ -55,7 +55,7 @@ func (t HttpAuthDomainTask) ProbeSupport() ProbeSupport {
 
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t HttpAuthDomainTask) Requirements() []string {
-	return []string{"dokku-http-auth plugin >= 0.13.0"}
+	return []string{"dokku-http-auth plugin >= 0.14.0"}
 }
 
 // Examples returns a list of HttpAuthDomainTaskExamples as yaml
