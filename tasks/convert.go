@@ -64,6 +64,26 @@ func Convert(data []byte, from, to Codec) ([]byte, error) {
 		return from.Format(data)
 	}
 
+	// The quoting around an interpolation decides how the substituted
+	// value is escaped, and canonical JSON5 has only the double-quoted
+	// string, which is the one YAML style that needs `| dq`. Refuse
+	// rather than write a recipe whose rendering would change - the same
+	// stance Format takes on an unquoted interpolation.
+	//
+	// The scan runs before the alias and merge passes below so an anchored
+	// value is reported once, at the line it was written on, rather than
+	// once per site it expands into. It runs before EncodeDocument for the
+	// blunter reason that the encoder is what folds the quotes away.
+	//
+	// Only the JSON5 target qualifies today. A format that can spell every
+	// YAML style has nothing to refuse, and the YAML target is that format;
+	// a third one with the same limitation joins the test here.
+	if to.Name() == FormatNameJSON5 {
+		if sites := yamlQuotingSites(documentBody(doc)); len(sites) > 0 {
+			return nil, unportableQuotingError(sites)
+		}
+	}
+
 	// Anchors, aliases and merge keys are YAML-only spellings, so the
 	// flattening runs here rather than in a codec: any target that cannot
 	// express sharing needs the same treatment. Neither pass is reachable

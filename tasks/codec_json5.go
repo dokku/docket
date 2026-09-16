@@ -88,6 +88,14 @@ func (json5Codec) DecodeDocument(data []byte) (*yaml.Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("json5 parse error: %w", err)
 	}
+	// json5DocumentToYAML forces DoubleQuotedStyle on any string holding
+	// an interpolation, which is the faithful reading of a double-quoted
+	// JSON5 source and the wrong one for a single-quoted source. FormatJSON5
+	// guards the same thing for the in-place path; this is the conversion
+	// path, and neither reaches the other.
+	if err := refuseJSON5UnportableQuoting(data); err != nil {
+		return nil, err
+	}
 	return json5DocumentToYAML(root)
 }
 

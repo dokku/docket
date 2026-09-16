@@ -208,12 +208,20 @@ func yamlStringNode(s string) *yaml.Node {
 //
 // JSON5 strings are double-quoted, so a double-quoted YAML scalar is the
 // faithful rendering of one, and forcing the style here is what keeps a
-// converted recipe meaning what it meant. The reverse direction has a
-// matching gap that cannot be closed the same way: canonical JSON5 has no
-// single-quoted string, so a YAML `'{{ .app }}'` - safe precisely because
-// single quotes tolerate a double quote in the value - becomes the
-// double-quoted form, which `docket validate` then reports as
-// unsafe_input_value. That is #538.
+// converted recipe meaning what it meant.
+//
+// Forcing it is only faithful because the source cannot have been quoted
+// any other way by the time this runs: a single-quoted JSON5 string
+// holding an interpolation is refused before the walk, since double
+// quotes are not what it meant either (#538). The same refusal guards the
+// other direction, where canonical JSON5 has no spelling for a YAML
+// scalar that is single-quoted, plain, or a block.
+//
+// The test stays the blunt `strings.Contains(s, "{{")` rather than
+// riskyInterpolations, which the refusal uses. The refusal has to be
+// exact, because it stops a conversion the user asked for; this only
+// picks a quote style, and quoting a string that did not need it costs
+// nothing.
 func containsInterpolation(s string) bool {
 	return strings.Contains(s, "{{")
 }
