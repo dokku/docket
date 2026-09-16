@@ -148,6 +148,13 @@ between top-level plays and task entries. It works on both YAML and JSON5, detec
 the extension, and both formats share the same canonical key order so a YAML recipe and its JSON5
 twin lay out identically. Comments are preserved in both formats.
 
+A recipe it cannot parse is reported with the byte offset of the problem and left untouched. What
+`fmt` accepts is what `apply`, `plan`, and `validate` accept, so a file that formats is a file
+that loads, and a file it refuses would have failed later anyway. The one thing `fmt` objects to
+that the others do not is an unquoted interpolation: `fmt` reads the recipe as written, where
+`{{ .app }}` outside quotes is YAML flow syntax rather than template text, so it names the line
+instead of writing YAML's reading of it back out. See [Inputs](inputs.md).
+
 `--format` makes it a converter as well as a formatter. It states the format to write, so naming
 one the recipe is not already in rewrites it into that format, comments and all - the thing a trip
 out to another tool and back cannot do.
@@ -221,7 +228,7 @@ check a recipe whose extension is misleading, use `--tasks-format`. `--diff` doe
 converting `--format`, and previews the conversion without writing anything.
 
 A conversion is not byte-reversible, and is not meant to be. Comments survive, and so does every
-value, but four things are normalised on the way:
+value, but six things are normalised on the way:
 
 - **Comments change syntax.** A `# note` becomes `// note` and back. A JSON5 block comment
   `/* note */` comes back as `// note`, since a line comment cannot be terminated early by its own
@@ -235,6 +242,12 @@ value, but four things are normalised on the way:
   disagree with `validate` about what a recipe says.
 - **A leading `---` is not restored.** The marker describes the bytes that were read, and a recipe
   arriving from JSON5 had none.
+- **A key that is not a plain ASCII identifier is written quoted.** JSON5 leaves `app` unquoted,
+  but `café` and `my-key` are not identifiers to a JSON5 reader, so they are written `"café"` and
+  `"my-key"`.
+- **An unpaired surrogate escape becomes U+FFFD.** A `\uD83D` with no low surrogate after it is
+  not a character, and the replacement is what every JSON5 reader makes of it, including the one
+  `apply` uses.
 
 A YAML timestamp is the one value whose type changes: JSON5 has no date literal, so `2015-01-01`
 becomes the string `"2015-01-01"`. Nothing in a recipe reads it as anything else - every task field

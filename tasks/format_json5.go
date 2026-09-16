@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -277,8 +276,13 @@ func normaliseJSON5Scalar(raw string) string {
 // decodeJSON5String decodes a quoted JSON5 string token (single or double
 // quoted) into its actual character content, resolving every JSON5 escape
 // to the character it denotes. ok is false on a malformed escape (bad hex,
-// lone surrogate, truncated sequence); callers treat that as "leave the
-// original quoting untouched" so a formatting bug can never corrupt a recipe.
+// truncated sequence); callers treat that as "leave the original quoting
+// untouched" so a formatting bug can never corrupt a recipe.
+//
+// It knows the whole JSON5 escape set, including the \v, \0, \xHH and
+// identity escapes readString now refuses on the loader's behalf (#537).
+// Keeping them costs nothing and means the decoder still answers for a
+// string that reached it from somewhere other than the lexer.
 func decodeJSON5String(raw string) (string, bool) {
 	if len(raw) < 2 {
 		return "", false
@@ -292,7 +296,22 @@ func decodeJSON5String(raw string) (string, bool) {
 	for i := 0; i < len(body); i++ {
 		c := body[i]
 		if c != '\\' {
-			b.WriteByte(c)
+			if c < utf8.RuneSelf {
+				b.WriteByte(c)
+				continue
+			}
+			// Invalid UTF-8 decodes to the replacement character, one byte at
+			// a time, which is what unquoteBytes - and so titanous/json5, and
+			// so the loader - makes of it. Copying the bytes through instead
+			// meant the value docket converted was not the value the loader
+			// read (#537).
+			r, size := utf8.DecodeRuneInString(body[i:])
+			if r == utf8.RuneError && size == 1 {
+				b.WriteRune(utf8.RuneError)
+				continue
+			}
+			b.WriteString(body[i : i+size])
+			i += size - 1
 			continue
 		}
 		i++
@@ -358,7 +377,14 @@ func decodeJSON5String(raw string) (string, bool) {
 // (the leading backslash already consumed). A high surrogate immediately
 // followed by \uYYYY that is a valid low surrogate is combined into the
 // astral code point. adv is the number of bytes consumed after the 'u'.
-// ok is false for a lone/invalid surrogate or truncated sequence.
+// ok is false only for a truncated or non-hex sequence, which the lexer
+// rejects outright and the loader rejects with it.
+//
+// An unpaired surrogate is not an error: it decodes to the replacement
+// character, consuming just the escape it read, so the escape after it is
+// still read on its own terms. That is encoding/json's rule and therefore
+// titanous/json5's, and refusing it here made `docket fmt` fail on a key
+// the loader reads quite happily (#537).
 func decodeJSON5Unicode(body string, i int) (r rune, adv int, ok bool) {
 	hi, ok := readHex4(body, i+1)
 	if !ok {
@@ -372,10 +398,10 @@ func decodeJSON5Unicode(body string, i int) (r rune, adv int, ok bool) {
 				return combined, 10, true
 			}
 		}
-		return 0, 0, false
+		return utf8.RuneError, 4, true
 	}
 	if hi >= 0xDC00 && hi <= 0xDFFF {
-		return 0, 0, false
+		return utf8.RuneError, 4, true
 	}
 	return rune(hi), 4, true
 }
@@ -432,9 +458,10 @@ const (
 )
 
 type json5Tok struct {
-	Kind     json5TokKind
-	Raw      string // verbatim source slice
-	NewlineBefore bool // true if any newline preceded this token
+	Kind          json5TokKind
+	Raw           string // verbatim source slice
+	Offset        int    // byte offset of the token's first byte in the source
+	NewlineBefore bool   // true if any newline preceded this token
 }
 
 type json5Lexer struct {
@@ -463,7 +490,7 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 			for l.pos < len(l.src) && l.src[l.pos] != '\n' {
 				l.pos++
 			}
-			l.tokens = append(l.tokens, json5Tok{Kind: tokLineComment, Raw: string(l.src[start:l.pos]), NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokLineComment, Raw: string(l.src[start:l.pos]), Offset: start, NewlineBefore: pendingNewline})
 			pendingNewline = false
 			continue
 		}
@@ -477,39 +504,39 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 				return nil, fmt.Errorf("unterminated block comment at offset %d", start)
 			}
 			l.pos += 2
-			l.tokens = append(l.tokens, json5Tok{Kind: tokBlockComment, Raw: string(l.src[start:l.pos]), NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokBlockComment, Raw: string(l.src[start:l.pos]), Offset: start, NewlineBefore: pendingNewline})
 			pendingNewline = false
 			continue
 		}
 
 		switch c {
 		case '{':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokLBrace, Raw: "{", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokLBrace, Raw: "{", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case '}':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokRBrace, Raw: "}", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokRBrace, Raw: "}", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case '[':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokLBracket, Raw: "[", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokLBracket, Raw: "[", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case ']':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokRBracket, Raw: "]", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokRBracket, Raw: "]", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case ':':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokColon, Raw: ":", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokColon, Raw: ":", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
 		case ',':
-			l.tokens = append(l.tokens, json5Tok{Kind: tokComma, Raw: ",", NewlineBefore: pendingNewline})
+			l.tokens = append(l.tokens, json5Tok{Kind: tokComma, Raw: ",", Offset: l.pos, NewlineBefore: pendingNewline})
 			l.pos++
 			pendingNewline = false
 			continue
@@ -545,67 +572,174 @@ func lexJSON5(src []byte) ([]json5Tok, error) {
 
 		return nil, fmt.Errorf("unexpected character %q at offset %d", c, l.pos)
 	}
-	l.tokens = append(l.tokens, json5Tok{Kind: tokEOF, NewlineBefore: pendingNewline})
+	l.tokens = append(l.tokens, json5Tok{Kind: tokEOF, Offset: len(l.src), NewlineBefore: pendingNewline})
 	return l.tokens, nil
 }
 
+// readString reads a quoted string literal, validating it as it goes.
+//
+// The rules are titanous/json5's, which are encoding/json's plus the single
+// quote and the line continuation: no raw control character inside the
+// quotes, and an escape drawn from a fixed set. JSON5 itself also spells
+// \v, \0 and \xHH and lets any other character escape to itself, but the
+// loader refuses all of those, and a string the formatter keeps and the
+// loader refuses is a recipe that formats cleanly and then fails to run
+// (#537).
 func (l *json5Lexer) readString(quote byte) (json5Tok, error) {
 	start := l.pos
 	l.pos++
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
-		if c == '\\' {
-			l.pos += 2
+		switch {
+		case c == '\\':
+			if err := l.readStringEscape(); err != nil {
+				return json5Tok{}, err
+			}
 			continue
-		}
-		if c == quote {
+		case c == quote:
 			l.pos++
-			return json5Tok{Kind: tokString, Raw: string(l.src[start:l.pos])}, nil
+			return json5Tok{Kind: tokString, Raw: string(l.src[start:l.pos]), Offset: start}, nil
+		case c < 0x20:
+			// A newline or a tab has to be written as an escape. Reading one
+			// raw would also mean a runaway string swallowing the rest of the
+			// recipe before anything complained.
+			return json5Tok{}, fmt.Errorf("control character in string at offset %d", l.pos)
 		}
 		l.pos++
 	}
 	return json5Tok{}, fmt.Errorf("unterminated string starting at offset %d", start)
 }
 
+// readStringEscape consumes one backslash escape inside a string literal.
+// A backslash at the very end of the source is an error rather than a step
+// past it, which is what the old two-byte skip could do.
+func (l *json5Lexer) readStringEscape() error {
+	start := l.pos
+	l.pos++
+	if l.pos >= len(l.src) {
+		return fmt.Errorf("unterminated string escape at offset %d", start)
+	}
+	c := l.src[l.pos]
+	l.pos++
+	switch c {
+	case 'b', 'f', 'n', 'r', 't', '\\', '/', '"', '\'', '\n':
+		// The bare newline is a line continuation; it contributes nothing to
+		// the decoded value.
+		return nil
+	case '\r':
+		// The same, written CRLF: the LF belongs to this escape.
+		if l.pos < len(l.src) && l.src[l.pos] == '\n' {
+			l.pos++
+		}
+		return nil
+	case 'u':
+		for i := 0; i < 4; i++ {
+			if l.pos >= len(l.src) || !isHexDigit(l.src[l.pos]) {
+				return fmt.Errorf("invalid \\u escape in string at offset %d", start)
+			}
+			l.pos++
+		}
+		return nil
+	}
+	return fmt.Errorf("invalid string escape %q at offset %d", l.src[start:l.pos], start)
+}
+
+// readNumber reads a JSON5 NumericLiteral: an optional sign, then Infinity,
+// a hexadecimal integer, or a decimal number.
+//
+// What it accepts is deliberately the grammar titanous/json5 accepts - its
+// scanner states, plus the isValidNumber check its decoder applies
+// afterwards - because that is the parser apply / plan / validate read a
+// recipe with. A spelling the formatter passes through and the loader
+// refuses is a file that formats cleanly and then fails to run, which is
+// what a lone "-", a digitless "0x", "01", "1.2.3" and "1e" all used to be
+// (#537).
 func (l *json5Lexer) readNumber() (json5Tok, error) {
 	start := l.pos
 	if l.src[l.pos] == '+' || l.src[l.pos] == '-' {
 		l.pos++
 	}
-	// JSON5 spells the non-finite numbers Infinity and NaN, and allows a
-	// sign in front of them. They have to be recognised here rather than
-	// left to readIdent, because the sign has already been consumed: the
-	// digit loop below stops dead on the "I", which used to yield a lone
-	// "-" token with "Infinity" following it as a separate identifier.
-	// Nothing rejected that pair - parseArray and parseObject treat the
-	// comma between entries as optional (#537) - so `[-Infinity]` parsed as
-	// two elements. An unsigned Infinity / NaN never reaches here at all; it
-	// starts with a letter, so the lexer sends it to readIdent.
-	for _, word := range []string{"Infinity", "NaN"} {
-		if l.hasWordAt(l.pos, word) {
-			l.pos += len(word)
-			return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
-		}
+	// JSON5 spells the infinities Infinity and allows a sign in front. It
+	// has to be recognised here rather than left to readIdent, because the
+	// sign has already been consumed: the digit scan below stops dead on the
+	// "I", which used to yield a lone "-" token with "Infinity" following it
+	// as a separate identifier (#418). An unsigned Infinity never reaches
+	// here at all; it starts with a letter, so the lexer sends it to
+	// readIdent.
+	//
+	// NaN is deliberately absent. The JSON5 spec allows a sign in front of
+	// it, but titanous/json5 does not - after a sign its scanner takes a
+	// digit, a dot or an "I" and nothing else - so a signed NaN is a number
+	// the formatter would keep and the loader would refuse.
+	if l.hasWordAt(l.pos, "Infinity") {
+		l.pos += len("Infinity")
+		return l.numberTok(start), nil
 	}
-	if l.pos+1 < len(l.src) && l.src[l.pos] == '0' && (l.src[l.pos+1] == 'x' || l.src[l.pos+1] == 'X') {
-		l.pos += 2
-		for l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
+
+	intStart := l.pos
+	if l.pos < len(l.src) && l.src[l.pos] == '0' {
+		l.pos++
+		if l.pos < len(l.src) && (l.src[l.pos] == 'x' || l.src[l.pos] == 'X') {
 			l.pos++
+			if !l.readHexDigits() {
+				return json5Tok{}, fmt.Errorf("invalid hexadecimal number at offset %d", start)
+			}
+			return l.numberTok(start), nil
 		}
-		return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
+		// A leading zero is the whole integer part. JSON5 has no octal
+		// literal, so the integer part of 0123 ends at the 0 and the rest is
+		// a second token the parser will refuse for the comma that is not
+		// between them.
+	} else {
+		l.readDigits()
 	}
-	for l.pos < len(l.src) {
-		c := l.src[l.pos]
-		if (c >= '0' && c <= '9') || c == '.' || c == 'e' || c == 'E' || c == '+' || c == '-' {
-			l.pos++
-			continue
-		}
-		break
+	hasInt := l.pos > intStart
+
+	hasFraction := false
+	if l.pos < len(l.src) && l.src[l.pos] == '.' {
+		l.pos++
+		hasFraction = l.readDigits()
 	}
-	if l.pos == start {
+	// 1. and .5 are both numbers; a bare ".", "-" or "+" is not.
+	if !hasInt && !hasFraction {
 		return json5Tok{}, fmt.Errorf("invalid number at offset %d", start)
 	}
-	return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos])}, nil
+
+	if l.pos < len(l.src) && (l.src[l.pos] == 'e' || l.src[l.pos] == 'E') {
+		l.pos++
+		if l.pos < len(l.src) && (l.src[l.pos] == '+' || l.src[l.pos] == '-') {
+			l.pos++
+		}
+		if !l.readDigits() {
+			return json5Tok{}, fmt.Errorf("invalid exponent in number at offset %d", start)
+		}
+	}
+	return l.numberTok(start), nil
+}
+
+// numberTok wraps the source between start and the current position as a
+// number token.
+func (l *json5Lexer) numberTok(start int) json5Tok {
+	return json5Tok{Kind: tokNumber, Raw: string(l.src[start:l.pos]), Offset: start}
+}
+
+// readDigits consumes a run of decimal digits and reports whether there was
+// at least one.
+func (l *json5Lexer) readDigits() bool {
+	start := l.pos
+	for l.pos < len(l.src) && l.src[l.pos] >= '0' && l.src[l.pos] <= '9' {
+		l.pos++
+	}
+	return l.pos > start
+}
+
+// readHexDigits is readDigits for a hexadecimal run.
+func (l *json5Lexer) readHexDigits() bool {
+	start := l.pos
+	for l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
+		l.pos++
+	}
+	return l.pos > start
 }
 
 // hasWordAt reports whether the source holds word at pos and does not
@@ -634,15 +768,21 @@ func (l *json5Lexer) readIdent() json5Tok {
 		}
 		l.pos += sz
 	}
-	return json5Tok{Kind: tokIdent, Raw: string(l.src[start:l.pos])}
+	return json5Tok{Kind: tokIdent, Raw: string(l.src[start:l.pos]), Offset: start}
 }
 
+// isIdentStart and isIdentPart spell the unquoted-key alphabet, and they
+// are ASCII on purpose. The JSON5 spec takes any Unicode letter, but
+// titanous/json5 takes [A-Za-z0-9_$] and nothing else, and it is the reader
+// apply / plan / validate use. Letting é through here meant `docket fmt`
+// unquoted a `café` key the loader had been reading quite happily and wrote
+// a recipe that no longer loaded (#537).
 func isIdentStart(r rune) bool {
-	return r == '_' || r == '$' || unicode.IsLetter(r)
+	return r == '_' || r == '$' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
 func isIdentPart(r rune) bool {
-	return isIdentStart(r) || unicode.IsDigit(r)
+	return isIdentStart(r) || (r >= '0' && r <= '9')
 }
 
 func isHexDigit(c byte) bool {
@@ -701,7 +841,7 @@ func parseJSON5(src []byte) (*json5Node, error) {
 		root.AfterComments = footComments
 	}
 	if p.peek().Kind != tokEOF {
-		return nil, fmt.Errorf("unexpected token %q after root value", p.peek().Raw)
+		return nil, fmt.Errorf("unexpected token %q after root value at offset %d", p.peek().Raw, p.peek().Offset)
 	}
 	return root, nil
 }
@@ -752,21 +892,49 @@ func (p *json5Parser) parseValue() (*json5Node, error) {
 		return p.parseObject()
 	case tokLBracket:
 		return p.parseArray()
-	case tokString, tokNumber, tokIdent:
+	case tokString, tokNumber:
+		p.advance()
+		return &json5Node{Kind: json5Scalar, Raw: t.Raw}, nil
+	case tokIdent:
+		// JSON5 gives a meaning to exactly five bare words. Every other
+		// identifier in value position is an unquoted string, which no JSON5
+		// reader accepts: titanous/json5, the one apply / plan / validate
+		// read a recipe with, stops at its first letter. Carrying `web`
+		// where `"web"` was meant let a recipe format cleanly and then fail
+		// to load (#537).
+		if !isJSON5Keyword(t.Raw) {
+			return nil, fmt.Errorf("unquoted value %q at offset %d is not valid json5", t.Raw, t.Offset)
+		}
 		p.advance()
 		return &json5Node{Kind: json5Scalar, Raw: t.Raw}, nil
 	}
-	return nil, fmt.Errorf("unexpected token %q while parsing value", t.Raw)
+	return nil, fmt.Errorf("unexpected token %q while parsing value at offset %d", t.Raw, t.Offset)
+}
+
+// isJSON5Keyword reports whether s is one of the bare words JSON5 gives a
+// meaning to in value position. A signed Infinity is not here because the
+// lexer reads it as a single number token instead.
+func isJSON5Keyword(s string) bool {
+	switch s {
+	case "true", "false", "null", "Infinity", "NaN":
+		return true
+	}
+	return false
 }
 
 func (p *json5Parser) parseObject() (*json5Node, error) {
 	if p.peek().Kind != tokLBrace {
-		return nil, fmt.Errorf("expected { at object start, got %q", p.peek().Raw)
+		return nil, fmt.Errorf("expected { at object start, got %q at offset %d", p.peek().Raw, p.peek().Offset)
 	}
 	p.advance()
 	node := &json5Node{Kind: json5Object}
+	// Comments consumed while looking for the separator after a member;
+	// they belong to whatever comes next, so they are held over to the top
+	// of the following iteration.
+	var pending []string
 	for {
-		head := p.consumeComments()
+		head := append(pending, p.consumeComments()...)
+		pending = nil
 		if p.peek().Kind == tokRBrace {
 			p.advance()
 			node.FootComments = head
@@ -777,7 +945,7 @@ func (p *json5Parser) parseObject() (*json5Node, error) {
 			return nil, err
 		}
 		if p.peek().Kind != tokColon {
-			return nil, fmt.Errorf("expected : after key %q, got %q", key, p.peek().Raw)
+			return nil, fmt.Errorf("expected : after key %q, got %q at offset %d", key, p.peek().Raw, p.peek().Offset)
 		}
 		p.advance()
 		val, err := p.parseValue()
@@ -787,11 +955,25 @@ func (p *json5Parser) parseObject() (*json5Node, error) {
 		member := &json5Member{Key: key, Value: val, HeadComments: head}
 		// Trailing comment on the same line as the value.
 		member.LineComment = p.consumeTrailingLineComment()
-		// Optional comma; trailing comma allowed.
+		// JSON5 makes only the trailing comma optional; a missing separator
+		// is an error. titanous/json5, which apply / plan / validate read a
+		// recipe with, rejects it too, so accepting it here meant a recipe
+		// could pass `docket fmt` and then fail to load (#537).
 		if p.peek().Kind == tokComma {
 			p.advance()
 			if member.LineComment == "" {
 				member.LineComment = p.consumeTrailingLineComment()
+			}
+		} else {
+			// A comment may sit between the member and its comma, or between
+			// the last member and the closing brace; either way it belongs to
+			// what follows, not to the member just parsed.
+			pending = p.consumeComments()
+			if p.peek().Kind == tokComma {
+				p.advance()
+			} else if p.peek().Kind != tokRBrace {
+				t := p.peek()
+				return nil, fmt.Errorf("expected , or } after object member, got %q at offset %d", t.Raw, t.Offset)
 			}
 		}
 		node.Members = append(node.Members, member)
@@ -800,12 +982,16 @@ func (p *json5Parser) parseObject() (*json5Node, error) {
 
 func (p *json5Parser) parseArray() (*json5Node, error) {
 	if p.peek().Kind != tokLBracket {
-		return nil, fmt.Errorf("expected [ at array start, got %q", p.peek().Raw)
+		return nil, fmt.Errorf("expected [ at array start, got %q at offset %d", p.peek().Raw, p.peek().Offset)
 	}
 	p.advance()
 	node := &json5Node{Kind: json5Array}
+	// See parseObject: comments found while looking for the separator are
+	// held over as the next element's head comments.
+	var pending []string
 	for {
-		head := p.consumeComments()
+		head := append(pending, p.consumeComments()...)
+		pending = nil
 		if p.peek().Kind == tokRBracket {
 			p.advance()
 			node.FootComments = head
@@ -822,24 +1008,36 @@ func (p *json5Parser) parseArray() (*json5Node, error) {
 			if elem.LineComment == "" {
 				elem.LineComment = p.consumeTrailingLineComment()
 			}
+		} else {
+			pending = p.consumeComments()
+			if p.peek().Kind == tokComma {
+				p.advance()
+			} else if p.peek().Kind != tokRBracket {
+				t := p.peek()
+				return nil, fmt.Errorf("expected , or ] after array element, got %q at offset %d", t.Raw, t.Offset)
+			}
 		}
 		node.Elements = append(node.Elements, elem)
 	}
 }
 
+// parseKey reads an object key: a quoted string or an unquoted identifier,
+// which is the whole of what JSON5 allows. A number is not a key - titanous
+// /json5 refuses `{1: "x"}`, and the emitter already writes a numeric key
+// quoted, so nothing docket produces changes shape (#537).
 func (p *json5Parser) parseKey() (string, error) {
 	t := p.advance()
 	switch t.Kind {
 	case tokString:
 		decoded, ok := decodeJSON5String(t.Raw)
 		if !ok {
-			return "", fmt.Errorf("invalid string key %q", t.Raw)
+			return "", fmt.Errorf("invalid string key %q at offset %d", t.Raw, t.Offset)
 		}
 		return decoded, nil
-	case tokIdent, tokNumber:
+	case tokIdent:
 		return t.Raw, nil
 	}
-	return "", fmt.Errorf("expected key, got %q", t.Raw)
+	return "", fmt.Errorf("expected key, got %q at offset %d", t.Raw, t.Offset)
 }
 
 // ---------------------------------------------------------------------

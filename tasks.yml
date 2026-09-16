@@ -10,9 +10,9 @@
   tasks:
     - name: dokku apps:create {{ .app | default "" }}
       dokku_app:
-        app: {{.app | default ""}}
+        app: "{{ .app | dq }}"
 
     - name: dokku git:sync {{ .app | default "" }}
       dokku_git_sync:
-        app: {{.app | default ""}}
-        remote: {{.remote | default ""}}
+        app: "{{ .app | dq }}"
+        remote: "{{ .remote | dq }}"

@@ -33,6 +33,15 @@ func TestDetectJSON5DuplicateKeys(t *testing.T) {
 			wantKey: "x",
 		},
 		{
+			// An escaped surrogate pair and the character it spells are one
+			// key to the loader, which keeps the last of them silently, so
+			// the lint has to see them as one too (#537).
+			name:    "escaped astral key collides with the literal",
+			input:   "{\"\\ud83d\\ude00\": 1, \"\U0001f600\": 2}",
+			dup:     true,
+			wantKey: "\U0001f600",
+		},
+		{
 			name:  "same key in different objects is fine",
 			input: `[{a: 1}, {a: 2}]`,
 			dup:   false,

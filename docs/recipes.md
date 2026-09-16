@@ -18,6 +18,13 @@ is friendlier than plain JSON for hand-written config: it allows `// line` and `
 comments, trailing commas, and unquoted keys. Any existing JSON file is already valid JSON5, so it
 parses unchanged.
 
+Those three additions are the whole of it, and it is worth knowing where they stop. A comma
+between two entries is still required - only the one after the last entry is optional. An
+unquoted key is a plain ASCII identifier, so `café` has to be written `"café"`. Every value
+other than `true`, `false`, `null`, `Infinity` and `NaN` is quoted or a number, and numbers
+follow the JSON5 grammar, which has `0x1F` and `.5` but not `01` or `1.2.3`. `docket fmt` holds
+to the same rules the loader does, so a recipe it formats is a recipe `apply` can read.
+
 The same recipe in YAML and JSON5 behaves identically - templates, conditionals, every envelope
 key, and every task type work the same way. This YAML recipe:
 
@@ -89,8 +96,10 @@ docket export --output - --format json5 | docket apply --tasks-format json5 -
 
 The format is sniffed from the first non-whitespace byte - `[`, `{`, `//`, or `/*` means JSON5,
 anything else means YAML. Pass `--tasks-format yaml` or `--tasks-format json5` when that guess would
-be wrong, which happens with a YAML recipe written in flow style, since it opens with `[`. The same
-flag overrides a misleading file extension:
+be wrong, which happens with a YAML recipe written in flow style, since it opens with `[`. A flow
+mapping's values are unquoted, which JSON5 has no reading for, so a wrong guess is a parse error
+naming the first one rather than something subtler. The same flag overrides a misleading file
+extension:
 
 ```bash
 docket validate --tasks recipe.txt --tasks-format json5

@@ -261,3 +261,91 @@ EOF
   assert_success
   assert_output --partial "ensure docket-test-json5-mix"
 }
+
+@test "docket fmt and validate both reject a JSON5 recipe missing a comma" {
+  write_tasks_file tasks.json <<'JSON5'
+[
+  {
+    tasks: [
+      { dokku_app: { app: "a" } }
+      { dokku_app: { app: "b" } }
+    ],
+  },
+]
+JSON5
+  before="$(cat "$TASKS_FILE")"
+
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "json5 parse error"
+  # A recipe fmt cannot parse is left exactly as it was found.
+  assert [ "$(cat "$TASKS_FILE")" = "$before" ]
+
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"json5_parse"'
+}
+
+@test "docket fmt and validate both reject a malformed JSON5 number" {
+  write_tasks_file tasks.json <<'JSON5'
+[
+  {
+    tasks: [
+      { dokku_ps_scale: { app: "a", scale: { web: 1.2.3 } } },
+    ],
+  },
+]
+JSON5
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "json5 parse error"
+
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"json5_parse"'
+}
+
+@test "docket fmt and validate both reject an unquoted JSON5 value" {
+  write_tasks_file tasks.json <<'JSON5'
+[
+  {
+    tasks: [
+      { dokku_app: { app: web } },
+    ],
+  },
+]
+JSON5
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "json5 parse error"
+  assert_output --partial "is not valid json5"
+
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_output --partial '"code":"json5_parse"'
+}
+
+@test "docket fmt keeps a non-ASCII JSON5 key quoted so it still loads" {
+  write_tasks_file tasks.json <<'JSON5'
+[
+  {
+    tasks: [
+      { dokku_config: { app: "api", config: { 'café': "au lait" } } },
+    ],
+  },
+]
+JSON5
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" fmt "$TASKS_FILE"
+  assert_success
+  run grep -F '"café"' "$TASKS_FILE"
+  assert_success
+
+  # The formatted recipe still loads: an unquoted café key would not.
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  run "$(docket_bin)" fmt --check "$TASKS_FILE"
+  assert_success
+}

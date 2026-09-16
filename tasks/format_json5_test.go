@@ -3,6 +3,8 @@ package tasks
 import (
 	"strings"
 	"testing"
+
+	json5 "github.com/titanous/json5"
 )
 
 func TestFormatJSON5IdempotentOnCanonicalInput(t *testing.T) {
@@ -191,7 +193,12 @@ func TestDecodeJSON5StringUnicodeAndControlEscapes(t *testing.T) {
 		{"line continuation lf", "'a\\\nb'", "ab", true},
 		{"unknown escape is literal", `'\q'`, "q", true},
 		{"bad hex", `'\xzz'`, "", false},
-		{"lone high surrogate", "'" + bs + "ud83d'", "", false},
+		// An unpaired surrogate is the replacement character rather than a
+		// refusal, because that is what the loader makes of it (#537).
+		{"lone high surrogate", "'" + bs + "ud83d'", "\uFFFD", true},
+		{"lone low surrogate", "'" + bs + "ude00'", "\uFFFD", true},
+		{"high surrogate then plain escape", "'" + bs + "ud83d" + bs + "u0041'", "\uFFFDA", true},
+		{"invalid utf-8 byte", "'a\xffb'", "a\uFFFDb", true},
 		{"truncated unicode", "'" + bs + "u00'", "", false},
 		{"nul followed by digit", `'\05'`, "", false},
 	}
@@ -253,17 +260,24 @@ func TestFormatJSON5ReQuotesUnicodeValueWithoutCorruption(t *testing.T) {
 	}
 }
 
-func TestFormatJSON5DecodesUnicodeKey(t *testing.T) {
+// TestFormatJSON5QuotesNonASCIIKey is the corruption case of #537 as a
+// test. The key is decoded out of its escape, as it always was, but it stays
+// quoted: an unquoted café is not a key titanous/json5 can read, so emitting
+// one took a recipe the loader had been reading and made it unreadable.
+func TestFormatJSON5QuotesNonASCIIKey(t *testing.T) {
 	in := []byte("[{ tasks: [{ dokku_config: { 'caf" + bs + "u00e9': \"x\" } }] }]")
 	out, err := FormatJSON5(in)
 	if err != nil {
 		t.Fatalf("FormatJSON5: %v", err)
 	}
-	if !strings.Contains(string(out), "café:") {
-		t.Errorf("expected decoded unicode key in output:\n%s", out)
+	if !strings.Contains(string(out), `"café":`) {
+		t.Errorf("expected a quoted unicode key in output:\n%s", out)
 	}
 	if strings.Contains(string(out), bs+"u00e9") {
 		t.Errorf("output still carries the raw unicode escape in the key:\n%s", out)
+	}
+	if _, err := parseJSON5(out); err != nil {
+		t.Fatalf("formatted output does not re-parse: %v\n%s", err, out)
 	}
 }
 
@@ -324,10 +338,12 @@ func TestFormatJSON5RootInsideAndAfterComments(t *testing.T) {
 // only surfaced once cross-format conversion started emitting JSON5:
 // readNumber consumed the sign and then stopped on the "I", handing back
 // a lone "-" token with "Infinity" trailing it as a separate identifier.
-// parseArray does not require a comma between elements, so nothing
-// rejected the pair and `[-Infinity]` silently parsed as two elements.
+// parseArray did not require a comma between elements back then, so
+// nothing rejected the pair and `[-Infinity]` silently parsed as two
+// elements. The separator is required now (#537), which would catch the
+// pair a second time; the lexer still has to read it as one token.
 func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
-	toks, err := lexJSON5([]byte("[-Infinity, +Infinity, Infinity, -NaN, NaN]"))
+	toks, err := lexJSON5([]byte("[-Infinity, +Infinity, Infinity, NaN]"))
 	if err != nil {
 		t.Fatalf("lexJSON5: %v", err)
 	}
@@ -337,7 +353,7 @@ func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 			values = append(values, tok.Raw)
 		}
 	}
-	want := []string{"-Infinity", "+Infinity", "Infinity", "-NaN", "NaN"}
+	want := []string{"-Infinity", "+Infinity", "Infinity", "NaN"}
 	if len(values) != len(want) {
 		t.Fatalf("lexed %d value tokens %q, want %d %q", len(values), values, len(want), want)
 	}
@@ -347,12 +363,19 @@ func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 		}
 	}
 
-	node, err := parseJSON5([]byte("[-Infinity, +Infinity, Infinity, -NaN, NaN]"))
+	node, err := parseJSON5([]byte("[-Infinity, +Infinity, Infinity, NaN]"))
 	if err != nil {
 		t.Fatalf("parseJSON5: %v", err)
 	}
 	if len(node.Elements) != len(want) {
 		t.Errorf("parsed %d elements, want %d", len(node.Elements), len(want))
+	}
+
+	// A signed NaN is the one spelling that does not come along. JSON5
+	// allows it and titanous/json5 does not, and the loader has the last
+	// word on what a recipe may say.
+	if _, err := parseJSON5([]byte("[-NaN]")); err == nil {
+		t.Error("parseJSON5(\"[-NaN]\") = nil error, want the loader's rejection")
 	}
 }
 
@@ -360,20 +383,23 @@ func TestLexJSON5SignedNonFiniteNumbers(t *testing.T) {
 // hasWordAt: an identifier that merely starts with Infinity or NaN is not
 // one of them, so the sign is not glued onto it.
 //
-// The assertion is on the tokens rather than on parseJSON5 returning an
-// error, because it does not: the lexer yields "-" and "Infinities" as
-// two tokens and parseArray accepts them as two elements, the comma
-// between entries being optional. That leniency is #537; what matters here
-// is that hasWordAt did not claim the longer word.
+// A sign followed by a longer word is no longer a number at all: the sign
+// is consumed, the boundary check refuses the word, and the digit scan
+// finds nothing, so the whole thing is an invalid number rather than two
+// tokens the parser would have to reject separately (#537).
 func TestLexJSON5SignedWordPrefixIsNotSwallowed(t *testing.T) {
-	toks, err := lexJSON5([]byte("-Infinities"))
+	if _, err := lexJSON5([]byte("-Infinities")); err == nil {
+		t.Error("lexJSON5(\"-Infinities\") = nil error, want an invalid number")
+	}
+
+	// The other side of the boundary: the exact word still reads as one
+	// signed number token.
+	toks, err := lexJSON5([]byte("-Infinity"))
 	if err != nil {
 		t.Fatalf("lexJSON5: %v", err)
 	}
-	for _, tok := range toks {
-		if tok.Raw == "-Infinities" {
-			t.Errorf("hasWordAt swallowed a longer identifier: %q", tok.Raw)
-		}
+	if len(toks) != 2 || toks[0].Kind != tokNumber || toks[0].Raw != "-Infinity" {
+		t.Errorf("lexed %+v, want a single -Infinity number token", toks)
 	}
 }
 
@@ -396,5 +422,368 @@ func TestFormatJSON5RoundTripsNonFiniteNumbers(t *testing.T) {
 	}
 	if string(again) != string(out) {
 		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", out, again)
+	}
+}
+
+// TestParseJSON5RequiresSeparatorBetweenEntries pins #537: the comma
+// between two entries is not optional. parseArray and parseObject used to
+// consume one only if it happened to be there, so `[1 2]` read as a
+// two-element array and `{ a: 1 b: 2 }` as a two-member object - documents
+// titanous/json5 rejects, which is what apply / plan / validate read a
+// recipe with. A file could format cleanly and then fail to load.
+func TestParseJSON5RequiresSeparatorBetweenEntries(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"array scalars", "[1 2]", "expected , or ]"},
+		{"object members", "{ a: 1 b: 2 }", "expected , or }"},
+		{"array objects", "[{a: 1} {b: 2}]", "expected , or ]"},
+		{"after one good comma", "[1, 2 3]", "expected , or ]"},
+		{"nested array", "[[1 2]]", "expected , or ]"},
+		{"object value then member", "{a: {b: 1} c: 2}", "expected , or }"},
+		{"comment between entries", "[\n1\n// note\n2\n]", "expected , or ]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseJSON5([]byte(tc.in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%q) = nil error, want a missing-separator error", tc.in)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tc.want)
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+
+	// The offset is the one the reader needs: where the entry that should
+	// have been preceded by a comma starts.
+	_, err := parseJSON5([]byte("[1 2]"))
+	if err == nil {
+		t.Fatal("parseJSON5 = nil error")
+	}
+	if !strings.Contains(err.Error(), `got "2" at offset 3`) {
+		t.Errorf("error = %q, want it to name the second element at offset 3", err.Error())
+	}
+}
+
+// TestParseJSON5AcceptsValidSeparatorForms is the other half: requiring the
+// separator must not cost the trailing comma JSON5 does make optional, nor
+// any of the places a comment is allowed to sit around one.
+func TestParseJSON5AcceptsValidSeparatorForms(t *testing.T) {
+	cases := []struct {
+		name         string
+		in           string
+		wantElements int
+		wantMembers  int
+	}{
+		{"plain", "[1, 2]", 2, 0},
+		{"trailing comma", "[1, 2,]", 2, 0},
+		{"object trailing comma", "{a: 1, b: 2,}", 0, 2},
+		{"empty array", "[]", 0, 0},
+		{"empty object", "{}", 0, 0},
+		{"trailing comma then comment", "[1, /* c */]", 1, 0},
+		{"comment after last element", "[\n 1\n // note\n]", 1, 0},
+		{"comment before comma same line", "[1 /* c */, 2]", 2, 0},
+		{"comment before comma own line", "[1\n/* c */\n, 2]", 2, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			node, err := parseJSON5([]byte(tc.in))
+			if err != nil {
+				t.Fatalf("parseJSON5(%q): %v", tc.in, err)
+			}
+			if len(node.Elements) != tc.wantElements {
+				t.Errorf("parsed %d elements, want %d", len(node.Elements), tc.wantElements)
+			}
+			if len(node.Members) != tc.wantMembers {
+				t.Errorf("parsed %d members, want %d", len(node.Members), tc.wantMembers)
+			}
+		})
+	}
+
+	// A comment held over while the parser looked for the separator still
+	// reaches the output, wherever it sat relative to the comma.
+	for _, in := range []string{"[1, /* c */]", "[\n 1\n // note\n]", "[1\n/* c */\n, 2]"} {
+		out, err := FormatJSON5([]byte(in))
+		if err != nil {
+			t.Fatalf("FormatJSON5(%q): %v", in, err)
+		}
+		if !strings.Contains(string(out), "c */") && !strings.Contains(string(out), "// note") {
+			t.Errorf("comment lost formatting %q:\n%s", in, out)
+		}
+	}
+}
+
+// TestFormatJSON5RejectsMissingComma is the formatter-level half of #537:
+// the missing separator surfaces as the parse error `docket fmt` prints,
+// rather than as a silently rewritten file.
+func TestFormatJSON5RejectsMissingComma(t *testing.T) {
+	in := []byte(`[{ tasks: [{ dokku_app: { app: "a" } } { dokku_app: { app: "b" } }] }]`)
+	_, err := FormatJSON5(in)
+	if err == nil {
+		t.Fatal("expected an error on a missing comma between task entries")
+	}
+	if !strings.Contains(err.Error(), "json5 parse error") {
+		t.Errorf("error = %q, want json5 parse error", err.Error())
+	}
+}
+
+// TestParseJSON5RejectsMalformedNumbers covers the other half of #537's
+// leniency: readNumber used to hand back a token whenever it had consumed
+// any byte at all, so a lone sign, a digitless 0x, a second decimal point
+// and a bare exponent all lexed as numbers that `docket fmt` would rewrite
+// verbatim and titanous/json5 would then refuse.
+//
+// Some rows fail in the lexer and some in the parser - 1.2.3 and 01 now lex
+// as two adjacent number tokens, which the separator rule rejects - so
+// every row asserts on parseJSON5, which is where a caller meets either.
+func TestParseJSON5RejectsMalformedNumbers(t *testing.T) {
+	for _, in := range []string{
+		"[-]", "[+]", "[.]", "[0x]", "[0X]", "[1e]", "[1e+]", "[--5]",
+		"[-NaN]", "[+NaN]", "[1.2.3]", "[01]", "[1-2]",
+	} {
+		t.Run(in, func(t *testing.T) {
+			_, err := parseJSON5([]byte(in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%s) = nil error, want a rejection", in)
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+}
+
+// TestLexJSON5AcceptsJSON5NumberForms is the guard on the other side of the
+// tightening: every spelling document_json5.go already types has to keep
+// lexing as exactly one value token. Infinity and NaN arrive unsigned as
+// identifiers, which is how the lexer has always handed them over.
+func TestLexJSON5AcceptsJSON5NumberForms(t *testing.T) {
+	for _, in := range []string{
+		"0", "-0", "42", "-42", "+7", "0x1F", "-0x10", "0X0A",
+		"1.5", "-0.25", ".5", "5.", "1e3", "1.5e-3", "1E+3", "0.0",
+		"Infinity", "+Infinity", "-Infinity", "NaN",
+	} {
+		t.Run(in, func(t *testing.T) {
+			toks, err := lexJSON5([]byte(in))
+			if err != nil {
+				t.Fatalf("lexJSON5(%s): %v", in, err)
+			}
+			if len(toks) != 2 {
+				t.Fatalf("lexed %d tokens %+v, want one value token and EOF", len(toks), toks)
+			}
+			if toks[0].Kind != tokNumber && toks[0].Kind != tokIdent {
+				t.Errorf("token kind = %d, want a number or identifier", toks[0].Kind)
+			}
+			if toks[0].Raw != in {
+				t.Errorf("token = %q, want %q", toks[0].Raw, in)
+			}
+		})
+	}
+}
+
+// TestParseJSON5RejectsUnquotedValues is the third shape of #537's
+// leniency: parseValue took any identifier as a scalar, so `{app: web}`
+// parsed and `docket fmt` rewrote it, while titanous/json5 stops at the "w"
+// and answers with a message about the literal false. Only the bare words
+// JSON5 actually defines are values.
+func TestParseJSON5RejectsUnquotedValues(t *testing.T) {
+	for _, in := range []string{`{app: web}`, `[undefined]`, `[web, "x"]`, `{a: 1, b: two}`} {
+		t.Run(in, func(t *testing.T) {
+			_, err := parseJSON5([]byte(in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%s) = nil error, want a rejection", in)
+			}
+			if !strings.Contains(err.Error(), "is not valid json5") {
+				t.Errorf("error = %q, want it to name the unquoted value", err.Error())
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+
+	// The five words that are values keep parsing, and an unquoted key is
+	// still an unquoted key - parseKey reads those, not parseValue.
+	node, err := parseJSON5([]byte(`[true, false, null, Infinity, NaN]`))
+	if err != nil {
+		t.Fatalf("parseJSON5 on the JSON5 keywords: %v", err)
+	}
+	if len(node.Elements) != 5 {
+		t.Errorf("parsed %d elements, want 5", len(node.Elements))
+	}
+	if _, err := parseJSON5([]byte(`{web: "x"}`)); err != nil {
+		t.Errorf("unquoted key should still parse: %v", err)
+	}
+}
+
+// TestParseJSON5RejectsInvalidStringLiterals covers the fourth shape of
+// #537: readString used to take any byte up to the closing quote, so a raw
+// newline and every escape JSON5 spells but titanous/json5 does not - \v,
+// \0, \xHH, and the identity escape - lexed fine and then failed to load.
+//
+// The \u rows are built from bs so this file never holds a real escape
+// sequence a text pipeline could fold into its character.
+func TestParseJSON5RejectsInvalidStringLiterals(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"raw newline", "[\"a\nb\"]"},
+		{"raw tab", "[\"a\tb\"]"},
+		{"vertical tab escape", `["a\vb"]`},
+		{"nul escape", `["a\0b"]`},
+		{"hex escape", `["a\x41b"]`},
+		{"identity escape", `["a\qb"]`},
+		{"short unicode escape", `["` + bs + `u12"]`},
+		{"non-hex unicode escape", `["` + bs + `uZZZZ"]`},
+		{"trailing backslash", `["a\`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseJSON5([]byte(tc.in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%q) = nil error, want a rejection", tc.in)
+			}
+			if !strings.Contains(err.Error(), "at offset ") {
+				t.Errorf("error = %q, want it to name an offset", err.Error())
+			}
+		})
+	}
+}
+
+// TestParseJSON5AcceptsValidStringEscapes is the guard on the other side:
+// every escape the loader does accept has to keep lexing, including the two
+// line continuations, which are the only way a JSON5 string spans lines.
+func TestParseJSON5AcceptsValidStringEscapes(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"short escapes", `["\b\f\n\r\t"]`},
+		{"backslash and slash", `["\\ \/"]`},
+		{"both quotes", `["\" \'"]`},
+		{"single quoted with escapes", `['it\'s \"quoted\"']`},
+		{"unicode escape", `["caf` + bs + `u00e9"]`},
+		{"surrogate pair", `["` + bs + `ud83d` + bs + `ude00"]`},
+		{"lf line continuation", "[\"a\\\nb\"]"},
+		{"crlf line continuation", "[\"a\\\r\nb\"]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			node, err := parseJSON5([]byte(tc.in))
+			if err != nil {
+				t.Fatalf("parseJSON5(%q): %v", tc.in, err)
+			}
+			if len(node.Elements) != 1 {
+				t.Errorf("parsed %d elements, want 1", len(node.Elements))
+			}
+		})
+	}
+}
+
+// TestParseJSON5RejectsUnreadableKeys is the read half of the same rule: a
+// key the loader cannot read is not one the formatter should accept either.
+func TestParseJSON5RejectsUnreadableKeys(t *testing.T) {
+	for _, in := range []string{`{café: 1}`, `{1: "x"}`, `{1.5: "x"}`, `{-1: "x"}`} {
+		t.Run(in, func(t *testing.T) {
+			if _, err := parseJSON5([]byte(in)); err == nil {
+				t.Errorf("parseJSON5(%s) = nil error, want a rejection", in)
+			}
+		})
+	}
+
+	// Quoted keys carry anything, and the ASCII identifier alphabet is
+	// exactly titanous/json5's [A-Za-z0-9_$].
+	for _, in := range []string{`{"café": 1}`, `{_a$b0: 1}`, `{"1": "x"}`, `{$: 1}`} {
+		t.Run(in, func(t *testing.T) {
+			if _, err := parseJSON5([]byte(in)); err != nil {
+				t.Errorf("parseJSON5(%s): %v", in, err)
+			}
+		})
+	}
+}
+
+// TestJSON5ParserAgreesWithTitanous is #537's complaint stated as a test.
+//
+// docket reads a JSON5 recipe with two different parsers: this one, which
+// keeps comments and is what `docket fmt` uses, and titanous/json5, which
+// `apply`, `plan`, `validate` and `--vars-file` use. Every row a formatter
+// accepts and a loader refuses is a recipe that formats cleanly and then
+// fails to load with a parse error pointing somewhere else entirely, so the
+// two have to answer the same way.
+//
+// The corpus covers the shapes they used to disagree about: the separator
+// between entries, number literals, bare words in value position, string
+// literals, and object keys.
+func TestJSON5ParserAgreesWithTitanous(t *testing.T) {
+	docs := []string{
+		// separators
+		"[1, 2]", "[1, 2,]", "{a: 1, b: 2,}", "[]", "{}",
+		"[1, /* c */]", "[\n 1\n // note\n]", "[1 /* c */, 2]", "[1\n/* c */\n, 2]",
+		"[1 2]", "{ a: 1 b: 2 }", "[{a: 1} {b: 2}]", "[[1 2]]",
+		// numbers
+		"[0, 42, -42, +7, 1.5, -0.25, .5, 5., 1e3, 1.5e-3, 0x1F, -0x10, 0X0A]",
+		"[Infinity, +Infinity, -Infinity, NaN]",
+		"[-]", "[+]", "[.]", "[0x]", "[1e]", "[1e+]", "[01]", "[1.2.3]", "[-NaN]", "[--5]",
+		// bare words
+		"[true, false, null]", "{app: web}", "[undefined]", "[web, \"x\"]",
+		// string literals
+		`["plain", 'single', "esc: \n\t\b\f\r\\\/\"\'"]`,
+		`["caf` + bs + `u00e9", "` + bs + `ud83d` + bs + `ude00", "` + bs + `ud83d"]`,
+		"[\"a\\\nb\"]",
+		"[\"a\nb\"]", "[\"a\tb\"]", `["a\vb"]`, `["a\0b"]`, `["a\x41b"]`, `["a\qb"]`,
+		`["` + bs + `u12"]`, `["` + bs + `uZZZZ"]`,
+		// object keys
+		`{"café": 1}`, `{_a$b0: 1}`, `{"1": "x"}`, `{café: 1}`, `{1: "x"}`, `{1.5: "x"}`,
+	}
+	for _, doc := range docs {
+		t.Run(doc, func(t *testing.T) {
+			_, docketErr := parseJSON5([]byte(doc))
+			var loaded interface{}
+			loaderErr := json5.Unmarshal([]byte(doc), &loaded)
+
+			switch {
+			case docketErr == nil && loaderErr != nil:
+				t.Errorf("docket accepts what the loader refuses (%v); a recipe like this formats cleanly and then fails to load", loaderErr)
+			case docketErr != nil && loaderErr == nil:
+				t.Errorf("docket refuses (%v) what the loader reads; `docket fmt` would fail on a working recipe", docketErr)
+			}
+		})
+	}
+}
+
+// TestDecodeJSON5StringMatchesTitanous is the value half of the same claim.
+// Agreeing that a string parses is not enough when the two decoders make
+// different characters of it: the key a duplicate is compared against, and
+// the value a conversion writes out, both come from here.
+func TestDecodeJSON5StringMatchesTitanous(t *testing.T) {
+	for _, raw := range []string{
+		`"plain"`,
+		`"caf` + bs + `u00e9"`,
+		`"` + bs + `ud83d` + bs + `ude00"`,
+		`"` + bs + `ud83d"`,
+		`"` + bs + `ude00"`,
+		`"` + bs + `ud83d` + bs + `u0041"`,
+		"\"a\xffb\"",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			got, ok := decodeJSON5String(raw)
+			if !ok {
+				t.Fatalf("decodeJSON5String(%q) refused a literal the loader reads", raw)
+			}
+			var want string
+			if err := json5.Unmarshal([]byte(raw), &want); err != nil {
+				t.Fatalf("json5.Unmarshal(%q): %v", raw, err)
+			}
+			if got != want {
+				t.Errorf("decoded %q, loader decoded %q", got, want)
+			}
+		})
 	}
 }
