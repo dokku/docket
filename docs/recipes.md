@@ -61,9 +61,11 @@ docket fmt --format json5 --output tasks.json5 tasks.yml
 ```
 
 A conversion is not byte-reversible: comments change syntax, YAML anchors and merge keys are
-inlined, numbers are normalised to decimal, and a leading `---` is not restored. See
+inlined, numbers are normalised to decimal, and a leading `---` is not restored. It is also refused
+outright when a recipe's interpolations are quoted in a way the other format cannot carry, since
+the quotes decide how a substituted value is escaped. See
 [Converting between YAML and JSON5](command-reference.md#converting-between-yaml-and-json5) for the
-full list and for what happens to an interpolation's quoting.
+full list and for what to write instead.
 
 ## How docket finds your recipe
 

@@ -141,6 +141,12 @@ single quote.
           MOTD: '{{ .motd }}'               # single quotes tolerate a " in the value
 ```
 
+That spelling is YAML-only. Canonical JSON5 has just the double-quoted string, so there is nothing
+for `docket fmt --format json5` to turn those single quotes into that would still mean the same
+thing - it refuses the conversion and names the line rather than quietly changing what the recipe
+can carry. The same goes for a plain scalar or a block scalar holding an interpolation. If a recipe
+may ever be converted, reach for `| dq` from the start; it is the one spelling both formats share.
+
 Note that `dq` must sit inside a double-quoted scalar. Do not leave the reference unquoted
 (`app: {{ .app | dq }}`). An unquoted `{{` is not the text it looks like: the braces are YAML's own
 flow syntax, so the value parses as a nested mapping and the template is gone before anything reads

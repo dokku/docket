@@ -324,3 +324,89 @@ EOF2
   run "$(docket_bin)" fmt --check "$BATS_TEST_DIRNAME/../../tasks.yml"
   assert_success
 }
+
+@test "docket fmt refuses a conversion that would requote an interpolation" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF2'
+---
+- tasks:
+    - dokku_app:
+        app: '{{ .app }}'
+EOF2
+  before=$(cat tasks.yml)
+  run "$(docket_bin)" fmt --format json5
+  assert_failure
+  assert_output --partial "line 4"
+  assert_output --partial "single-quoted"
+  assert_output --partial '"{{ .app | dq }}"'
+  # The recipe is left alone. Converting it would have written the
+  # double-quoted form, which needs dq to carry a value holding a quote.
+  assert [ "$(cat tasks.yml)" = "$before" ]
+}
+
+@test "docket fmt names every scalar style a conversion cannot carry" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF2'
+---
+- tasks:
+    - name: web{{ .suffix }}
+      dokku_config:
+        app: web
+        config:
+          MOTD: |
+            {{ .motd }}
+EOF2
+  run "$(docket_bin)" fmt --format json5
+  assert_failure
+  assert_output --partial "2 interpolations"
+  assert_output --partial "line 3"
+  assert_output --partial "unquoted"
+  assert_output --partial "literal block scalar"
+}
+
+@test "docket fmt refuses to requote a single-quoted JSON5 interpolation" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.json5 <<'EOF2'
+[
+  {
+    tasks: [
+      { dokku_app: { app: '{{ .app }}' } },
+    ],
+  },
+]
+EOF2
+  before=$(cat tasks.json5)
+  run "$(docket_bin)" fmt tasks.json5
+  assert_failure
+  assert_output --partial "line 4"
+  assert_output --partial '"{{ .app | dq }}"'
+  assert [ "$(cat tasks.json5)" = "$before" ]
+
+  # The loader is a separate path and keeps reading the recipe: this is a
+  # rule about rewriting a file, not about whether the recipe is valid.
+  run "$(docket_bin)" validate --tasks tasks.json5
+  assert_success
+}
+
+@test "docket fmt converts a recipe whose interpolations are dq-escaped" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF2'
+---
+- tasks:
+    - dokku_app:
+        app: "{{ .app | dq }}"
+EOF2
+  run "$(docket_bin)" fmt --format json5 --output tasks.json5 tasks.yml
+  assert_success
+  run grep -c '"{{ .app | dq }}"' tasks.json5
+  refute_output "0"
+}
+
+@test "docket fmt converts the repository's own recipe to JSON5" {
+  cd "$BATS_TEST_TMPDIR"
+  cp "$BATS_TEST_DIRNAME/../../tasks.yml" tasks.yml
+  run "$(docket_bin)" fmt --format json5 --output tasks.json5 tasks.yml
+  assert_success
+  run "$(docket_bin)" validate --tasks tasks.json5
+  assert_success
+}

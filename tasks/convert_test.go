@@ -14,13 +14,18 @@ import (
 // head, line and foot comments, a nested tasks list, a block scalar, a
 // string that would resolve as a number and one that would resolve as a
 // bool, an inline scalar array, and a sigil template.
+//
+// The template is written `"{{ .app | dq }}"` because that is the only
+// spelling a conversion carries across: every other quoting style changes
+// how the substituted value is escaped, so Convert refuses it - see
+// TestConvertRefusesUnportableQuoting.
 const convertFixtureYAML = `# top of file
 - name: web
   # about the tasks
   tasks:
     - name: create app # trailing note
       dokku_app:
-        app: '{{ .app }}'
+        app: "{{ .app | dq }}"
         state: present
 
     - name: config
@@ -45,7 +50,7 @@ const convertFixtureJSON5 = `// top of file
       {
         name: "create app", // trailing note
         dokku_app: {
-          app: "{{ .app }}",
+          app: "{{ .app | dq }}",
           state: "present",
         },
       },
@@ -645,4 +650,168 @@ func FuzzConvertRoundTrip(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestConvertRefusesUnportableQuoting covers #538: the quotes around an
+// interpolation are part of what a recipe means, because a recipe is
+// rendered as text before it is parsed, so a rewrite that changes them
+// changes which values the recipe can carry. Refuse rather than write one.
+func TestConvertRefusesUnportableQuoting(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		from string
+		to   string
+		in   string
+		want string
+	}{
+		{
+			name: "single-quoted yaml scalar",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - dokku_app:\n        app: '{{ .app }}'\n",
+			want: "line 3: `{{ .app }}` is single-quoted",
+		},
+		{
+			name: "plain yaml scalar",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - name: web{{ .suffix }}\n      dokku_app:\n        app: web\n",
+			want: "line 2: `{{ .suffix }}` is unquoted",
+		},
+		{
+			name: "literal block scalar",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - dokku_app:\n        app: |\n          {{ .app }}\n",
+			want: "in a literal block scalar",
+		},
+		{
+			name: "folded block scalar",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - dokku_app:\n        app: >\n          {{ .app }}\n",
+			want: "in a folded block scalar",
+		},
+		{
+			name: "single-quoted yaml mapping key",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - dokku_config:\n        '{{ .key }}': web\n",
+			want: "`{{ .key }}` is single-quoted",
+		},
+		{
+			// The JSON5 side has the same gap in the other direction:
+			// json5DocumentToYAML forces the double-quoted style on
+			// anything holding an interpolation, which is right only when
+			// the source was double-quoted to begin with.
+			name: "single-quoted json5 string",
+			from: FormatNameJSON5,
+			to:   FormatYAML,
+			in:   "[{ tasks: [{ dokku_app: { app: '{{ .app }}' } }] }]\n",
+			want: "`{{ .app }}` is single-quoted",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			out, err := Convert([]byte(tc.in), CodecFor(tc.from), CodecFor(tc.to))
+			if err == nil {
+				t.Fatalf("Convert accepted %q: %s", tc.in, out)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to mention %q", err, tc.want)
+			}
+			if !strings.Contains(err.Error(), "| dq") {
+				t.Errorf("error = %q, want it to name the dq filter", err)
+			}
+			if out != nil {
+				t.Errorf("Convert returned bytes alongside an error: %q", out)
+			}
+		})
+	}
+}
+
+// TestConvertAllowsSafeInterpolations is the other half of #538. The rule
+// has to leave alone everything that is not actually at risk, or a
+// conversion would be refused for recipes it can carry perfectly well.
+func TestConvertAllowsSafeInterpolations(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		from string
+		to   string
+		in   string
+	}{
+		{
+			name: "double-quoted and escaped",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - dokku_app:\n        app: \"{{ .app | dq }}\"\n",
+		},
+		{
+			// A double-quoted scalar is already the spelling every rewrite
+			// produces, so nothing about it changes.
+			name: "double-quoted without dq",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - dokku_app:\n        app: \"{{ .app }}\"\n",
+		},
+		{
+			// Only literal recipe text is substituted, so the quoting
+			// around it cannot decide anything.
+			name: "single-quoted conditional",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - name: 'web{{ if .debug }}-verbose{{ end }}'\n      dokku_app:\n        app: web\n",
+		},
+		{
+			// dq inside single quotes is a recipe that does not work; the
+			// rewrite into double quotes is the fix for it, not a break.
+			name: "single-quoted but already escaped",
+			from: FormatYAML,
+			to:   FormatNameJSON5,
+			in:   "- tasks:\n    - dokku_app:\n        app: '{{ .app | dq }}'\n",
+		},
+		{
+			name: "single-quoted json5 string with no interpolation",
+			from: FormatNameJSON5,
+			to:   FormatYAML,
+			in:   "[{ tasks: [{ dokku_app: { app: 'web' } }] }]\n",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := Convert([]byte(tc.in), CodecFor(tc.from), CodecFor(tc.to)); err != nil {
+				t.Fatalf("Convert refused a safe recipe %q: %v", tc.in, err)
+			}
+		})
+	}
+}
+
+// TestConvertReportsAnAnchoredScalarOnce keeps the scan ahead of the alias
+// and merge passes. An anchor expanded into three places is still one line
+// to edit, and reporting it three times would send the user to two lines
+// that hold no interpolation at all.
+func TestConvertReportsAnAnchoredScalarOnce(t *testing.T) {
+	t.Parallel()
+
+	in := []byte("- tasks:\n    - dokku_config:\n        A: &name '{{ .app }}'\n        B: *name\n        C: *name\n")
+	_, err := Convert(in, CodecFor(FormatYAML), CodecFor(FormatNameJSON5))
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if !strings.Contains(err.Error(), "line 3:") {
+		t.Errorf("error = %q, want it to name the anchor's own line", err)
+	}
+	if strings.Contains(err.Error(), "interpolations would lose") {
+		t.Errorf("error = %q, want the anchored scalar reported once", err)
+	}
 }

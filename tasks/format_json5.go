@@ -35,6 +35,15 @@ func FormatJSON5(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("json5 parse error: %w", err)
 	}
 
+	// canonicaliseScalarRaw folds a single-quoted string into the
+	// double-quoted canonical form, which for a string holding an
+	// interpolation is not a spelling change but a change to how the
+	// substituted value is escaped. Refuse instead, after the parse so a
+	// malformed file still reports the parse error it always did.
+	if err := refuseJSON5UnportableQuoting(data); err != nil {
+		return nil, err
+	}
+
 	canonicaliseJSON5Recipe(root)
 
 	var buf bytes.Buffer
@@ -1258,4 +1267,26 @@ func canonicaliseScalarRaw(raw string) string {
 		}
 	}
 	return raw
+}
+
+// refuseJSON5UnportableQuoting rejects JSON5 source holding a single-quoted
+// interpolation, which every rewrite of it - formatting in place, or
+// converting to YAML - would leave double-quoted.
+//
+// It is called from the two entry points a recipe can reach from `docket
+// fmt`, and from neither of the ones the loader uses: ToYAML and Lint read
+// a recipe for `validate`, `plan` and `apply`, which render before they
+// parse and so do not care how the file is spelled. This is a fmt rule.
+func refuseJSON5UnportableQuoting(data []byte) error {
+	sites, err := json5QuotingSites(data)
+	if err != nil {
+		// The caller has already parsed, or is about to; a lex failure
+		// here is that same problem and is better reported by the parser,
+		// which says where it is.
+		return nil
+	}
+	if len(sites) == 0 {
+		return nil
+	}
+	return unportableQuotingError(sites)
 }

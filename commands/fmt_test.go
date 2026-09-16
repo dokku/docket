@@ -1019,3 +1019,153 @@ func TestFmtOutputSpelledDifferentlyIsStillInPlace(t *testing.T) {
 		t.Errorf("file mismatch:\n%s", got)
 	}
 }
+
+// --- interpolation quoting (#538) ----------------------------------------
+
+// singleQuotedTasksYAML holds the interpolation spelling docs/inputs.md
+// offers as the filter-free alternative to dq: safe as YAML, because a
+// single-quoted scalar tolerates a double quote in the substituted value,
+// and unwritable as canonical JSON5, which has only the double-quoted
+// string.
+const singleQuotedTasksYAML = `---
+- tasks:
+    - name: create app
+      dokku_app:
+        app: '{{ .app }}'
+`
+
+// TestFmtRefusesAConversionThatWouldRequote covers #538 end to end: the
+// conversion is refused, the recipe is left exactly as it was, and the
+// error says which line to edit and what to write there.
+func TestFmtRefusesAConversionThatWouldRequote(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(singleQuotedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--format", "json5", path}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	stderr := c.Ui.(*cli.MockUi).ErrorWriter.String()
+	for _, want := range []string{"line 5", "{{ .app }}", "single-quoted", `"{{ .app | dq }}"`} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to mention %q", stderr, want)
+		}
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != singleQuotedTasksYAML {
+		t.Errorf("a refused conversion wrote to the file:\n%s", got)
+	}
+}
+
+// TestFmtDiffOnARefusedConversionShowsNothing keeps --diff honest. It
+// previews a conversion, and there is no conversion to preview here, so it
+// has to report the refusal rather than print a diff of a rewrite that
+// will never be written.
+func TestFmtDiffOnARefusedConversionShowsNothing(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(singleQuotedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	out, exit := captureStdout(t, func(w io.Writer) int {
+		c := newTestFmtCommand()
+		c.Stdout = w
+		return c.Run([]string{"--diff", "--format", "json5", path})
+	})
+	if exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	if out != "" {
+		t.Errorf("--diff printed a diff for a refused conversion:\n%s", out)
+	}
+}
+
+// TestFmtCheckOnAConvertingFormatBeatsTheQuotingRefusal pins the order the
+// two objections are raised in. --check plus a converting --format is a
+// flag-combination error, and hearing about quoting instead would answer a
+// question the user did not ask.
+func TestFmtCheckOnAConvertingFormatBeatsTheQuotingRefusal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	if err := os.WriteFile(path, []byte(singleQuotedTasksYAML), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{"--check", "--format", "json5", path}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	stderr := c.Ui.(*cli.MockUi).ErrorWriter.String()
+	if !strings.Contains(stderr, "a conversion is never a no-op") {
+		t.Errorf("stderr = %q, want the flag-combination error", stderr)
+	}
+	if strings.Contains(stderr, "single-quoted") {
+		t.Errorf("stderr = %q, want the quoting refusal held back", stderr)
+	}
+}
+
+// TestFmtRefusesToRequoteAJSON5Recipe is the same rule with no conversion
+// in sight: formatting a JSON5 recipe in place would fold its single
+// quotes away just as a conversion would.
+func TestFmtRefusesToRequoteAJSON5Recipe(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.json5")
+	const recipe = "[\n  {\n    tasks: [\n      { dokku_app: { app: '{{ .app }}' } },\n    ],\n  },\n]\n"
+	if err := os.WriteFile(path, []byte(recipe), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c := newTestFmtCommand()
+	if exit := c.Run([]string{path}); exit != 1 {
+		t.Fatalf("exit = %d, want 1", exit)
+	}
+	stderr := c.Ui.(*cli.MockUi).ErrorWriter.String()
+	if !strings.Contains(stderr, "line 4") || !strings.Contains(stderr, `"{{ .app | dq }}"`) {
+		t.Errorf("stderr = %q, want the line and the rewritten spelling", stderr)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != recipe {
+		t.Errorf("a refused format wrote to the file:\n%s", got)
+	}
+}
+
+// TestFmtConvertsAnEscapedInterpolation is the silence guard. The spelling
+// the refusal asks for has to be the one that converts cleanly, or the
+// error would be sending users somewhere that does not work either.
+func TestFmtConvertsAnEscapedInterpolation(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.yml")
+	escaped := strings.Replace(singleQuotedTasksYAML, `'{{ .app }}'`, `"{{ .app | dq }}"`, 1)
+	if err := os.WriteFile(path, []byte(escaped), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	out, exit := captureStdout(t, func(w io.Writer) int {
+		c := newTestFmtCommand()
+		c.Stdout = w
+		return c.Run([]string{"--format", "json5", "--output", "-", path})
+	})
+	if exit != 0 {
+		t.Fatalf("exit = %d, want 0", exit)
+	}
+	if !strings.Contains(out, `app: "{{ .app | dq }}"`) {
+		t.Errorf("converted recipe does not carry the escaped interpolation:\n%s", out)
+	}
+}

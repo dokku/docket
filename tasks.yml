@@ -8,11 +8,11 @@
       default: "http://github.com/cakephp/inflector.cakephp.org"
       description: "Remote git repository to be synced"
   tasks:
-    - name: dokku apps:create {{ .app | default "" }}
+    - name: "dokku apps:create {{ .app | dq }}"
       dokku_app:
         app: "{{ .app | dq }}"
 
-    - name: dokku git:sync {{ .app | default "" }}
+    - name: "dokku git:sync {{ .app | dq }}"
       dokku_git_sync:
         app: "{{ .app | dq }}"
         remote: "{{ .remote | dq }}"

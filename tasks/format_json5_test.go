@@ -787,3 +787,86 @@ func TestDecodeJSON5StringMatchesTitanous(t *testing.T) {
 		})
 	}
 }
+
+// TestFormatJSON5RefusesSingleQuotedInterpolation covers the half of #538
+// that needs no conversion at all. canonicaliseScalarRaw folds a
+// single-quoted string into the double-quoted canonical form, which for a
+// string holding an interpolation changes how the substituted value is
+// escaped rather than just how the recipe is spelled.
+func TestFormatJSON5RefusesSingleQuotedInterpolation(t *testing.T) {
+	t.Parallel()
+
+	in := []byte("[\n  {\n    tasks: [\n      { dokku_app: { app: '{{ .app }}' } },\n    ],\n  },\n]\n")
+	out, err := FormatJSON5(in)
+	if err == nil {
+		t.Fatalf("FormatJSON5 accepted a single-quoted interpolation: %s", out)
+	}
+	if !strings.Contains(err.Error(), "line 4:") {
+		t.Errorf("error = %q, want it to name line 4", err)
+	}
+	if !strings.Contains(err.Error(), `"{{ .app | dq }}"`) {
+		t.Errorf("error = %q, want it to carry the rewritten spelling", err)
+	}
+	if out != nil {
+		t.Errorf("FormatJSON5 returned bytes alongside an error: %q", out)
+	}
+}
+
+// TestFormatJSON5StillFoldsOrdinarySingleQuotes is the guard against the
+// refusal reaching further than it should. Only a string that substitutes
+// a value has quoting worth protecting; every other single-quoted string
+// is canonicalised exactly as it always was.
+func TestFormatJSON5StillFoldsOrdinarySingleQuotes(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "no interpolation",
+			in:   "[{ tasks: [{ dokku_app: { app: 'web', state: 'present' } }] }]\n",
+			want: `app: "web"`,
+		},
+		{
+			name: "already escaped",
+			in:   "[{ tasks: [{ dokku_app: { app: '{{ .app | dq }}' } }] }]\n",
+			want: `app: "{{ .app | dq }}"`,
+		},
+		{
+			name: "control action only",
+			in:   "[{ tasks: [{ name: 'web{{ if .debug }}-v{{ end }}', dokku_app: { app: 'web' } }] }]\n",
+			want: `name: "web{{ if .debug }}-v{{ end }}"`,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			out, err := FormatJSON5([]byte(tc.in))
+			if err != nil {
+				t.Fatalf("FormatJSON5: %v", err)
+			}
+			if !strings.Contains(string(out), tc.want) {
+				t.Errorf("output does not contain %q:\n%s", tc.want, out)
+			}
+		})
+	}
+}
+
+// TestFormatJSON5ParseErrorBeatsTheQuotingRefusal keeps the refusal behind
+// the parser. A file that is not JSON5 at all should say so, with a
+// position, rather than being reported for how it quotes something.
+func TestFormatJSON5ParseErrorBeatsTheQuotingRefusal(t *testing.T) {
+	t.Parallel()
+
+	_, err := FormatJSON5([]byte("[{ tasks: [{ dokku_app: { app: '{{ .app }}' } }] }\n"))
+	if err == nil {
+		t.Fatal("expected a parse error")
+	}
+	if !strings.Contains(err.Error(), "parse error") {
+		t.Errorf("error = %q, want the parse error", err)
+	}
+}

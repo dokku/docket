@@ -160,7 +160,8 @@ func (c *FmtCommand) AutocompleteFlags() complete.Flags {
 //	    or written to --output)
 //	1 - flag parse error, a rejected flag combination, an --output that
 //	    would overwrite an existing file without --force, IO error, parse /
-//	    round-trip failure, a --check that would have to convert, or a
+//	    round-trip failure, a rewrite that would change the quoting around
+//	    an interpolation, a --check that would have to convert, or a
 //	    --check mismatch on at least one file
 func (c *FmtCommand) Run(args []string) int {
 	flags := c.FlagSet()
@@ -353,6 +354,22 @@ func (c *FmtCommand) formatPath(path, formatOverride, outputOverride string) int
 func (c *FmtCommand) writeFormatted(display string, src []byte, inFormat, outFormat, writePath, sourcePath string) int {
 	converting := outFormat != inFormat
 
+	// --check asks whether a recipe is already canonical, and a conversion
+	// is never a no-op, so the answer would be "no" for every file however
+	// clean it is. Say that rather than exiting 1 and letting a CI lint job
+	// read it as a formatting failure.
+	//
+	// It is tested before the conversion runs, not after, so the objection
+	// to the flag pair is what the user hears even when the conversion has
+	// an objection of its own - a recipe whose interpolation quoting cannot
+	// survive it would otherwise answer a question about --check with an
+	// error about quoting.
+	if c.check && converting {
+		c.Ui.Error(fmt.Sprintf("[error]   %s: --check cannot be combined with --format %s on a %s recipe; a conversion is never a no-op", display, outFormat, inFormat))
+		c.Ui.Error(fmt.Sprintf("          to check a recipe whose extension is misleading, use: %s fmt --check --tasks-format %s", appName(), outFormat))
+		return 1
+	}
+
 	formatted, err := tasks.Convert(src, tasks.CodecFor(inFormat), tasks.CodecFor(outFormat))
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("%s: %v", display, err))
@@ -361,22 +378,16 @@ func (c *FmtCommand) writeFormatted(display string, src []byte, inFormat, outFor
 
 	changed := !bytesEqual(src, formatted)
 
-	// The diff is rendered before the --check rejection below, so
-	// `--check --diff` still shows what it objected to.
+	// The diff is rendered before the --check mismatch below, so
+	// `--check --diff` still shows what it objected to. The converting
+	// --check is the one rejection it cannot show, having already returned
+	// above: there is nothing to diff against until the conversion runs,
+	// and running it would be doing the work --check exists to avoid.
 	if c.diff && changed {
 		_, _ = io.WriteString(c.stdout(), renderDiff(display, string(src), string(formatted), c.useColor))
 	}
 
 	if c.check {
-		if converting {
-			// --check asks whether a recipe is already canonical, and a
-			// conversion is never a no-op, so the answer would be "no" for
-			// every file however clean it is. Say that rather than exiting
-			// 1 and letting a CI lint job read it as a formatting failure.
-			c.Ui.Error(fmt.Sprintf("[error]   %s: --check cannot be combined with --format %s on a %s recipe; a conversion is never a no-op", display, outFormat, inFormat))
-			c.Ui.Error(fmt.Sprintf("          to check a recipe whose extension is misleading, use: %s fmt --check --tasks-format %s", appName(), outFormat))
-			return 1
-		}
 		if changed {
 			c.Ui.Error(fmt.Sprintf("[error]   %s is not canonically formatted", display))
 			c.Ui.Error(fmt.Sprintf("          run: %s fmt %s", appName(), display))

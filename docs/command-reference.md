@@ -149,11 +149,16 @@ the extension, and both formats share the same canonical key order so a YAML rec
 twin lay out identically. Comments are preserved in both formats.
 
 A recipe it cannot parse is reported with the byte offset of the problem and left untouched. What
-`fmt` accepts is what `apply`, `plan`, and `validate` accept, so a file that formats is a file
-that loads, and a file it refuses would have failed later anyway. The one thing `fmt` objects to
-that the others do not is an unquoted interpolation: `fmt` reads the recipe as written, where
-`{{ .app }}` outside quotes is YAML flow syntax rather than template text, so it names the line
-instead of writing YAML's reading of it back out. See [Inputs](inputs.md).
+`fmt` accepts is what `apply`, `plan`, and `validate` accept, so a file that formats is a file that
+loads, and a file it refuses would have failed later anyway.
+
+What `fmt` objects to that the others do not comes from reading the recipe as written rather than
+rendering it first, which is what lets it see the quote characters at all. An unquoted interpolation
+is one case: `{{ .app }}` outside quotes is YAML flow syntax rather than template text, so `fmt`
+names the line instead of writing YAML's reading of it back out. A rewrite that would change an
+interpolation's quoting is the other, refused on a conversion and on a JSON5 recipe but never on a
+plain YAML format - see [Converting between YAML and JSON5](#converting-between-yaml-and-json5).
+Both are about the same thing, and [Inputs](inputs.md) covers it.
 
 `--format` makes it a converter as well as a formatter. It states the format to write, so naming
 one the recipe is not already in rewrites it into that format, comments and all - the thing a trip
@@ -253,11 +258,36 @@ A YAML timestamp is the one value whose type changes: JSON5 has no date literal,
 becomes the string `"2015-01-01"`. Nothing in a recipe reads it as anything else - every task field
 holding one is a string already.
 
-Quoting is preserved where it carries meaning. A value holding an interpolation stays double-quoted,
-because `"{{ .app | dq }}"` and `'{{ .app | dq }}'` do not render the same way - see
-[Inputs](inputs.md). The reverse has no safe spelling: canonical JSON5 has no single-quoted string,
-so a YAML `'{{ .app }}'` converts to `"{{ .app }}"`, which `docket validate` then reports as
-`unsafe_input_value`. Add `| dq` before converting such a recipe.
+Quoting is preserved where it carries meaning, and where it cannot be, `fmt` refuses rather than
+change it. A recipe is rendered as text and only then parsed, so the quotes around an interpolation
+decide how the substituted value is escaped - see [Inputs](inputs.md). Canonical JSON5 has only the
+double-quoted string, which is the one spelling that needs `| dq`, so every other way of writing a
+YAML scalar loses something on the way across:
+
+```text
+ !     tasks.yml: line 5: `{{ .app }}` is single-quoted, and rewriting it double-quoted would leave
+       a recipe that no longer tolerates a double quote in the value; write it as "{{ .app | dq }}"
+```
+
+The error names every line it objects to, so a recipe with several is one edit rather than several.
+It covers a single-quoted scalar, a plain one, and a literal or folded block - all of them tolerate
+a double quote in the value, and none of them survives being written as `"..."`. The fix is always
+the same, `| dq` inside a double-quoted scalar, which renders identically wherever the original
+worked and keeps working where the original would have broken.
+
+Two things are deliberately left alone. An interpolation that is already `| dq` escaped converts
+untouched, in either direction. So does one that substitutes no value at all, such as
+`'web{{ if .debug }}-verbose{{ end }}'`, where only literal recipe text is ever inserted.
+
+The same refusal applies with no conversion in sight: `docket fmt tasks.json5` would fold a
+single-quoted JSON5 string into the double-quoted canonical form, so it is refused on exactly the
+same terms. Only a plain `docket fmt` of a YAML recipe is unaffected, since YAML-to-YAML formatting
+leaves every scalar's quoting as it found it.
+
+An interpolation containing a double quote of its own - `{{ .app | default "" }}`, say - has no
+double-quoted spelling in either format, because the scalar would have to escape that quote and the
+template engine reads the recipe before anything unescapes it. Such an action has to be rewritten to
+drop the literal; a backquoted raw string is one way.
 
 ## docket plan
 
