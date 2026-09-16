@@ -325,6 +325,23 @@ EOF2
   assert_success
 }
 
+@test "docket fmt names the line of an unquoted interpolation when converting" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF2'
+---
+- tasks:
+    - dokku_app:
+        app: {{.app | default ""}}
+EOF2
+  run "$(docket_bin)" fmt --format json5 --output - tasks.yml
+  assert_failure
+  assert_output --partial "line 4"
+  assert_output --partial "unquoted"
+  # Converting used to report a complex mapping key, which describes YAML's
+  # reading of the braces rather than the braces.
+  refute_output --partial "json5 object keys"
+}
+
 @test "docket fmt refuses a conversion that would requote an interpolation" {
   cd "$BATS_TEST_TMPDIR"
   cat >tasks.yml <<'EOF2'

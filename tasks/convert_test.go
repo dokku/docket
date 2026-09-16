@@ -815,3 +815,54 @@ func TestConvertReportsAnAnchoredScalarOnce(t *testing.T) {
 		t.Errorf("error = %q, want the anchored scalar reported once", err)
 	}
 }
+
+// TestConvertNamesAnUnquotedInterpolation pins that a conversion diagnoses
+// an unquoted interpolation the way an in-place format always has.
+//
+// The recipe was refused either way - the JSON5 encoder has no key to write
+// for a mapping whose key is a mapping - but it reported a complex mapping
+// key, which is about YAML's reading of the braces rather than about the
+// braces. Both paths now read the recipe through decodeSingleYAMLDocument,
+// so they cannot drift on this again.
+func TestConvertNamesAnUnquotedInterpolation(t *testing.T) {
+	t.Parallel()
+
+	in := []byte("---\n- tasks:\n    - dokku_app:\n        app: {{.app | default \"\"}}\n")
+	out, err := Convert(in, CodecFor(FormatYAML), CodecFor(FormatNameJSON5))
+	if err == nil {
+		t.Fatalf("Convert accepted an unquoted interpolation: %s", out)
+	}
+	if !strings.Contains(err.Error(), "line 4") {
+		t.Errorf("error = %q, want it to name line 4", err)
+	}
+	if !strings.Contains(err.Error(), "unquoted") {
+		t.Errorf("error = %q, want it to say the interpolation is unquoted", err)
+	}
+	if strings.Contains(err.Error(), "json5 object keys") {
+		t.Errorf("error = %q, want the diagnosis rather than the complex-key message", err)
+	}
+
+	// The same message, from the same reader, whichever entry point asked.
+	_, formatErr := Format(in)
+	if formatErr == nil || formatErr.Error() != err.Error() {
+		t.Errorf("Format said %q but Convert said %q; the two must agree", formatErr, err)
+	}
+}
+
+// TestConvertStillReportsAnOrdinaryComplexKey is the guard on the line
+// above. Only a complex key with an interpolation on its line is claimed as
+// a mis-quoted template; a genuine one is still the encoder's to refuse.
+func TestConvertStillReportsAnOrdinaryComplexKey(t *testing.T) {
+	t.Parallel()
+
+	_, err := Convert([]byte("? [a, b]\n: value\n"), CodecFor(FormatYAML), CodecFor(FormatNameJSON5))
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if !strings.Contains(err.Error(), "not a scalar") {
+		t.Errorf("error = %q, want the complex-key message", err)
+	}
+	if strings.Contains(err.Error(), "unquoted") {
+		t.Errorf("error = %q, want a complex key with no interpolation left alone", err)
+	}
+}

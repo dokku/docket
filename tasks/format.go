@@ -69,10 +69,6 @@ func Format(data []byte) ([]byte, error) {
 		return data, nil
 	}
 
-	if line := unquotedInterpolationLine(documentBody(root), data); line > 0 {
-		return nil, fmt.Errorf("line %d: this interpolation is unquoted, so YAML reads the braces as its own flow syntax and the value is a nested mapping rather than the template text; quote it, as in app: \"{{ .app | dq }}\"", line)
-	}
-
 	out, err := encodeCanonicalYAML(root)
 	if err != nil {
 		return nil, err
@@ -91,7 +87,14 @@ func Format(data []byte) ([]byte, error) {
 
 // decodeSingleYAMLDocument is Format's reading half, split out so the YAML
 // codec's DecodeDocument and Format cannot drift apart on what counts as a
-// parse error, a multi-document file, or an empty one.
+// parse error, a multi-document file, an empty one, or an unquoted
+// interpolation.
+//
+// That last one used to sit in Format alone, which is exactly the drift
+// this split exists to prevent: `docket fmt` named the line, while `docket
+// fmt --format json5` walked the same recipe into the JSON5 encoder and
+// reported a complex mapping key instead - true, but about YAML's reading
+// of the braces rather than about the braces.
 //
 // A nil node with a nil error means the source holds no document at all -
 // an empty or comment-only file. That is not a failure: Format returns
@@ -120,6 +123,10 @@ func decodeSingleYAMLDocument(data []byte) (*yaml.Node, error) {
 		}
 	} else if extraErr != io.EOF {
 		return nil, fmt.Errorf("yaml parse error: %w", extraErr)
+	}
+
+	if line := unquotedInterpolationLine(doc, data); line > 0 {
+		return nil, fmt.Errorf("line %d: this interpolation is unquoted, so YAML reads the braces as its own flow syntax and the value is a nested mapping rather than the template text; quote it, as in app: \"{{ .app | dq }}\"", line)
 	}
 
 	return &root, nil
