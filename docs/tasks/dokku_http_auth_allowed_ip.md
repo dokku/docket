@@ -6,7 +6,7 @@ Manages the set of IP addresses allowed to bypass HTTP auth for a dokku applicat
 
 ## Requirements
 
-- dokku-http-auth plugin >= 0.13.0
+- dokku-http-auth plugin >= 0.14.0
 
 ## Export support
 
@@ -25,8 +25,8 @@ Keyed by `app`. Manages the whole `allowed_ips` collection; entries are identifi
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `allowed_ips` | list | no |  |  | List of IP addresses to allow or remove |
-| `state` | string | no | present | present, absent | Desired state of the allowed IP entries |
+| `allowed_ips` | list | no |  |  | List of IP addresses to allow or remove; omit for state 'clear' |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the allowed IP entries |
 
 ## Examples
 
@@ -50,13 +50,22 @@ dokku_http_auth_allowed_ip:
     state: absent
 ```
 
-### Remove all allowed IP addresses from an app
+### Replace the set of allowed IP addresses for an app
 
 ```yaml
 dokku_http_auth_allowed_ip:
     app: hello-world
-    allowed_ips: []
-    state: absent
+    allowed_ips:
+        - 192.0.2.1
+    state: set
+```
+
+### Clear all allowed IP addresses from an app
+
+```yaml
+dokku_http_auth_allowed_ip:
+    app: hello-world
+    state: clear
 ```
 
 ## Return Values

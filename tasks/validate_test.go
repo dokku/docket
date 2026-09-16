@@ -1662,3 +1662,45 @@ func TestValidateAcceptsYamlBoolSpellings(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateInvalidTaskInputAllowedIpAddress(t *testing.T) {
+	// http_auth_allowed_ip mirrors the plugin's address check for the states
+	// that write addresses, so a typo is caught offline rather than at apply.
+	data := []byte(`---
+- tasks:
+    - dokku_http_auth_allowed_ip:
+        app: my-app
+        state: present
+        allowed_ips:
+            - 10.0.0.0/
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "allowed_ips[0]") {
+		t.Errorf("expected message to name the offending entry, got: %q", p.Message)
+	}
+}
+
+func TestValidateAllowedIpAddressSkippedWithPlaceholder(t *testing.T) {
+	// An address supplied by a required-no-default input renders to the
+	// validate placeholder, which is not an address; the conditional checks are
+	// skipped for the whole task so the address check cannot false-positive.
+	data := []byte(`---
+- inputs:
+    - name: office_ip
+      required: true
+  tasks:
+    - dokku_http_auth_allowed_ip:
+        app: my-app
+        state: present
+        allowed_ips:
+            - "{{ .office_ip }}"
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input with placeholder input, got %d: %+v", n, problems)
+	}
+}

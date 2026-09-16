@@ -1394,3 +1394,35 @@ func TestMarshalVarsMatchesTheCodec(t *testing.T) {
 		t.Errorf("vars round-trip differs by codec:\nyaml:  %#v\njson5: %#v", fromYAML, fromJSON5)
 	}
 }
+
+func TestExportHttpAuthAllowedIpsUseStateSet(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet apps:list":                  "web",
+		"http-auth:report web --format json": `{"enabled":"true","users":"","allowed-ips":"198.51.100.2 192.0.2.1","domains":""}`,
+	}))
+
+	// state:set replaces the whole allow-list, so re-applying an export
+	// converges an app carrying an extra address rather than adding to it (#531).
+	bodies, err := HttpAuthAllowedIpTask{}.ExportApp(ctx, "web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	allowedIps := bodies[0].(HttpAuthAllowedIpTask)
+	if allowedIps.State != StateSet {
+		t.Errorf("State = %q, want %q", allowedIps.State, StateSet)
+	}
+	// The probe hands back a map, so the export sorts for a stable recipe.
+	if want := []string{"192.0.2.1", "198.51.100.2"}; !reflect.DeepEqual(allowedIps.AllowedIps, want) {
+		t.Errorf("AllowedIps = %v, want %v", allowedIps.AllowedIps, want)
+	}
+	if err := allowedIps.Validate(); err != nil {
+		t.Errorf("exported task must be valid, got: %v", err)
+	}
+	if plan := allowedIps.Plan(ctx); !plan.InSync {
+		t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}

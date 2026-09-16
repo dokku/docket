@@ -6,7 +6,7 @@ Manages the set of HTTP auth users for a dokku application
 
 ## Requirements
 
-- dokku-http-auth plugin >= 0.13.0
+- dokku-http-auth plugin >= 0.14.0
 
 ## Export support
 

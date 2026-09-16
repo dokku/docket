@@ -89,14 +89,41 @@ func TestIntegrationHttpAuthAllowedIp(t *testing.T) {
 		t.Error("expected Changed=false on idempotent remove")
 	}
 
-	// clearing with empty allowed_ips removes every remaining allowed ip
-	clearTask := HttpAuthAllowedIpTask{App: appName, State: StateAbsent}
+	// set replaces the whole list; from {first} to {first, second} adds second
+	setTask := HttpAuthAllowedIpTask{App: appName, AllowedIps: []string{firstIp, secondIp}, State: StateSet}
+	result = setTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to set allowed ips: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected Changed=true on first set")
+	}
+	if result.State != StateSet {
+		t.Errorf("expected state 'set', got '%s'", result.State)
+	}
+	assertHas(t, "after set", firstIp, true)
+	assertHas(t, "after set", secondIp, true)
+
+	// setting the same list again is idempotent
+	result = setTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed second set: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected Changed=false on idempotent set")
+	}
+
+	// clear removes every allowed ip
+	clearTask := HttpAuthAllowedIpTask{App: appName, State: StateClear}
 	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear allowed ips: %v", result.Error)
 	}
 	if !result.Changed {
 		t.Error("expected Changed=true on first clear")
+	}
+	if result.State != StateClear {
+		t.Errorf("expected state 'clear', got '%s'", result.State)
 	}
 	if remaining := currentIps(t, "after clear"); len(remaining) != 0 {
 		t.Errorf("expected no allowed ips after clear, got %v", remaining)
