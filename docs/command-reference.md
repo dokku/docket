@@ -150,15 +150,23 @@ twin lay out identically. Comments are preserved in both formats.
 
 A recipe it cannot parse is reported with the byte offset of the problem and left untouched. What
 `fmt` accepts is what `apply`, `plan`, and `validate` accept, so a file that formats is a file that
-loads, and a file it refuses would have failed later anyway.
+loads. It refuses a little more than they do, which the next paragraphs cover.
 
-What `fmt` objects to that the others do not comes from reading the recipe as written rather than
-rendering it first, which is what lets it see the quote characters at all. An unquoted interpolation
-is one case: `{{ .app }}` outside quotes is YAML flow syntax rather than template text, so `fmt`
-names the line instead of writing YAML's reading of it back out. A rewrite that would change an
-interpolation's quoting is the other, refused on a conversion and on a JSON5 recipe but never on a
-plain YAML format - see [Converting between YAML and JSON5](#converting-between-yaml-and-json5).
-Both are about the same thing, and [Inputs](inputs.md) covers it.
+What `fmt` objects to that the others do not comes from it seeing parts of the recipe the others
+never look at. Two cases come from reading the recipe as written rather than rendering it first,
+which is what lets `fmt` see the quote characters at all. An unquoted interpolation is the first:
+`{{ .app }}` outside quotes is YAML flow syntax rather than template text, so `fmt` names the line
+instead of writing YAML's reading of it back out. A rewrite that would change an interpolation's
+quoting is the second, refused on a conversion and on a JSON5 recipe but never on a plain YAML
+format - see [Converting between YAML and JSON5](#converting-between-yaml-and-json5). Both are
+about the same thing, and [Inputs](inputs.md) covers it.
+
+The third is comments, which `fmt` preserves and everything else discards before it reads a recipe
+at all. A JSON5 comment holding a byte that is not valid UTF-8 is refused, naming the byte and its
+offset, because a comment is carried through a conversion verbatim and there is no writing such a
+byte into YAML. A YAML recipe needs no such rule; its parser will not read the byte in the first
+place. Inside a string value an invalid byte is not refused but read as U+FFFD, which is what
+`apply` reads it as too.
 
 `--format` makes it a converter as well as a formatter. It states the format to write, so naming
 one the recipe is not already in rewrites it into that format, comments and all - the thing a trip

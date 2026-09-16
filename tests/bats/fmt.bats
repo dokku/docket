@@ -427,3 +427,27 @@ EOF2
   run "$(docket_bin)" validate --tasks tasks.json5
   assert_success
 }
+
+@test "docket fmt refuses a json5 comment that is not valid utf-8" {
+  cd "$BATS_TEST_TMPDIR"
+  # printf rather than a heredoc so the byte reaches the file intact.
+  printf '[\n  // n\204te\n  { tasks: [] },\n]\n' >tasks.json5
+  cp tasks.json5 before.json5
+
+  # --format yaml is the conversion that used to die inside yaml.v3's
+  # emitter with "panic: unknown character width" rather than reporting
+  # anything about the recipe.
+  run "$(docket_bin)" fmt --format yaml tasks.json5
+  assert_failure
+  assert_output --partial "invalid UTF-8"
+  assert_output --partial "in comment at offset 8"
+  refute_output --partial "panic"
+  assert cmp -s tasks.json5 before.json5
+
+  # The same refusal with no conversion in sight; both reach it through
+  # the parser.
+  run "$(docket_bin)" fmt tasks.json5
+  assert_failure
+  assert_output --partial "invalid UTF-8"
+  assert cmp -s tasks.json5 before.json5
+}

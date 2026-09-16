@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	json5 "github.com/titanous/json5"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -606,6 +607,13 @@ func FuzzConvertRoundTrip(f *testing.F) {
 	f.Add("- &a [1]\n- *a\n")
 	f.Add("a: &a {k: v}\nb:\n  <<: *a\n")
 	f.Add("{ a: 0x1F, b: Infinity, c: \"true\" }")
+	// #544: a comment carrying a byte that is not valid UTF-8 reached
+	// yaml.v3's emitter, which writes a comment out raw and panicked on it.
+	// The string beside it is the same byte in the one other place a JSON5
+	// recipe can hold it verbatim, where the answer is U+FFFD rather than a
+	// refusal.
+	f.Add("//\x84\n0")
+	f.Add("{ a: \"x\x84y\" }")
 
 	f.Fuzz(func(t *testing.T, input string) {
 		for _, from := range Codecs() {
@@ -864,5 +872,95 @@ func TestConvertStillReportsAnOrdinaryComplexKey(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "unquoted") {
 		t.Errorf("error = %q, want a complex key with no interpolation left alone", err)
+	}
+}
+
+// TestConvertRefusesNonUTF8Comment covers #544 across the conversion the
+// panic came out of. A JSON5 comment's bytes are kept verbatim so `fmt`
+// can carry them, and yaml.v3's emitter writes a comment out raw and panics
+// on a byte that starts no rune, so the screen has to be on the way in.
+func TestConvertRefusesNonUTF8Comment(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"line comment above the document", "//\x84\n0"},
+		{"block comment above the document", "/*\x84*/\n0"},
+		{"line comment beside a member", "{\n  a: 1, // n\xffte\n}\n"},
+		{"foot comment inside a container", "[\n  1,\n  // \xc3\n]\n"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			out, err := Convert([]byte(tc.in), CodecFor(FormatNameJSON5), CodecFor(FormatYAML))
+			if err == nil {
+				t.Fatalf("Convert accepted %q: %s", tc.in, out)
+			}
+			if !strings.Contains(err.Error(), "invalid UTF-8") {
+				t.Errorf("error = %q, want it to name invalid UTF-8", err)
+			}
+			if !strings.Contains(err.Error(), "in comment at offset ") {
+				t.Errorf("error = %q, want it to name the offending byte's offset", err)
+			}
+			if out != nil {
+				t.Errorf("Convert returned bytes alongside an error: %q", out)
+			}
+		})
+	}
+}
+
+// TestConvertKeepsNonUTF8StringValue is the other half of #544's question.
+// A string needs no screen of its own: decodeJSON5String already replaces
+// an invalid byte with U+FFFD one byte at a time, which is what
+// titanous/json5 makes of it and therefore what `apply` reads, so the
+// conversion carries the value the loader would have seen rather than
+// refusing a recipe that runs.
+func TestConvertKeepsNonUTF8StringValue(t *testing.T) {
+	t.Parallel()
+
+	out, err := Convert([]byte("{ a: \"x\x84y\" }\n"), CodecFor(FormatNameJSON5), CodecFor(FormatYAML))
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if !strings.Contains(string(out), "x�y") {
+		t.Errorf("output does not carry the replacement character:\n%q", out)
+	}
+
+	var loaded map[string]string
+	if err := json5.Unmarshal([]byte("{ a: \"x\x84y\" }\n"), &loaded); err != nil {
+		t.Fatalf("json5.Unmarshal: %v", err)
+	}
+	var got map[string]string
+	if err := yaml.Unmarshal(out, &got); err != nil {
+		t.Fatalf("yaml.Unmarshal(%q): %v", out, err)
+	}
+	if got["a"] != loaded["a"] {
+		t.Errorf("converted value %q, loader reads %q", got["a"], loaded["a"])
+	}
+}
+
+// TestConvertRefusesNonUTF8YAMLSource is #544's third question, and the
+// answer is that there is nothing to screen: yaml.v3 refuses an invalid
+// byte while reading, so a YAML recipe can never carry one as far as a
+// comment on the way to JSON5.
+func TestConvertRefusesNonUTF8YAMLSource(t *testing.T) {
+	t.Parallel()
+
+	for _, in := range []string{"# n\x84te\na: 1\n", "a: \"x\x84y\"\n"} {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+
+			out, err := Convert([]byte(in), CodecFor(FormatYAML), CodecFor(FormatNameJSON5))
+			if err == nil {
+				t.Fatalf("Convert accepted %q: %s", in, out)
+			}
+			if out != nil {
+				t.Errorf("Convert returned bytes alongside an error: %q", out)
+			}
+		})
 	}
 }

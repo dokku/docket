@@ -25,6 +25,12 @@ other than `true`, `false`, `null`, `Infinity` and `NaN` is quoted or a number, 
 follow the JSON5 grammar, which has `0x1F` and `.5` but not `01` or `1.2.3`. `docket fmt` holds
 to the same rules the loader does, so a recipe it formats is a recipe `apply` can read.
 
+A recipe is text, and one rule applies to the bytes themselves: a comment must be valid UTF-8.
+`docket fmt` is the only command that reads comments at all, and it refuses one that is not,
+naming the byte and its offset, rather than carrying it into a conversion it has no way to write.
+A byte inside a string value is read rather than refused, as U+FFFD, which is what every JSON5
+reader makes of it including the one `apply` uses.
+
 The same recipe in YAML and JSON5 behaves identically - templates, conditionals, every envelope
 key, and every task type work the same way. This YAML recipe:
 

@@ -870,3 +870,96 @@ func TestFormatJSON5ParseErrorBeatsTheQuotingRefusal(t *testing.T) {
 		t.Errorf("error = %q, want the parse error", err)
 	}
 }
+
+// TestParseJSON5RejectsNonUTF8Comment covers #544. The lexer keeps a
+// comment's bytes verbatim, which is what lets `fmt` carry one across a
+// conversion, and nothing between there and yaml.v3's emitter looked at
+// them again - the emitter writes a comment out raw and panics outright on
+// a byte that starts no rune, so `docket fmt --format yaml` died instead of
+// reporting a problem with the file.
+//
+// The offset named is the offending byte's, not the comment's, so the
+// second-comment rows say where to look rather than which token to re-read.
+func TestParseJSON5RejectsNonUTF8Comment(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		in     string
+		wantAt string
+	}{
+		{"line comment", "//\x84\n0", "at offset 2"},
+		{"block comment", "/*\x84*/0", "at offset 2"},
+		{"second of two line comments", "//ok\n//\xc3", "at offset 7"},
+		{"trailing continuation byte", "0 // note\xbf", "at offset 9"},
+		{"inside a document", "{\n  a: 1, // n\xffte\n}", "at offset 14"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := parseJSON5([]byte(tc.in))
+			if err == nil {
+				t.Fatalf("parseJSON5(%q) = nil error, want a rejection", tc.in)
+			}
+			if !strings.Contains(err.Error(), "invalid UTF-8") {
+				t.Errorf("error = %q, want it to name invalid UTF-8", err)
+			}
+			if want := "in comment " + tc.wantAt; !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to contain %q", err, want)
+			}
+		})
+	}
+}
+
+// TestParseJSON5AcceptsTextComments is the guard on the other side. The
+// screen is about bytes that are not text at all, so every comment that is
+// text keeps lexing - including the multi-byte runes that made it necessary
+// to check rather than just reject anything over 0x7f, and the carriage
+// return a CRLF recipe ends every line comment with.
+func TestParseJSON5AcceptsTextComments(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"ascii", "// note\n0"},
+		{"two byte rune", "// café\n0"},
+		{"three byte rune", "// ☕\n0"},
+		{"four byte rune", "// \U0001F600\n0"},
+		{"tab", "//\tnote\n0"},
+		{"crlf line ending", "// note\r\n0"},
+		{"block comment with runes", "/* café ☕ */0"},
+		{"multiline block comment", "/*\n * café\n */\n0"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := parseJSON5([]byte(tc.in)); err != nil {
+				t.Errorf("parseJSON5(%q): %v", tc.in, err)
+			}
+		})
+	}
+}
+
+// TestFormatJSON5RejectsNonUTF8Comment is the same rule seen from the
+// entry point `docket fmt` uses with no conversion in sight: the file is
+// reported as the parse error it now is, and no bytes come back to write.
+func TestFormatJSON5RejectsNonUTF8Comment(t *testing.T) {
+	t.Parallel()
+
+	out, err := FormatJSON5([]byte("[\n  // n\x84te\n]\n"))
+	if err == nil {
+		t.Fatal("expected a rejection")
+	}
+	if out != nil {
+		t.Errorf("returned %q alongside the error", out)
+	}
+	if !strings.Contains(err.Error(), "json5 parse error: invalid UTF-8") {
+		t.Errorf("error = %q, want the parse error to name invalid UTF-8", err)
+	}
+}
