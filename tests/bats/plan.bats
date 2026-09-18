@@ -8,6 +8,7 @@ setup() {
   dokku_clean_app docket-test-plan
   dokku_clean_storage_entry docket-test-plan-data
   dokku_clean_storage_entry docket-test-plan-hostdir
+  dokku_clean_global_cert
 }
 
 teardown() {
@@ -15,6 +16,7 @@ teardown() {
   dokku_clean_storage_entry docket-test-plan-data
   dokku_clean_storage_entry docket-test-plan-hostdir
   rm -rf /var/lib/dokku/data/storage/docket-test-plan-hostdir
+  dokku_clean_global_cert
 }
 
 @test "docket plan reports drift on a missing app" {
@@ -329,6 +331,23 @@ $(sed 's/^/          /' "$BATS_TEST_TMPDIR/$name.key")
 EOF
 }
 
+# write_global_certs_tasks_file is write_certs_tasks_file for the global scope:
+# no app, and the certificate lands via the dokku-global-cert plugin.
+write_global_certs_tasks_file() {
+  local name="$1"
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: ensure the global certificate
+      dokku_certs:
+        global: true
+        cert_content: |
+$(sed 's/^/          /' "$BATS_TEST_TMPDIR/$name.crt")
+        key_content: |
+$(sed 's/^/          /' "$BATS_TEST_TMPDIR/$name.key")
+EOF
+}
+
 @test "docket plan reports drift when a pinned certificate is renewed" {
   generate_cert original
   generate_cert renewed
@@ -394,6 +413,36 @@ generate_chain() {
   assert_output --partial "[~]"
   assert_output --partial "certificate material drift"
   assert_output --partial "replace certificate for docket-test-plan"
+  assert_output --partial "1 would change"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "[ok]"
+  assert_output --partial "0 would change"
+}
+
+@test "docket plan reports drift when the pinned global certificate is renewed" {
+  require_plugin global-cert
+  generate_cert global-original
+  generate_cert global-renewed
+
+  write_global_certs_tasks_file global-original
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "0 would change"
+
+  write_global_certs_tasks_file global-renewed
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "[~]"
+  assert_output --partial "certificate material drift"
+  assert_output --partial "replace certificate for (global)"
   assert_output --partial "1 would change"
 
   run "$(docket_bin)" apply --tasks "$TASKS_FILE"

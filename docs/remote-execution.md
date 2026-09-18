@@ -116,11 +116,12 @@ recipe pins against the one the server holds, so a renewal shows up as drift - b
 reports in sync as long as some certificate is installed. The inline form carries its own material,
 so it is compared on every transport.
 
-That comparison is a fingerprint, not a copy. For an app, docket reads the SHA-256 digest
-`certs:report` carries and settles it against a digest taken locally, so the certificate itself
-never crosses the connection at plan time. It falls back to reading the PEM back with `certs:show`
-only where a digest cannot answer: the global certificate, whose plugin reports none, and a recipe
-pinning a certificate chain, where dokku digests the leaf alone.
+That comparison is a fingerprint, not a copy. docket reads the SHA-256 digest the scope's report
+carries - `certs:report` for an app, `global-cert:report --global` for the global certificate - and
+settles it against a digest taken locally, so the certificate itself never crosses the connection at
+plan time. It falls back to reading the PEM back with `certs:show` or `global-cert:show` only where
+a digest cannot answer: a recipe pinning a certificate chain, where dokku digests the leaf alone,
+and a report that carries no usable fingerprint.
 
 ## See also
 

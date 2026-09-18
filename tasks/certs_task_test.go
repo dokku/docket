@@ -321,6 +321,46 @@ func certsAppFixtureNoFingerprint(app, installed string) map[string]string {
 	}
 }
 
+// globalCertReportJSON renders a global-cert:report --global --format json
+// payload. The plugin strips the `--global-cert-` prefix from JSON keys, so its
+// digest lands under `fingerprint`, the same key core's certs:report uses.
+func globalCertReportJSON(fingerprint string) string {
+	return fmt.Sprintf(`{"dir":"/home/dokku/tls","enabled":"true","fingerprint":%q,"serial":"322844AD8CD6D4FF"}`, fingerprint)
+}
+
+// certsGlobalFixture answers the reads the global-scope present branch makes: a
+// global certificate is installed, global-cert:report carries its fingerprint,
+// and global-cert:show hands back installed for anything the fingerprint cannot
+// settle. There is no letsencrypt entry: a global plan must not ask.
+func certsGlobalFixture(installed string) map[string]string {
+	fixture := certsGlobalFixtureNoFingerprint(installed)
+	fixture["--quiet global-cert:report --global --format json"] = globalCertReportJSON(fingerprintOf(installed))
+	return fixture
+}
+
+// certsGlobalFixtureNoFingerprint is certsGlobalFixture against a
+// dokku-global-cert older than 0.7.0, whose report carries no fingerprint key,
+// which is the fall-back to global-cert:show.
+func certsGlobalFixtureNoFingerprint(installed string) map[string]string {
+	return map[string]string{
+		"--quiet global-cert:report --global --global-cert-enabled": "true",
+		"--quiet global-cert:report --global --format json":         `{"dir":"/home/dokku/tls","enabled":"true"}`,
+		"--quiet global-cert:show crt":                              installed,
+	}
+}
+
+// globalCertTask is the recipe the global-scope plan tests exercise: a pinned
+// certificate and its key, inline so the material is readable on every
+// transport.
+func globalCertTask(desired string) CertsTask {
+	return CertsTask{
+		Global:      true,
+		CertContent: desired,
+		KeyContent:  "-----BEGIN PRIVATE KEY-----\nglobal-key\n-----END PRIVATE KEY-----\n",
+		State:       StatePresent,
+	}
+}
+
 // assertNoCertMaterial fails when any plan-visible string carries PEM material.
 // The cert and key are sensitive and ride to dokku on stdin, so neither the
 // rendered commands, the itemized mutations nor the reason may name them.
@@ -427,49 +467,6 @@ func TestCertsTaskPlanNormalizesPEM(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestCertsTaskPlanGlobalComparesGlobalCertShow locks the global scope to
-// global-cert:show, the twin of certs:show the export path already uses, and to
-// leaving the letsencrypt probe alone - that plugin manages per-app
-// certificates, so there is no global certificate for it to own.
-func TestCertsTaskPlanGlobalComparesGlobalCertShow(t *testing.T) {
-	t.Parallel()
-	var calls []string
-	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(map[string]string{
-		"--quiet global-cert:report --global --global-cert-enabled": "true",
-		"--quiet global-cert:show crt":                              certPEM("global-old"),
-	}, &calls))
-
-	plan := CertsTask{
-		Global:      true,
-		CertContent: certPEM("global-renewed"),
-		KeyContent:  "-----BEGIN PRIVATE KEY-----\nglobal-key\n-----END PRIVATE KEY-----\n",
-		State:       StatePresent,
-	}.Plan(ctx)
-	if plan.Error != nil {
-		t.Fatalf("unexpected plan error: %v", plan.Error)
-	}
-	if plan.InSync || plan.Status != PlanStatusModify {
-		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
-	}
-	if !reflect.DeepEqual(plan.Mutations, []string{"replace certificate for (global)"}) {
-		t.Errorf("Mutations = %v, want [replace certificate for (global)]", plan.Mutations)
-	}
-	if len(plan.Commands) != 1 || !strings.HasSuffix(plan.Commands[0], "global-cert:set") {
-		t.Errorf("Commands = %v, want one command ending in global-cert:set", plan.Commands)
-	}
-	for _, call := range calls {
-		if strings.Contains(call, "letsencrypt:active") {
-			t.Errorf("global plan probed letsencrypt: %q", call)
-		}
-		// dokku-global-cert reports no fingerprint, and certs:report would answer
-		// for an app rather than the global certificate, so neither is asked (#548).
-		if strings.Contains(call, "--format json") {
-			t.Errorf("global plan read a fingerprint report: %q", call)
-		}
-	}
-	assertNoCertMaterial(t, plan)
 }
 
 // TestCertsTaskPlanPathFormComparesLocalFile covers the `cert:` form on a local
@@ -924,11 +921,293 @@ func TestCertsTaskPlanChainRecipeComparesWholePEM(t *testing.T) {
 					plan.InSync, plan.Status, tc.wantInSync, tc.wantStatus)
 			}
 			// The report is not even asked: a leaf digest cannot answer for a chain.
-			for _, call := range calls {
-				if strings.Contains(call, "--format json") {
-					t.Errorf("chain plan read a fingerprint report it could not use: %q", call)
-				}
+			assertNoFingerprintReport(t, calls)
+			assertCertsShowRan(t, calls)
+		})
+	}
+}
+
+// TestCertsReportFingerprintReadsTheScopesReport locks the command each scope's
+// fingerprint read issues. The global form has to name the `--global` scope for
+// the reason certsEnabled does: dokku-global-cert standardized its report, so a
+// bare info flag reports per-app and only `--global` targets the global
+// certificate itself.
+func TestCertsReportFingerprintReadsTheScopesReport(t *testing.T) {
+	t.Parallel()
+	installed := certPEM("cert-a")
+
+	tests := []struct {
+		name    string
+		task    CertsTask
+		payload string
+		want    string
+	}{
+		{
+			name:    "app",
+			task:    CertsTask{App: "test-app"},
+			payload: certsReportJSON(fingerprintOf(installed)),
+			want:    "--quiet certs:report test-app --format json",
+		},
+		{
+			name:    "global",
+			task:    CertsTask{Global: true},
+			payload: globalCertReportJSON(fingerprintOf(installed)),
+			want:    "--quiet global-cert:report --global --format json",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var gotArgs []string
+			ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+				gotArgs = in.Args
+				return subprocess.ExecCommandResponse{Stdout: tc.payload}, nil
+			})
+
+			reported, ok, err := certsReportFingerprint(ctx, tc.task)
+			if err != nil {
+				t.Fatalf("certsReportFingerprint: %v", err)
 			}
+			if !ok {
+				t.Fatal("expected the report to carry a fingerprint")
+			}
+			if want := fingerprintOf(installed); reported != want {
+				t.Errorf("reported fingerprint = %q, want %q", reported, want)
+			}
+			if got := strings.Join(gotArgs, " "); got != tc.want {
+				t.Errorf("certsReportFingerprint args = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCertsTaskPlanGlobalFingerprintSettlesWithoutReadingTheCertificate is #548
+// in one assertion: the global certificate is settled by the digest
+// global-cert:report carries (dokku-global-cert 0.7.0), so it stays on the
+// server at plan time - on a command whose other argument hands back the
+// private key.
+func TestCertsTaskPlanGlobalFingerprintSettlesWithoutReadingTheCertificate(t *testing.T) {
+	t.Parallel()
+	installed := certPEM("global-a")
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(certsGlobalFixture(installed), &calls))
+
+	plan := globalCertTask(installed).Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if !plan.InSync || plan.Status != PlanStatusOK {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want an in-sync ok", plan.InSync, plan.Status)
+	}
+	assertNoCertsShow(t, calls)
+	assertNoLetsencryptProbe(t, calls)
+}
+
+// TestCertsTaskPlanGlobalFingerprintMismatchPlansModify covers the other half:
+// a renewed global certificate is caught by the digest alone, still without a
+// read-back.
+func TestCertsTaskPlanGlobalFingerprintMismatchPlansModify(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(certsGlobalFixture(certPEM("global-old")), &calls))
+
+	plan := globalCertTask(certPEM("global-renewed")).Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
+	}
+	if plan.Reason != "certificate material drift" {
+		t.Errorf("Reason = %q, want %q", plan.Reason, "certificate material drift")
+	}
+	if !reflect.DeepEqual(plan.Mutations, []string{"replace certificate for (global)"}) {
+		t.Errorf("Mutations = %v, want [replace certificate for (global)]", plan.Mutations)
+	}
+	// global-cert:set overwrites what is there, so replacing needs no second command.
+	if len(plan.Commands) != 1 || !strings.HasSuffix(plan.Commands[0], "global-cert:set") {
+		t.Errorf("Commands = %v, want one command ending in global-cert:set", plan.Commands)
+	}
+	assertNoCertsShow(t, calls)
+	assertNoLetsencryptProbe(t, calls)
+	assertNoCertMaterial(t, plan)
+}
+
+// TestCertsTaskPlanGlobalMissingFingerprintFallsBackToShow covers a
+// dokku-global-cert older than 0.7.0, whose report carries no fingerprint key at
+// all: the comparison is the exact global-cert:show one the global scope always
+// made, so the verdict is unchanged in both directions.
+func TestCertsTaskPlanGlobalMissingFingerprintFallsBackToShow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		desired    string
+		wantInSync bool
+		wantStatus PlanStatus
+	}{
+		{name: "same certificate", desired: certPEM("global-a"), wantInSync: true, wantStatus: PlanStatusOK},
+		{name: "renewed certificate", desired: certPEM("global-renewed"), wantStatus: PlanStatusModify},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls []string
+			ctx := subprocess.ContextWithRunner(testCtx(),
+				recordingDokku(certsGlobalFixtureNoFingerprint(certPEM("global-a")), &calls))
+
+			plan := globalCertTask(tc.desired).Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if plan.InSync != tc.wantInSync || plan.Status != tc.wantStatus {
+				t.Fatalf("plan = {InSync:%v Status:%q}, want {InSync:%v Status:%q}",
+					plan.InSync, plan.Status, tc.wantInSync, tc.wantStatus)
+			}
+			assertCertsShowRan(t, calls)
+			assertNoLetsencryptProbe(t, calls)
+		})
+	}
+}
+
+// TestCertsTaskPlanGlobalUnusableFingerprintFallsBackToShow keeps a reported
+// value that is not a SHA-256 digest from being compared in the global scope
+// either. The empty case is what the report hands back when openssl cannot read
+// server.crt; comparing it would plan drift on every run and reinstall the same
+// certificate forever.
+func TestCertsTaskPlanGlobalUnusableFingerprintFallsBackToShow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		reported string
+	}{
+		{name: "empty, as openssl failing to read server.crt reports", reported: ""},
+		{name: "sha1 length", reported: "B7:DF:D5:84:C6:2E:27:BF:12:34:56:78:9A:BC:DE:F0:12:34:56:78"},
+		{name: "still labelled", reported: "sha256 Fingerprint=" + fingerprintOf(certPEM("global-a"))},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			installed := certPEM("global-a")
+			fixture := certsGlobalFixture(installed)
+			fixture["--quiet global-cert:report --global --format json"] = globalCertReportJSON(tc.reported)
+
+			var calls []string
+			ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(fixture, &calls))
+
+			plan := globalCertTask(installed).Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if !plan.InSync || plan.Status != PlanStatusOK {
+				t.Fatalf("plan = {InSync:%v Status:%q}, want an in-sync ok", plan.InSync, plan.Status)
+			}
+			assertCertsShowRan(t, calls)
+		})
+	}
+}
+
+// TestCertsTaskPlanGlobalReportFailureFallsBackToShow keeps a plugin-level
+// failure out of the plan. A dokku-global-cert too old to know `--format`
+// rejects the invocation outright; the read-back answers the question exactly,
+// so there is nothing to surface - and nothing to leak, since the probe's
+// stderr never reaches the plan.
+func TestCertsTaskPlanGlobalReportFailureFallsBackToShow(t *testing.T) {
+	t.Parallel()
+	installed := certPEM("global-a")
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		joined := strings.Join(in.Args, " ")
+		calls = append(calls, joined)
+		switch {
+		case strings.Contains(joined, "--format json"):
+			response := subprocess.ExecCommandResponse{ExitCode: 1, Stderr: "Invalid flag passed, valid flags: --global-cert-dir, --global-cert-enabled"}
+			return response, &subprocess.ExecError{Response: response, Err: errors.New(response.Stderr), Ran: true}
+		case strings.Contains(joined, "global-cert:show"):
+			return subprocess.ExecCommandResponse{Stdout: installed}, nil
+		case strings.Contains(joined, "--global-cert-enabled"):
+			return subprocess.ExecCommandResponse{Stdout: "true"}, nil
+		}
+		return subprocess.ExecCommandResponse{Stdout: "false"}, nil
+	})
+
+	plan := globalCertTask(certPEM("global-renewed")).Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
+	}
+	if strings.Contains(plan.Reason, "Invalid flag") {
+		t.Errorf("Reason carried the probe's stderr: %q", plan.Reason)
+	}
+	assertCertsShowRan(t, calls)
+}
+
+// TestCertsTaskPlanGlobalReportSSHErrorIsProbeError keeps a transport failure an
+// error in the global scope too. A server docket cannot reach is not a server
+// that is in sync, and falling back would only reach for the same unreachable
+// host again.
+func TestCertsTaskPlanGlobalReportSSHErrorIsProbeError(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		joined := strings.Join(in.Args, " ")
+		if strings.Contains(joined, "--format json") {
+			return subprocess.ExecCommandResponse{ExitCode: 255}, &subprocess.SSHError{
+				Host:   "dokku@unreachable",
+				Stderr: "ssh: connect to host unreachable port 22: Connection refused",
+			}
+		}
+		if strings.Contains(joined, "--global-cert-enabled") {
+			return subprocess.ExecCommandResponse{Stdout: "true"}, nil
+		}
+		return subprocess.ExecCommandResponse{Stdout: "false"}, nil
+	})
+
+	plan := globalCertTask(certPEM("global-a")).Plan(ctx)
+	if plan.Status != PlanStatusError {
+		t.Fatalf("Status = %q, want %q", plan.Status, PlanStatusError)
+	}
+	var sshErr *subprocess.SSHError
+	if !errors.As(plan.Error, &sshErr) {
+		t.Errorf("plan.Error = %v, want an *subprocess.SSHError", plan.Error)
+	}
+}
+
+// TestCertsTaskPlanGlobalChainRecipeComparesWholePEM keeps a global recipe
+// pinning a chain on the exact comparison. dokku-global-cert digests the first
+// certificate in server.crt and ignores the rest, so settling a chain by
+// fingerprint would stop reporting a changed intermediate - a narrowing the
+// recipe never asked for.
+func TestCertsTaskPlanGlobalChainRecipeComparesWholePEM(t *testing.T) {
+	t.Parallel()
+	leaf := certPEM("global-leaf")
+	installedChain := leaf + certPEM("global-intermediate-old")
+
+	tests := []struct {
+		name       string
+		desired    string
+		wantInSync bool
+		wantStatus PlanStatus
+	}{
+		{name: "same chain", desired: installedChain, wantInSync: true, wantStatus: PlanStatusOK},
+		{name: "same leaf, rotated intermediate", desired: leaf + certPEM("global-intermediate-new"), wantStatus: PlanStatusModify},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls []string
+			ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(certsGlobalFixture(installedChain), &calls))
+
+			plan := globalCertTask(tc.desired).Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if plan.InSync != tc.wantInSync || plan.Status != tc.wantStatus {
+				t.Fatalf("plan = {InSync:%v Status:%q}, want {InSync:%v Status:%q}",
+					plan.InSync, plan.Status, tc.wantInSync, tc.wantStatus)
+			}
+			// The report is not even asked: a leaf digest cannot answer for a chain.
+			assertNoFingerprintReport(t, calls)
 			assertCertsShowRan(t, calls)
 		})
 	}
@@ -1012,7 +1291,7 @@ func TestNormalizeFingerprint(t *testing.T) {
 func assertNoCertsShow(t *testing.T, calls []string) {
 	t.Helper()
 	for _, call := range calls {
-		if strings.Contains(call, "certs:show") {
+		if isCertsShow(call) {
 			t.Errorf("plan read the certificate back rather than settling from its fingerprint: %q", call)
 		}
 	}
@@ -1023,9 +1302,42 @@ func assertNoCertsShow(t *testing.T, calls []string) {
 func assertCertsShowRan(t *testing.T, calls []string) {
 	t.Helper()
 	for _, call := range calls {
-		if strings.Contains(call, "certs:show") {
+		if isCertsShow(call) {
 			return
 		}
 	}
-	t.Errorf("plan never fell back to certs:show; calls were %v", calls)
+	t.Errorf("plan never fell back to reading the certificate back; calls were %v", calls)
+}
+
+// isCertsShow reports whether a recorded call read a certificate back. Both
+// spellings have to be named: the app scope reads it back with certs:show and
+// the global scope with global-cert:show, and neither string contains the other
+// - `global-cert:show` is singular, so matching "certs:show" alone would pass
+// every global test vacuously.
+func isCertsShow(call string) bool {
+	return strings.Contains(call, "certs:show") || strings.Contains(call, "global-cert:show")
+}
+
+// assertNoFingerprintReport fails when a plan read a fingerprint report it could
+// not have used. A recipe pinning a chain is the case: a leaf digest cannot
+// answer for the certificates behind it.
+func assertNoFingerprintReport(t *testing.T, calls []string) {
+	t.Helper()
+	for _, call := range calls {
+		if strings.Contains(call, "--format json") {
+			t.Errorf("plan read a fingerprint report it could not use: %q", call)
+		}
+	}
+}
+
+// assertNoLetsencryptProbe fails when a global plan asked whether letsencrypt
+// manages the certificate. That plugin manages per-app certificates, so there is
+// no global certificate for it to own.
+func assertNoLetsencryptProbe(t *testing.T, calls []string) {
+	t.Helper()
+	for _, call := range calls {
+		if strings.Contains(call, "letsencrypt:active") {
+			t.Errorf("global plan probed letsencrypt: %q", call)
+		}
+	}
 }

@@ -122,8 +122,8 @@ func TestIntegrationExportCerts(t *testing.T) {
 }
 
 // TestIntegrationExportGlobalCerts verifies the global certificate exporter:
-// global-cert:show streams the cert/key back (dokku-global-cert 0.4.x+), so the
-// exported task round-trips with no drift. Requires the dokku-global-cert plugin.
+// global-cert:show streams the cert/key back, so the exported task round-trips
+// with no drift. Requires the dokku-global-cert plugin.
 func TestIntegrationExportGlobalCerts(t *testing.T) {
 	skipIfNoDokkuT(t)
 	skipIfPluginMissingT(t, "global-cert")

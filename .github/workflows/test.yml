@@ -62,7 +62,7 @@ jobs:
       - name: install dokku http-auth plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git --committish 0.14.0 http-auth
       - name: install dokku global-cert plugin
-        run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git global-cert
+        run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git --committish 0.7.0 global-cert
       - name: install dokku letsencrypt plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish 0.25.0 letsencrypt
       - name: install dokku acl plugin
@@ -103,7 +103,7 @@ jobs:
       - name: install dokku http-auth plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git --committish 0.14.0 http-auth
       - name: install dokku global-cert plugin
-        run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git global-cert
+        run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git --committish 0.7.0 global-cert
       - name: install dokku letsencrypt plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git --committish 0.25.0 letsencrypt
       - name: install dokku acl plugin
@@ -192,6 +192,8 @@ jobs:
           sudo dokku plugin:install-dependencies --core
       - name: install dokku http-auth plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git --committish 0.14.0 http-auth
+      - name: install dokku global-cert plugin
+        run: sudo dokku plugin:install https://github.com/dokku-community/dokku-global-cert.git --committish 0.7.0 global-cert
       - name: install bats
         run: sudo apt-get install -qq -y bats bats-support bats-assert
       - name: build docket

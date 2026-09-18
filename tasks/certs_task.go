@@ -69,12 +69,12 @@ func (t CertsTask) ExportSupport() ExportSupport {
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t CertsTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "an app's certificate is compared against the desired one by the SHA-256 fingerprint certs:report carries, falling back to reading the PEM back with certs:show when the recipe pins a certificate chain or dokku reports no fingerprint, as the global scope always does via global-cert:show; on the fingerprint path a server holding the pinned certificate plus an extra chain reads as in sync, since dokku digests only the first certificate it finds; the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared"}
+	return ProbeSupport{Status: ProbePartial, Caveat: "a certificate is compared against the desired one by the SHA-256 fingerprint its report carries - certs:report for an app, global-cert:report --global for the global certificate - falling back to reading the PEM back with certs:show or global-cert:show when the recipe pins a certificate chain or the report carries no usable fingerprint; on the fingerprint path a server holding the pinned certificate plus an extra chain reads as in sync, since dokku digests only the first certificate it finds; the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t CertsTask) Requirements() []string {
-	return []string{"dokku-global-cert plugin (required only when global: true)"}
+	return []string{"dokku-global-cert plugin >= 0.7.0 (required only when global: true)"}
 }
 
 // Examples returns the examples for the certs task
@@ -331,12 +331,12 @@ func certsEnabled(ctx context.Context, t CertsTask) (bool, error) {
 // cannot compare keeps the coarse "a certificate is installed, so we are in
 // sync" answer Plan() gave before it compared anything.
 //
-// An app is answered from its fingerprint where it can be (#529): certs:report
-// carries the SHA-256 digest of the installed certificate, which the same digest
-// taken locally settles against without the certificate leaving the server. The
-// PEM read-back stays for everything the fingerprint cannot answer - the global
-// scope, whose plugin reports no fingerprint, and a recipe pinning a chain,
-// whose extra certificates a leaf digest does not cover.
+// Either scope is answered from its fingerprint where it can be (#529, #548):
+// the report carries the SHA-256 digest of the installed certificate, which the
+// same digest taken locally settles against without the certificate leaving the
+// server. The PEM read-back stays for everything a digest cannot answer - a
+// recipe pinning a chain, whose extra certificates a leaf digest does not cover,
+// and a report carrying no usable fingerprint.
 //
 // Two cases are deliberately not compared. Desired material docket cannot read
 // leaves nothing to compare against - see desiredCertPEM. And a
@@ -367,14 +367,14 @@ func certsMaterialDrifted(ctx context.Context, t CertsTask) (bool, error) {
 		} else if active {
 			return false, nil
 		}
+	}
 
-		drifted, decided, err := certsFingerprintDrifted(ctx, t.App, desired)
-		if err != nil {
-			return false, err
-		}
-		if decided {
-			return drifted, nil
-		}
+	drifted, decided, err := certsFingerprintDrifted(ctx, t, desired)
+	if err != nil {
+		return false, err
+	}
+	if decided {
+		return drifted, nil
 	}
 
 	installed, err := certsShow(ctx, t, "crt")
@@ -384,18 +384,18 @@ func certsMaterialDrifted(ctx context.Context, t CertsTask) (bool, error) {
 	return !samePEM(installed, desired), nil
 }
 
-// certsFingerprintDrifted settles the comparison from certs:report alone,
+// certsFingerprintDrifted settles the comparison from the scope's report alone,
 // reporting decided=false when it cannot and the caller should read the
-// certificate back instead. Only a transport failure is an error: a dokku that
+// certificate back instead. Only a transport failure is an error: a server that
 // does not report a fingerprint, or reports one that is not a digest, is
 // something the PEM read-back answers exactly, so there is nothing to surface.
-func certsFingerprintDrifted(ctx context.Context, app, desired string) (drifted bool, decided bool, err error) {
+func certsFingerprintDrifted(ctx context.Context, t CertsTask, desired string) (drifted bool, decided bool, err error) {
 	want, ok := desiredCertFingerprint(desired)
 	if !ok {
 		return false, false, nil
 	}
 
-	reported, ok, err := certsReportFingerprint(ctx, app)
+	reported, ok, err := certsReportFingerprint(ctx, t)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
@@ -416,15 +416,15 @@ func certsFingerprintDrifted(ctx context.Context, app, desired string) (drifted 
 
 // desiredCertFingerprint returns the SHA-256 digest of the certificate the
 // recipe pins as uppercase hex, and whether it could be taken at all. It is the
-// value certs:report carries: openssl digests the DER encoding, which is exactly
-// what a PEM block decodes to, so nothing here parses X.509.
+// value either report carries: openssl digests the DER encoding, which is
+// exactly what a PEM block decodes to, so nothing here parses X.509.
 //
 // The digest is only taken for a document holding a single CERTIFICATE block.
-// dokku runs `openssl x509 -in server.crt`, which reads the first certificate
-// and ignores the rest, so comparing fingerprints compares leaves - and a recipe
-// pinning a fullchain PEM asked for its whole chain to be compared. Refusing
-// those leaves them on the exact certs:show comparison rather than quietly
-// narrowing it to the leaf.
+// Both plugins digest with `openssl x509 -in server.crt`, which reads the first
+// certificate and ignores the rest, so comparing fingerprints compares leaves -
+// and a recipe pinning a fullchain PEM asked for its whole chain to be compared.
+// Refusing those leaves them on the exact read-back comparison rather than
+// quietly narrowing it to the leaf.
 func desiredCertFingerprint(pemText string) (string, bool) {
 	blocks, ok := pemBlocks(pemText)
 	if !ok || len(blocks) != 1 || blocks[0].Type != "CERTIFICATE" {
@@ -434,16 +434,16 @@ func desiredCertFingerprint(pemText string) (string, bool) {
 	return strings.ToUpper(hex.EncodeToString(sum[:])), true
 }
 
-// normalizeFingerprint renders a fingerprint dokku reported in the form
-// desiredCertFingerprint produces, and reports whether it is one at all. dokku
-// emits the colon-separated hex `openssl x509 -fingerprint` prints, so dropping
-// the separators and folding case makes the two comparable.
+// normalizeFingerprint renders a reported fingerprint in the form
+// desiredCertFingerprint produces, and reports whether it is one at all. Both
+// reports emit the colon-separated hex `openssl x509 -fingerprint` prints, so
+// dropping the separators and folding case makes the two comparable.
 //
 // Anything that is not a SHA-256 digest is refused rather than compared. It
 // could never match, so comparing it would report drift on every run and have
 // apply reinstall the same certificate forever; falling back to reading the
-// certificate back is both correct and terminating. An empty value - what
-// certs:report hands back when openssl cannot read server.crt - lands here too.
+// certificate back is both correct and terminating. An empty value - what either
+// report hands back when openssl cannot read server.crt - lands here too.
 func normalizeFingerprint(reported string) (string, bool) {
 	reported = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(reported), ":", ""))
 	if len(reported) != sha256.Size*2 {
@@ -457,20 +457,27 @@ func normalizeFingerprint(reported string) (string, bool) {
 	return reported, true
 }
 
-// certsReportFingerprint reads the SHA-256 fingerprint dokku computed for an
-// app's installed certificate. The certs plugin strips the `ssl-` prefix from
-// JSON report keys, so `--ssl-fingerprint` lands under `fingerprint`. The key is
-// decoded into a *string so a dokku too old to carry it (it arrived in 0.38.28
-// via dokku/dokku#8996) is distinguishable from one that reported it empty.
+// certsReportFingerprint reads the SHA-256 fingerprint the scope's report
+// carries for the certificate installed there. Both plugins strip their flag
+// prefix from JSON report keys, so core's `--ssl-fingerprint` and
+// dokku-global-cert's `--global-cert-fingerprint` land under the same
+// `fingerprint`. The key is decoded into a *string so a server too old to carry
+// it - dokku 0.38.28 for an app (dokku/dokku#8996), dokku-global-cert 0.7.0 for
+// the global certificate (dokku-community/dokku-global-cert#25) - is
+// distinguishable from one that reported it empty.
 //
-// It takes an app rather than a CertsTask because there is no global form to
-// take: dokku-global-cert computes a fingerprint internally but exposes none on
-// global-cert:report, so the global certificate is still compared by reading its
-// PEM back (#548).
-func certsReportFingerprint(ctx context.Context, app string) (string, bool, error) {
+// The global read names the `--global` scope for the reason certsEnabled does.
+// getPropertyArgs builds both arg lists, so the scope is spelled in one place
+// for the whole package.
+func certsReportFingerprint(ctx context.Context, t CertsTask) (string, bool, error) {
+	plugin := "certs"
+	if t.Global {
+		plugin = "global-cert"
+	}
+
 	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"--quiet", "certs:report", app, "--format", "json"},
+		Args:    getPropertyArgs(plugin, t.App, t.Global),
 	})
 	if err != nil {
 		return "", false, err
@@ -558,9 +565,8 @@ func (t CertsTask) ExportApp(ctx context.Context, app string) ([]interface{}, er
 	return exportCert(ctx, CertsTask{App: app})
 }
 
-// ExportGlobal reconstructs the global SSL certificate via global-cert:show
-// (dokku-global-cert 0.4.x+). The cert and key PEM are sensitive and lifted into
-// the vars-file by the engine.
+// ExportGlobal reconstructs the global SSL certificate via global-cert:show. The
+// cert and key PEM are sensitive and lifted into the vars-file by the engine.
 func (t CertsTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
 	return exportCert(ctx, CertsTask{Global: true})
 }
@@ -616,8 +622,8 @@ func exportCert(ctx context.Context, t CertsTask) ([]interface{}, error) {
 }
 
 // certsShow returns the scope's server.crt or server.key PEM. The per-app scope
-// uses core certs:show; the global scope uses global-cert:show (dokku-global-cert
-// 0.4.x+), mirroring the app/global branch in certsEnabled.
+// uses core certs:show; the global scope uses global-cert:show, mirroring the
+// app/global branch in certsEnabled.
 func certsShow(ctx context.Context, t CertsTask, kind string) (string, error) {
 	args := []string{"--quiet", "certs:show", t.App, kind}
 	if t.Global {
