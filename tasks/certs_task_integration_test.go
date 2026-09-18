@@ -487,3 +487,104 @@ func readFileT(t *testing.T, path string) string {
 	}
 	return string(data)
 }
+
+// TestIntegrationCertsReportFingerprint is the canary for #529: it proves the
+// digest docket takes locally is the one dokku puts on certs:report, against a
+// real dokku and a real openssl. If upstream renames the key or changes how it
+// is computed, this fails rather than letting the probe degrade quietly to
+// reading the whole certificate back on every plan.
+func TestIntegrationCertsReportFingerprint(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-certs-fingerprint"
+	certPath, keyPath := generateSelfSignedCert(t, appName+".example.com")
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	install := CertsTask{App: appName, Cert: certPath, Key: keyPath, State: StatePresent}
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to add cert: %v", result.Error)
+	}
+
+	reported, ok, err := certsReportFingerprint(testCtx(), appName)
+	if err != nil {
+		t.Fatalf("certsReportFingerprint failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("certs:report carried no fingerprint key; dokku >= 0.38.28 is required")
+	}
+
+	installed, ok := normalizeFingerprint(reported)
+	if !ok {
+		t.Fatalf("certs:report fingerprint %q is not a sha256 digest", reported)
+	}
+
+	want, ok := desiredCertFingerprint(readFileT(t, certPath))
+	if !ok {
+		t.Fatal("could not take a fingerprint of the generated certificate")
+	}
+	if installed != want {
+		t.Errorf("certs:report fingerprint = %q, want %q", installed, want)
+	}
+}
+
+// TestIntegrationCertsAppChainRotation keeps a recipe pinning a chain on the
+// exact comparison. dokku digests only the first certificate in server.crt, so a
+// rotated trailing certificate under an unchanged leaf is drift the fingerprint
+// cannot see - and the probe has to notice that and read the PEM back.
+//
+// The two concatenated certificates are a fixture rather than a real chain:
+// certs:add validates with `openssl x509 -in`, which reads the first block only,
+// and the key supplied is the one paired with it.
+func TestIntegrationCertsAppChainRotation(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-certs-chain"
+	leafCert, leafKey := generateSelfSignedCert(t, appName+".example.com")
+	oldExtra, _ := generateSelfSignedCert(t, appName+".example.net")
+	newExtra, _ := generateSelfSignedCert(t, appName+".example.org")
+
+	leafPEM := readFileT(t, leafCert)
+	oldChain := leafPEM + readFileT(t, oldExtra)
+	newChain := leafPEM + readFileT(t, newExtra)
+	keyPEM := readFileT(t, leafKey)
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	install := CertsTask{App: appName, CertContent: oldChain, KeyContent: keyPEM, State: StatePresent}
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to add chain: %v", result.Error)
+	}
+
+	// The same chain settles, so the fall-back does not manufacture drift.
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed second install: %v", result.Error)
+	} else if result.Changed {
+		t.Errorf("expected Changed=false when the pinned chain is already installed")
+	}
+
+	rotate := CertsTask{App: appName, CertContent: newChain, KeyContent: keyPEM, State: StatePresent}
+	plan := rotate.Plan(testCtx())
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q - the leaf is unchanged, so only the exact comparison catches this",
+			plan.InSync, plan.Status, PlanStatusModify)
+	}
+
+	if result := rotate.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to rotate chain: %v", result.Error)
+	}
+	installed, err := certsShow(testCtx(), CertsTask{App: appName}, "crt")
+	if err != nil {
+		t.Fatalf("certsShow failed: %v", err)
+	}
+	if !samePEM(installed, newChain) {
+		t.Errorf("installed chain is not the one the recipe pinned")
+	}
+}

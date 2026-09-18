@@ -4,8 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -272,13 +275,48 @@ func certPEM(body string) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte(body)}))
 }
 
-// certsAppFixture answers the three reads the app-scope present branch makes:
-// a certificate is installed, letsencrypt does not manage it, and certs:show
-// hands back installed.
+// fingerprintOf renders the colon-separated uppercase SHA-256 of the first PEM
+// block's DER in text, which is the shape dokku's certs:report reports. It walks
+// the document itself rather than calling desiredCertFingerprint so a fixture
+// stating what the server holds is not derived from the code under test.
+func fingerprintOf(pemText string) string {
+	block, _ := pem.Decode([]byte(pemText))
+	if block == nil {
+		return ""
+	}
+	sum := sha256.Sum256(block.Bytes)
+	upper := strings.ToUpper(hex.EncodeToString(sum[:]))
+	pairs := make([]string, 0, len(upper)/2)
+	for i := 0; i < len(upper); i += 2 {
+		pairs = append(pairs, upper[i:i+2])
+	}
+	return strings.Join(pairs, ":")
+}
+
+// certsReportJSON renders a certs:report --format json payload. The certs plugin
+// strips the `ssl-` prefix from JSON keys, so the digest lands under
+// `fingerprint`.
+func certsReportJSON(fingerprint string) string {
+	return fmt.Sprintf(`{"enabled":"true","fingerprint":%q}`, fingerprint)
+}
+
+// certsAppFixture answers the reads the app-scope present branch makes: a
+// certificate is installed, letsencrypt does not manage it, certs:report carries
+// the installed certificate's fingerprint, and certs:show hands back installed
+// for anything the fingerprint cannot settle.
 func certsAppFixture(app, installed string) map[string]string {
+	fixture := certsAppFixtureNoFingerprint(app, installed)
+	fixture["--quiet certs:report "+app+" --format json"] = certsReportJSON(fingerprintOf(installed))
+	return fixture
+}
+
+// certsAppFixtureNoFingerprint is certsAppFixture against a dokku whose
+// certs:report carries no fingerprint key, which is the fall-back to certs:show.
+func certsAppFixtureNoFingerprint(app, installed string) map[string]string {
 	return map[string]string{
 		"--quiet certs:report " + app + " --ssl-enabled": "true",
 		"--quiet letsencrypt:active " + app:              "false",
+		"--quiet certs:report " + app + " --format json": `{"enabled":"true"}`,
 		"--quiet certs:show " + app + " crt":             installed,
 	}
 }
@@ -351,10 +389,12 @@ func TestCertsTaskPlanInlineRotatedCertPlansModify(t *testing.T) {
 	assertNoCertMaterial(t, plan)
 }
 
-// TestCertsTaskPlanNormalizesPEM locks the comparison to the decoded blocks.
-// certs:show is a plain cat of server.crt and StdoutContents trims it, so an
-// inline cert_content that ends in a newline - which every PEM file does - would
-// otherwise plan as drift forever against the certificate it just installed.
+// TestCertsTaskPlanNormalizesPEM locks the comparison to the decoded block. The
+// digest is taken over the DER a PEM block decodes to, never over the text
+// around it, so an inline cert_content that ends in a newline - which every PEM
+// file does - does not plan as drift forever against the certificate it just
+// installed. The same holds on the certs:show fall-back, where samePEM compares
+// decoded blocks for the same reason.
 func TestCertsTaskPlanNormalizesPEM(t *testing.T) {
 	t.Parallel()
 	installed := strings.TrimSpace(certPEM("cert-a"))
@@ -422,6 +462,11 @@ func TestCertsTaskPlanGlobalComparesGlobalCertShow(t *testing.T) {
 	for _, call := range calls {
 		if strings.Contains(call, "letsencrypt:active") {
 			t.Errorf("global plan probed letsencrypt: %q", call)
+		}
+		// dokku-global-cert reports no fingerprint, and certs:report would answer
+		// for an app rather than the global certificate, so neither is asked (#548).
+		if strings.Contains(call, "--format json") {
+			t.Errorf("global plan read a fingerprint report: %q", call)
 		}
 	}
 	assertNoCertMaterial(t, plan)
@@ -498,8 +543,8 @@ func TestCertsTaskPlanPathFormRemoteSkipsComparison(t *testing.T) {
 		t.Fatalf("plan = {InSync:%v Status:%q}, want an in-sync ok", plan.InSync, plan.Status)
 	}
 	for _, call := range calls {
-		if strings.Contains(call, "certs:show") {
-			t.Errorf("plan read the certificate back with nothing to compare it to: %q", call)
+		if strings.Contains(call, "certs:show") || strings.Contains(call, "--format json") {
+			t.Errorf("plan probed the certificate with nothing to compare it to: %q", call)
 		}
 	}
 }
@@ -530,7 +575,7 @@ func TestCertsTaskPlanLetsencryptManagedSkipsComparison(t *testing.T) {
 		t.Fatalf("plan = {InSync:%v Status:%q}, want an in-sync ok", plan.InSync, plan.Status)
 	}
 	for _, call := range calls {
-		if strings.Contains(call, "certs:show") {
+		if strings.Contains(call, "certs:show") || strings.Contains(call, "--format json") {
 			t.Errorf("plan compared a letsencrypt-managed certificate: %q", call)
 		}
 	}
@@ -569,13 +614,17 @@ func TestCertsTaskPlanNotInstalledPlansCreate(t *testing.T) {
 
 // TestCertsTaskPlanShowFailureIsProbeError keeps a failed read-back an error
 // rather than a silent "in sync", matching how the same branch already treats a
-// certs:report failure.
+// certs:report failure. The report reports no fingerprint, which is what puts
+// the branch on certs:show in the first place.
 func TestCertsTaskPlanShowFailureIsProbeError(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		joined := strings.Join(in.Args, " ")
 		if strings.Contains(joined, "certs:show") {
 			return subprocess.ExecCommandResponse{ExitCode: 1}, errors.New("test-app doesn't have an SSL endpoint defined")
+		}
+		if strings.Contains(joined, "--format json") {
+			return subprocess.ExecCommandResponse{Stdout: `{"enabled":"true"}`}, nil
 		}
 		if strings.Contains(joined, "certs:report") {
 			return subprocess.ExecCommandResponse{Stdout: "true"}, nil
@@ -628,4 +677,355 @@ func TestSamePEM(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCertsTaskPlanFingerprintSettlesWithoutReadingTheCertificate is #529 in one
+// assertion: an app whose installed certificate matches the pinned one is
+// settled by the digest certs:report carries, so no certificate material leaves
+// the server at plan time.
+func TestCertsTaskPlanFingerprintSettlesWithoutReadingTheCertificate(t *testing.T) {
+	t.Parallel()
+	installed := certPEM("cert-a")
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(certsAppFixture("test-app", installed), &calls))
+
+	plan := CertsTask{
+		App:         "test-app",
+		CertContent: installed,
+		KeyContent:  "-----BEGIN PRIVATE KEY-----\nkey-a\n-----END PRIVATE KEY-----\n",
+		State:       StatePresent,
+	}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if !plan.InSync || plan.Status != PlanStatusOK {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want an in-sync ok", plan.InSync, plan.Status)
+	}
+	assertNoCertsShow(t, calls)
+}
+
+// TestCertsTaskPlanFingerprintMismatchPlansModify covers the other half: a
+// renewed certificate is caught by the digest alone, still without a read-back.
+func TestCertsTaskPlanFingerprintMismatchPlansModify(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(certsAppFixture("test-app", certPEM("cert-old")), &calls))
+
+	plan := CertsTask{
+		App:         "test-app",
+		CertContent: certPEM("cert-renewed"),
+		KeyContent:  "-----BEGIN PRIVATE KEY-----\nkey-renewed\n-----END PRIVATE KEY-----\n",
+		State:       StatePresent,
+	}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
+	}
+	if plan.Reason != "certificate material drift" {
+		t.Errorf("Reason = %q, want %q", plan.Reason, "certificate material drift")
+	}
+	assertNoCertsShow(t, calls)
+	assertNoCertMaterial(t, plan)
+}
+
+// TestCertsTaskPlanMissingFingerprintFallsBackToShow covers a dokku whose
+// certs:report carries no fingerprint key at all: the comparison is the exact
+// one #525 shipped, so the verdict is unchanged in both directions.
+func TestCertsTaskPlanMissingFingerprintFallsBackToShow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		desired    string
+		wantInSync bool
+		wantStatus PlanStatus
+	}{
+		{name: "same certificate", desired: certPEM("cert-a"), wantInSync: true, wantStatus: PlanStatusOK},
+		{name: "renewed certificate", desired: certPEM("cert-renewed"), wantStatus: PlanStatusModify},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls []string
+			ctx := subprocess.ContextWithRunner(testCtx(),
+				recordingDokku(certsAppFixtureNoFingerprint("test-app", certPEM("cert-a")), &calls))
+
+			plan := CertsTask{
+				App:         "test-app",
+				CertContent: tc.desired,
+				KeyContent:  "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+				State:       StatePresent,
+			}.Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if plan.InSync != tc.wantInSync || plan.Status != tc.wantStatus {
+				t.Fatalf("plan = {InSync:%v Status:%q}, want {InSync:%v Status:%q}",
+					plan.InSync, plan.Status, tc.wantInSync, tc.wantStatus)
+			}
+			assertCertsShowRan(t, calls)
+		})
+	}
+}
+
+// TestCertsTaskPlanUnusableFingerprintFallsBackToShow keeps a reported value
+// that is not a SHA-256 digest from being compared. Comparing one could never
+// match, so every run would plan drift and every apply would reinstall the same
+// certificate; reading it back instead both answers correctly and terminates.
+func TestCertsTaskPlanUnusableFingerprintFallsBackToShow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		reported string
+	}{
+		{name: "empty, as openssl failing to read server.crt reports", reported: ""},
+		{name: "sha1 length", reported: "B7:DF:D5:84:C6:2E:27:BF:12:34:56:78:9A:BC:DE:F0:12:34:56:78"},
+		{name: "not hex", reported: strings.Repeat("z", 64)},
+		{name: "still labelled", reported: "sha256 Fingerprint=" + fingerprintOf(certPEM("cert-a"))},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			installed := certPEM("cert-a")
+			fixture := certsAppFixture("test-app", installed)
+			fixture["--quiet certs:report test-app --format json"] = certsReportJSON(tc.reported)
+
+			var calls []string
+			ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(fixture, &calls))
+
+			plan := CertsTask{
+				App:         "test-app",
+				CertContent: installed,
+				KeyContent:  "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+				State:       StatePresent,
+			}.Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if !plan.InSync || plan.Status != PlanStatusOK {
+				t.Fatalf("plan = {InSync:%v Status:%q}, want an in-sync ok", plan.InSync, plan.Status)
+			}
+			assertCertsShowRan(t, calls)
+		})
+	}
+}
+
+// TestCertsTaskPlanReportFailureFallsBackToShow keeps a dokku-level report
+// failure out of the plan. The read-back answers the question exactly, so there
+// is nothing to surface - and nothing to leak, since the probe's stderr never
+// reaches the plan.
+func TestCertsTaskPlanReportFailureFallsBackToShow(t *testing.T) {
+	t.Parallel()
+	installed := certPEM("cert-a")
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		joined := strings.Join(in.Args, " ")
+		calls = append(calls, joined)
+		switch {
+		case strings.Contains(joined, "--format json"):
+			response := subprocess.ExecCommandResponse{ExitCode: 1, Stderr: "Invalid flag passed, valid flags: --ssl-dir, --ssl-enabled"}
+			return response, &subprocess.ExecError{Response: response, Err: errors.New(response.Stderr), Ran: true}
+		case strings.Contains(joined, "certs:show"):
+			return subprocess.ExecCommandResponse{Stdout: installed}, nil
+		case strings.Contains(joined, "--ssl-enabled"):
+			return subprocess.ExecCommandResponse{Stdout: "true"}, nil
+		}
+		return subprocess.ExecCommandResponse{Stdout: "false"}, nil
+	})
+
+	plan := CertsTask{
+		App:         "test-app",
+		CertContent: certPEM("cert-renewed"),
+		KeyContent:  "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+		State:       StatePresent,
+	}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q", plan.InSync, plan.Status, PlanStatusModify)
+	}
+	if strings.Contains(plan.Reason, "Invalid flag") {
+		t.Errorf("Reason carried the probe's stderr: %q", plan.Reason)
+	}
+	assertCertsShowRan(t, calls)
+}
+
+// TestCertsTaskPlanReportSSHErrorIsProbeError keeps a transport failure an
+// error. A server docket cannot reach is not a server that is in sync, and
+// falling back would only reach for the same unreachable host again.
+func TestCertsTaskPlanReportSSHErrorIsProbeError(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		joined := strings.Join(in.Args, " ")
+		if strings.Contains(joined, "--format json") {
+			return subprocess.ExecCommandResponse{ExitCode: 255}, &subprocess.SSHError{
+				Host:   "dokku@unreachable",
+				Stderr: "ssh: connect to host unreachable port 22: Connection refused",
+			}
+		}
+		if strings.Contains(joined, "--ssl-enabled") {
+			return subprocess.ExecCommandResponse{Stdout: "true"}, nil
+		}
+		return subprocess.ExecCommandResponse{Stdout: "false"}, nil
+	})
+
+	plan := CertsTask{
+		App:         "test-app",
+		CertContent: certPEM("cert-a"),
+		KeyContent:  "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+		State:       StatePresent,
+	}.Plan(ctx)
+	if plan.Status != PlanStatusError {
+		t.Fatalf("Status = %q, want %q", plan.Status, PlanStatusError)
+	}
+	var sshErr *subprocess.SSHError
+	if !errors.As(plan.Error, &sshErr) {
+		t.Errorf("plan.Error = %v, want an *subprocess.SSHError", plan.Error)
+	}
+}
+
+// TestCertsTaskPlanChainRecipeComparesWholePEM keeps a recipe pinning a chain on
+// the exact comparison. dokku digests the first certificate in server.crt and
+// ignores the rest, so settling a chain by fingerprint would stop reporting a
+// changed intermediate - a narrowing the recipe never asked for.
+func TestCertsTaskPlanChainRecipeComparesWholePEM(t *testing.T) {
+	t.Parallel()
+	leaf := certPEM("leaf")
+	installedChain := leaf + certPEM("intermediate-old")
+
+	tests := []struct {
+		name       string
+		desired    string
+		wantInSync bool
+		wantStatus PlanStatus
+	}{
+		{name: "same chain", desired: installedChain, wantInSync: true, wantStatus: PlanStatusOK},
+		{name: "same leaf, rotated intermediate", desired: leaf + certPEM("intermediate-new"), wantStatus: PlanStatusModify},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls []string
+			ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(certsAppFixture("test-app", installedChain), &calls))
+
+			plan := CertsTask{
+				App:         "test-app",
+				CertContent: tc.desired,
+				KeyContent:  "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----\n",
+				State:       StatePresent,
+			}.Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if plan.InSync != tc.wantInSync || plan.Status != tc.wantStatus {
+				t.Fatalf("plan = {InSync:%v Status:%q}, want {InSync:%v Status:%q}",
+					plan.InSync, plan.Status, tc.wantInSync, tc.wantStatus)
+			}
+			// The report is not even asked: a leaf digest cannot answer for a chain.
+			for _, call := range calls {
+				if strings.Contains(call, "--format json") {
+					t.Errorf("chain plan read a fingerprint report it could not use: %q", call)
+				}
+			}
+			assertCertsShowRan(t, calls)
+		})
+	}
+}
+
+// TestDesiredCertFingerprint locks what the digest is taken over and what is
+// refused. It is the DER a block decodes to, never the PEM text, which is what
+// makes it the value openssl prints for the same certificate.
+func TestDesiredCertFingerprint(t *testing.T) {
+	t.Parallel()
+
+	sum := sha256.Sum256([]byte("cert-a"))
+	wantCertA := strings.ToUpper(hex.EncodeToString(sum[:]))
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+		ok    bool
+	}{
+		{name: "single certificate", input: certPEM("cert-a"), want: wantCertA, ok: true},
+		{name: "trailing whitespace is not digested", input: certPEM("cert-a") + "\n\n", want: wantCertA, ok: true},
+		{name: "text ahead of the block is not digested", input: "Certificate:\n    Serial Number: 1\n" + certPEM("cert-a"), want: wantCertA, ok: true},
+		{name: "chain", input: certPEM("leaf") + certPEM("intermediate")},
+		{name: "certificate and key together", input: certPEM("cert-a") + "-----BEGIN PRIVATE KEY-----\na2V5\n-----END PRIVATE KEY-----\n"},
+		{name: "private key alone", input: "-----BEGIN PRIVATE KEY-----\na2V5\n-----END PRIVATE KEY-----\n"},
+		{name: "no pem block", input: "not a certificate"},
+		{name: "empty", input: ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := desiredCertFingerprint(tc.input)
+			if ok != tc.ok {
+				t.Fatalf("desiredCertFingerprint ok = %v, want %v", ok, tc.ok)
+			}
+			if got != tc.want {
+				t.Errorf("desiredCertFingerprint = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestNormalizeFingerprint locks the reported value to the form the local digest
+// takes, and locks what is refused rather than compared.
+func TestNormalizeFingerprint(t *testing.T) {
+	t.Parallel()
+	digest := strings.Repeat("AB", 32)
+
+	tests := []struct {
+		name     string
+		reported string
+		want     string
+		ok       bool
+	}{
+		{name: "colon separated uppercase, as dokku reports", reported: strings.TrimSuffix(strings.Repeat("AB:", 32), ":"), want: digest, ok: true},
+		{name: "lowercase", reported: strings.ToLower(digest), want: digest, ok: true},
+		{name: "bare uppercase", reported: digest, want: digest, ok: true},
+		{name: "surrounding whitespace", reported: "  " + digest + "\n", want: digest, ok: true},
+		{name: "empty", reported: ""},
+		{name: "sha1 length", reported: strings.Repeat("AB", 20)},
+		{name: "not hex", reported: strings.Repeat("zz", 32)},
+		{name: "labelled", reported: "sha256 Fingerprint=" + digest},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := normalizeFingerprint(tc.reported)
+			if ok != tc.ok {
+				t.Fatalf("normalizeFingerprint ok = %v, want %v", ok, tc.ok)
+			}
+			if got != tc.want {
+				t.Errorf("normalizeFingerprint = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// assertNoCertsShow fails when the plan read the certificate back, which is the
+// whole point of settling from the report.
+func assertNoCertsShow(t *testing.T, calls []string) {
+	t.Helper()
+	for _, call := range calls {
+		if strings.Contains(call, "certs:show") {
+			t.Errorf("plan read the certificate back rather than settling from its fingerprint: %q", call)
+		}
+	}
+}
+
+// assertCertsShowRan fails when a plan that should have fallen back to the exact
+// comparison never made it, which would mean a verdict reached some other way.
+func assertCertsShowRan(t *testing.T, calls []string) {
+	t.Helper()
+	for _, call := range calls {
+		if strings.Contains(call, "certs:show") {
+			return
+		}
+	}
+	t.Errorf("plan never fell back to certs:show; calls were %v", calls)
 }

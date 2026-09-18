@@ -359,3 +359,48 @@ EOF
   assert_output --partial "[ok]"
   assert_output --partial "0 would change"
 }
+
+# generate_chain writes "$1.crt" as the concatenation of the leaf's certificate
+# and the extra one, paired with the leaf's key. It is a fixture rather than a
+# real chain: certs:add validates with `openssl x509 -in`, which reads the first
+# block only, and that block is the leaf whose key is supplied.
+generate_chain() {
+  local name="$1" leaf="$2" extra="$3"
+  cat "$BATS_TEST_TMPDIR/$leaf.crt" "$BATS_TEST_TMPDIR/$extra.crt" >"$BATS_TEST_TMPDIR/$name.crt"
+  cp "$BATS_TEST_TMPDIR/$leaf.key" "$BATS_TEST_TMPDIR/$name.key"
+}
+
+@test "docket plan reports drift when a pinned certificate chain changes below its leaf" {
+  generate_cert leaf
+  generate_cert intermediate-old
+  generate_cert intermediate-new
+  generate_chain chain-old leaf intermediate-old
+  generate_chain chain-new leaf intermediate-new
+
+  write_certs_tasks_file chain-old
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "0 would change"
+
+  # The leaf is byte-identical, so the fingerprint certs:report carries is the
+  # same for both chains. Only reading the certificate back catches this, which
+  # is why a recipe pinning a chain stays on that comparison (#529).
+  write_certs_tasks_file chain-new
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "[~]"
+  assert_output --partial "certificate material drift"
+  assert_output --partial "replace certificate for docket-test-plan"
+  assert_output --partial "1 would change"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "[ok]"
+  assert_output --partial "0 would change"
+}

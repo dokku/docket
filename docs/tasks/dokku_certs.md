@@ -14,7 +14,7 @@ Partial - app and global certificate PEM material is exported (via certs:show an
 
 ## Probe support
 
-Partial - the installed certificate is compared against the desired one via certs:show, but the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared.
+Partial - an app's certificate is compared against the desired one by the SHA-256 fingerprint certs:report carries, falling back to reading the PEM back with certs:show when the recipe pins a certificate chain or dokku reports no fingerprint, as the global scope always does via global-cert:show; on the fingerprint path a server holding the pinned certificate plus an extra chain reads as in sync, since dokku digests only the first certificate it finds; the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared.
 
 ## Identity
 
