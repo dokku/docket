@@ -113,6 +113,83 @@ func TestCodecConformance(t *testing.T) {
 	}
 }
 
+// TestCodecEscapesForItsOwnSyntax is the `dq` half of the contract.
+//
+// A recipe is rendered as text and only then parsed, so the filter has to
+// escape for the syntax the rendered bytes will be read as - which is not one
+// answer for every format: HCL reads `${` and `%{` inside a quoted string as
+// its own template syntax where YAML and JSON5 read them as text. A codec that
+// answered with the wrong escaping would break a recipe only for the input
+// values that happen to carry the offending characters, which is exactly the
+// kind of bug that reaches a user rather than a test.
+func TestCodecEscapesForItsOwnSyntax(t *testing.T) {
+	t.Parallel()
+
+	// Everything any of the three formats reads as syntax inside a
+	// double-quoted scalar, in one value.
+	const hostile = "a\"b\\c${d}e%{f}g\nh"
+
+	const source = "- tasks:\n    - dokku_app:\n        app: \"{{ .app | dq }}\"\n"
+
+	for _, codec := range Codecs() {
+		codec := codec
+		t.Run(codec.Name(), func(t *testing.T) {
+			t.Parallel()
+			recipe, err := Convert([]byte(source), DefaultCodec(), codec)
+			if err != nil {
+				t.Fatalf("Convert into %s: %v", codec.Name(), err)
+			}
+			rendered, err := RenderTemplateWithFormat(recipe, map[string]interface{}{"app": hostile}, "dq", codec.Name())
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			loaded, err := UnmarshalRecipe(rendered.Bytes(), codec.Name())
+			if err != nil {
+				t.Fatalf("UnmarshalRecipe of the rendered recipe: %v\n%s", err, rendered.String())
+			}
+			if len(loaded) != 1 || len(loaded[0].Tasks) != 1 {
+				t.Fatalf("rendered recipe = %d plays, want 1 play with 1 task\n%s", len(loaded), rendered.String())
+			}
+			body, ok := loaded[0].Tasks[0]["dokku_app"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("task body = %T, want a mapping\n%s", loaded[0].Tasks[0]["dokku_app"], rendered.String())
+			}
+			if got := body["app"]; got != hostile {
+				t.Errorf("app = %q, want %q; `dq` escaped for the wrong syntax\n%s", got, hostile, rendered.String())
+			}
+		})
+	}
+}
+
+// TestNoTaskFieldShadowsAnEnvelopeKey guards the HCL task spelling.
+//
+// A shorthand task block merges the envelope and the task body into one HCL
+// body, so a task field named for an envelope key would be read back as the
+// envelope's. `name` is the one that already collides - ten task types declare
+// it - and the mapping handles it by moving the envelope's name out to the
+// block label, which leaves a body `name` unambiguously the task's own.
+//
+// No other envelope key collides today. Should a new task type declare a field
+// called `when` or `loop`, this fails rather than the HCL encoder quietly
+// falling back to the general `task` form for every recipe using it.
+func TestNoTaskFieldShadowsAnEnvelopeKey(t *testing.T) {
+	t.Parallel()
+	catalog, err := CatalogFor(nil)
+	if err != nil {
+		t.Fatalf("CatalogFor: %v", err)
+	}
+	for _, task := range catalog.Tasks {
+		for _, field := range task.Fields {
+			if hclEnvelopeAttrSet[field.Name] {
+				t.Errorf("%s declares a field %q, which is also a task envelope key; "+
+					"the hcl shorthand cannot spell both. Give the field another name, or move the "+
+					"envelope key out to a label the way `name` is handled",
+					task.Type, field.Name)
+			}
+		}
+	}
+}
+
 // TestLookupCodec pins the spellings the --tasks-format / --format flags
 // accept. The empty string is a miss on purpose: it means "flag not set",
 // and parseRecipeFormatFlag has to answer that before it asks here.
@@ -128,6 +205,9 @@ func TestLookupCodec(t *testing.T) {
 		"json":  FormatNameJSON5,
 		"json5": FormatNameJSON5,
 		"JSON5": FormatNameJSON5,
+		"hcl":   FormatNameHCL,
+		"HCL":   FormatNameHCL,
+		" hcl ": FormatNameHCL,
 	}
 	for spelling, want := range hits {
 		codec, ok := LookupCodec(spelling)
@@ -140,7 +220,7 @@ func TestLookupCodec(t *testing.T) {
 		}
 	}
 
-	for _, spelling := range []string{"", "   ", "toml", "hcl", "ini", "yamlish", "js"} {
+	for _, spelling := range []string{"", "   ", "toml", "ini", "yamlish", "js", "hcl1", "tf"} {
 		if codec, ok := LookupCodec(spelling); ok {
 			t.Errorf("LookupCodec(%q) = %q, want a miss", spelling, codec.Name())
 		}
@@ -152,7 +232,7 @@ func TestLookupCodec(t *testing.T) {
 // read as the default codec rather than deciding anything by accident.
 func TestCodecForFallsBackToDefault(t *testing.T) {
 	t.Parallel()
-	for _, format := range []string{"", "toml", "hcl", "nonsense"} {
+	for _, format := range []string{"", "toml", "nonsense"} {
 		if got := CodecFor(format).Name(); got != DefaultCodec().Name() {
 			t.Errorf("CodecFor(%q) = %q, want the default codec %q", format, got, DefaultCodec().Name())
 		}
@@ -172,6 +252,9 @@ func TestCodecForExtension(t *testing.T) {
 		"json":  FormatNameJSON5,
 		"json5": FormatNameJSON5,
 		".JSON": FormatNameJSON5,
+		"hcl":   FormatNameHCL,
+		".hcl":  FormatNameHCL,
+		".HCL":  FormatNameHCL,
 	}
 	for ext, want := range hits {
 		codec, ok := CodecForExtension(ext)
@@ -232,10 +315,10 @@ func TestSniffCodec(t *testing.T) {
 // positional-recipe-path check. Reordering either is user-visible.
 func TestCodecNamesAndExtensions(t *testing.T) {
 	t.Parallel()
-	if got, want := CodecNames(), []string{"yaml", "json5"}; !reflect.DeepEqual(got, want) {
+	if got, want := CodecNames(), []string{"yaml", "json5", "hcl"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("CodecNames() = %v, want %v", got, want)
 	}
-	if got, want := CodecExtensions(), []string{"yml", "yaml", "json", "json5"}; !reflect.DeepEqual(got, want) {
+	if got, want := CodecExtensions(), []string{"yml", "yaml", "json", "json5", "hcl"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("CodecExtensions() = %v, want %v", got, want)
 	}
 	if got := DefaultCodec().Name(); got != FormatYAML {

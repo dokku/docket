@@ -165,3 +165,45 @@ func TestVarsFileJSON5RecipePairEndToEnd(t *testing.T) {
 		t.Errorf("the JSON5 vars-file did not reach the listing; got:\n%s", stdout)
 	}
 }
+
+// TestVarsOutputFormatMismatch covers the warning a companion vars-file gets
+// when --format writes it in a syntax its own extension does not name.
+//
+// The answer is not the same for every format, which is why the check tries
+// reading the file back rather than listing which pairs happen to overlap:
+// JSON5's MarshalVars deliberately emits plain JSON, which is also valid YAML,
+// so a `.yml` vars-file holding JSON loads and deserves no warning. HCL is
+// valid neither as YAML nor as JSON5.
+func TestVarsOutputFormatMismatch(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		path    string
+		written string
+		vars    map[string]interface{}
+		wantMsg bool
+	}{
+		{name: "matching extension", path: "vars.hcl", written: tasks.FormatNameHCL, wantMsg: false},
+		{name: "hcl named yml", path: "vars.yml", written: tasks.FormatNameHCL, wantMsg: true},
+		{name: "hcl named json", path: "vars.json", written: tasks.FormatNameHCL, wantMsg: true},
+		{name: "json5 named yml is readable anyway", path: "vars.yml", written: tasks.FormatNameJSON5, wantMsg: false},
+		{name: "stdout", path: "-", written: tasks.FormatNameHCL, wantMsg: false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			data, err := tasks.CodecFor(tt.written).MarshalVars(map[string]interface{}{"app": "web"})
+			if err != nil {
+				t.Fatalf("MarshalVars: %v", err)
+			}
+			msg := varsOutputFormatMismatch(tt.path, tt.written, data)
+			if (msg != "") != tt.wantMsg {
+				t.Fatalf("varsOutputFormatMismatch(%q, %q) = %q, wantMsg = %v", tt.path, tt.written, msg, tt.wantMsg)
+			}
+			if tt.wantMsg && !strings.Contains(msg, renamedForFormat(tt.path, tt.written)) {
+				t.Errorf("warning %q should suggest the name that would load", msg)
+			}
+		})
+	}
+}

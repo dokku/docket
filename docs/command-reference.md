@@ -13,8 +13,9 @@ docket has eight commands. Running `docket` with no subcommand prints the list:
 | [`docket schema`](#docket-schema) | Print the machine-readable catalog of task types. |
 | [`docket version`](#docket-version) | Print the binary's version. |
 
-`apply`, `plan`, `validate`, and `fmt` all accept either YAML or JSON5 recipes. When `--tasks` is
-omitted they probe `tasks.yml`, then `tasks.yaml`, then `tasks.json`, and use the first that exists.
+`apply`, `plan`, `validate`, and `fmt` all accept YAML, JSON5 and HCL recipes. When `--tasks` is
+omitted they probe `tasks.yml`, then `tasks.yaml`, then `tasks.json`, then `tasks.hcl`, and use the
+first that exists.
 A directory holding more than one of them is ambiguous, so the probe names the one it took in a
 warning on stderr - `tasks.yml, tasks.json both exist; using tasks.yml (pass --tasks to choose)` -
 leaving stdout to the command's own output.
@@ -34,19 +35,21 @@ docket export --output - | docket apply -
 docket init --output - | docket validate -
 cat tasks.yml | docket plan --tasks - --app api
 docket export --output - --format json5 | docket apply --tasks-format json5 -
+docket export --output - --format hcl | docket apply --tasks-format hcl -
 ```
 
-The format normally comes from the file extension, and for stdin from the first non-whitespace byte
-(`[`, `{`, `//`, or `/*` means JSON5; anything else means YAML). `--tasks-format yaml|json5`
-overrides both. Reach for it when the extension is absent or misleading (`--tasks recipe.txt`, or a
-URL whose path carries no extension), or when a YAML recipe written in flow style would be sniffed
-as JSON5 because it opens with `[`.
+The format normally comes from the file extension, and for stdin from the first significant token
+(`[`, `{`, `//`, or `/*` means JSON5; an identifier followed by `=`, `{`, or a quoted label means
+HCL; anything else means YAML). `--tasks-format yaml|json5|hcl` overrides both. Reach for it when
+the extension is absent or misleading (`--tasks recipe.txt`, or a URL whose path carries no
+extension), when a YAML recipe written in flow style would be sniffed as JSON5 because it opens with
+`[`, or when a hand-written HCL recipe opens with a `//` comment, which JSON5 claims first.
 
 `--tasks-format` is the reading side. On the writing side, `init`, `export`, and `fmt` take
-`--format yaml|json5` to state the format of what they emit. Without it, `init` and `export` can
+`--format yaml|json5|hcl` to state the format of what they emit. Without it, `init` and `export` can
 only ever write YAML to stdout, since there is no extension to infer from. On `fmt` the two flags
 compose: `--tasks-format` says what the recipe already is, `--format` says what to write it as, and
-naming a different one converts the recipe between the two.
+naming a different one converts the recipe between them.
 
 Reading the recipe from stdin consumes it, so a `dokku` command that would otherwise have inherited
 the terminal's stdin sees end-of-file instead. No task depends on this - every task that streams
@@ -60,9 +63,10 @@ contact and no `git` subprocess. The default scaffold ships four tasks (`dokku_a
 and round-trips cleanly through `docket validate`.
 
 The output format follows `--format` when given, otherwise the `--output` extension: `.json` /
-`.json5` writes a JSON5 scaffold with `// ...` comments, anything else writes YAML. Streaming to
-stdout (`--output -`) has no extension to read, so it writes YAML unless `--format json5` says
-otherwise. Passing `--format json5` without an `--output` writes `./tasks.json` rather than a JSON5
+`.json5` writes a JSON5 scaffold with `// ...` comments, `.hcl` writes an HCL one, anything else
+writes YAML. Streaming to stdout (`--output -`) has no extension to read, so it writes YAML unless
+`--format` says otherwise. Passing `--format` without an `--output` moves the default name to match:
+`--format json5` writes `./tasks.json` and `--format hcl` writes `./tasks.hcl`, rather than either
 document under a `.yml` name.
 
 ```bash
@@ -77,12 +81,16 @@ docket init --output -
 
 # Stream a JSON5 scaffold to stdout.
 docket init --output - --format json5
+
+# Same scaffold in HCL, written to ./tasks.hcl.
+docket init --format hcl
 ```
 
 `init` closes by printing the commands to run next. Those run without `--tasks` and so rely on the
 default probe, which only reaches the new scaffold when it was written to `tasks.yml`. Written
-anywhere else (`tasks.json` from `--format json5`, or an `--output` in another directory) the
-printed commands name the file, so they cannot end up describing a stale recipe sitting beside it:
+anywhere else (`tasks.json` from `--format json5`, `tasks.hcl` from `--format hcl`, or an `--output`
+in another directory) the printed commands name the file, so they cannot end up describing a stale
+recipe sitting beside it:
 
 ```text
 $ docket init --format json5
@@ -136,7 +144,7 @@ Exit code is `0` when no problems are found, `1` otherwise.
 | `--tasks-format <fmt>` | Parse the recipe as `yaml` or `json5` instead of detecting it. |
 | `--json` | Emit one JSON-lines problem per line with a stable schema, for a CI annotator. |
 | `--strict` | Also flag any `required: true` input with no default and no supplied value, and verify that `--play` / `--start-at-task` references resolve to real names. |
-| `--vars-file <path>` | Load input values from a YAML or JSON file (repeatable). Values here count as overrides for `--strict`. A file that supplies a `sensitive: true` input and is readable by other users is warned about on stderr. See [inputs](inputs.md#layered-values-with---vars-file). |
+| `--vars-file <path>` | Load input values from a file in any recipe format, chosen by its extension and defaulting to YAML (repeatable). Values here count as overrides for `--strict`. A file that supplies a `sensitive: true` input and is readable by other users is warned about on stderr. See [inputs](inputs.md#layered-values-with---vars-file). |
 | `--play <name>` | (strict only) Verify the named play exists. |
 | `--start-at-task <name>` | (strict only) Verify a task with this name exists; narrowed by `--play`. |
 
@@ -144,9 +152,11 @@ Exit code is `0` when no problems are found, `1` otherwise.
 
 `docket fmt` is a canonical formatter for recipes, in the spirit of `gofmt`. It reorders task and
 play keys into a stable order, normalizes indentation to a 2-space step, and inserts blank lines
-between top-level plays and task entries. It works on both YAML and JSON5, detected per file from
-the extension, and both formats share the same canonical key order so a YAML recipe and its JSON5
-twin lay out identically. Comments are preserved in both formats.
+between top-level plays and task entries. It works on YAML, JSON5 and HCL, detected per file from
+the extension, and all three share the same canonical key order so a YAML recipe and its JSON5 or
+HCL twin lay out identically. Comments are preserved in every format. An HCL recipe also has its
+`=` signs aligned, by `hclwrite.Format`, so docket's HCL and `terraform fmt`'s agree about
+whitespace.
 
 A recipe it cannot parse is reported with the byte offset of the problem and left untouched. What
 `fmt` accepts is what `apply`, `plan`, and `validate` accept, so a file that formats is a file that
@@ -157,9 +167,10 @@ never look at. Two cases come from reading the recipe as written rather than ren
 which is what lets `fmt` see the quote characters at all. An unquoted interpolation is the first:
 `{{ .app }}` outside quotes is YAML flow syntax rather than template text, so `fmt` names the line
 instead of writing YAML's reading of it back out. A rewrite that would change an interpolation's
-quoting is the second, refused on a conversion and on a JSON5 recipe but never on a plain YAML
-format - see [Converting between YAML and JSON5](#converting-between-yaml-and-json5). Both are
-about the same thing, and [Inputs](inputs.md) covers it.
+quoting is the second, refused on a conversion, on a JSON5 recipe whose string is single-quoted, and
+on an HCL recipe whose heredoc holds one, but never on a plain YAML format - see
+[Converting between formats](#converting-between-formats). Both are about the same thing, and
+[Inputs](inputs.md) covers it.
 
 The third is comments, which `fmt` preserves and everything else discards before it reads a recipe
 at all. A JSON5 comment holding a byte that is not valid UTF-8 is refused, naming the byte and its
@@ -191,6 +202,9 @@ cat tasks.yml | docket fmt --tasks-format yaml -
 # Convert a recipe to JSON5 and write it to stdout, touching nothing on disk.
 cat tasks.yml | docket fmt --format json5 -
 
+# Convert a recipe to HCL.
+docket fmt --format hcl --output tasks.hcl tasks.yml
+
 # Convert to a new file, leaving the original alone. The extension alone would
 # have been enough; --format is what a name like recipe.txt would need.
 docket fmt --format json5 --output tasks.json5 tasks.yml
@@ -205,8 +219,8 @@ docket fmt --format json5 tasks.json
 | `--check` | Exit 1 if any file is not canonical; no writes. Composes with `--diff`. |
 | `--diff` | Print a unified diff against canonical; no writes. Composes with `--check`. |
 | `--color <when>` | Colorize the diff: `auto` (default), `always`, or `never`. |
-| `--tasks-format <fmt>` | Read the recipe as `yaml` or `json5` instead of detecting it. |
-| `--format <fmt>` | Write the recipe as `yaml` or `json5`, converting it when that is not what it was read as. Cannot be combined with `--check`. |
+| `--tasks-format <fmt>` | Read the recipe as `yaml`, `json5` or `hcl` instead of detecting it. |
+| `--format <fmt>` | Write the recipe as `yaml`, `json5` or `hcl`, converting it when that is not what it was read as. Cannot be combined with `--check`. |
 | `--output <path>` | Write to this path instead of in place; `-` writes to stdout. Takes a single recipe, and cannot be combined with `--check` or `--diff`. |
 | `--force` | Overwrite an existing `--output` file. |
 | `-` | Read from stdin, write canonical to stdout. Cannot be combined with other paths. |
@@ -220,7 +234,7 @@ the result does not match the input, so a formatting bug can never corrupt a rec
 YAML file containing more than one document (separated by `---`) is rejected rather than having its
 trailing documents silently dropped.
 
-### Converting between YAML and JSON5
+### Converting between formats
 
 Without `--output`, `--format` converts the file in place and keeps its name, which leaves a
 `tasks.yml` holding JSON5. `fmt` says so once, on stderr, because nothing downstream can tell: a
@@ -241,7 +255,7 @@ check a recipe whose extension is misleading, use `--tasks-format`. `--diff` doe
 converting `--format`, and previews the conversion without writing anything.
 
 A conversion is not byte-reversible, and is not meant to be. Comments survive, and so does every
-value, but six things are normalised on the way:
+value, but these things are normalised on the way:
 
 - **Comments change syntax.** A `# note` becomes `// note` and back. A JSON5 block comment
   `/* note */` comes back as `// note`, since a line comment cannot be terminated early by its own
@@ -257,20 +271,30 @@ value, but six things are normalised on the way:
   arriving from JSON5 had none.
 - **A key that is not a plain ASCII identifier is written quoted.** JSON5 leaves `app` unquoted,
   but `café` and `my-key` are not identifiers to a JSON5 reader, so they are written `"café"` and
-  `"my-key"`.
+  `"my-key"`. HCL's identifiers are wider and take both unquoted, but its attribute NAMES have to be
+  identifiers, so a play or envelope key holding a space, a dot, or a leading digit is refused.
 - **An unpaired surrogate escape becomes U+FFFD.** A `\uD83D` with no low surrogate after it is
   not a character, and the replacement is what every JSON5 reader makes of it, including the one
   `apply` uses.
+- **Into HCL, `${` and `%{` are doubled.** They open a template in HCL and are ordinary text
+  everywhere else, so the literal has to be written `$${` and `%%{`. See
+  [HCL recipes](hcl.md#templating).
+- **Into HCL, a multi-line string becomes a heredoc.** A value carrying a newline is written as
+  `<<EOT`, which keeps a certificate or an `app.json` readable. A value carrying an interpolation
+  never is, because a heredoc processes no backslash escapes.
+- **An empty recipe has no HCL spelling.** A list of no plays would be an empty HCL file, which
+  reads back as no recipe at all, so the conversion is refused rather than written.
 
-A YAML timestamp is the one value whose type changes: JSON5 has no date literal, so `2015-01-01`
-becomes the string `"2015-01-01"`. Nothing in a recipe reads it as anything else - every task field
-holding one is a string already.
+A YAML timestamp is the one value whose type changes: neither JSON5 nor HCL has a date literal, so
+`2015-01-01` becomes the string `"2015-01-01"`. Nothing in a recipe reads it as anything else - every
+task field holding one is a string already. `Infinity` and `NaN` go the other way: JSON5 spells them
+and HCL has no literal for either, so a conversion into HCL is refused rather than widened.
 
 Quoting is preserved where it carries meaning, and where it cannot be, `fmt` refuses rather than
 change it. A recipe is rendered as text and only then parsed, so the quotes around an interpolation
-decide how the substituted value is escaped - see [Inputs](inputs.md). Canonical JSON5 has only the
-double-quoted string, which is the one spelling that needs `| dq`, so every other way of writing a
-YAML scalar loses something on the way across:
+decide how the substituted value is escaped - see [Inputs](inputs.md). Canonical JSON5 and canonical
+HCL both have only the double-quoted string, which is the one spelling that needs `| dq`, so every
+other way of writing a YAML scalar loses something on the way across to either:
 
 ```text
  !     tasks.yml: line 5: `{{ .app }}` is single-quoted, and rewriting it double-quoted would leave
@@ -288,13 +312,15 @@ untouched, in either direction. So does one that substitutes no value at all, su
 `'web{{ if .debug }}-verbose{{ end }}'`, where only literal recipe text is ever inserted.
 
 The same refusal applies with no conversion in sight: `docket fmt tasks.json5` would fold a
-single-quoted JSON5 string into the double-quoted canonical form, so it is refused on exactly the
-same terms. Only a plain `docket fmt` of a YAML recipe is unaffected, since YAML-to-YAML formatting
-leaves every scalar's quoting as it found it.
+single-quoted JSON5 string into the double-quoted canonical form, and `docket fmt tasks.hcl` would
+fold a heredoc into it, so both are refused on exactly the same terms. A heredoc is refused a little
+harder than a single-quoted string: it processes no backslash escapes at all, so `| dq` inside one
+is as wrong as no escaping. Only a plain `docket fmt` of a YAML recipe is unaffected, since
+YAML-to-YAML formatting leaves every scalar's quoting as it found it.
 
 An interpolation containing a double quote of its own - `{{ .app | default "" }}`, say - has no
-double-quoted spelling in either format, because the scalar would have to escape that quote and the
-template engine reads the recipe before anything unescapes it. Such an action has to be rewritten to
+double-quoted spelling in any of the three formats, because the scalar would have to escape that
+quote and the template engine reads the recipe before anything unescapes it. Such an action has to be rewritten to
 drop the literal; a backquoted raw string is one way.
 
 ## docket plan
@@ -592,6 +618,9 @@ docket apply --tasks tasks.yml --vars-file tasks.vars.yml
 # Stream a JSON5 recipe to stdout and pipe it straight back in.
 docket export --output - --format json5 | docket apply --tasks-format json5 -
 
+# Export the local server as an HCL pair.
+docket export --format hcl
+
 # Read back a single resource instead of a whole app.
 docket export --resource 'dokku_config[app=api]' --output -
 ```
@@ -634,7 +663,7 @@ matches nothing on the server is reported by name and exits non-zero, the same w
 | Flag | Effect |
 |------|--------|
 | `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. Because a stream has no vars-file and touches no file on disk, combining `-` with `--vars-output` or `--overwrite` is an error rather than a silently ignored flag. |
-| `--format <fmt>` | Write `yaml` or `json5` regardless of the `--output` extension, for both the recipe and the vars-file. Without an explicit `--output`, `--format json5` writes `./tasks.json` and `./tasks.vars.json`. Required to stream JSON5 with `--output -`, which has no extension to read. |
+| `--format <fmt>` | Write `yaml`, `json5` or `hcl` regardless of the `--output` extension, for both the recipe and the vars-file. Without an explicit `--output`, `--format json5` writes `./tasks.json` and `./tasks.vars.json`, and `--format hcl` writes `./tasks.hcl` and `./tasks.vars.hcl`. Required to stream anything but YAML with `--output -`, which has no extension to read. |
 | `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). Written `0600` wherever it lands. Not valid with `--output -`. When the server holds nothing sensitive there is no vars-file to write, and an explicit path is reported as unwritten rather than passed over. |
 | `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). Not valid with `--output -`. |
 | `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in, and the template is still written `0600` because filling it in is what puts the secrets there. |
@@ -645,8 +674,10 @@ matches nothing on the server is reported by name and exits non-zero, the same w
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
 
 The output format follows `--format` when given, otherwise the `--output` extension (`.json` /
-`.json5` writes JSON5, anything else YAML); the vars-file follows the recipe, or its own
-`--vars-output` extension when `--format` is not given. Which task types export is a per-task property: each task's
+`.json5` writes JSON5, `.hcl` writes HCL, anything else YAML); the vars-file follows the recipe, or
+its own `--vars-output` extension when `--format` is not given. A JSON5 vars-file is plain JSON,
+which is also valid YAML, so one named `.yml` still loads; an HCL one does not, and export says so
+rather than letting the next `--vars-file` find out. Which task types export is a per-task property: each task's
 reference page carries an **Export support** section stating whether it is supported, partial (for
 example a value that is lifted into the vars-file), or not exportable (write-only credentials such
 as `dokku_git_auth`, or `dokku_service_property`, which no datastore plugin can read back).

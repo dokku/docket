@@ -167,7 +167,7 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 	// not yet applied; text/template's `missingkey=default` mode renders
 	// missing keys as `<no value>` rather than failing, so this pass only
 	// surfaces real template syntax errors.
-	if _, renderProblem := renderForValidate(data, map[string]interface{}{}); renderProblem != nil {
+	if _, renderProblem := renderForValidate(data, map[string]interface{}{}, opts.Format); renderProblem != nil {
 		return []Problem{*renderProblem}
 	}
 
@@ -211,7 +211,7 @@ func Validate(data []byte, opts ValidateOptions) []Problem {
 	playsInputs := extractPlayInputs(rawDoc)
 	context := buildSigilContext(playsInputs)
 
-	rendered, renderProblem := renderForValidate(data, context)
+	rendered, renderProblem := renderForValidate(data, context, opts.Format)
 	if renderProblem != nil {
 		// Without rendered bytes the structural walk cannot run; return the
 		// template error alongside whatever input-strict findings can still
@@ -646,9 +646,9 @@ func validateTaskBody(registered Task, typeName string, body *yaml.Node, playLab
 // scalar item access (`{{ .item.app }}`) does not blow up the file-level
 // pass. The loop_var_outside_loop check then walks the rendered tree to
 // flag any reference in a non-loop task body.
-func renderForValidate(data []byte, context map[string]interface{}) ([]byte, *Problem) {
+func renderForValidate(data []byte, context map[string]interface{}, format string) ([]byte, *Problem) {
 	escaped, captured := escapeLoopVars(data)
-	rendered, err := RenderTemplate(escaped, context, "tasks.yml")
+	rendered, err := RenderTemplateWithFormat(escaped, context, "tasks.yml", format)
 	if err != nil {
 		line, col := parseSigilErrorPosition(err.Error())
 		return nil, &Problem{
@@ -1178,7 +1178,7 @@ func diagnoseUnsafeInputValue(data []byte, format string, context map[string]int
 	}
 
 	parses := func(ctx map[string]interface{}) bool {
-		rendered, err := renderRecipeBytes(data, ctx)
+		rendered, err := renderRecipeBytes(data, ctx, format)
 		if err != nil {
 			return false
 		}

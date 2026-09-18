@@ -107,3 +107,13 @@ func normaliseYAMLMap(in map[interface{}]interface{}) (map[string]interface{}, e
 	}
 	return out, nil
 }
+
+// EscapeDoubleQuoted is the plain JSON-style escaping a double-quoted YAML
+// scalar reads.
+func (yamlCodec) EscapeDoubleQuoted(v interface{}) (string, error) {
+	return DoubleQuoteEscape(v)
+}
+
+// DoubleQuotesOnly is false: YAML canonical form leaves every scalar's
+// quoting as it found it, so there is never anything to refuse.
+func (yamlCodec) DoubleQuotesOnly() bool { return false }

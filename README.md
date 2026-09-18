@@ -54,6 +54,7 @@ Running `docket apply` again is a no-op when the server already matches the reci
 - [Getting started](docs/getting-started.md) -- why docket, installation, and your first recipe
 - [Command reference](docs/command-reference.md) -- every command and flag
 - [Recipes](docs/recipes.md) -- the recipe file format, plays, and multi-app recipes
+- [HCL recipes](docs/hcl.md) -- writing a recipe in HCL, block by block
 - [Inputs](docs/inputs.md) -- parameterize a recipe with variables and `--vars-file`
 - [Task envelope](docs/task-envelope.md) -- tags, conditionals, loops, and error handling per task
 - [Remote execution](docs/remote-execution.md) -- drive a remote Dokku server over SSH

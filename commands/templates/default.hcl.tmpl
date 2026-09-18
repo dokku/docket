@@ -1,0 +1,35 @@
+play <<hclStr .Name>> {
+  input "app" {
+    default     = <<hclStr .Name>>
+    description = "Application name"
+  }
+
+  input "repo" {
+    <<if .Repo>>default = "<<.Repo>>"<<else>>required = true<<end>>
+    description = "Git repository URL"
+  }
+
+  dokku_app "create app" {
+    app   = "{{ .app | dq }}"
+    state = "present"
+  }
+
+  dokku_config "configure env vars" {
+    app = "{{ .app | dq }}"
+    config = {
+      APP_ENV   = "production"
+      LOG_LEVEL = "info"
+    }
+  }
+
+  dokku_domains "configure domains" {
+    app     = "{{ .app | dq }}"
+    domains = ["{{ .app | dq }}.example.com"]
+    state   = "set"
+  }
+
+  dokku_git_sync "sync git repository" {
+    app    = "{{ .app | dq }}"
+    remote = "{{ .repo | dq }}"
+  }
+}

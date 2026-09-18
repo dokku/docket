@@ -336,3 +336,50 @@ teardown() {
   run "$(docket_bin)" validate --tasks "$BATS_TEST_TMPDIR/tasks.yml"
   assert_success
 }
+
+@test "docket export --format hcl writes a tasks.hcl / tasks.vars.hcl pair" {
+  require_dokku
+  dokku apps:create docket-test-export
+  # A config value is what gets lifted into the vars-file; without one
+  # the export has no vars and writes no companion file at all.
+  dokku config:set --no-restart docket-test-export API_KEY=abc123
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --app docket-test-export --format hcl
+  assert_success
+  assert [ -f tasks.hcl ]
+  assert [ -f tasks.vars.hcl ]
+  assert [ ! -f tasks.yml ]
+
+  run head -1 tasks.hcl
+  assert_output --partial "play"
+
+  run "$(docket_bin)" validate --tasks tasks.hcl --vars-file tasks.vars.hcl
+  assert_success
+  assert_output --partial "is valid"
+
+  # And what it wrote is canonical, so a `docket fmt --check` gate passes
+  # over an exported recipe.
+  run "$(docket_bin)" fmt --check tasks.hcl
+  assert_success
+}
+
+@test "docket export --output - --format hcl round-trips into apply" {
+  require_dokku
+  dokku apps:create docket-test-export
+  run bash -c "\"$(docket_bin)\" export --app docket-test-export --output - --format hcl | \"$(docket_bin)\" apply --tasks-format hcl --list-tasks -"
+  assert_success
+  assert_output --partial "docket-test-export"
+}
+
+@test "docket export warns when --format hcl writes a vars-file named .yml" {
+  require_dokku
+  dokku apps:create docket-test-export
+  dokku config:set --no-restart docket-test-export API_KEY=abc123
+  cd "$BATS_TEST_TMPDIR"
+  # JSON5 gets no such warning: its vars-file is plain JSON, which is also
+  # valid YAML. HCL is neither, so the named file would not load.
+  run "$(docket_bin)" export --app docket-test-export --format hcl --output tasks.hcl --vars-output vars.yml
+  assert_success
+  assert_output --partial "vars.yml holds hcl"
+  assert_output --partial "rename it vars.hcl"
+}

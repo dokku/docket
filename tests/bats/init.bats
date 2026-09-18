@@ -240,3 +240,52 @@ CFG
   assert_success
   assert_output --partial "create app"
 }
+
+@test "docket init --format hcl writes tasks.hcl" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --format hcl --name api --repo https://example.com/repo.git
+  assert_success
+  assert_output --partial "Created tasks.hcl"
+  assert [ -f tasks.hcl ]
+  assert [ ! -f tasks.yml ]
+
+  run head -1 tasks.hcl
+  assert_output 'play "api" {'
+
+  run "$(docket_bin)" validate --tasks tasks.hcl
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket init --format hcl writes a canonical scaffold" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init --format hcl --name api --repo https://example.com/repo.git
+  run "$(docket_bin)" fmt --check tasks.hcl
+  assert_success
+}
+
+@test "docket init --format hcl --minimal validates" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --format hcl --minimal --name api
+  assert_success
+  run "$(docket_bin)" validate --tasks tasks.hcl
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket init --output - --format hcl streams HCL to stdout" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --output - --format hcl --name api --repo https://example.com/repo.git
+  assert_success
+  assert_output --partial 'play "api" {'
+  assert [ ! -f tasks.hcl ]
+}
+
+@test "docket init --format hcl escapes a name carrying HCL syntax" {
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" init --format hcl --name 'we"b${x}' --repo https://example.com/repo.git
+  assert_success
+  run "$(docket_bin)" validate --tasks tasks.hcl
+  assert_success
+  assert_output --partial "is valid"
+}

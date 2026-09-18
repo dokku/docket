@@ -29,6 +29,7 @@
         "play_key_type",
         "envelope_key_unsupported",
         "expr_compile",
+        "hcl_parse",
         "input_missing",
         "invalid_input_default",
         "invalid_input_name",

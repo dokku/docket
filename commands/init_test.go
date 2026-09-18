@@ -976,3 +976,75 @@ func readAllString(r io.Reader) (string, error) {
 	b, err := io.ReadAll(r)
 	return string(b), err
 }
+
+// TestInitEveryScaffoldIsCanonicalAndValid walks the registry rather than
+// naming a format, so a new one is checked the moment its templates land.
+//
+// Canonical matters as much as valid: `docket fmt --check` is a CI gate, and a
+// scaffold `docket init` just wrote failing it would be an odd first
+// experience. It is why renderInit runs the formatter over the template's
+// output - HCL aligns a run of `=` signs on the longest name in it, which a
+// template holding an `<<if>>` cannot know in advance.
+func TestInitEveryScaffoldIsCanonicalAndValid(t *testing.T) {
+	t.Parallel()
+	for _, codec := range tasks.Codecs() {
+		codec := codec
+		for _, opts := range []initOptions{
+			{Name: "demo", Format: codec.Name()},
+			{Name: "demo", Format: codec.Name(), Minimal: true},
+			{Name: "demo", Format: codec.Name(), Repo: "git@example.com:foo/bar.git"},
+		} {
+			opts := opts
+			label := codec.Name()
+			if opts.Minimal {
+				label += "/minimal"
+			} else if opts.Repo != "" {
+				label += "/repo"
+			}
+			t.Run(label, func(t *testing.T) {
+				t.Parallel()
+				out, err := renderInit(opts)
+				if err != nil {
+					t.Fatalf("renderInit: %v", err)
+				}
+				if problems := tasks.Validate(out, tasks.ValidateOptions{Format: codec.Name()}); len(problems) != 0 {
+					t.Fatalf("scaffold does not validate: %+v\n%s", problems, out)
+				}
+				formatted, err := codec.Format(out)
+				if err != nil {
+					t.Fatalf("Format of the scaffold: %v", err)
+				}
+				if string(formatted) != string(out) {
+					t.Errorf("scaffold is not canonical:\nwrote:\n%s\ncanonical:\n%s", out, formatted)
+				}
+			})
+		}
+	}
+}
+
+// TestInitFormatHCLWritesTasksHCL covers the default output path, which
+// follows --format through defaultTaskFileCandidates.
+func TestInitFormatHCLWritesTasksHCL(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	c, ui := newTestInitCommandUi(dir)
+	if exit := c.Run([]string{"--format", "hcl", "--name", "demo"}); exit != 0 {
+		t.Fatalf("exit = %d, want 0: %s", exit, ui.ErrorWriter.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tasks.yml")); err == nil {
+		t.Error("--format hcl should not write tasks.yml")
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "tasks.hcl"))
+	if err != nil {
+		t.Fatalf("tasks.hcl not written: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "play ") {
+		t.Errorf("scaffold should open with a play block:\n%s", body)
+	}
+	if problems := tasks.Validate(body, tasks.ValidateOptions{Format: tasks.FormatNameHCL}); len(problems) > 0 {
+		t.Errorf("scaffold did not validate: %+v", problems)
+	}
+	if warn := ui.ErrorWriter.String(); warn != "" {
+		t.Errorf("a matching extension should not warn:\n%s", warn)
+	}
+}

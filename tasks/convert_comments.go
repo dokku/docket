@@ -2,15 +2,17 @@ package tasks
 
 import "strings"
 
-// Comment translation between the two surface syntaxes.
+// Comment translation between the surface syntaxes.
 //
-// YAML and JSON5 both let a recipe carry commentary, and `docket fmt`
+// YAML, JSON5 and HCL all let a recipe carry commentary, and `docket fmt`
 // preserves it within a format, so a conversion that dropped it would be
 // no better than the round trip through an external tool that #418 exists
-// to replace. The two formatters store comments differently, though:
+// to replace. The formatters store comments differently, though:
 // yaml.v3 keeps one string per anchor point with the `#` included and
-// embedded newlines for a multi-line run, while the JSON5 AST keeps a
-// slice of raw tokens with their `//` or `/* */` delimiters intact.
+// embedded newlines for a multi-line run, the JSON5 AST keeps a slice of
+// raw tokens with their `//` or `/* */` delimiters intact, and the HCL
+// decoder hands over the lexer's raw tokens, which may be spelled `#`,
+// `//` or `/* */`.
 
 // json5CommentsToYAML renders a run of raw JSON5 comment tokens as the
 // single `#`-prefixed string yaml.v3 wants, one source line per output
@@ -109,6 +111,80 @@ func json5CommentLine(text string) string {
 		return "//" + strings.TrimSuffix(strings.TrimPrefix(trimmed, "#"), " ")
 	}
 	return "// " + trimmed
+}
+
+// hclCommentsToYAML renders a run of raw HCL comment tokens as the single
+// `#`-prefixed string yaml.v3 wants, one source line per output line. It is
+// json5CommentsToYAML for the third format; only the delimiters differ.
+func hclCommentsToYAML(raws []string) string {
+	var lines []string
+	for _, raw := range raws {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		lines = append(lines, hclCommentBodyLines(raw)...)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	for i, line := range lines {
+		lines[i] = yamlCommentLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// hclCommentBodyLines strips a raw comment token's delimiters and returns its
+// text, one entry per line. HCL accepts all three of `#`, `//` and `/* */`, so
+// unlike the JSON5 side this has a third case; the delimiters never survive,
+// since the YAML side has only one comment syntax to render into.
+func hclCommentBodyLines(raw string) []string {
+	raw = strings.TrimRight(raw, "\r\n")
+	switch {
+	case strings.HasPrefix(raw, "#"):
+		return []string{strings.TrimRight(strings.TrimPrefix(raw, "#"), " \t")}
+	case strings.HasPrefix(raw, "//"):
+		return []string{strings.TrimRight(strings.TrimPrefix(raw, "//"), " \t")}
+	case strings.HasPrefix(raw, "/*"):
+		body := strings.TrimSuffix(strings.TrimPrefix(raw, "/*"), "*/")
+		lines := strings.Split(body, "\n")
+		out := make([]string, 0, len(lines))
+		for _, line := range lines {
+			out = append(out, strings.TrimRight(line, " \t\r"))
+		}
+		return trimEmptyEdges(out)
+	}
+	return []string{raw}
+}
+
+// yamlCommentToHCL renders a yaml.v3 comment string as HCL comment tokens, one
+// per line.
+//
+// Always `#`, for the reason `//` is always right on the JSON5 side - a line
+// comment cannot be terminated early by its own text - and for one more of
+// HCL's own: SniffCodec asks the JSON5 codec first, and JSON5 claims any
+// stream opening with `//` or `/*`. A canonical HCL recipe piped to stdin has
+// to be recognisable as HCL, so canonical HCL never opens with either.
+func yamlCommentToHCL(comment string) []string {
+	if strings.TrimSpace(comment) == "" {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(comment, "\n") {
+		out = append(out, hclCommentLine(line))
+	}
+	return trimEmptyEdges(out)
+}
+
+// hclCommentLine turns one line of YAML comment text into a `#` token.
+func hclCommentLine(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "#") {
+		return trimmed
+	}
+	return "# " + trimmed
 }
 
 // flattenComment collapses a multi-line comment onto one line, for the

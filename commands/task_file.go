@@ -27,9 +27,13 @@ const taskFileStdin = "-"
 // defaultTaskFileCandidates is the ordered list of filenames probed when
 // --tasks is not given. The first one that exists in the working
 // directory is used. The order matches the legacy default (tasks.yml)
-// so behaviour does not change for existing recipes; .yaml and .json
-// fall through to give JSON-native users a no-config setup.
-var defaultTaskFileCandidates = []string{"tasks.yml", "tasks.yaml", "tasks.json"}
+// so behaviour does not change for existing recipes; .yaml, .json and
+// .hcl fall through to give users of the other formats a no-config setup.
+//
+// Every registered codec needs a candidate here, or defaultRecipeOutputFor
+// has no filename to answer with for that format;
+// TestDefaultRecipeOutputForEveryCodec enforces it.
+var defaultTaskFileCandidates = []string{"tasks.yml", "tasks.yaml", "tasks.json", "tasks.hcl"}
 
 // parseRecipeFormatFlag normalises a recipe-format flag value to a
 // canonical codec name. An empty value means "not set" and leaves the
@@ -236,9 +240,9 @@ func resolveRecipeOutput(output, override string, outputChanged bool) (string, s
 // parser from the extension. Say it once, on stderr, instead of letting
 // the user find out from a parse error.
 //
-// The companion vars-file deliberately gets no warning: MarshalVars emits
-// plain JSON, which is valid YAML, so a .yml vars-file holding JSON still
-// loads.
+// The companion vars-file has its own check, varsOutputFormatMismatch,
+// because the answer there is not the same: a vars-file is a flat mapping,
+// and MarshalVars emits one that another codec can often read anyway.
 func recipeOutputFormatMismatch(path, override string) string {
 	if override == "" || path == taskFileStdin {
 		return ""
@@ -248,6 +252,40 @@ func recipeOutputFormatMismatch(path, override string) string {
 	}
 	return fmt.Sprintf("warning: --format %s does not match the %s extension; reading %s back needs --tasks-format %s",
 		override, path, path, override)
+}
+
+// varsOutputFormatMismatch returns the warning to print when a companion
+// vars-file is written in a format its own extension does not name and would
+// not load back, or "" when there is nothing to say.
+//
+// It answers by trying it rather than by listing which pairs happen to
+// overlap. The JSON5 codec deliberately emits plain JSON from MarshalVars,
+// which is also valid YAML, so a `.yml` vars-file holding JSON loads and
+// deserves no warning; HCL is valid neither as YAML nor as JSON5, so the same
+// file named `.yml` is one the next `--vars-file` cannot read. Asking the
+// reader keeps those two answers from having to be maintained by hand.
+func varsOutputFormatMismatch(path, written string, data []byte) string {
+	if path == taskFileStdin || written == "" || len(data) == 0 {
+		return ""
+	}
+	reader := detectTaskFileFormat(path)
+	if reader == written {
+		return ""
+	}
+	if _, err := tasks.CodecFor(reader).UnmarshalVars(data); err == nil {
+		return ""
+	}
+	return fmt.Sprintf("warning: %s holds %s but its extension reads as %s; rename it %s or --vars-file cannot load it",
+		path, written, reader, renamedForFormat(path, written))
+}
+
+// renamedForFormat swaps a path's extension for the canonical one of a format.
+func renamedForFormat(path, format string) string {
+	extensions := tasks.CodecFor(format).Extensions()
+	if len(extensions) == 0 {
+		return path
+	}
+	return strings.TrimSuffix(path, filepath.Ext(path)) + "." + extensions[0]
 }
 
 // stdoutInertFlag names a flag on a recipe-writing command that only means

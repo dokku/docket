@@ -110,7 +110,7 @@ func (c *ValidateCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format ("+recipeFormatList()+") instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines problem event per finding")
 	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override, and check that --play / --start-at-task references resolve to real names in the file")
-	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a YAML or JSON file (repeatable; later files override earlier; CLI --name=value flags always win). A .json extension parses as JSON; otherwise YAML.")
+	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a file in any recipe format ("+recipeFormatList()+"; repeatable; later files override earlier; CLI --name=value flags always win). The format follows the extension, defaulting to YAML.")
 	f.StringVar(&c.play, "play", "", "(strict) verify the named play exists in the recipe (matches the play's `name:` field; auto-named plays use `play #N`)")
 	f.StringVar(&c.startAtTask, "start-at-task", "", "(strict) verify a task with this name exists in the recipe; narrowed by --play when set")
 

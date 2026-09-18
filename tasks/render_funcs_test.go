@@ -168,3 +168,75 @@ func TestGetTasksDoubleQuoteEscapeSpecialValue(t *testing.T) {
 		})
 	}
 }
+
+// TestHCLDoubleQuoteEscape covers `dq` for the one format whose quoted string
+// is a template of its own: HCL reads `${` and `%{` as syntax, and a value
+// carrying either would be read as an interpolation rather than as text.
+func TestHCLDoubleQuoteEscape(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"plain":            "plain",
+		`a"b`:              `a\"b`,
+		`a\b`:              `a\\b`,
+		"a\nb":             `a\nb`,
+		"${foo}":           "$${foo}",
+		"%{if true}":       "%%{if true}",
+		"$ alone":          "$ alone",
+		"% alone":          "% alone",
+		"a$${b}c":          "a$$${b}c",
+		"nested ${a${b}}c": "nested $${a$${b}}c",
+	}
+	for in, want := range tests {
+		got, err := HCLDoubleQuoteEscape(in)
+		if err != nil {
+			t.Errorf("HCLDoubleQuoteEscape(%q) returned error: %v", in, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("HCLDoubleQuoteEscape(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestHCLDoubleQuoteEscapeSurvivesAParse is the behavioural half: whatever the
+// escaping spells, HCL has to read it back as the value it started as.
+func TestHCLDoubleQuoteEscapeSurvivesAParse(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{
+		`plain`, `a"b`, `a\b`, "a\nb\tc", "${foo}", "%{if true}", "a$${b}c", "$", "%", "$${", "\\u0024{",
+	} {
+		escaped, err := HCLDoubleQuoteEscape(value)
+		if err != nil {
+			t.Fatalf("HCLDoubleQuoteEscape(%q): %v", value, err)
+		}
+		back, err := (hclCodec{}).UnmarshalVars([]byte(`app = "` + escaped + `"` + "\n"))
+		if err != nil {
+			t.Errorf("hcl cannot read back %q escaped as %q: %v", value, escaped, err)
+			continue
+		}
+		if back["app"] != value {
+			t.Errorf("hcl read %q escaped as %q back as %q", value, escaped, back["app"])
+		}
+	}
+}
+
+// TestHCLScalar covers the init scaffold's helper, which unlike `dq` carries
+// its own quotes.
+func TestHCLScalar(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"web":    `"web"`,
+		`a"b`:    `"a\"b"`,
+		"${foo}": `"$${foo}"`,
+	}
+	for in, want := range tests {
+		got, err := HCLScalar(in)
+		if err != nil {
+			t.Errorf("HCLScalar(%q) returned error: %v", in, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("HCLScalar(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
