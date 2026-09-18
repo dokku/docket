@@ -1426,3 +1426,55 @@ func TestExportHttpAuthAllowedIpsUseStateSet(t *testing.T) {
 		t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
+
+func TestExportPsScaleUsesStateSet(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet ps:scale web": "web: 2\nworker: 0",
+	}))
+
+	// state:set declares the whole formation, so re-applying an export
+	// converges an app running an extra process type rather than leaving it
+	// alone (#526).
+	bodies, err := PsScaleTask{}.ExportApp(ctx, "web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	scale := bodies[0].(PsScaleTask)
+	if scale.State != StateSet {
+		t.Errorf("State = %q, want %q", scale.State, StateSet)
+	}
+	// The zeroed process type is dropped: under state:set an omitted type
+	// already means zero, and dokku only reports the zero until the next
+	// deploy deletes the scale.old property, so emitting it would make two
+	// exports of the same server differ on deploy timing alone.
+	if want := map[string]int{"web": 2}; !reflect.DeepEqual(scale.Scale, want) {
+		t.Errorf("Scale = %v, want %v", scale.Scale, want)
+	}
+	if err := scale.Validate(); err != nil {
+		t.Errorf("exported task must be valid, got: %v", err)
+	}
+	if plan := scale.Plan(ctx); !plan.InSync {
+		t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}
+
+func TestExportPsScaleSkipsAnUnscaledApp(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet ps:scale web": "web: 0",
+	}))
+
+	// An app with nothing scaled above zero has no formation worth declaring,
+	// and state:set needs at least one tuple to be a legal ps:scale call.
+	bodies, err := PsScaleTask{}.ExportApp(ctx, "web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if bodies != nil {
+		t.Errorf("expected no exported task, got %v", bodies)
+	}
+}

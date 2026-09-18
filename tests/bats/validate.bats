@@ -159,6 +159,63 @@ EOF
   assert_output --partial "'allowed_ips' must be an ip address"
 }
 
+@test "docket validate exits 0 on ps scale state set (#526)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ps_scale:
+        app: web
+        state: set
+        scale:
+          web: 2
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on ps scale state set with an empty scale" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ps_scale:
+        app: web
+        state: set
+        scale: {}
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'scale' must not be empty for state 'set'"
+}
+
+@test "docket validate exits 1 on a negative ps scale quantity" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ps_scale:
+        app: web
+        scale:
+          web: -1
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'scale' quantities must not be negative"
+}
+
+@test "docket validate exits 1 on a ps scale process type that cannot be read back" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ps_scale:
+        app: web
+        scale:
+          "web worker": 1
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "must not contain whitespace"
+}
+
 @test "docket validate exits 1 on two port mappings sharing a scheme and host port (#432)" {
   write_tasks_file <<EOF
 ---

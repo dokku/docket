@@ -178,3 +178,73 @@ func TestIntegrationPsScaleSkipDeploy(t *testing.T) {
 		t.Error("expected changed=false for unchanged scale")
 	}
 }
+
+func TestIntegrationPsScaleSet(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-psscale-set"
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	// Build a formation the recipe will not fully declare. skip_deploy keeps
+	// this cheap, and it is also the harder path: without a deploy dokku never
+	// clears the scale.old property, so the zeroed process type stays visible
+	// in ps:scale and the plan has to read it as "not running" rather than as
+	// drift.
+	seedTask := PsScaleTask{
+		App:        appName,
+		Scale:      map[string]int{"web": 2, "worker": 1},
+		SkipDeploy: boolPtr(true),
+		State:      StatePresent,
+	}
+	result := seedTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to seed the formation: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true for the initial scale")
+	}
+
+	// Declare web as the whole formation; worker is not named, so it goes to zero.
+	setTask := PsScaleTask{
+		App:        appName,
+		Scale:      map[string]int{"web": 2},
+		SkipDeploy: boolPtr(true),
+		State:      StateSet,
+	}
+	result = setTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to set the formation: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true when an undeclared process type is running")
+	}
+	if result.State != StateSet {
+		t.Errorf("expected state 'set', got '%s'", result.State)
+	}
+
+	scale, err := getPsScale(testCtx(), appName)
+	if err != nil {
+		t.Fatalf("failed to get ps scale: %v", err)
+	}
+	if scale["web"] != 2 {
+		t.Errorf("expected web=2, got web=%d", scale["web"])
+	}
+	// The entry is still reported, at zero, because no deploy has run to delete
+	// the scale.old property it was moved to.
+	if scale["worker"] != 0 {
+		t.Errorf("expected worker=0 after the replacement, got worker=%d", scale["worker"])
+	}
+
+	// The zeroed process type must not read as drift, or state 'set' would
+	// never converge on an app scaled with skip_deploy.
+	result = setTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("idempotent set failed: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected changed=false for an unchanged formation")
+	}
+}
