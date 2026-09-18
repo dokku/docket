@@ -90,6 +90,18 @@ dokku_clean_app() {
   fi
 }
 
+# dokku_clean_global_cert removes the global certificate if one is installed.
+# Same setup/teardown role as dokku_clean_app, but the state is server-wide:
+# global-cert:set applies the certificate to every existing app, so a leak would
+# change what later tests see. The command fails when no global certificate is
+# defined, and needs no --force.
+dokku_clean_global_cert() {
+  if ! command -v dokku >/dev/null 2>&1; then
+    return 0
+  fi
+  dokku --quiet global-cert:remove >/dev/null 2>&1 || true
+}
+
 # dokku_clean_storage_entry destroys a named storage registry entry if it
 # exists. Same setup/teardown role as dokku_clean_app; storage:destroy
 # refuses an entry any app still mounts, so unmount first if a test ever

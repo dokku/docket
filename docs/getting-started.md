@@ -41,6 +41,7 @@ code into it:
 - **Dokku >= 0.38.28.**
 - **dokku-letsencrypt >= 0.25.0.**
 - **dokku-http-auth >= 0.14.0**, if your recipe uses the `dokku_http_auth*` tasks.
+- **dokku-global-cert >= 0.7.0**, if your recipe uses `dokku_certs` with `global: true`.
 
 ## Installation
 

@@ -432,7 +432,7 @@ func TestIntegrationCertsAppInlineRotation(t *testing.T) {
 }
 
 // TestIntegrationCertsGlobalRotation covers the same rotation for the global
-// scope, which reads back through global-cert:show.
+// scope, which settles from the fingerprint global-cert:report carries.
 func TestIntegrationCertsGlobalRotation(t *testing.T) {
 	skipIfNoDokkuT(t)
 	skipIfPluginMissingT(t, "global-cert")
@@ -508,7 +508,7 @@ func TestIntegrationCertsReportFingerprint(t *testing.T) {
 		t.Fatalf("failed to add cert: %v", result.Error)
 	}
 
-	reported, ok, err := certsReportFingerprint(testCtx(), appName)
+	reported, ok, err := certsReportFingerprint(testCtx(), CertsTask{App: appName})
 	if err != nil {
 		t.Fatalf("certsReportFingerprint failed: %v", err)
 	}
@@ -527,6 +527,109 @@ func TestIntegrationCertsReportFingerprint(t *testing.T) {
 	}
 	if installed != want {
 		t.Errorf("certs:report fingerprint = %q, want %q", installed, want)
+	}
+}
+
+// TestIntegrationGlobalCertReportFingerprint is the canary for #548, the twin of
+// TestIntegrationCertsReportFingerprint: it proves the digest docket takes
+// locally is the one dokku-global-cert puts on global-cert:report, against a
+// real plugin and a real openssl. If upstream renames the key or changes how it
+// is computed, this fails rather than letting the probe degrade quietly to
+// reading the whole certificate back on every plan.
+func TestIntegrationGlobalCertReportFingerprint(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "global-cert")
+
+	certPath, keyPath := generateSelfSignedCert(t, "global-fingerprint.example.com")
+
+	cleanup := func() {
+		(CertsTask{Global: true, State: StateAbsent}).Execute(testCtx())
+	}
+	cleanup()
+	defer cleanup()
+
+	install := CertsTask{Global: true, Cert: certPath, Key: keyPath, State: StatePresent}
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to add global cert: %v", result.Error)
+	}
+
+	reported, ok, err := certsReportFingerprint(testCtx(), CertsTask{Global: true})
+	if err != nil {
+		t.Fatalf("certsReportFingerprint failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("global-cert:report carried no fingerprint key; dokku-global-cert >= 0.7.0 is required")
+	}
+
+	installed, ok := normalizeFingerprint(reported)
+	if !ok {
+		t.Fatalf("global-cert:report fingerprint %q is not a sha256 digest", reported)
+	}
+
+	want, ok := desiredCertFingerprint(readFileT(t, certPath))
+	if !ok {
+		t.Fatal("could not take a fingerprint of the generated certificate")
+	}
+	if installed != want {
+		t.Errorf("global-cert:report fingerprint = %q, want %q", installed, want)
+	}
+}
+
+// TestIntegrationCertsGlobalChainRotation keeps a global recipe pinning a chain
+// on the exact comparison, the way TestIntegrationCertsAppChainRotation does for
+// an app. The plugin digests only the first certificate in server.crt, so a
+// rotated trailing certificate under an unchanged leaf is drift the fingerprint
+// cannot see - and the probe has to notice that and read the PEM back.
+func TestIntegrationCertsGlobalChainRotation(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "global-cert")
+
+	leafCert, leafKey := generateSelfSignedCert(t, "global-chain.example.com")
+	oldExtra, _ := generateSelfSignedCert(t, "global-chain.example.net")
+	newExtra, _ := generateSelfSignedCert(t, "global-chain.example.org")
+
+	leafPEM := readFileT(t, leafCert)
+	oldChain := leafPEM + readFileT(t, oldExtra)
+	newChain := leafPEM + readFileT(t, newExtra)
+	keyPEM := readFileT(t, leafKey)
+
+	cleanup := func() {
+		(CertsTask{Global: true, State: StateAbsent}).Execute(testCtx())
+	}
+	cleanup()
+	defer cleanup()
+
+	install := CertsTask{Global: true, CertContent: oldChain, KeyContent: keyPEM, State: StatePresent}
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to add global chain: %v", result.Error)
+	}
+
+	// The same chain settles, so the fall-back does not manufacture drift.
+	if result := install.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed second global install: %v", result.Error)
+	} else if result.Changed {
+		t.Errorf("expected Changed=false when the pinned global chain is already installed")
+	}
+
+	rotate := CertsTask{Global: true, CertContent: newChain, KeyContent: keyPEM, State: StatePresent}
+	plan := rotate.Plan(testCtx())
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("plan = {InSync:%v Status:%q}, want drift with %q - the leaf is unchanged, so only the exact comparison catches this",
+			plan.InSync, plan.Status, PlanStatusModify)
+	}
+
+	if result := rotate.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to rotate global chain: %v", result.Error)
+	}
+	installed, err := certsShow(testCtx(), CertsTask{Global: true}, "crt")
+	if err != nil {
+		t.Fatalf("certsShow failed: %v", err)
+	}
+	if !samePEM(installed, newChain) {
+		t.Errorf("installed global chain is not the one the recipe pinned")
 	}
 }
 
