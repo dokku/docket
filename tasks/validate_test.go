@@ -1544,7 +1544,7 @@ func TestBuildSigilContextResolvesTypedDefaults(t *testing.T) {
 `)
 	context := buildSigilContext(declaredInputs(data, FormatYAML))
 
-	rendered, err := renderRecipeBytes(data, context)
+	rendered, err := renderRecipeBytes(data, context, FormatYAML)
 	if err != nil {
 		t.Fatalf("render failed: %v", err)
 	}

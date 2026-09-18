@@ -157,3 +157,13 @@ func (json5Codec) UnmarshalVars(data []byte) (map[string]interface{}, error) {
 	}
 	return out, nil
 }
+
+// EscapeDoubleQuoted is the same escaping YAML uses. JSON string escaping is a
+// subset of YAML's double-quoted escaping, so one implementation serves both.
+func (json5Codec) EscapeDoubleQuoted(v interface{}) (string, error) {
+	return DoubleQuoteEscape(v)
+}
+
+// DoubleQuotesOnly is true: canonical JSON5 has only the double-quoted string,
+// so a single-quoted source loses its escaping on the way to canonical form.
+func (json5Codec) DoubleQuotesOnly() bool { return true }

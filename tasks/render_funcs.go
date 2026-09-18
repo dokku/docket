@@ -101,3 +101,53 @@ func scalarArg(v interface{}) string {
 		return fmt.Sprintf("%v", t)
 	}
 }
+
+// hclInterpOpen and hclTemplateOpen are the two sequences HCL reads as the
+// start of one of its own template expressions inside a quoted string.
+// Doubling the leading sigil is how HCL spells the literal.
+const (
+	hclInterpOpen    = "${"
+	hclInterpEscape  = "$${"
+	hclControlOpen   = "%{"
+	hclControlEscape = "%%{"
+)
+
+// HCLDoubleQuoteEscape is `dq` for an HCL recipe.
+//
+// HCL's quoted string is a template of its own: `${` opens an interpolation
+// and `%{` a control sequence, neither of which YAML or JSON5 attaches any
+// meaning to. A substituted value carrying either would be read as HCL syntax
+// rather than as text, so both are doubled on the way in - the escape HCL
+// itself defines. Everything else is DoubleQuoteEscape's JSON escaping, which
+// HCL's quoted string accepts unchanged.
+//
+// The doubling runs after the JSON escaping and is safe to apply blindly: a
+// value that already contains `$${` lands as `$$${`, which HCL scans as a
+// literal `$` followed by the escape, giving `$${` back.
+func HCLDoubleQuoteEscape(v interface{}) (string, error) {
+	escaped, err := DoubleQuoteEscape(v)
+	if err != nil {
+		return "", err
+	}
+	return escapeHCLTemplateSequences(escaped), nil
+}
+
+// escapeHCLTemplateSequences doubles the sigil of every HCL template opener in
+// s. Split out because the recipe emitter needs it for a string it has escaped
+// itself rather than through the `dq` filter.
+func escapeHCLTemplateSequences(s string) string {
+	s = strings.ReplaceAll(s, hclInterpOpen, hclInterpEscape)
+	return strings.ReplaceAll(s, hclControlOpen, hclControlEscape)
+}
+
+// HCLScalar renders v as a complete HCL string literal, quotes included, for
+// the `docket init` scaffold. It is the HCL sibling of YAMLScalar and
+// JSONScalar and, like them, is not a recipe-render filter: its output carries
+// its own quoting and so cannot sit inside an existing quoted scalar.
+func HCLScalar(v interface{}) (string, error) {
+	body, err := HCLDoubleQuoteEscape(v)
+	if err != nil {
+		return "", err
+	}
+	return `"` + body + `"`, nil
+}

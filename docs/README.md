@@ -15,6 +15,7 @@ Complete documentation for docket, a declarative way to pre-package and ship app
 ## Guides
 
 - [Recipes](recipes.md) -- the recipe file format, plays, and multi-app recipes
+- [HCL recipes](hcl.md) -- writing a recipe in HCL, block by block
 - [Inputs](inputs.md) -- parameterize a recipe with variables and `--vars-file`
 - [Task envelope](task-envelope.md) -- tags, conditionals, loops, and error handling per task
 - [Remote execution](remote-execution.md) -- drive a remote Dokku server over SSH

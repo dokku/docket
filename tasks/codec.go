@@ -106,6 +106,28 @@ type Codec interface {
 
 	// UnmarshalVars reads a vars-file back, the other half of MarshalVars.
 	UnmarshalVars(data []byte) (map[string]interface{}, error)
+
+	// EscapeDoubleQuoted is this format's `dq` filter: it escapes a
+	// substituted value for interpolation inside a double-quoted scalar,
+	// returning the body WITHOUT the surrounding quotes so the recipe keeps
+	// its own.
+	//
+	// A recipe is rendered as text and only then parsed, so the escaping has
+	// to suit the syntax the rendered bytes will be read as. YAML and JSON5
+	// share one answer, which is why `dq` was a single function until HCL
+	// arrived: HCL's quoted string is a template of its own and reads `${`
+	// and `%{` as syntax.
+	EscapeDoubleQuoted(v interface{}) (string, error)
+
+	// DoubleQuotesOnly reports whether the double-quoted string is the only
+	// string spelling this format's canonical form has.
+	//
+	// It is what Convert asks before refusing to rewrite an interpolation
+	// whose quoting carries meaning. A format that can spell every YAML
+	// style has nothing to refuse and answers false; one that folds every
+	// string into `"..."` answers true, because `| dq` is the only escaping
+	// that survives the fold.
+	DoubleQuotesOnly() bool
 }
 
 // codecs is every recipe format docket understands, in priority order.
@@ -122,7 +144,7 @@ type Codec interface {
 // under a package that leans on t.Parallel() throughout, and there would
 // be no way to put it back. tasks/export.go's globalExportOrder is the
 // same shape for the same reason.
-var codecs = []Codec{yamlCodec{}, json5Codec{}}
+var codecs = []Codec{yamlCodec{}, json5Codec{}, hclCodec{}}
 
 // Codecs returns every registered codec in priority order.
 func Codecs() []Codec {

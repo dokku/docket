@@ -112,8 +112,8 @@ the scaffolded shape `app: "{{ .app }}"`, a value containing a double quote rend
 
 The robust fix is the `dq` filter, which escapes a value for a double-quoted scalar. Use it **inside
 the quotes** so it handles any value - double quotes, both quote types, even a newline - while the
-recipe stays valid YAML/JSON5 for `docket validate` and `docket fmt`. The `docket init` scaffold uses
-it for exactly this reason:
+recipe stays valid for `docket validate` and `docket fmt`. The `docket init` scaffold uses it for
+exactly this reason:
 
 ```yaml
 ---
@@ -141,11 +141,17 @@ single quote.
           MOTD: '{{ .motd }}'               # single quotes tolerate a " in the value
 ```
 
-That spelling is YAML-only. Canonical JSON5 has just the double-quoted string, so there is nothing
-for `docket fmt --format json5` to turn those single quotes into that would still mean the same
-thing - it refuses the conversion and names the line rather than quietly changing what the recipe
-can carry. The same goes for a plain scalar or a block scalar holding an interpolation. If a recipe
-may ever be converted, reach for `| dq` from the start; it is the one spelling both formats share.
+That spelling is YAML-only. Canonical JSON5 and canonical HCL both have just the double-quoted
+string, so there is nothing for `docket fmt --format json5` or `--format hcl` to turn those single
+quotes into that would still mean the same thing - the conversion is refused and the line named,
+rather than quietly changing what the recipe can carry. The same goes for a plain scalar or a block
+scalar holding an interpolation. If a recipe may ever be converted, reach for `| dq` from the start;
+it is the one spelling all three formats share.
+
+`dq` escapes for the format it is rendering. That is one answer for YAML and JSON5, whose
+double-quoted strings read the same escapes, and one more for HCL, which also reads `${` and `%{`
+inside a quoted string as its own template syntax and so has those doubled as well. You write the
+same `"{{ .app | dq }}"` either way; see [HCL recipes](hcl.md#templating) for what it produces.
 
 Note that `dq` must sit inside a double-quoted scalar. Do not leave the reference unquoted
 (`app: {{ .app | dq }}`). An unquoted `{{` is not the text it looks like: the braces are YAML's own
@@ -290,7 +296,8 @@ replicas: 3
 debug: false
 ```
 
-JSON works the same way - any path ending in `.json` is parsed as JSON, anything else as YAML:
+A vars-file may be written in any of the recipe formats. The format follows the extension, and
+anything unrecognised is read as YAML:
 
 ```json
 {
@@ -299,6 +306,14 @@ JSON works the same way - any path ending in `.json` is parsed as JSON, anything
   "replicas": 3,
   "debug": false
 }
+```
+
+```hcl
+# prod.hcl
+app      = "api"
+repo     = "https://github.com/example/api.git"
+replicas = 3
+debug    = false
 ```
 
 Common patterns:

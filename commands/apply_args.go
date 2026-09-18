@@ -273,7 +273,7 @@ var valueTakingFlags = map[string]bool{
 
 func getInputVariables(data []byte, format string) (map[string]*tasks.Input, error) {
 	vars := make(map[string]interface{})
-	render, err := tasks.RenderTemplate(data, vars, "tasks")
+	render, err := tasks.RenderTemplateWithFormat(data, vars, "tasks", format)
 	if err != nil {
 		return map[string]*tasks.Input{}, fmt.Errorf("sigil error: %v", err.Error())
 	}

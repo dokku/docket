@@ -593,7 +593,7 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 		return nil, problemToError(declProblems[0])
 	}
 
-	baseRendered, err := renderRecipeBytes(data, context)
+	baseRendered, err := renderRecipeBytes(data, context, format)
 	if err != nil {
 		return nil, err
 	}
@@ -668,7 +668,7 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 		}
 
 		playCtx := BuildPerPlayContext(context, play.Inputs, userSet)
-		perRendered, err := renderRecipeBytes(data, playCtx)
+		perRendered, err := renderRecipeBytes(data, playCtx, format)
 		if err != nil {
 			return nil, err
 		}
@@ -779,9 +779,9 @@ func decodePlayMeta(node *yaml.Node) (playMeta, error) {
 // given context and returns the rendered bytes. Pulled out of the legacy
 // GetTasks so GetPlays can reuse it across the structure pass and per-play
 // passes.
-func renderRecipeBytes(data []byte, context map[string]interface{}) ([]byte, error) {
+func renderRecipeBytes(data []byte, context map[string]interface{}, format string) ([]byte, error) {
 	escaped, captured := escapeLoopVars(data)
-	render, err := RenderTemplate(escaped, context, "tasks")
+	render, err := RenderTemplateWithFormat(escaped, context, "tasks", format)
 	if err != nil {
 		return nil, fmt.Errorf("re-render error: %v", err.Error())
 	}

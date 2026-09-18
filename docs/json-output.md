@@ -137,6 +137,7 @@ reworded:
 |--------|---------------|
 | `yaml_parse` | The recipe is not parseable YAML. |
 | `json5_parse` | The recipe is not parseable JSON5. |
+| `hcl_parse` | The recipe is not parseable HCL, or holds something a recipe cannot: an HCL variable, function call or template. |
 | `duplicate_key` | The same key appears twice in one mapping. |
 | `recipe_shape` | The recipe is not a list of plays, or a play is not a mapping. |
 | `task_entry_shape` | A task entry does not carry exactly one task-type key. |

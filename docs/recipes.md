@@ -5,25 +5,30 @@ formats it can be written in, how docket finds it, and how a recipe is structure
 
 ## File formats
 
-docket reads recipes in either YAML or JSON5. You can write whichever you prefer; they produce
+docket reads recipes in YAML, JSON5 or HCL. You can write whichever you prefer; they produce
 identical results. The format is chosen from the file extension:
 
 | Extension | Parser |
 |-----------|--------|
 | `.yml`, `.yaml` | YAML (`gopkg.in/yaml.v3`) |
 | `.json`, `.json5` | JSON5 (a strict superset of JSON) |
+| `.hcl` | HCL (`github.com/hashicorp/hcl/v2`) |
 
 YAML is the most common choice and is used throughout this documentation. JSON5 exists because it
 is friendlier than plain JSON for hand-written config: it allows `// line` and `/* block */`
 comments, trailing commas, and unquoted keys. Any existing JSON file is already valid JSON5, so it
 parses unchanged.
 
-Those three additions are the whole of it, and it is worth knowing where they stop. A comma
+Those three JSON5 additions are the whole of it, and it is worth knowing where they stop. A comma
 between two entries is still required - only the one after the last entry is optional. An
 unquoted key is a plain ASCII identifier, so `café` has to be written `"café"`. Every value
 other than `true`, `false`, `null`, `Infinity` and `NaN` is quoted or a number, and numbers
 follow the JSON5 grammar, which has `0x1F` and `.5` but not `01` or `1.2.3`. `docket fmt` holds
 to the same rules the loader does, so a recipe it formats is a recipe `apply` can read.
+
+HCL is the block-and-attribute syntax Terraform and Packer are configured in. It is the one format
+whose syntax is not a nesting of collections, so how a play, an input and a task are spelled has to
+be stated rather than derived, and [HCL recipes](hcl.md) is where that is written down.
 
 A recipe is text, and one rule applies to the bytes themselves: a comment must be valid UTF-8.
 `docket fmt` is the only command that reads comments at all, and it refuses one that is not,
@@ -31,7 +36,7 @@ naming the byte and its offset, rather than carrying it into a conversion it has
 A byte inside a string value is read rather than refused, as U+FFFD, which is what every JSON5
 reader makes of it including the one `apply` uses.
 
-The same recipe in YAML and JSON5 behaves identically - templates, conditionals, every envelope
+The same recipe in any of the three behaves identically - templates, conditionals, every envelope
 key, and every task type work the same way. This YAML recipe:
 
 ```yaml
@@ -54,24 +59,35 @@ is equivalent to this JSON5 recipe:
 ]
 ```
 
-### Converting between the two
+and to this HCL one:
 
-`docket fmt --format` rewrites a recipe from either format into the other, keeping the comments:
+```hcl
+play {
+  # create the app
+  dokku_app {
+    app = "inflector"
+  }
+}
+```
+
+### Converting between them
+
+`docket fmt --format` rewrites a recipe from any of the three into any other, keeping the comments:
 
 ```bash
 # To stdout, touching nothing on disk.
 cat tasks.yml | docket fmt --format json5 -
 
 # To a new file, leaving the original in place.
-docket fmt --format json5 --output tasks.json5 tasks.yml
+docket fmt --format hcl --output tasks.hcl tasks.yml
 ```
 
 A conversion is not byte-reversible: comments change syntax, YAML anchors and merge keys are
 inlined, numbers are normalised to decimal, and a leading `---` is not restored. It is also refused
 outright when a recipe's interpolations are quoted in a way the other format cannot carry, since
 the quotes decide how a substituted value is escaped. See
-[Converting between YAML and JSON5](command-reference.md#converting-between-yaml-and-json5) for the
-full list and for what to write instead.
+[Converting between formats](command-reference.md#converting-between-formats) for the full list and
+for what to write instead.
 
 ## How docket finds your recipe
 
@@ -81,6 +97,7 @@ and uses the first one that exists:
 1. `tasks.yml`
 2. `tasks.yaml`
 3. `tasks.json`
+4. `tasks.hcl`
 
 If none exist, the run errors and lists the names it looked for, so a typo is easy to spot. To use
 a different path, pass `--tasks`; the format is detected from that path's extension (an unknown
@@ -89,6 +106,7 @@ extension is treated as YAML):
 ```bash
 docket apply --tasks deploy/production.yml
 docket apply --tasks deploy/production.json
+docket apply --tasks deploy/production.hcl
 ```
 
 ### Piping a recipe in
@@ -100,14 +118,17 @@ it a recipe another tool just generated:
 docket export --output - | docket apply -
 docket init --output - | docket validate -
 docket export --output - --format json5 | docket apply --tasks-format json5 -
+docket export --output - --format hcl | docket apply --tasks-format hcl -
 ```
 
-The format is sniffed from the first non-whitespace byte - `[`, `{`, `//`, or `/*` means JSON5,
-anything else means YAML. Pass `--tasks-format yaml` or `--tasks-format json5` when that guess would
-be wrong, which happens with a YAML recipe written in flow style, since it opens with `[`. A flow
+The format is sniffed from the first significant token. `[`, `{`, `//`, or `/* */` means JSON5; an
+identifier followed by `=`, `{`, or a quoted label means HCL; anything else means YAML. Pass
+`--tasks-format yaml`, `--tasks-format json5` or `--tasks-format hcl` when that guess would be
+wrong. It happens with a YAML recipe written in flow style, since it opens with `[`: a flow
 mapping's values are unquoted, which JSON5 has no reading for, so a wrong guess is a parse error
-naming the first one rather than something subtler. The same flag overrides a misleading file
-extension:
+naming the first one rather than something subtler. It also happens with a hand-written HCL recipe
+led by `//` or `/* */`, which JSON5 claims first - one `docket fmt` wrote comments with `#` and is
+always recognised. The same flag overrides a misleading file extension:
 
 ```bash
 docket validate --tasks recipe.txt --tasks-format json5
@@ -263,6 +284,7 @@ Summary: 4 tasks · 2 changed · 2 ok · 0 skipped · 0 errors · 1 play skipped
 
 ## See also
 
+- [HCL recipes](hcl.md) - writing a recipe in HCL, block by block
 - [Inputs](inputs.md) - parameterize a recipe with variables and `--vars-file`
 - [Task envelope](task-envelope.md) - per-task tags, conditionals, loops, and error handling
 - [Command reference](command-reference.md) - flags for `apply`, `plan`, `validate`, and `fmt`

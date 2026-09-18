@@ -42,6 +42,30 @@ const convertFixtureYAML = `# top of file
         order: [1, 2, 3]
 `
 
+const convertFixtureHCL = `# top of file
+play "web" {
+  # about the tasks
+  dokku_app "create app" { # trailing note
+    app   = "{{ .app | dq }}"
+    state = "present"
+  }
+
+  dokku_config "config" {
+    app = "web"
+    keys = {
+      PORT  = "5000"
+      DEBUG = "true"
+      NOTE  = <<EOT
+first line
+second line
+EOT
+    }
+    restart = false
+    order   = [1, 2, 3]
+  }
+}
+`
+
 const convertFixtureJSON5 = `// top of file
 [
   {
@@ -82,6 +106,8 @@ func fixtureFor(t *testing.T, name string) string {
 		return convertFixtureYAML
 	case FormatNameJSON5:
 		return convertFixtureJSON5
+	case FormatNameHCL:
+		return convertFixtureHCL
 	}
 	t.Fatalf("no conversion fixture for codec %q; add one when adding a format", name)
 	return ""
@@ -104,6 +130,12 @@ func TestConvertSameFormatIsFormat(t *testing.T) {
 		FormatNameJSON5: {
 			"recipe":        convertFixtureJSON5,
 			"non-canonical": "[{tasks: [], name: \"web\"}]\n",
+		},
+		FormatNameHCL: {
+			"recipe":        convertFixtureHCL,
+			"empty":         "",
+			"comment only":  "# just a note\n",
+			"non-canonical": "play {\n  tasks = []\n  name = \"web\"\n}\n",
 		},
 	}
 
@@ -614,6 +646,15 @@ func FuzzConvertRoundTrip(f *testing.F) {
 	// refusal.
 	f.Add("//\x84\n0")
 	f.Add("{ a: \"x\x84y\" }")
+	// HCL's own shapes: the two task spellings, a heredoc, the template
+	// openers it reads as syntax, and the numeric forms it has no literal
+	// for.
+	f.Add(convertFixtureHCL)
+	f.Add("play {\n  dokku_app { app = \"a\" }\n}\n")
+	f.Add("play {\n  task {\n    block {\n      dokku_app { app = \"a\" }\n    }\n  }\n}\n")
+	f.Add("play {\n  dokku_app {\n    note = <<EOT\nEOT\n  }\n}\n")
+	f.Add("play {\n  dokku_app { a = \"$${b}%%{c}\" }\n}\n")
+	f.Add("- tasks:\n    - dokku_app:\n        a: .inf\n        b: .nan\n")
 
 	f.Fuzz(func(t *testing.T, input string) {
 		for _, from := range Codecs() {

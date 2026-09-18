@@ -97,13 +97,21 @@ func TestRenderTemplateKeepsSigilBuiltins(t *testing.T) {
 		"drop", "append", "seq", "join", "joinkv", "split", "splitkv",
 		"dq",
 	}
-	for _, name := range names {
-		if _, ok := renderFuncs[name]; !ok {
-			t.Errorf("template function %q is missing from renderFuncs", name)
+	// Asked of every codec, not just the default: `dq`, `include` and
+	// `render` are per-format entries renderFuncsFor adds, and a codec that
+	// forgot one would render a recipe with the filter missing rather than
+	// with the wrong escaping - a parse error a long way from its cause.
+	for _, codec := range Codecs() {
+		funcs := renderFuncsFor(codec)
+		for _, name := range names {
+			if _, ok := funcs[name]; !ok {
+				t.Errorf("template function %q is missing from the %s function map", name, codec.Name())
+			}
 		}
-	}
-	if got, want := len(renderFuncs), len(names); got != want {
-		t.Errorf("renderFuncs holds %d functions, want %d; update this list when adding one", got, want)
+		if got, want := len(funcs), len(names); got != want {
+			t.Errorf("the %s function map holds %d functions, want %d; update this list when adding one",
+				codec.Name(), got, want)
+		}
 	}
 }
 

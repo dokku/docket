@@ -1,0 +1,6 @@
+play <<hclStr .Name>> {
+  dokku_app "create app" {
+    app   = <<hclStr .Name>>
+    state = "present"
+  }
+}

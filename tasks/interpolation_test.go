@@ -235,3 +235,86 @@ func TestUnportableQuotingErrorCapsTheList(t *testing.T) {
 		t.Errorf("error = %q, want the list to stop at %d entries", got, maxQuotingSitesNamed)
 	}
 }
+
+// TestHCLQuotingSites covers the HCL half of the quoting rule: only a heredoc
+// is at risk, because HCL's other string spelling is already the double-quoted
+// one canonical form uses.
+func TestHCLQuotingSites(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		src   string
+		want  int
+		style string
+	}{
+		{
+			name:  "heredoc with an interpolation",
+			src:   "play {\n  dokku_app {\n    note = <<EOT\nhello {{ .app }}\nEOT\n  }\n}\n",
+			want:  1,
+			style: "in a heredoc",
+		},
+		{
+			name: "quoted string with an interpolation is already canonical",
+			src:  "play {\n  dokku_app {\n    app = \"{{ .app }}\"\n  }\n}\n",
+			want: 0,
+		},
+		{
+			name: "heredoc with a control action substitutes nothing",
+			src:  "play {\n  dokku_app {\n    note = <<EOT\nweb{{ if .debug }}-verbose{{ end }}\nEOT\n  }\n}\n",
+			want: 0,
+		},
+		{
+			name: "heredoc with no interpolation at all",
+			src:  "play {\n  dokku_app {\n    note = <<EOT\nhello\nEOT\n  }\n}\n",
+			want: 0,
+		},
+		{
+			name:  "heredoc nested in a list",
+			src:   "play {\n  dokku_app {\n    notes = [<<EOT\nhello {{ .app }}\nEOT\n    ]\n  }\n}\n",
+			want:  1,
+			style: "in a heredoc",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sites, err := hclQuotingSites([]byte(tt.src))
+			if err != nil {
+				t.Fatalf("hclQuotingSites: %v", err)
+			}
+			if len(sites) != tt.want {
+				t.Fatalf("hclQuotingSites = %d sites, want %d: %+v", len(sites), tt.want, sites)
+			}
+			if tt.want > 0 && sites[0].Style != tt.style {
+				t.Errorf("style = %q, want %q", sites[0].Style, tt.style)
+			}
+		})
+	}
+}
+
+// TestSubstitutesAnyValue covers the predicate the heredoc rule asks, which
+// differs from riskyInterpolations on exactly one case: a `| dq` action. In a
+// quoted scalar `dq` is the fix; in a heredoc, which processes no backslash
+// escapes, it is just as broken as the unescaped form.
+func TestSubstitutesAnyValue(t *testing.T) {
+	t.Parallel()
+	tests := map[string]bool{
+		"plain text":                    false,
+		"{{ .app }}":                    true,
+		"{{ .app | dq }}":               true,
+		"web{{ if .debug }}-v{{ end }}": false,
+		"{{/* a comment */}}":           false,
+		"{{ .a }} and {{ .b | dq }}":    true,
+		"an unterminated {{ .app":       false,
+	}
+	for in, want := range tests {
+		if got := substitutesAnyValue(in); got != want {
+			t.Errorf("substitutesAnyValue(%q) = %v, want %v", in, got, want)
+		}
+	}
+	// riskyInterpolations is the narrower question and must stay narrower.
+	if len(riskyInterpolations("{{ .app | dq }}")) != 0 {
+		t.Error("riskyInterpolations flagged a dq-escaped action; it is the fix, not the break")
+	}
+}

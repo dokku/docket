@@ -75,10 +75,10 @@ func Convert(data []byte, from, to Codec) ([]byte, error) {
 	// once per site it expands into. It runs before EncodeDocument for the
 	// blunter reason that the encoder is what folds the quotes away.
 	//
-	// Only the JSON5 target qualifies today. A format that can spell every
-	// YAML style has nothing to refuse, and the YAML target is that format;
-	// a third one with the same limitation joins the test here.
-	if to.Name() == FormatNameJSON5 {
+	// Each codec answers for itself. A format that can spell every YAML
+	// style has nothing to refuse, and the YAML target is that format; JSON5
+	// and HCL both fold every string into `"..."` and so both qualify.
+	if to.DoubleQuotesOnly() {
 		if sites := yamlQuotingSites(documentBody(doc)); len(sites) > 0 {
 			return nil, unportableQuotingError(sites)
 		}

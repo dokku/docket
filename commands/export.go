@@ -115,7 +115,7 @@ func (c *ExportCommand) ParsedArguments(args []string) (map[string]command.Argum
 func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.output, "output", defaultRecipeOutput, "path to write the recipe to; pass - to stream a self-contained recipe to stdout")
-	f.StringVar(&c.formatFlag, "format", "", "write the recipe and vars-file as this format ("+recipeFormatList()+") instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputFor(tasks.FormatNameJSON5)+"; this is also the only way to get JSON5 on stdout.")
+	f.StringVar(&c.formatFlag, "format", "", "write the recipe and vars-file as this format ("+recipeFormatList()+") instead of inferring it from the --output extension. Without an explicit --output, each format writes its own default name ("+defaultRecipeOutputFor(tasks.FormatNameJSON5)+" for json5, "+defaultRecipeOutputFor(tasks.FormatNameHCL)+" for hcl); this is also the only way to pick a format on stdout.")
 	f.StringVar(&c.varsOutput, "vars-output", "", "path to write the companion vars-file to (defaults to <output-base>.vars.<ext>; --format overrides its format)")
 	f.BoolVar(&c.overwrite, "overwrite", false, "overwrite existing output files without prompting")
 	f.BoolVar(&c.redact, "redact", false, "write placeholder values into the vars-file instead of real secrets")
@@ -336,6 +336,9 @@ func (c *ExportCommand) Run(args []string) int {
 		if err := c.writeVarsFile(varsOutput, varsBytes); err != nil {
 			c.Ui.Error(fmt.Sprintf("write error: %v", err))
 			return 1
+		}
+		if msg := varsOutputFormatMismatch(varsOutput, varsFormat, varsBytes); msg != "" {
+			c.Ui.Warn(msg)
 		}
 	}
 

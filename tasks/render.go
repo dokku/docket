@@ -66,9 +66,9 @@ func init() {
 	}
 }
 
-// renderFuncs is the template function map docket renders with: sigil's
-// builtins, with `include` and `render` swapped for versions that recurse into
-// this renderer, plus docket's own filters.
+// renderFuncs is the format-independent half of the template function map
+// docket renders with: sigil's builtins, minus the three functions that depend
+// on which surface syntax is being rendered. renderFuncsFor adds those.
 //
 // Owning the map also settles which functions a render has. Sigil keeps one
 // package-global map that `sigil/builtin` fills from an init, so whether a
@@ -77,10 +77,6 @@ func init() {
 // this package, but the commands test binary does not. A recipe using
 // `{{ .app | upper }}` therefore worked in the CLI and failed to parse in
 // those tests. There is one map now and it is the same everywhere.
-//
-// The map is filled in an init rather than a literal because `include` and
-// `render` recurse back into the renderer, which reads the map - a cycle the
-// compiler rejects in a composite literal.
 var renderFuncs = template.FuncMap{
 	// templating
 	"default": builtin.Default,
@@ -122,26 +118,57 @@ var renderFuncs = template.FuncMap{
 	"joinkv":   builtin.JoinKv,
 	"split":    builtin.Split,
 	"splitkv":  builtin.SplitKv,
-	// docket's own
-	"dq": DoubleQuoteEscape,
 }
 
-func init() {
-	renderFuncs["include"] = includeTemplate
-	renderFuncs["render"] = renderNested
+// renderFuncsFor is the full map for a render of one surface syntax.
+//
+// Three entries are per-format. `dq` escapes a substituted value for the
+// syntax the rendered bytes will be parsed as, which is not one answer for all
+// three: HCL reads `${` and `%{` inside a quoted string as its own template
+// syntax, where YAML and JSON5 read them as text. `include` and `render`
+// recurse into this renderer rather than back into sigil.Execute, and carry
+// the codec with them so a nested render escapes the same way its parent does.
+//
+// Building the map per render rather than keeping one global is also what
+// removed the init() this used to need: `include` and `render` closing over
+// the codec is a cycle the compiler accepts, where a composite literal
+// referring to functions that read the literal is not.
+func renderFuncsFor(codec Codec) template.FuncMap {
+	funcs := make(template.FuncMap, len(renderFuncs)+3)
+	for name, fn := range renderFuncs {
+		funcs[name] = fn
+	}
+	funcs["dq"] = codec.EscapeDoubleQuoted
+	funcs["include"] = func(filename string, args ...interface{}) (interface{}, error) {
+		return includeTemplate(codec, filename, args...)
+	}
+	funcs["render"] = func(args ...interface{}) (interface{}, error) {
+		return renderNested(codec, args...)
+	}
+	return funcs
 }
 
-// RenderTemplate renders input with vars, under the render lock. Every render
-// in docket goes through it.
+// RenderTemplate renders input with vars as the default surface syntax.
+//
+// It is the spelling for a caller with no format to hand: a loop body, which
+// is re-rendered from the YAML bytes the codec has already normalised
+// whatever the recipe was written in, and the tests. A caller holding the
+// recipe's own format uses RenderTemplateWithFormat.
 func RenderTemplate(input []byte, vars map[string]interface{}, name string) (bytes.Buffer, error) {
+	return RenderTemplateWithFormat(input, vars, name, "")
+}
+
+// RenderTemplateWithFormat renders input with vars as the given surface
+// syntax, under the render lock. Every render in docket goes through it.
+func RenderTemplateWithFormat(input []byte, vars map[string]interface{}, name, format string) (bytes.Buffer, error) {
 	renderMu.Lock()
 	defer renderMu.Unlock()
-	return renderTemplate(input, vars, name)
+	return renderTemplate(input, vars, name, CodecFor(format))
 }
 
 // renderTemplate is the unlocked form, so `include` and `render` can recurse
 // from inside a render that already holds the lock.
-func renderTemplate(input []byte, vars map[string]interface{}, name string) (bytes.Buffer, error) {
+func renderTemplate(input []byte, vars map[string]interface{}, name string, codec Codec) (bytes.Buffer, error) {
 	var tmplVars string
 	for _, match := range templateVarRe.FindAllSubmatch(input, -1) {
 		varName := string(match[1])
@@ -159,7 +186,7 @@ func renderTemplate(input []byte, vars map[string]interface{}, name string) (byt
 		fmt.Sprintf("%s%s", rightDelim, leftDelim),
 	)
 
-	tmpl, err := template.New(name).Funcs(renderFuncs).Delims(leftDelim, rightDelim).Parse(tmplVars + inputStr)
+	tmpl, err := template.New(name).Funcs(renderFuncsFor(codec)).Delims(leftDelim, rightDelim).Parse(tmplVars + inputStr)
 	if err != nil {
 		return bytes.Buffer{}, err
 	}
@@ -195,7 +222,7 @@ func varsFromArgs(args []interface{}) map[string]interface{} {
 // renderNested is the `render` filter. It exists so a nested render goes
 // through this renderer rather than back into sigil.Execute, which would
 // reintroduce the environment writes at one remove.
-func renderNested(args ...interface{}) (interface{}, error) {
+func renderNested(codec Codec, args ...interface{}) (interface{}, error) {
 	if len(args) == 0 {
 		return "", fmt.Errorf("render cannot be used without arguments")
 	}
@@ -203,14 +230,14 @@ func renderNested(args ...interface{}) (interface{}, error) {
 	if !ok {
 		return "", fmt.Errorf("render must be given a string to render")
 	}
-	out, err := renderTemplate([]byte(input), varsFromArgs(args[:len(args)-1]), "<render>")
+	out, err := renderTemplate([]byte(input), varsFromArgs(args[:len(args)-1]), "<render>", codec)
 	return out.String(), err
 }
 
 // includeTemplate is the `include` filter, for the same reason as
 // renderNested. The path stack is still sigil's, so a relative include inside
 // an included file resolves the way it always has.
-func includeTemplate(filename string, args ...interface{}) (interface{}, error) {
+func includeTemplate(codec Codec, filename string, args ...interface{}) (interface{}, error) {
 	path, err := sigil.LookPath(filename)
 	if err != nil {
 		return "", err
@@ -221,6 +248,6 @@ func includeTemplate(filename string, args ...interface{}) (interface{}, error) 
 	}
 	sigil.PushPath(filepath.Dir(path))
 	defer sigil.PopPath()
-	out, err := renderTemplate(data, varsFromArgs(args), filepath.Base(path))
+	out, err := renderTemplate(data, varsFromArgs(args), filepath.Base(path), codec)
 	return out.String(), err
 }

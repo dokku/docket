@@ -6,6 +6,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/zclconf/go-cty/cty"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -86,7 +89,28 @@ type quotingSite struct {
 // double-quoted scalar reads, so `'{{ .app | dq }}'` is a recipe that does
 // not work today and `"{{ .app | dq }}"` is one that does.
 func riskyInterpolations(s string) []string {
-	var risky []string
+	return interpolationsMatching(s, actionSubstitutesValue)
+}
+
+// substitutesAnyValue reports whether s holds an action that substitutes a
+// value at all, `dq`-escaped or not.
+//
+// It is the question a heredoc asks, where riskyInterpolations asks the
+// question a quoted scalar asks. A heredoc processes no backslash escapes, so
+// `| dq` is not the fix there that it is everywhere else - it lands as literal
+// backslashes in the value. The HCL emitter therefore writes any string
+// holding a substitution as a quoted scalar, escaped or not, rather than
+// reaching for a heredoc it would have to un-escape.
+func substitutesAnyValue(s string) bool {
+	return len(interpolationsMatching(s, func(body string) bool {
+		return actionSubstitutesValue(body) || firstWord(lastPipelineStage(trimActionMarkers(body))) == "dq"
+	})) > 0
+}
+
+// interpolationsMatching returns the `{{ ... }}` actions in s whose body
+// satisfies want, in source order.
+func interpolationsMatching(s string, want func(body string) bool) []string {
+	var found []string
 	for i := 0; i < len(s); {
 		open := strings.Index(s[i:], interpolationOpen)
 		if open < 0 {
@@ -101,12 +125,12 @@ func riskyInterpolations(s string) []string {
 			break
 		}
 		end += body
-		if actionSubstitutesValue(s[body:end]) {
-			risky = append(risky, s[open:end+len(interpolationClose)])
+		if want(s[body:end]) {
+			found = append(found, s[open:end+len(interpolationClose)])
 		}
 		i = end + len(interpolationClose)
 	}
-	return risky
+	return found
 }
 
 // actionSubstitutesValue reports whether an action body emits text that
@@ -264,6 +288,89 @@ func json5QuotingSites(src []byte) ([]quotingSite, error) {
 		})
 	}
 	return sites, nil
+}
+
+// hclQuotingSites collects the heredocs in HCL source whose quoting a rewrite
+// would change.
+//
+// Only the heredoc qualifies, and for the mirror of the reason only the
+// single-quoted string qualifies in JSON5: HCL's other string spelling is
+// already the double-quoted one. What makes a heredoc unportable is stronger
+// than what makes a single-quoted JSON5 string unportable, though - a heredoc
+// processes no backslash escapes at all, so `| dq` inside one lands as literal
+// backslashes rather than merely as the wrong escaping.
+//
+// The scan runs over the parsed expressions rather than the token stream,
+// because that is what reports the decoded value: an interpolation can be
+// spelled with HCL's own `$${` escape, and only the parser unwinds it.
+func hclQuotingSites(src []byte) ([]quotingSite, error) {
+	file, diags := hclsyntax.ParseConfig(src, hclSourceName, hcl.InitialPos)
+	if diags.HasErrors() {
+		return nil, hclDiagnosticError(diags)
+	}
+	body, ok := file.Body.(*hclsyntax.Body)
+	if !ok {
+		return nil, fmt.Errorf("hcl parse error: unexpected body type %T", file.Body)
+	}
+	var sites []quotingSite
+	hclWalkBodyExpressions(body, func(expr hclsyntax.Expression) {
+		template, isTemplate := expr.(*hclsyntax.TemplateExpr)
+		if !isTemplate || !template.IsStringLiteral() {
+			return
+		}
+		span := expr.Range()
+		if span.Start.Byte >= len(src) || src[span.Start.Byte] != '<' {
+			return
+		}
+		value, valueDiags := template.Value(nil)
+		if valueDiags.HasErrors() || value.Type() != cty.String {
+			return
+		}
+		risky := riskyInterpolations(value.AsString())
+		if len(risky) == 0 {
+			return
+		}
+		sites = append(sites, quotingSite{
+			Line:   span.Start.Line,
+			Action: risky[0],
+			Style:  "in a heredoc",
+		})
+	})
+	return sites, nil
+}
+
+// hclWalkBodyExpressions visits every attribute expression in a body and in
+// the bodies nested inside it, then every expression nested inside those.
+func hclWalkBodyExpressions(body *hclsyntax.Body, visit func(hclsyntax.Expression)) {
+	for _, attr := range body.Attributes {
+		hclWalkExpressions(attr.Expr, visit)
+	}
+	for _, block := range body.Blocks {
+		hclWalkBodyExpressions(block.Body, visit)
+	}
+}
+
+// hclWalkExpressions visits an expression and the expressions inside it.
+func hclWalkExpressions(expr hclsyntax.Expression, visit func(hclsyntax.Expression)) {
+	if expr == nil {
+		return
+	}
+	visit(expr)
+	switch e := expr.(type) {
+	case *hclsyntax.TupleConsExpr:
+		for _, item := range e.Exprs {
+			hclWalkExpressions(item, visit)
+		}
+	case *hclsyntax.ObjectConsExpr:
+		for _, item := range e.Items {
+			hclWalkExpressions(item.KeyExpr, visit)
+			hclWalkExpressions(item.ValueExpr, visit)
+		}
+	case *hclsyntax.ObjectConsKeyExpr:
+		hclWalkExpressions(e.Wrapped, visit)
+	case *hclsyntax.ParenthesesExpr:
+		hclWalkExpressions(e.Expression, visit)
+	}
 }
 
 // lineForOffset returns the 1-based line a byte offset falls on.

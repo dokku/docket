@@ -451,3 +451,133 @@ EOF2
   assert_output --partial "invalid UTF-8"
   assert cmp -s tasks.json5 before.json5
 }
+
+@test "docket fmt --format hcl - converts a piped YAML recipe" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >input.yml <<'EOF'
+---
+- name: web
+  tasks:
+    # scale it up first
+    - name: scale
+      dokku_ps_scale:
+        app: web
+EOF
+  run bash -c "\"$(docket_bin)\" fmt --format hcl - <input.yml"
+  assert_success
+  assert_output --partial 'play "web" {'
+  assert_output --partial 'dokku_ps_scale "scale" {'
+  assert_output --partial "# scale it up first"
+  assert [ ! -f tasks.yml ]
+}
+
+@test "docket fmt --format yaml - converts a piped HCL recipe" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >input.hcl <<'EOF'
+play "web" {
+  # scale it up first
+  dokku_ps_scale "scale" {
+    app = "web"
+  }
+}
+EOF
+  run bash -c "\"$(docket_bin)\" fmt --tasks-format hcl --format yaml - <input.hcl"
+  assert_success
+  assert_output --partial "- name: web"
+  assert_output --partial "# scale it up first"
+  assert_output --partial "dokku_ps_scale:"
+}
+
+@test "docket fmt round-trips a recipe through HCL and back" {
+  cd "$BATS_TEST_TMPDIR"
+  "$(docket_bin)" init
+  run "$(docket_bin)" fmt --format hcl --output tasks.hcl tasks.yml
+  assert_success
+  # The converted file is canonical and loadable on its own.
+  run "$(docket_bin)" fmt --check tasks.hcl
+  assert_success
+  run "$(docket_bin)" validate --tasks tasks.hcl
+  assert_success
+  run "$(docket_bin)" fmt --format yaml --output back.yml tasks.hcl
+  assert_success
+  # A conversion normalises spellings - the document marker, a quoted plain
+  # scalar, a flow sequence - the way the JSON5 one does, so what has to
+  # match is the recipe rather than the bytes.
+  "$(docket_bin)" apply --tasks tasks.yml --list-tasks --json --repo x >original.json
+  "$(docket_bin)" apply --tasks back.yml --list-tasks --json --repo x >roundtripped.json
+  run diff original.json roundtripped.json
+  assert_success
+}
+
+@test "docket fmt keeps a multi-line value as an HCL heredoc" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF'
+---
+- tasks:
+    - dokku_app:
+        app: web
+        note: |
+          first line
+          second line
+EOF
+  run "$(docket_bin)" fmt --format hcl --output tasks.hcl tasks.yml
+  assert_success
+  run cat tasks.hcl
+  assert_output --partial "note = <<EOT"
+  assert_output --partial "first line"
+  run "$(docket_bin)" fmt --check tasks.hcl
+  assert_success
+}
+
+@test "docket fmt refuses to convert an unportable interpolation into HCL" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.yml <<'EOF'
+---
+- tasks:
+    - dokku_app:
+        app: '{{ .app }}'
+EOF
+  run "$(docket_bin)" fmt --format hcl --output tasks.hcl tasks.yml
+  assert_failure
+  assert_output --partial "is single-quoted"
+  assert_output --partial '"{{ .app | dq }}"'
+  assert [ ! -f tasks.hcl ]
+}
+
+@test "docket fmt refuses an HCL heredoc holding an interpolation" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.hcl <<'EOF'
+play {
+  dokku_app {
+    note = <<EOT
+hello {{ .app }}
+EOT
+  }
+}
+EOF
+  run "$(docket_bin)" fmt --check tasks.hcl
+  assert_failure
+  assert_output --partial "in a heredoc"
+  assert_output --partial '"{{ .app | dq }}"'
+}
+
+@test "docket fmt --check accepts a canonical HCL recipe and rewrites a messy one" {
+  cd "$BATS_TEST_TMPDIR"
+  cat >tasks.hcl <<'EOF'
+play   "web"    {
+dokku_app   "create"   {
+state = "present"
+app = "web"
+}
+}
+EOF
+  run "$(docket_bin)" fmt --check tasks.hcl
+  assert_failure
+  run "$(docket_bin)" fmt tasks.hcl
+  assert_success
+  run cat tasks.hcl
+  assert_output --partial '    state = "present"'
+  assert_output --partial '    app   = "web"'
+  run "$(docket_bin)" fmt --check tasks.hcl
+  assert_success
+}

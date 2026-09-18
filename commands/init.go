@@ -97,7 +97,7 @@ func (c *InitCommand) ParsedArguments(args []string) (map[string]command.Argumen
 func (c *InitCommand) FlagSet() *flag.FlagSet {
 	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
 	f.StringVar(&c.output, "output", defaultRecipeOutput, "path to write the scaffold to; pass - to write to stdout")
-	f.StringVar(&c.formatFlag, "format", "", "write the scaffold as this format ("+recipeFormatList()+") instead of inferring it from the --output extension. Without an explicit --output, json5 writes "+defaultRecipeOutputFor(tasks.FormatNameJSON5)+"; this is also the only way to get JSON5 on stdout.")
+	f.StringVar(&c.formatFlag, "format", "", "write the scaffold as this format ("+recipeFormatList()+") instead of inferring it from the --output extension. Without an explicit --output, each format writes its own default name ("+defaultRecipeOutputFor(tasks.FormatNameJSON5)+" for json5, "+defaultRecipeOutputFor(tasks.FormatNameHCL)+" for hcl); this is also the only way to pick a format on stdout.")
 	f.BoolVar(&c.force, "force", false, "overwrite an existing output file")
 	f.BoolVar(&c.minimal, "minimal", false, "emit a minimal one-task scaffold without an inputs block")
 	f.StringVar(&c.name, "name", defaultName(c.baseDir()), "play name and default app input value")
@@ -265,14 +265,15 @@ func renderInit(opts initOptions) ([]byte, error) {
 		return nil, fmt.Errorf("read template %s: %w", templateName, err)
 	}
 
-	// yamlStr / jsonStr emit a value as a correctly quoted-and-escaped
-	// scalar so a name with YAML- or JSON-special characters (@web,
-	// "foo: bar", an embedded quote) produces a valid scaffold instead of
-	// a broken one. yamlStr leaves simple names unquoted, matching the
-	// previous output for ordinary names.
+	// yamlStr / jsonStr / hclStr emit a value as a correctly
+	// quoted-and-escaped scalar so a name with characters the format reads
+	// as syntax (@web, "foo: bar", an embedded quote, `${`) produces a
+	// valid scaffold instead of a broken one. yamlStr leaves simple names
+	// unquoted, matching the previous output for ordinary names.
 	tmpl, err := template.New(templateName).Delims("<<", ">>").Funcs(template.FuncMap{
 		"yamlStr": tasks.YAMLScalar,
 		"jsonStr": tasks.JSONScalar,
+		"hclStr":  tasks.HCLScalar,
 	}).Parse(string(raw))
 	if err != nil {
 		return nil, fmt.Errorf("parse template %s: %w", templateName, err)
@@ -286,7 +287,17 @@ func renderInit(opts initOptions) ([]byte, error) {
 		return nil, fmt.Errorf("render template %s: %w", templateName, err)
 	}
 
-	return body.Bytes(), nil
+	// The scaffold is run through the formatter rather than written out as
+	// the template spelled it, so `docket fmt --check` passes over a file
+	// `docket init` just wrote. It is a no-op for the YAML and JSON5
+	// templates, which are canonical as written; HCL aligns a run of `=`
+	// signs on the longest name in it, which a template holding an
+	// `<<if>>` cannot know in advance.
+	formatted, err := tasks.CodecFor(opts.Format).Format(body.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("format template %s: %w", templateName, err)
+	}
+	return formatted, nil
 }
 
 // selectInitTemplate returns the embedded template name for (format,

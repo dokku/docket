@@ -47,6 +47,8 @@ func TestParseRecipeFormatFlag(t *testing.T) {
 		"json5": tasks.FormatNameJSON5,
 		"JSON5": tasks.FormatNameJSON5,
 		" yaml": tasks.FormatYAML,
+		"hcl":   tasks.FormatNameHCL,
+		"HCL":   tasks.FormatNameHCL,
 	}
 	for value, want := range valid {
 		got, err := parseRecipeFormatFlag("--tasks-format", value)
@@ -62,10 +64,10 @@ func TestParseRecipeFormatFlag(t *testing.T) {
 	// The rejection enumerates the registry, so a new codec becomes an
 	// accepted value and reaches this message without anyone editing it.
 	wantList := strings.Join(tasks.CodecNames(), ", ")
-	if wantList != "yaml, json5" {
-		t.Errorf("CodecNames() renders as %q; docs/command-reference.md and the bats suites spell it \"yaml, json5\"", wantList)
+	if wantList != "yaml, json5, hcl" {
+		t.Errorf("CodecNames() renders as %q; docs/command-reference.md and the bats suites spell it \"yaml, json5, hcl\"", wantList)
 	}
-	for _, value := range []string{"toml", "hcl", "ini", "yamlish"} {
+	for _, value := range []string{"toml", "hcl1", "ini", "yamlish"} {
 		if _, err := parseRecipeFormatFlag("--tasks-format", value); err == nil {
 			t.Errorf("parseRecipeFormatFlag(%q) = nil error, want a rejection", value)
 		} else if !strings.Contains(err.Error(), wantList) {

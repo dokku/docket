@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dokku/docket/tasks"
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/mitchellh/cli"
 )
@@ -646,6 +647,16 @@ const commentedTasksJSON5 = `[
 ]
 `
 
+const commentedTasksHCL = `# top of file
+play "web" { # the public app
+  # scale it up first
+  dokku_ps_scale "scale" {
+    app = "web"
+    web = 2
+  }
+}
+`
+
 func TestFmtStdinConvertsYAMLToJSON5(t *testing.T) {
 	t.Parallel()
 	out, exit := withStdinAndStdout(t, commentedTasksYAML, func(in io.Reader, w io.Writer) int {
@@ -675,6 +686,47 @@ func TestFmtStdinConvertsJSON5ToYAML(t *testing.T) {
 	// were read, and these came from JSON5. Everything else round-trips.
 	if out != commentedTasksYAML {
 		t.Errorf("output mismatch:\nwant:\n%s\ngot:\n%s", commentedTasksYAML, out)
+	}
+}
+
+// TestFmtStdinConvertsEveryPairing walks the registry, so the fixtures above
+// are checked in both directions for every format rather than only for the
+// pair that existed when they were written.
+//
+// The `---` marker is not restored on the way back into YAML: it is a
+// property of the bytes that were read, and these came from another format.
+func TestFmtStdinConvertsEveryPairing(t *testing.T) {
+	t.Parallel()
+	fixtures := map[string]string{
+		tasks.FormatYAML:      commentedTasksYAML,
+		tasks.FormatNameJSON5: commentedTasksJSON5,
+		tasks.FormatNameHCL:   commentedTasksHCL,
+	}
+	for _, from := range tasks.Codecs() {
+		for _, to := range tasks.Codecs() {
+			if from.Name() == to.Name() {
+				continue
+			}
+			from, to := from, to
+			t.Run(from.Name()+"_to_"+to.Name(), func(t *testing.T) {
+				t.Parallel()
+				in, ok := fixtures[from.Name()]
+				if !ok {
+					t.Fatalf("no fixture for %q; add one when adding a format", from.Name())
+				}
+				out, exit := withStdinAndStdout(t, in, func(r io.Reader, w io.Writer) int {
+					c := newTestFmtCommand()
+					c.Stdin, c.Stdout = r, w
+					return c.Run([]string{"--tasks-format", from.Name(), "--format", to.Name(), "-"})
+				})
+				if exit != 0 {
+					t.Fatalf("exit = %d, want 0", exit)
+				}
+				if want := fixtures[to.Name()]; out != want {
+					t.Errorf("output mismatch:\nwant:\n%s\ngot:\n%s", want, out)
+				}
+			})
+		}
 	}
 }
 
