@@ -1704,3 +1704,62 @@ func TestValidateAllowedIpAddressSkippedWithPlaceholder(t *testing.T) {
 		t.Errorf("expected no invalid_task_input with placeholder input, got %d: %+v", n, problems)
 	}
 }
+
+func TestValidateInvalidTaskInputPsScaleNegativeQuantity(t *testing.T) {
+	// dokku parses the tuple with strconv.Atoi and stores whatever comes back,
+	// so a negative count is written and reported unchanged (dokku/dokku#9048).
+	// docket refuses it offline instead of converging on it.
+	data := []byte(`---
+- tasks:
+    - dokku_ps_scale:
+        app: my-app
+        scale:
+            web: -1
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, `scale["web"]`) {
+		t.Errorf("expected message to name the offending entry, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputPsScaleProcessType(t *testing.T) {
+	// getPsScale collapses whitespace out of the ps:scale report before it
+	// splits the line, so a process type carrying a space is written but never
+	// read back and the task would plan the same change on every run.
+	data := []byte(`---
+- tasks:
+    - dokku_ps_scale:
+        app: my-app
+        scale:
+            "web worker": 1
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "must not contain whitespace") {
+		t.Errorf("expected message to name the rule, got: %q", p.Message)
+	}
+}
+
+func TestValidateAcceptsPsScaleStateSet(t *testing.T) {
+	// The whole-formation state carries the same scale map state 'present'
+	// does, so a well-formed one validates without a server (#526).
+	data := []byte(`---
+- tasks:
+    - dokku_ps_scale:
+        app: my-app
+        state: set
+        scale:
+            web: 2
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input, got %d: %+v", n, problems)
+	}
+}

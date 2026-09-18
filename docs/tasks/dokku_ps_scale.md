@@ -23,7 +23,7 @@ Keyed by `app`. Manages the whole `scale` collection; entries are identified by 
 | `app` | string | yes |  |  | Name of the app |
 | `scale` | dict | yes |  |  | Map of process types to quantities |
 | `skip_deploy` | bool | no | false |  | Skip the corresponding deploy |
-| `state` | string | no | present | present | Desired state of the process scale |
+| `state` | string | no | present | present, set | Desired state of the process scale; 'set' declares the whole formation |
 
 ## Examples
 
@@ -46,6 +46,16 @@ dokku_ps_scale:
         web: 4
         worker: 4
     skip_deploy: true
+```
+
+### Declare the whole process formation
+
+```yaml
+dokku_ps_scale:
+    app: hello-world
+    scale:
+        web: 2
+    state: set
 ```
 
 ## Return Values

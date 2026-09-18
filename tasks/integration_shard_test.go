@@ -76,6 +76,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationProxyToggle":                            7.7,
 	"TestIntegrationPsPropertyAll":                          21.3,
 	"TestIntegrationPsScale":                                72.7,
+	"TestIntegrationPsScaleSet":                             7.0,
 	"TestIntegrationPsScaleSkipDeploy":                      6.2,
 	"TestIntegrationRegistryAuthApp":                        7.9,
 	"TestIntegrationRegistryAuthGlobal":                     0.9,
