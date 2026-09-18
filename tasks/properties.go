@@ -535,7 +535,7 @@ var dynamicPropertyFamilies = map[string][]dynamicPropertyFamily{
 	// way, as of dokku 0.38.27 (dokku/dokku#8928, #450). It is global-only:
 	// `traefik:set` refuses a `dns-provider-*` key outside `--global`, so there
 	// is a `global-dns-provider-<KEY>` row and no per-app one. The version is
-	// not gated because docket's dokku floor is already 0.38.27; below it the
+	// not gated because docket's dokku floor is already past it; below it the
 	// rows are genuinely absent and a `state: absent` task would read an unset
 	// property as already gone.
 	"traefik": {{

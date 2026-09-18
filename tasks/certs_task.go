@@ -4,6 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -66,7 +69,7 @@ func (t CertsTask) ExportSupport() ExportSupport {
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t CertsTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "the installed certificate is compared against the desired one via certs:show, but the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared"}
+	return ProbeSupport{Status: ProbePartial, Caveat: "an app's certificate is compared against the desired one by the SHA-256 fingerprint certs:report carries, falling back to reading the PEM back with certs:show when the recipe pins a certificate chain or dokku reports no fingerprint, as the global scope always does via global-cert:show; on the fingerprint path a server holding the pinned certificate plus an extra chain reads as in sync, since dokku digests only the first certificate it finds; the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared"}
 }
 
 // Requirements lists the non-core dokku plugins this task depends on.
@@ -323,10 +326,17 @@ func certsEnabled(ctx context.Context, t CertsTask) (bool, error) {
 
 // certsMaterialDrifted reports whether the certificate installed for the task's
 // scope is a different one from the certificate the recipe pins. It answers true
-// only on positive evidence: material read back from the server that does not
-// match the desired material. Everything it cannot see reads as false, so a
-// scope it cannot compare keeps the coarse "a certificate is installed, so we
-// are in sync" answer Plan() gave before it compared anything.
+// only on positive evidence: state read back from the server that does not match
+// the desired material. Everything it cannot see reads as false, so a scope it
+// cannot compare keeps the coarse "a certificate is installed, so we are in
+// sync" answer Plan() gave before it compared anything.
+//
+// An app is answered from its fingerprint where it can be (#529): certs:report
+// carries the SHA-256 digest of the installed certificate, which the same digest
+// taken locally settles against without the certificate leaving the server. The
+// PEM read-back stays for everything the fingerprint cannot answer - the global
+// scope, whose plugin reports no fingerprint, and a recipe pinning a chain,
+// whose extra certificates a leaf digest does not cover.
 //
 // Two cases are deliberately not compared. Desired material docket cannot read
 // leaves nothing to compare against - see desiredCertPEM. And a
@@ -357,6 +367,14 @@ func certsMaterialDrifted(ctx context.Context, t CertsTask) (bool, error) {
 		} else if active {
 			return false, nil
 		}
+
+		drifted, decided, err := certsFingerprintDrifted(ctx, t.App, desired)
+		if err != nil {
+			return false, err
+		}
+		if decided {
+			return drifted, nil
+		}
 	}
 
 	installed, err := certsShow(ctx, t, "crt")
@@ -364,6 +382,110 @@ func certsMaterialDrifted(ctx context.Context, t CertsTask) (bool, error) {
 		return false, err
 	}
 	return !samePEM(installed, desired), nil
+}
+
+// certsFingerprintDrifted settles the comparison from certs:report alone,
+// reporting decided=false when it cannot and the caller should read the
+// certificate back instead. Only a transport failure is an error: a dokku that
+// does not report a fingerprint, or reports one that is not a digest, is
+// something the PEM read-back answers exactly, so there is nothing to surface.
+func certsFingerprintDrifted(ctx context.Context, app, desired string) (drifted bool, decided bool, err error) {
+	want, ok := desiredCertFingerprint(desired)
+	if !ok {
+		return false, false, nil
+	}
+
+	reported, ok, err := certsReportFingerprint(ctx, app)
+	if err != nil {
+		var sshErr *subprocess.SSHError
+		if errors.As(err, &sshErr) {
+			return false, false, err
+		}
+		return false, false, nil
+	}
+	if !ok {
+		return false, false, nil
+	}
+
+	installed, ok := normalizeFingerprint(reported)
+	if !ok {
+		return false, false, nil
+	}
+	return installed != want, true, nil
+}
+
+// desiredCertFingerprint returns the SHA-256 digest of the certificate the
+// recipe pins as uppercase hex, and whether it could be taken at all. It is the
+// value certs:report carries: openssl digests the DER encoding, which is exactly
+// what a PEM block decodes to, so nothing here parses X.509.
+//
+// The digest is only taken for a document holding a single CERTIFICATE block.
+// dokku runs `openssl x509 -in server.crt`, which reads the first certificate
+// and ignores the rest, so comparing fingerprints compares leaves - and a recipe
+// pinning a fullchain PEM asked for its whole chain to be compared. Refusing
+// those leaves them on the exact certs:show comparison rather than quietly
+// narrowing it to the leaf.
+func desiredCertFingerprint(pemText string) (string, bool) {
+	blocks, ok := pemBlocks(pemText)
+	if !ok || len(blocks) != 1 || blocks[0].Type != "CERTIFICATE" {
+		return "", false
+	}
+	sum := sha256.Sum256(blocks[0].Bytes)
+	return strings.ToUpper(hex.EncodeToString(sum[:])), true
+}
+
+// normalizeFingerprint renders a fingerprint dokku reported in the form
+// desiredCertFingerprint produces, and reports whether it is one at all. dokku
+// emits the colon-separated hex `openssl x509 -fingerprint` prints, so dropping
+// the separators and folding case makes the two comparable.
+//
+// Anything that is not a SHA-256 digest is refused rather than compared. It
+// could never match, so comparing it would report drift on every run and have
+// apply reinstall the same certificate forever; falling back to reading the
+// certificate back is both correct and terminating. An empty value - what
+// certs:report hands back when openssl cannot read server.crt - lands here too.
+func normalizeFingerprint(reported string) (string, bool) {
+	reported = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(reported), ":", ""))
+	if len(reported) != sha256.Size*2 {
+		return "", false
+	}
+	for _, r := range reported {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'F') {
+			return "", false
+		}
+	}
+	return reported, true
+}
+
+// certsReportFingerprint reads the SHA-256 fingerprint dokku computed for an
+// app's installed certificate. The certs plugin strips the `ssl-` prefix from
+// JSON report keys, so `--ssl-fingerprint` lands under `fingerprint`. The key is
+// decoded into a *string so a dokku too old to carry it (it arrived in 0.38.28
+// via dokku/dokku#8996) is distinguishable from one that reported it empty.
+//
+// It takes an app rather than a CertsTask because there is no global form to
+// take: dokku-global-cert computes a fingerprint internally but exposes none on
+// global-cert:report, so the global certificate is still compared by reading its
+// PEM back (#548).
+func certsReportFingerprint(ctx context.Context, app string) (string, bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "certs:report", app, "--format", "json"},
+	})
+	if err != nil {
+		return "", false, err
+	}
+
+	var report struct {
+		Fingerprint *string `json:"fingerprint"`
+	}
+	if err := json.Unmarshal(result.StdoutBytes(), &report); err != nil {
+		return "", false, err
+	}
+	if report.Fingerprint == nil {
+		return "", false, nil
+	}
+	return *report.Fingerprint, true, nil
 }
 
 // desiredCertPEM returns the certificate PEM the recipe pins, and whether docket

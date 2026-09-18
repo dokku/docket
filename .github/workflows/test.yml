@@ -55,7 +55,7 @@ jobs:
           curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.27
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.28
           sudo dokku plugin:install-dependencies --core
       - name: install dokku redis plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-redis.git redis
@@ -96,7 +96,7 @@ jobs:
           curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.27
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.28
           sudo dokku plugin:install-dependencies --core
       - name: install dokku redis plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-redis.git redis
@@ -133,7 +133,7 @@ jobs:
           curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.27
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.28
           sudo dokku plugin:install-dependencies --core
       - name: initialize k3s cluster
         run: sudo dokku scheduler-k3s:initialize --server-ip 127.0.0.1
@@ -156,7 +156,7 @@ jobs:
           curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.27
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.28
           sudo dokku plugin:install-dependencies --core
       - name: stand up the pebble ACME server
         run: |
@@ -188,7 +188,7 @@ jobs:
           curl -fsSL https://packagecloud.io/dokku/dokku/gpgkey | sudo gpg --dearmor -o /etc/apt/keyrings/dokku-archive-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/dokku-archive-keyring.gpg] https://packagecloud.io/dokku/dokku/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/dokku.list
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.27
+          sudo DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get install -qq -y dokku=0.38.28
           sudo dokku plugin:install-dependencies --core
       - name: install dokku http-auth plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-http-auth.git --committish 0.14.0 http-auth
