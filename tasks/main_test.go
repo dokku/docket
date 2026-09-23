@@ -956,7 +956,7 @@ func TestTaskDocStrings(t *testing.T) {
 		{&ProxyToggleTask{}, "Enables or disables the proxy plugin for a given dokku application"},
 		{&StorageEnsureTask{}, "Ensures the storage for a given dokku application"},
 		{&StorageEntryTask{}, "Creates or destroys a named storage registry entry"},
-		{&StorageMountTask{}, "Attaches or detaches storage on a dokku application"},
+		{&StorageMountTask{}, "Attaches, detaches or replaces storage mounts on a dokku application"},
 		{&TraefikPropertyTask{}, "Manages the traefik configuration for a given dokku application"},
 	}
 

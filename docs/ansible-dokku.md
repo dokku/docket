@@ -267,7 +267,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_resource_reserve` | `dokku_resource_reserve` | | Direct. |
 | `dokku_service_create` | `dokku_service_create` | datastore plugin | docket adds `state: absent`, and exposes the create-time options as task fields (`image`, `image_version`, `custom_env`, and the rest) rather than through the environment. |
 | `dokku_service_link` | `dokku_service_link` | datastore plugin | Direct. |
-| `dokku_storage` | `dokku_storage_mount`, `dokku_storage_entry`, `dokku_storage_ensure` | | One `dokku_storage_mount` per entry in `mounts`. Host directories go to `dokku_storage_entry`; see [host directories](#host-directories). |
+| `dokku_storage` | `dokku_storage_mount`, `dokku_storage_entry`, `dokku_storage_ensure` | | The module's `mounts` list becomes one `dokku_storage_mount` with a `mounts` list, which `state: present` and `absent` apply as a single write. docket also supports `state: set`, which treats the list as the app's whole set of mounts and removes any it omits. Host directories go to `dokku_storage_entry`; see [host directories](#host-directories). |
 
 The mapping is not always command-for-command. `dokku_registry` drives `registry:set <app> username`
 while `dokku_registry_auth` drives `registry:login`, and `dokku_proxy` reads its current state from
@@ -304,7 +304,7 @@ entry that does not exist yet, and `storage:set` plus the `storage:annotations:s
 
 | `dokku_storage` | docket | Notes |
 |-----------------|--------|-------|
-| `create_host_dir: true` | `dokku_storage_entry` | `storage:create` creates the directory. Emit one entry task per distinct host directory, ahead of the `dokku_storage_mount` tasks that reference it. |
+| `create_host_dir: true` | `dokku_storage_entry` | `storage:create` creates the directory. Emit one entry task per distinct host directory, ahead of the `dokku_storage_mount` task that references it. |
 | the host path itself | `dokku_storage_entry.path` | Omit it to get dokku's default, `/var/lib/dokku/data/storage/<name>`. |
 | `user` and `group` | `dokku_storage_entry.chown` | One value, not two: dokku's helper runs `chown -R <id>:<id>`, so a module call whose `user` and `group` differ cannot be expressed. The module's `"32767"` default is `chown: herokuish`. |
 | `os.chmod(host_dir, 0o777)` | `dokku_storage_entry.mode` | The module chmods unconditionally; docket leaves the directory at the `0755` dokku creates it with unless the recipe names a mode, so a wrapper reproducing the module sends `mode: "0777"` outright. Quote it, or send the 3 digit form - `755` and `0755` are the same value. |
@@ -356,7 +356,7 @@ same file, and it is the spec that Ansible enforces. Those modules are `dokku_bu
 | `mappings` / `port_mappings` | Optional list of `"http:80:5000"` strings | Optional list of `{scheme, host, container}` objects, but required and non-empty for `state: present`, `absent`, and `set`, and no two may share a scheme and host port under `state: present` or `set` | Parse each string and restructure it. Omit the field entirely for `state: clear`, which rejects a list rather than ignoring one. A list carrying `"http:80:5000"` and `"http:80:6000"` passes the module's argument spec and fails `docket validate`, the same reuse dokku's `ports:add` and `ports:set` refuse. |
 | `username` / `password` on `dokku_registry` | Both required, even for `state: absent` | Only `server` is required; credentials are required when `state: present` | A `state: absent` call carries credentials docket does not need. Drop them. |
 | `app` on `dokku_builder`, `dokku_network_property` | Required in the docs, optional in the spec | Optional, paired with `global` | Nothing. |
-| `app` on `dokku_storage` | Required | `dokku_storage_mount` requires `app` and `container_dir` | Split `mounts` into one task per entry, and split each `host:container` string. |
+| `app` on `dokku_storage` | Required | `dokku_storage_mount` requires `app`, and each `mounts` entry requires `container_dir` | Split each `host:container` string into a `mounts` entry's `host_dir` and `container_dir`. |
 | `user` / `group` on `dokku_storage` | Two options, both defaulting to `"32767"` | `dokku_storage_entry.chown` is one value, and rejects anything that is not an ownership preset or a uid in 0-65535 | Collapse the pair into one value, and fail the module call when they differ - dokku chowns the owner and the group to the same id. |
 | `build` on `dokku_clone` | Defaults to `true` | `dokku_git_sync.build` has no default, so it is off | Send `build: true` explicitly to preserve module behavior. |
 | `state` on `dokku_image`, `dokku_service_create`, `dokku_network_property`, `dokku_ps_scale` | No `state` option at all | Present on all four | Nothing; each docket default matches the module's only behavior. Note that `dokku_git_from_image.state` defaults to `deployed`, not `present`, so do not send `present`, and that `dokku_ps_scale.state: set` has no module equivalent - the module is always additive. |
