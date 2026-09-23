@@ -100,11 +100,11 @@ func TestApplyListTasksMarksProbeSupport(t *testing.T) {
 	path := writeTasksFile(t, `---
 - tasks:
     - name: unprobeable
-      dokku_registry_auth:
-        global: true
-        server: docker.io
-        username: deploy-bot
-        password: examplepassword
+      dokku_service_property:
+        service: redis
+        name: cache
+        property: shm-size
+        value: 64m
     - name: partially probed
       dokku_git_from_image:
         app: api

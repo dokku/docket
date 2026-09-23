@@ -602,3 +602,68 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// TestProbeCodeKeepsTheExitCode pins the difference between ProbeCode and
+// Probe: an answer that is not "no" survives. Every shape a runner can report a
+// non-zero exit in has to arrive the same way, because the real runner wraps
+// one in an *ExecError while an injected test runner returns it on the response
+// with no error at all.
+func TestProbeCodeKeepsTheExitCode(t *testing.T) {
+	t.Parallel()
+	t.Run("ran non-zero returns the code", func(t *testing.T) {
+		t.Parallel()
+		ctx := ContextWithRunner(context.Background(), func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+			resp := ExecCommandResponse{ExitCode: 4, Stderr: "cannot compare"}
+			return resp, &ExecError{Response: resp, Err: errors.New("absent"), Ran: true}
+		})
+
+		result, err := ProbeCode(ctx, ExecCommandInput{Command: "dokku"})
+		if err != nil {
+			t.Fatalf("ProbeCode should treat a ran non-zero exit as an answer, got err %v", err)
+		}
+		if result.ExitCode != 4 {
+			t.Errorf("ExitCode = %d, want 4", result.ExitCode)
+		}
+		if result.Stderr != "cannot compare" {
+			t.Errorf("Stderr = %q, want the command's own message", result.Stderr)
+		}
+	})
+
+	t.Run("a runner that returns no error still reports its code", func(t *testing.T) {
+		t.Parallel()
+		ctx := ContextWithRunner(context.Background(), func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+			return ExecCommandResponse{ExitCode: 2}, nil
+		})
+
+		result, err := ProbeCode(ctx, ExecCommandInput{Command: "dokku"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.ExitCode != 2 {
+			t.Errorf("ExitCode = %d, want 2", result.ExitCode)
+		}
+	})
+
+	t.Run("cancelled probe propagates", func(t *testing.T) {
+		t.Parallel()
+		ctx := ContextWithRunner(context.Background(), func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+			resp := ExecCommandResponse{ExitCode: -1, Cancelled: true}
+			return resp, &ExecError{Response: resp, Err: context.Canceled}
+		})
+
+		if _, err := ProbeCode(ctx, ExecCommandInput{Command: "dokku"}); !errors.Is(err, context.Canceled) {
+			t.Fatalf("ProbeCode should propagate a cancelled probe, got %v", err)
+		}
+	})
+
+	t.Run("transport failure propagates", func(t *testing.T) {
+		t.Parallel()
+		ctx := ContextWithRunner(context.Background(), func(_ context.Context, _ ExecCommandInput) (ExecCommandResponse, error) {
+			return ExecCommandResponse{}, &SSHError{Host: "dokku@example.com"}
+		})
+
+		if _, err := ProbeCode(ctx, ExecCommandInput{Command: "dokku"}); err == nil {
+			t.Fatal("ProbeCode should propagate a transport failure, not report it as an answer")
+		}
+	})
+}

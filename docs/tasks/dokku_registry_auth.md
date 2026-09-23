@@ -6,11 +6,11 @@ Manages docker registry authentication for a dokku application or globally
 
 ## Export support
 
-Not supported - registry login credentials are write-only and cannot be read back.
+Partial - registry:report names the servers a credential exists for, so the logins a server needs are reconstructed; the username and password behind each one are not readable and are lifted into required inputs the caller supplies before apply.
 
 ## Probe support
 
-Not supported - registry login state has no read command, so the task plans as drift on every run.
+Supported.
 
 ## Identity
 

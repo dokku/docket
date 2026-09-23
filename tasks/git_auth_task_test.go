@@ -123,13 +123,13 @@ func TestGitAuthTaskRejectsNewlineBeforeProbing(t *testing.T) {
 	}
 }
 
-// gitAuthDrifted stubs every dokku call as a clean non-zero exit, which is how
-// subprocess.Probe reports git:auth-status saying "the stored entry is not what
-// you handed me". fakeDokku always exits 0, so it can only express the in-sync
-// case.
-func gitAuthDrifted() func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+// gitAuthExits stubs every dokku call as a clean exit with the given code,
+// which is how git:auth-status answers: 1 for a host with no entry, 2 for one
+// whose entry differs, 3 for a call it could not check. fakeDokku always exits
+// 0, so it can only express the in-sync case.
+func gitAuthExits(code int) func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 	return func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
-		return subprocess.ExecCommandResponse{ExitCode: 1}, nil
+		return subprocess.ExecCommandResponse{ExitCode: code}, nil
 	}
 }
 
@@ -154,36 +154,76 @@ func TestGitAuthTaskPresentInSync(t *testing.T) {
 	}
 }
 
+// TestGitAuthTaskPresentDrifts pins both drift shapes the present branch can
+// report. git:auth-status separates them (dokku/dokku#8995), so a host with no
+// entry at all is a create and a host whose entry differs is a replacement -
+// the same distinction every other docket task draws, and the reason to read
+// the exit code rather than just its sign.
 func TestGitAuthTaskPresentDrifts(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), gitAuthDrifted())
+	for _, tc := range []struct {
+		name       string
+		code       int
+		wantStatus PlanStatus
+		wantReason string
+	}{
+		{name: "no entry is a create", code: 1, wantStatus: PlanStatusCreate, wantReason: "no netrc entry"},
+		{name: "differing entry is a modify", code: 2, wantStatus: PlanStatusModify, wantReason: "netrc entry does not match"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := subprocess.ContextWithRunner(testCtx(), gitAuthExits(tc.code))
 
-	plan := GitAuthTask{
-		Host:     "github.com",
-		Username: "deploy-bot",
-		Password: "ghp_examplepat",
-		State:    StatePresent,
-	}.Plan(ctx)
-	if plan.Error != nil {
-		t.Fatalf("unexpected plan error: %v", plan.Error)
+			plan := GitAuthTask{
+				Host:     "github.com",
+				Username: "deploy-bot",
+				Password: "ghp_examplepat",
+				State:    StatePresent,
+			}.Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if plan.InSync || plan.Status != tc.wantStatus {
+				t.Fatalf("plan = {InSync:%v Status:%q}, want %q", plan.InSync, plan.Status, tc.wantStatus)
+			}
+			if plan.Reason != tc.wantReason {
+				t.Errorf("Reason = %q, want %q", plan.Reason, tc.wantReason)
+			}
+			if !reflect.DeepEqual(plan.Mutations, []string{"git:auth github.com as deploy-bot"}) {
+				t.Errorf("Mutations = %v, want [git:auth github.com as deploy-bot]", plan.Mutations)
+			}
+			if len(plan.Commands) != 1 || !strings.HasSuffix(plan.Commands[0], "git:auth github.com deploy-bot") {
+				t.Fatalf("expected a single git:auth command, got %v", plan.Commands)
+			}
+			// The password rides on stdin, so neither the rendered command nor
+			// the itemized mutations may carry it.
+			for _, s := range append(append([]string{}, plan.Commands...), plan.Mutations...) {
+				if strings.Contains(s, "ghp_examplepat") {
+					t.Errorf("password leaked into plan output: %q", s)
+				}
+			}
+		})
 	}
-	if plan.InSync || plan.Status != PlanStatusModify {
-		t.Fatalf("plan = {InSync:%v Status:%q}, want a modify", plan.InSync, plan.Status)
-	}
-	if plan.Reason != "netrc entry does not match" {
-		t.Errorf("Reason = %q, want %q", plan.Reason, "netrc entry does not match")
-	}
-	if !reflect.DeepEqual(plan.Mutations, []string{"git:auth github.com as deploy-bot"}) {
-		t.Errorf("Mutations = %v, want [git:auth github.com as deploy-bot]", plan.Mutations)
-	}
-	if len(plan.Commands) != 1 || !strings.HasSuffix(plan.Commands[0], "git:auth github.com deploy-bot") {
-		t.Fatalf("expected a single git:auth command, got %v", plan.Commands)
-	}
-	// The password rides on stdin, so neither the rendered command nor the
-	// itemized mutations may carry it.
-	for _, s := range append(append([]string{}, plan.Commands...), plan.Mutations...) {
-		if strings.Contains(s, "ghp_examplepat") {
-			t.Errorf("password leaked into plan output: %q", s)
+}
+
+// TestGitAuthTaskInvalidArgumentsError pins that an invalid-arguments exit is
+// reported rather than acted on. Validate() rejects everything that reaches it
+// from the recipe, so seeing it means dokku could not answer the question
+// docket asked, and writing the entry anyway would act on an answer that was
+// never given.
+func TestGitAuthTaskInvalidArgumentsError(t *testing.T) {
+	t.Parallel()
+	for _, state := range []State{StatePresent, StateAbsent} {
+		task := GitAuthTask{Host: "github.com", State: state}
+		if state == StatePresent {
+			task.Username, task.Password = "deploy-bot", "ghp_examplepat"
+		}
+		plan := task.Plan(subprocess.ContextWithRunner(testCtx(), gitAuthExits(3)))
+		if plan.Error == nil || plan.Status != PlanStatusError {
+			t.Errorf("state %q: plan = {Status:%q Error:%v}, want a plan error", state, plan.Status, plan.Error)
+		}
+		if len(plan.Commands) != 0 {
+			t.Errorf("state %q: a probe error must issue no commands, got %v", state, plan.Commands)
 		}
 	}
 }
@@ -206,7 +246,7 @@ func TestGitAuthTaskAbsentInSync(t *testing.T) {
 
 func TestGitAuthTaskAbsentDrifts(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), gitAuthDrifted())
+	ctx := subprocess.ContextWithRunner(testCtx(), gitAuthExits(2))
 
 	plan := GitAuthTask{Host: "github.com", State: StateAbsent}.Plan(ctx)
 	if plan.Error != nil {

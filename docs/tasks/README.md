@@ -55,7 +55,7 @@ A task marked `(never converges)` cannot read its own state, so it plans as drif
 - [dokku_proxy_toggle](dokku_proxy_toggle.md) - Enables or disables the proxy plugin for a given dokku application
 - [dokku_ps_property](dokku_ps_property.md) - Manages the ps configuration for a given dokku application
 - [dokku_ps_scale](dokku_ps_scale.md) - Manages the process scale for a given dokku application
-- [dokku_registry_auth](dokku_registry_auth.md) - Manages docker registry authentication for a dokku application or globally (never converges)
+- [dokku_registry_auth](dokku_registry_auth.md) - Manages docker registry authentication for a dokku application or globally
 - [dokku_registry_property](dokku_registry_property.md) - Manages the registry configuration for a given dokku application
 - [dokku_resource_limit](dokku_resource_limit.md) - Manages the resource limits for a given dokku application
 - [dokku_resource_reserve](dokku_resource_reserve.md) - Manages the resource reservations for a given dokku application

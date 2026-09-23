@@ -325,18 +325,18 @@ EOF
   write_tasks_file <<EOF
 ---
 - tasks:
-    - name: registry auth
-      dokku_registry_auth:
-        global: true
-        server: docker.io
-        username: deploy-bot
-        password: examplepassword
+    - name: service property
+      dokku_service_property:
+        service: redis
+        name: cache
+        property: shm-size
+        value: 64m
     - name: create app
       dokku_app: { app: docket-test-list-1 }
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
   assert_success
-  assert_output --partial "registry auth  (never converges)"
+  assert_output --partial "service property  (never converges)"
   refute_output --partial "create app  (never converges)"
 }
 
@@ -358,12 +358,12 @@ EOF
   write_tasks_file <<EOF
 ---
 - tasks:
-    - name: registry auth
-      dokku_registry_auth:
-        global: true
-        server: docker.io
-        username: deploy-bot
-        password: examplepassword
+    - name: service property
+      dokku_service_property:
+        service: redis
+        name: cache
+        property: shm-size
+        value: 64m
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --json
   assert_success

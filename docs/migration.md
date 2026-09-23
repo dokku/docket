@@ -32,7 +32,7 @@ once DNS points at it.
 
 ## Before you start
 
-Provision the new server first. docket needs [Dokku >= 0.38.28 and dokku-letsencrypt >=
+Provision the new server first. docket needs [Dokku >= 0.38.29 and dokku-letsencrypt >=
 0.25.0](getting-started.md#prerequisites), plus any datastore plugins your services rely on
 (dokku-postgres, dokku-redis, dokku-mysql, and so on) already installed. The
 [`dokku_plugin`](tasks/dokku_plugin.md) task can install third-party plugins as part of the
@@ -61,11 +61,13 @@ together with `--vars-file`. If you already maintain a recipe as the source of t
 server, skip this and use it directly.
 
 Some state cannot be read back and is left out with a warning - notably write-only credentials
-(`dokku_git_auth`, `dokku_registry_auth`, and datastore backup credentials), datastore service data,
-and service properties (`dokku_service_property`), which you add by hand. Each task's
-[reference page](tasks/README.md) has an Export support section noting its limits. Those warnings
-mask the secrets the export read, so the log of a migration run is safe to paste into a ticket even
-though the pair of files it wrote is not.
+(`dokku_git_auth` and datastore backup credentials), datastore service data, and service properties
+(`dokku_service_property`), which you add by hand. Registry logins sit in between: dokku reports
+which servers an app holds a credential for but nothing about the credential itself, so
+`dokku_registry_auth` tasks are emitted with the username and password as required inputs for you
+to supply at apply time. Each task's [reference page](tasks/README.md) has an Export support
+section noting its limits. Those warnings mask the secrets the export read, so the log of a
+migration run is safe to paste into a ticket even though the pair of files it wrote is not.
 
 `tasks.vars.yml` is written `0600` on the box that produced it, which says nothing about where you
 put it next: move it the way you would move a private key, and delete it once the migration is done.
