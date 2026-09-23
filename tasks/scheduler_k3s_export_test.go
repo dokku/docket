@@ -472,7 +472,7 @@ func TestExportSchedulerK3sMapTasksUseStateSet(t *testing.T) {
 		"--quiet scheduler-k3s:labels:report --global --format json":           `{"global.deployment.tier":"edge"}`,
 		"--quiet scheduler-k3s:autoscaling-auth:report myapp --format json":    `{"datadog.apiKey":"secret"}`,
 		"--quiet scheduler-k3s:autoscaling-auth:report --global --format json": `{"datadog.apiKey":"secret"}`,
-		nodeSysctlsReportKey: `{"--global":{"vm.swappiness":"10"}}`,
+		nodeSysctlsStoredReportKey:                                             `{"--global":{"vm.swappiness":"10"}}`,
 	}))
 
 	cases := []struct {
@@ -535,13 +535,13 @@ func TestExportSchedulerK3sMapTasksUseStateSet(t *testing.T) {
 	}
 }
 
-// TestSchedulerK3sNodeSysctlsExportGlobalEmpty checks the scope with nothing
-// stored exports nothing, rather than a task carrying an empty map that
-// state:set would then refuse to validate.
+// TestSchedulerK3sNodeSysctlsExportGlobalEmpty checks a report with nothing
+// stored in any scope exports nothing, rather than a task carrying an empty
+// map that state:set would then refuse to validate.
 func TestSchedulerK3sNodeSysctlsExportGlobalEmpty(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		nodeSysctlsReportKey: `{"--global":{},"edge-workers":{"vm.swappiness":"10"}}`,
+		nodeSysctlsStoredReportKey: `{"--global":{},"edge-workers":{}}`,
 	}))
 
 	bodies, err := SchedulerK3sNodeSysctlsTask{}.ExportGlobal(ctx)
@@ -550,5 +550,56 @@ func TestSchedulerK3sNodeSysctlsExportGlobalEmpty(t *testing.T) {
 	}
 	if bodies != nil {
 		t.Errorf("expected no bodies, got %+v", bodies)
+	}
+}
+
+// TestSchedulerK3sNodeSysctlsExportProfiles checks the export emits one body
+// per scope storing sysctls - the global scope first, then each profile by
+// name - skips a scope storing nothing, and reports and leaves out a profile
+// whose name dokku cannot write sysctls for.
+func TestSchedulerK3sNodeSysctlsExportProfiles(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		nodeSysctlsStoredReportKey: `{"--global":{},"zeta":{"vm.swappiness":"10"},"alpha":{"vm.max_map_count":"262144"},"empty":{},"EdgeWorkers":{"vm.swappiness":"60"}}`,
+	}))
+
+	var warnings []string
+	bodies, err := SchedulerK3sNodeSysctlsTask{}.ExportGlobalReport(ctx, func(msg string) {
+		warnings = append(warnings, msg)
+	})
+	if err != nil {
+		t.Fatalf("ExportGlobalReport: %v", err)
+	}
+
+	want := []interface{}{
+		SchedulerK3sNodeSysctlsTask{Profile: "alpha", Sysctls: map[string]string{"vm.max_map_count": "262144"}, State: StateSet},
+		SchedulerK3sNodeSysctlsTask{Profile: "zeta", Sysctls: map[string]string{"vm.swappiness": "10"}, State: StateSet},
+	}
+	if !reflect.DeepEqual(bodies, want) {
+		t.Errorf("bodies = %+v, want %+v", bodies, want)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], `profile "EdgeWorkers"`) {
+		t.Errorf("expected one warning naming EdgeWorkers, got %v", warnings)
+	}
+}
+
+// TestSchedulerK3sNodeSysctlsExportGlobalLeadsProfiles checks the global body
+// comes ahead of every profile body.
+func TestSchedulerK3sNodeSysctlsExportGlobalLeadsProfiles(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		nodeSysctlsStoredReportKey: `{"edge-workers":{"vm.swappiness":"60"},"--global":{"vm.swappiness":"20"}}`,
+	}))
+
+	bodies, err := SchedulerK3sNodeSysctlsTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	want := []interface{}{
+		SchedulerK3sNodeSysctlsTask{Global: true, Sysctls: map[string]string{"vm.swappiness": "20"}, State: StateSet},
+		SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", Sysctls: map[string]string{"vm.swappiness": "60"}, State: StateSet},
+	}
+	if !reflect.DeepEqual(bodies, want) {
+		t.Errorf("bodies = %+v, want %+v", bodies, want)
 	}
 }

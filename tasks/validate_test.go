@@ -1794,6 +1794,9 @@ func TestValidateAcceptsSchedulerK3sMapStateSetAndClear(t *testing.T) {
         state: set
         sysctls:
             vm.max_map_count: "262144"
+    - dokku_scheduler_k3s_node_sysctls:
+        profile: edge-workers
+        state: clear
 `)
 	problems := Validate(data, ValidateOptions{})
 	if n := countProblems(problems, "invalid_task_input"); n != 0 {
@@ -1846,10 +1849,7 @@ func TestValidateInvalidTaskInputSchedulerK3sSetWithAnEqualsInAKey(t *testing.T)
 	}
 }
 
-func TestValidateInvalidTaskInputSchedulerK3sNodeSysctlsWithoutGlobal(t *testing.T) {
-	// Only the global scope is manageable: the report renders a node profile's
-	// entry as the effective set rather than its stored map, so a
-	// profile-scoped task could never converge (dokku/dokku#9073).
+func TestValidateInvalidTaskInputSchedulerK3sNodeSysctlsWithoutScope(t *testing.T) {
 	data := []byte(`---
 - tasks:
     - dokku_scheduler_k3s_node_sysctls:
@@ -1861,7 +1861,26 @@ func TestValidateInvalidTaskInputSchedulerK3sNodeSysctlsWithoutGlobal(t *testing
 	if p == nil {
 		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
 	}
-	if !strings.Contains(p.Message, "'global' must be set to true") {
+	if !strings.Contains(p.Message, "'profile' is required when 'global' is not set to true") {
+		t.Errorf("expected message to name the rule, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputSchedulerK3sNodeSysctlsWithBothScopes(t *testing.T) {
+	data := []byte(`---
+- tasks:
+    - dokku_scheduler_k3s_node_sysctls:
+        global: true
+        profile: edge-workers
+        sysctls:
+            vm.max_map_count: "262144"
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'profile' must not be set when 'global' is set to true") {
 		t.Errorf("expected message to name the rule, got: %q", p.Message)
 	}
 }

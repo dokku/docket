@@ -76,7 +76,7 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 	"dokku_scheduler_k3s_annotations":  {k3s: true},
 	"dokku_scheduler_k3s_chart":        {k3s: true},
 	"dokku_scheduler_k3s_labels":       {k3s: true},
-	"dokku_scheduler_k3s_node_sysctls": {k3s: true},
+	"dokku_scheduler_k3s_node_sysctls": {k3s: true, setup: setupSchedulerK3sNodeSysctlsExample},
 	"dokku_scheduler_k3s_profile":      {k3s: true},
 	"dokku_scheduler_k3s_property":     {k3s: true},
 
@@ -390,6 +390,21 @@ func setupRegistryExample(t *testing.T) (func(Task) Task, func()) {
 		return auth
 	}
 	return transform, nil
+}
+
+// setupSchedulerK3sNodeSysctlsExample creates the node profile the
+// profile-scoped node sysctls example writes to, since dokku refuses sysctls for
+// a profile that does not exist. Removing the profile afterwards also deletes
+// the sysctls the example stored for it.
+func setupSchedulerK3sNodeSysctlsExample(t *testing.T) (func(Task) Task, func()) {
+	t.Helper()
+	profile := SchedulerK3sProfileTask{Name: "edge-workers", Role: "worker", State: StatePresent}
+	if result := profile.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to create node sysctls example profile: %v", result.Error)
+	}
+	return nil, func() {
+		SchedulerK3sProfileTask{Name: "edge-workers", Role: "worker", State: StateAbsent}.Execute(testCtx())
+	}
 }
 
 // setupHttpAuthEnabledExample enables HTTP auth on the example app so the

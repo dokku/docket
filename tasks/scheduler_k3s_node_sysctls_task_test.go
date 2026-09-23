@@ -10,15 +10,19 @@ import (
 	"github.com/dokku/docket/subprocess"
 )
 
-// nodeSysctlsReportKey is the fakeDokku key for the probe every node-sysctls
-// planner runs. The report carries every scope, so the fixtures below include a
-// profile scope the task must ignore.
-const nodeSysctlsReportKey = "--quiet scheduler-k3s:node-sysctls:report --format json"
+// The fakeDokku keys for the probes the node-sysctls planner and exporter run.
+// Plan narrows the stored report to the task's own scope; export reads every
+// scope at once.
+const (
+	nodeSysctlsGlobalReportKey  = "--quiet scheduler-k3s:node-sysctls:report --stored --global --format json"
+	nodeSysctlsProfileReportKey = "--quiet scheduler-k3s:node-sysctls:report --stored --profile edge-workers --format json"
+	nodeSysctlsStoredReportKey  = "--quiet scheduler-k3s:node-sysctls:report --stored --format json"
+)
 
 func TestSchedulerK3sNodeSysctlsSetPlansFullReplacement(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		nodeSysctlsReportKey: `{"--global":{"vm.swappiness":"60","vm.stale":"1"},"edge-workers":{"vm.swappiness":"60"}}`,
+		nodeSysctlsGlobalReportKey: `{"--global":{"vm.swappiness":"60","vm.stale":"1"}}`,
 	}))
 
 	plan := SchedulerK3sNodeSysctlsTask{
@@ -45,7 +49,7 @@ func TestSchedulerK3sNodeSysctlsSetPlansFullReplacement(t *testing.T) {
 func TestSchedulerK3sNodeSysctlsSetConvergesWhenReportMatches(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		nodeSysctlsReportKey: `{"--global":{"vm.swappiness":"10"}}`,
+		nodeSysctlsGlobalReportKey: `{"--global":{"vm.swappiness":"10"}}`,
 	}))
 
 	plan := SchedulerK3sNodeSysctlsTask{
@@ -62,7 +66,7 @@ func TestSchedulerK3sNodeSysctlsSetConvergesWhenReportMatches(t *testing.T) {
 func TestSchedulerK3sNodeSysctlsClearEmptiesTheScope(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		nodeSysctlsReportKey: `{"--global":{"vm.swappiness":"10"},"edge-workers":{"vm.swappiness":"10"}}`,
+		nodeSysctlsGlobalReportKey: `{"--global":{"vm.swappiness":"10"}}`,
 	}))
 
 	plan := SchedulerK3sNodeSysctlsTask{Global: true, State: StateClear}.Plan(ctx)
@@ -83,11 +87,8 @@ func TestSchedulerK3sNodeSysctlsClearEmptiesTheScope(t *testing.T) {
 
 func TestSchedulerK3sNodeSysctlsClearIsInSyncWhenScopeIsEmpty(t *testing.T) {
 	t.Parallel()
-	// The profile scope is populated and the global one is not. Reading the
-	// profile's entry here would report drift forever, since :clear --global
-	// could never empty it.
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		nodeSysctlsReportKey: `{"--global":{},"edge-workers":{"vm.swappiness":"10"}}`,
+		nodeSysctlsGlobalReportKey: `{"--global":{}}`,
 	}))
 
 	plan := SchedulerK3sNodeSysctlsTask{Global: true, State: StateClear}.Plan(ctx)
@@ -103,7 +104,7 @@ func TestSchedulerK3sNodeSysctlsClearIsInSyncWhenScopeIsEmpty(t *testing.T) {
 func TestSchedulerK3sNodeSysctlsPresentAndAbsentUseThePerKeyForm(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		nodeSysctlsReportKey: `{"--global":{"vm.swappiness":"60"}}`,
+		nodeSysctlsGlobalReportKey: `{"--global":{"vm.swappiness":"60"}}`,
 	}))
 
 	present := SchedulerK3sNodeSysctlsTask{
@@ -181,7 +182,7 @@ func TestSchedulerK3sNodeSysctlsProbeTreatsDokkuFailureAsNoSysctls(t *testing.T)
 func TestSchedulerK3sNodeSysctlsProbeSurfacesMalformedReport(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		nodeSysctlsReportKey: "not json",
+		nodeSysctlsGlobalReportKey: "not json",
 	}))
 
 	plan := SchedulerK3sNodeSysctlsTask{Global: true, State: StateClear}.Plan(ctx)
@@ -213,9 +214,39 @@ func TestSchedulerK3sNodeSysctlsValidate(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "global must be set",
+			name:    "a scope is required",
 			task:    SchedulerK3sNodeSysctlsTask{Sysctls: map[string]string{"vm.swappiness": "10"}},
-			wantErr: "'global' must be set to true",
+			wantErr: "'profile' is required when 'global' is not set to true",
+		},
+		{
+			name:    "global and profile are mutually exclusive",
+			task:    SchedulerK3sNodeSysctlsTask{Global: true, Profile: "edge-workers", Sysctls: map[string]string{"vm.swappiness": "10"}},
+			wantErr: "'profile' must not be set when 'global' is set to true",
+		},
+		{
+			name: "profile accepts a valid name",
+			task: SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", Sysctls: map[string]string{"vm.swappiness": "10"}},
+		},
+		{
+			name: "profile accepts a valid name for state clear",
+			task: SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", State: StateClear},
+		},
+		{
+			name:    "profile rejects a name dokku refuses",
+			task:    SchedulerK3sNodeSysctlsTask{Profile: "-edge", State: StateClear},
+			wantErr: "'profile' must contain only alphanumeric characters and dashes",
+		},
+		{
+			// dokku's node-sysctls writes refuse a profile helm cannot name a
+			// release after, :clear included, so no state gets a pass.
+			name:    "profile rejects an uppercase name for state clear",
+			task:    SchedulerK3sNodeSysctlsTask{Profile: "EdgeWorkers", State: StateClear},
+			wantErr: "'profile' must be lowercase, got \"EdgeWorkers\"",
+		},
+		{
+			name:    "profile rejects a name too long for its helm release",
+			task:    SchedulerK3sNodeSysctlsTask{Profile: strings.Repeat("a", 27), Sysctls: map[string]string{"vm.swappiness": ""}, State: StateAbsent},
+			wantErr: "'profile' must be at most 26 characters, got 27",
 		},
 		{
 			name:    "set rejects an empty map",
@@ -281,5 +312,111 @@ func TestSchedulerK3sNodeSysctlsValidate(t *testing.T) {
 				t.Errorf("error = %v, want it to contain %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestSchedulerK3sNodeSysctlsProfileCommandsAddressTheProfile(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		nodeSysctlsProfileReportKey: `{"edge-workers":{"vm.swappiness":"60"}}`,
+	}))
+
+	cases := []struct {
+		name   string
+		task   SchedulerK3sNodeSysctlsTask
+		suffix string
+	}{
+		{
+			name:   "set",
+			task:   SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", Sysctls: map[string]string{"vm.swappiness": "10", "vm.max_map_count": "262144"}, State: StateSet},
+			suffix: "scheduler-k3s:node-sysctls:set --replace --profile edge-workers vm.max_map_count=262144 vm.swappiness=10",
+		},
+		{
+			name:   "present",
+			task:   SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", Sysctls: map[string]string{"vm.swappiness": "10"}, State: StatePresent},
+			suffix: "scheduler-k3s:node-sysctls:set --profile edge-workers vm.swappiness 10",
+		},
+		{
+			name:   "absent",
+			task:   SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", Sysctls: map[string]string{"vm.swappiness": ""}, State: StateAbsent},
+			suffix: "scheduler-k3s:node-sysctls:set --profile edge-workers vm.swappiness ",
+		},
+		{
+			name:   "clear",
+			task:   SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", State: StateClear},
+			suffix: "scheduler-k3s:node-sysctls:clear --profile edge-workers",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			plan := tc.task.Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("Plan() error: %v", plan.Error)
+			}
+			if len(plan.Commands) != 1 {
+				t.Fatalf("expected exactly one command, got %v", plan.Commands)
+			}
+			if !strings.HasSuffix(plan.Commands[0], tc.suffix) {
+				t.Errorf("command = %q, want suffix %q", plan.Commands[0], tc.suffix)
+			}
+		})
+	}
+}
+
+// TestSchedulerK3sNodeSysctlsProfileClearIsInSyncWhenStoredMapIsEmpty pins
+// #555: a profile's resolved set carries every global sysctl, so a probe that
+// read it would see drift after every :clear --profile. The stored report
+// returns only the profile's own map, which :clear does empty.
+func TestSchedulerK3sNodeSysctlsProfileClearIsInSyncWhenStoredMapIsEmpty(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		nodeSysctlsProfileReportKey: `{"edge-workers":{}}`,
+		// The unfiltered resolved report, which the probe must not read.
+		"--quiet scheduler-k3s:node-sysctls:report --format json": `{"--global":{"vm.swappiness":"10"},"edge-workers":{"vm.swappiness":"10"}}`,
+	}))
+
+	plan := SchedulerK3sNodeSysctlsTask{Profile: "edge-workers", State: StateClear}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("Plan() error: %v", plan.Error)
+	}
+	if !plan.InSync {
+		t.Errorf("expected in sync, got %v", plan.Mutations)
+	}
+}
+
+func TestSchedulerK3sNodeSysctlsProfileSetDiffsAgainstTheStoredMap(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		nodeSysctlsProfileReportKey: `{"edge-workers":{"vm.swappiness":"60"}}`,
+	}))
+
+	plan := SchedulerK3sNodeSysctlsTask{
+		Profile: "edge-workers",
+		Sysctls: map[string]string{"vm.swappiness": "60"},
+		State:   StateSet,
+	}.Plan(ctx)
+	if !plan.InSync {
+		t.Errorf("expected in sync, got %v", plan.Mutations)
+	}
+}
+
+// TestSchedulerK3sNodeSysctlsProbeRejectsDokkuWithoutStored checks a dokku
+// older than 0.38.30 is reported rather than read as "no sysctls", which would
+// let state 'clear' report in sync on a scope that still stores sysctls.
+func TestSchedulerK3sNodeSysctlsProbeRejectsDokkuWithoutStored(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		response := subprocess.ExecCommandResponse{ExitCode: 2, Stderr: "flag provided but not defined: -stored\nUsage of scheduler-k3s:node-sysctls:report:\n"}
+		return response, &subprocess.ExecError{Response: response, Err: errors.New("exit status 2"), Ran: true}
+	})
+
+	plan := SchedulerK3sNodeSysctlsTask{Global: true, State: StateClear}.Plan(ctx)
+	if plan.Error == nil {
+		t.Fatal("expected a plan error when dokku has no --stored flag")
+	}
+	if !strings.Contains(plan.Error.Error(), "requires dokku 0.38.30") {
+		t.Errorf("unexpected error: %v", plan.Error)
 	}
 }
