@@ -1763,3 +1763,105 @@ func TestValidateAcceptsPsScaleStateSet(t *testing.T) {
 		t.Errorf("expected no invalid_task_input, got %d: %+v", n, problems)
 	}
 }
+
+func TestValidateAcceptsSchedulerK3sMapStateSetAndClear(t *testing.T) {
+	// The authoritative states carry the same shape their additive siblings
+	// do, except that 'clear' names no entries at all (#527).
+	data := []byte(`---
+- tasks:
+    - dokku_scheduler_k3s_annotations:
+        app: my-app
+        resource_type: deployment
+        state: set
+        annotations:
+            managed-by: docket
+    - dokku_scheduler_k3s_annotations:
+        app: my-app
+        resource_type: deployment
+        state: clear
+    - dokku_scheduler_k3s_labels:
+        global: true
+        resource_type: deployment
+        state: set
+        labels:
+            tier: edge
+    - dokku_scheduler_k3s_autoscaling_auth:
+        app: my-app
+        trigger: datadog
+        state: clear
+    - dokku_scheduler_k3s_node_sysctls:
+        global: true
+        state: set
+        sysctls:
+            vm.max_map_count: "262144"
+`)
+	problems := Validate(data, ValidateOptions{})
+	if n := countProblems(problems, "invalid_task_input"); n != 0 {
+		t.Errorf("expected no invalid_task_input, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateInvalidTaskInputSchedulerK3sClearCarryingEntries(t *testing.T) {
+	// :clear takes no entries, so a map supplied alongside it would be
+	// silently discarded rather than removed - the same rule dokku_domains and
+	// dokku_ports already enforce.
+	data := []byte(`---
+- tasks:
+    - dokku_scheduler_k3s_annotations:
+        app: my-app
+        resource_type: deployment
+        state: clear
+        annotations:
+            managed-by: docket
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'annotations' must not be set for state 'clear'") {
+		t.Errorf("expected message to name the rule, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputSchedulerK3sSetWithAnEqualsInAKey(t *testing.T) {
+	// :set --replace splits every pair on its first '=', so a key carrying one
+	// would be stored truncated with a mangled value.
+	data := []byte(`---
+- tasks:
+    - dokku_scheduler_k3s_labels:
+        app: my-app
+        resource_type: deployment
+        state: set
+        labels:
+            "bad=key": value
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "label keys must not contain '='") {
+		t.Errorf("expected message to name the rule, got: %q", p.Message)
+	}
+}
+
+func TestValidateInvalidTaskInputSchedulerK3sNodeSysctlsWithoutGlobal(t *testing.T) {
+	// Only the global scope is manageable: the report renders a node profile's
+	// entry as the effective set rather than its stored map, so a
+	// profile-scoped task could never converge (dokku/dokku#9073).
+	data := []byte(`---
+- tasks:
+    - dokku_scheduler_k3s_node_sysctls:
+        sysctls:
+            vm.max_map_count: "262144"
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "'global' must be set to true") {
+		t.Errorf("expected message to name the rule, got: %q", p.Message)
+	}
+}

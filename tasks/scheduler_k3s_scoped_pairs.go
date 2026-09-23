@@ -40,27 +40,49 @@ func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state Sta
 	if effective == "" {
 		effective = StatePresent
 	}
+	singular := singularizeSchedulerK3sKind(spec.Kind)
+
+	// :clear takes no pairs, so a map supplied alongside it would be silently
+	// discarded rather than removed. Every other state consumes one.
+	if effective == StateClear {
+		if len(spec.Pairs) > 0 {
+			return fmt.Errorf("'%s' must not be set for state 'clear'", spec.Kind)
+		}
+		return nil
+	}
 	if len(spec.Pairs) == 0 {
 		return fmt.Errorf("'%s' must not be empty for state '%s'", spec.Kind, effective)
 	}
-	singular := singularizeSchedulerK3sKind(spec.Kind)
-	for key, value := range spec.Pairs {
+
+	for _, key := range sortedPairKeys(spec.Pairs) {
 		if key == "" {
 			return fmt.Errorf("%s keys must not be empty", singular)
+		}
+		// The per-key form passes the key and the value as separate arguments,
+		// so an "=" in a key is harmless there. State 'set' goes through
+		// :set --replace, which splits every pair on its first "=", and would
+		// store a truncated key and a mangled value instead.
+		if effective == StateSet && strings.Contains(key, "=") {
+			return fmt.Errorf("%s keys must not contain '=' for state 'set', got %q", singular, key)
 		}
 		// dokku interprets an empty value on the :set subcommand as a clear, so
 		// a present-state empty value can never be stored and would drift on
 		// every run (issue #358). Clearing is expressed with state 'absent'.
-		if effective == StatePresent && value == "" {
+		// State 'set' is exempt: :set --replace writes the declared map
+		// wholesale, so an empty value is stored and reads back out of the
+		// report.
+		if effective == StatePresent && spec.Pairs[key] == "" {
 			return fmt.Errorf("%s values must not be empty for state 'present'; use state 'absent' to clear a %s", singular, singular)
 		}
 	}
 	return nil
 }
 
-// planSchedulerK3sScopedPairsSet delegates to planPairsSet with a current-state
-// reader and a per-key command builder bound to the spec's scope.
-func planSchedulerK3sScopedPairsSet(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
+// planSchedulerK3sScopedPairsPresent delegates to planPairsSet with a
+// current-state reader and a per-key command builder bound to the spec's
+// scope. Present is additive: a key the server carries and the recipe does not
+// is left alone, which is what state 'set' exists to override.
+func planSchedulerK3sScopedPairsPresent(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
 	return planPairsSet(ctx,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,
@@ -71,10 +93,10 @@ func planSchedulerK3sScopedPairsSet(ctx context.Context, spec schedulerK3sScoped
 	)
 }
 
-// planSchedulerK3sScopedPairsUnset delegates to planPairsUnset; the command
+// planSchedulerK3sScopedPairsAbsent delegates to planPairsUnset; the command
 // builder passes an empty value, which dokku's `:labels:set` / `:annotations:set`
 // interpret as "clear this key".
-func planSchedulerK3sScopedPairsUnset(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
+func planSchedulerK3sScopedPairsAbsent(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
 	return planPairsUnset(ctx,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,
@@ -85,19 +107,74 @@ func planSchedulerK3sScopedPairsUnset(ctx context.Context, spec schedulerK3sScop
 	)
 }
 
+// planSchedulerK3sScopedPairsSet delegates to planPairsReplace with a
+// whole-map command builder bound to the spec's scope, so `:set --replace`
+// removes the keys stored at the scope that the recipe does not declare.
+func planSchedulerK3sScopedPairsSet(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
+	return planPairsReplace(ctx,
+		singularizeSchedulerK3sKind(spec.Kind),
+		spec.Pairs,
+		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
+		func() subprocess.ExecCommandInput { return schedulerK3sScopedPairsReplaceCommand(spec) },
+	)
+}
+
+// planSchedulerK3sScopedPairsClear delegates to planPairsClear; the command
+// builder empties this spec's (process_type, resource_type) scope alone, not
+// every scope on the app.
+func planSchedulerK3sScopedPairsClear(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
+	return planPairsClear(ctx,
+		singularizeSchedulerK3sKind(spec.Kind),
+		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
+		func() subprocess.ExecCommandInput { return schedulerK3sScopedPairsClearCommand(spec) },
+	)
+}
+
+// schedulerK3sScopedPairsScopeArgs returns the flags and the positional target
+// that address one scope. Every scheduler-k3s pair command shares them, and the
+// process type is always spelled out: dokku defaults an omitted --process-type
+// to the same global sentinel on the :set commands, but reads it as "no filter"
+// on :clear, where leaving it off would empty every process type's map for the
+// resource type rather than just this scope's.
+func schedulerK3sScopedPairsScopeArgs(spec schedulerK3sScopedPairsSpec) []string {
+	args := []string{
+		"--resource-type", spec.ResourceType,
+		"--process-type", schedulerK3sEffectiveProcessType(spec.ProcessType),
+	}
+	if spec.Global {
+		return append(args, "--global")
+	}
+	return append(args, spec.App)
+}
+
 // schedulerK3sScopedPairsCommand builds one `dokku scheduler-k3s:<kind>:set`
 // call. An empty value is forwarded verbatim; dokku interprets it as a clear.
 func schedulerK3sScopedPairsCommand(spec schedulerK3sScopedPairsSpec, key, value string) subprocess.ExecCommandInput {
-	args := []string{"--quiet", "scheduler-k3s:" + spec.Kind + ":set"}
-	args = append(args, "--resource-type", spec.ResourceType)
-	if spec.ProcessType != "" {
-		args = append(args, "--process-type", spec.ProcessType)
+	args := append([]string{"--quiet", "scheduler-k3s:" + spec.Kind + ":set"}, schedulerK3sScopedPairsScopeArgs(spec)...)
+	return subprocess.ExecCommandInput{Command: "dokku", Args: append(args, key, value)}
+}
+
+// schedulerK3sScopedPairsReplaceCommand builds the single
+// `dokku scheduler-k3s:<kind>:set --replace` call that swaps the scope's whole
+// map for the declared one. Dokku reads the app from the first positional
+// argument and the key=value pairs from the rest, so the pairs follow the
+// target; under --global there is no positional target and they start the list.
+// They are sorted so the rendered command does not change between runs.
+func schedulerK3sScopedPairsReplaceCommand(spec schedulerK3sScopedPairsSpec) subprocess.ExecCommandInput {
+	args := append([]string{"--quiet", "scheduler-k3s:" + spec.Kind + ":set", "--replace"}, schedulerK3sScopedPairsScopeArgs(spec)...)
+	for _, key := range sortedPairKeys(spec.Pairs) {
+		args = append(args, key+"="+spec.Pairs[key])
 	}
-	if spec.Global {
-		args = append(args, "--global", key, value)
-	} else {
-		args = append(args, spec.App, key, value)
-	}
+	return subprocess.ExecCommandInput{Command: "dokku", Args: args}
+}
+
+// schedulerK3sScopedPairsClearCommand builds the `dokku
+// scheduler-k3s:<kind>:clear` call that empties one scope. `:set --replace`
+// cannot express this: dokku rejects an empty pair list rather than reading it
+// as "remove everything", so that a generated list which expands to nothing
+// cannot silently drop an app's metadata.
+func schedulerK3sScopedPairsClearCommand(spec schedulerK3sScopedPairsSpec) subprocess.ExecCommandInput {
+	args := append([]string{"--quiet", "scheduler-k3s:" + spec.Kind + ":clear"}, schedulerK3sScopedPairsScopeArgs(spec)...)
 	return subprocess.ExecCommandInput{Command: "dokku", Args: args}
 }
 
@@ -115,11 +192,7 @@ func getSchedulerK3sScopedPairs(ctx context.Context, spec schedulerK3sScopedPair
 	}
 	args = append(args, "--resource-type", spec.ResourceType)
 
-	effectiveProcessType := spec.ProcessType
-	if effectiveProcessType == "" {
-		effectiveProcessType = "--global"
-	}
-	args = append(args, "--process-type", effectiveProcessType)
+	args = append(args, "--process-type", schedulerK3sEffectiveProcessType(spec.ProcessType))
 	args = append(args, "--format", "json")
 
 	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
@@ -144,6 +217,18 @@ func getSchedulerK3sScopedPairs(ctx context.Context, spec schedulerK3sScopedPair
 		pairs[strings.TrimPrefix(composedKey, prefix)] = value
 	}
 	return pairs, nil
+}
+
+// schedulerK3sEffectiveProcessType returns the process type a command should
+// name for a scope. dokku stores a scope whose process type is omitted under
+// the sentinel "--global", and the sentinel is spelled out on every command
+// rather than left to dokku's default, because :clear reads an omitted
+// --process-type as "no filter" instead of as that default.
+func schedulerK3sEffectiveProcessType(processType string) string {
+	if processType == "" {
+		return "--global"
+	}
+	return processType
 }
 
 // renderedSchedulerK3sProcessType mirrors dokku's report-side rendering of the

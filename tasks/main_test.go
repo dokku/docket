@@ -758,7 +758,7 @@ func TestAllTaskExamplesValidate(t *testing.T) {
 }
 
 func TestRegisteredTaskCount(t *testing.T) {
-	expected := 73
+	expected := 74
 	if got := len(RegisteredTasks); got != expected {
 		t.Errorf("expected %d registered tasks, got %d", expected, got)
 	}

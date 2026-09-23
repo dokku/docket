@@ -23,8 +23,8 @@ Keyed by `app`, `global`, and `trigger`. Fields left empty are omitted from the 
 | `app` | string | no |  |  | Name of the app. Required if Global is false. |
 | `global` | bool | no |  |  | Flag indicating if the trigger authentication should be applied globally |
 | `trigger` | string | yes |  |  | Name of the KEDA trigger authentication resource |
-| `metadata` | dict | no |  |  | Map of metadata key to value for the trigger authentication. On absent, only the keys are read. |
-| `state` | string | no | present | present, absent | Desired state of the trigger authentication metadata |
+| `metadata` | dict | no |  |  | Map of metadata key to value for the trigger authentication; omit for state 'clear'. On absent, only the keys are read. A key must not contain '='. |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the trigger authentication metadata. 'set' declares the complete map for the trigger, removing any key the recipe does not name; 'clear' removes every key stored under it. |
 
 ## Examples
 
@@ -60,6 +60,26 @@ dokku_scheduler_k3s_autoscaling_auth:
     metadata:
         secretName: ""
     state: absent
+```
+
+### Replace the whole metadata map for an app's trigger
+
+```yaml
+dokku_scheduler_k3s_autoscaling_auth:
+    app: node-js-app
+    trigger: aws-secret-manager
+    metadata:
+        awsRegion: us-east-1
+    state: set
+```
+
+### Clear every metadata key from an app's trigger
+
+```yaml
+dokku_scheduler_k3s_autoscaling_auth:
+    app: node-js-app
+    trigger: aws-secret-manager
+    state: clear
 ```
 
 ## Return Values

@@ -73,11 +73,12 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 		deployApps: []string{"node-js-app"},
 		setup:      setupLetsencryptExample,
 	},
-	"dokku_scheduler_k3s_annotations": {k3s: true},
-	"dokku_scheduler_k3s_chart":       {k3s: true},
-	"dokku_scheduler_k3s_labels":      {k3s: true},
-	"dokku_scheduler_k3s_profile":     {k3s: true},
-	"dokku_scheduler_k3s_property":    {k3s: true},
+	"dokku_scheduler_k3s_annotations":  {k3s: true},
+	"dokku_scheduler_k3s_chart":        {k3s: true},
+	"dokku_scheduler_k3s_labels":       {k3s: true},
+	"dokku_scheduler_k3s_node_sysctls": {k3s: true},
+	"dokku_scheduler_k3s_profile":      {k3s: true},
+	"dokku_scheduler_k3s_property":     {k3s: true},
 
 	// Plugin-gated app tasks (the plugins are installed in the integration CI job).
 	"dokku_acl_app":              {plugins: []string{"acl"}},
@@ -119,7 +120,7 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 
 	// Tasks that need infra not present in the integration environment.
 	"dokku_ps_scale":                       {skip: "requires a multi-process (web+worker) deploy that a stock image does not provide; covered offline"},
-	"dokku_scheduler_k3s_autoscaling_auth":  {skip: "requires KEDA installed on the cluster to apply the trigger-authentication chart; covered offline"},
+	"dokku_scheduler_k3s_autoscaling_auth": {skip: "requires KEDA installed on the cluster to apply the trigger-authentication chart; covered offline"},
 	"dokku_service_backup":                 {skip: "needs an object-storage backend and credentials; covered offline"},
 	"dokku_plugin":                         {skip: "installs/uninstalls a real dokku plugin; covered offline and by TestIntegrationPlugin"},
 	"dokku_ssh_key":                        {skip: "manages host ssh keys; covered offline"},

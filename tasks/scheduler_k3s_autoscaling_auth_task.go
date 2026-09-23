@@ -20,10 +20,12 @@ type SchedulerK3sAutoscalingAuthTask struct {
 	// trigger. On present, these keys are written and merged with any other
 	// keys dokku already stores under the trigger. On absent, only the listed
 	// keys are cleared; their values are ignored.
-	Metadata map[string]string `required:"false" identity:"collection" yaml:"metadata,omitempty" description:"Map of metadata key to value for the trigger authentication. On absent, only the keys are read."`
+	Metadata map[string]string `required:"false" identity:"collection" yaml:"metadata,omitempty" description:"Map of metadata key to value for the trigger authentication; omit for state 'clear'. On absent, only the keys are read. A key must not contain '='."`
 
 	// State is the desired state of the trigger authentication metadata.
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the trigger authentication metadata"`
+	// 'present' and 'absent' are additive, naming keys to write or clear;
+	// 'set' declares the trigger's complete map and 'clear' empties it.
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the trigger authentication metadata. 'set' declares the complete map for the trigger, removing any key the recipe does not name; 'clear' removes every key stored under it."`
 }
 
 // SchedulerK3sAutoscalingAuthTaskExample contains an example of a SchedulerK3sAutoscalingAuthTask
@@ -91,6 +93,25 @@ func (t SchedulerK3sAutoscalingAuthTask) Examples() ([]Doc, error) {
 				State: StateAbsent,
 			},
 		},
+		{
+			Name: "Replace the whole metadata map for an app's trigger",
+			SchedulerK3sAutoscalingAuthTask: SchedulerK3sAutoscalingAuthTask{
+				App:     "node-js-app",
+				Trigger: "aws-secret-manager",
+				Metadata: map[string]string{
+					"awsRegion": "us-east-1",
+				},
+				State: StateSet,
+			},
+		},
+		{
+			Name: "Clear every metadata key from an app's trigger",
+			SchedulerK3sAutoscalingAuthTask: SchedulerK3sAutoscalingAuthTask{
+				App:     "node-js-app",
+				Trigger: "aws-secret-manager",
+				State:   StateClear,
+			},
+		},
 	})
 }
 
@@ -129,8 +150,10 @@ func (t SchedulerK3sAutoscalingAuthTask) Plan(ctx context.Context) PlanResult {
 	}
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSchedulerK3sAutoscalingAuthSet(ctx, spec) },
-		StateAbsent:  func() PlanResult { return planSchedulerK3sAutoscalingAuthUnset(ctx, spec) },
+		StatePresent: func() PlanResult { return planSchedulerK3sAutoscalingAuthPresent(ctx, spec) },
+		StateAbsent:  func() PlanResult { return planSchedulerK3sAutoscalingAuthAbsent(ctx, spec) },
+		StateSet:     func() PlanResult { return planSchedulerK3sAutoscalingAuthSet(ctx, spec) },
+		StateClear:   func() PlanResult { return planSchedulerK3sAutoscalingAuthClear(ctx, spec) },
 	})
 }
 
@@ -153,6 +176,7 @@ func (t SchedulerK3sAutoscalingAuthTask) ExportApp(ctx context.Context, app stri
 			App:      app,
 			Trigger:  trigger,
 			Metadata: metadata,
+			State:    StateSet,
 		}
 	})
 }
@@ -165,6 +189,7 @@ func (t SchedulerK3sAutoscalingAuthTask) ExportGlobal(ctx context.Context) ([]in
 			Global:   true,
 			Trigger:  trigger,
 			Metadata: metadata,
+			State:    StateSet,
 		}
 	})
 }

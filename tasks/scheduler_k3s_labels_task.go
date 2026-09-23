@@ -22,10 +22,12 @@ type SchedulerK3sLabelsTask struct {
 
 	// Labels is the desired set of label key/value pairs to apply at the
 	// (process_type, resource_type) scope.
-	Labels map[string]string `required:"false" identity:"collection" yaml:"labels,omitempty" description:"Map of label key to value to apply at the scope."`
+	Labels map[string]string `required:"false" identity:"collection" yaml:"labels,omitempty" description:"Map of label key to value to apply at the scope; omit for state 'clear'. Under state 'set' a key must not contain '=', and an empty value is stored rather than clearing the key."`
 
-	// State is the desired state of the labels
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the labels"`
+	// State is the desired state of the labels. 'present' and 'absent' are
+	// additive, naming keys to write or clear; 'set' declares the complete map
+	// for the scope and 'clear' empties it.
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the labels. 'set' declares the complete map for this (process_type, resource_type) scope, removing any label the recipe does not name; 'clear' empties that scope alone, leaving other scopes on the app untouched."`
 }
 
 // SchedulerK3sLabelsTaskExample contains an example of a SchedulerK3sLabelsTask
@@ -103,6 +105,27 @@ func (t SchedulerK3sLabelsTask) Examples() ([]Doc, error) {
 				State: StateAbsent,
 			},
 		},
+		{
+			Name: "Replace the deployment labels on an app's web process",
+			SchedulerK3sLabelsTask: SchedulerK3sLabelsTask{
+				App:          "node-js-app",
+				ProcessType:  "web",
+				ResourceType: "deployment",
+				Labels: map[string]string{
+					"managed-by": "docket",
+				},
+				State: StateSet,
+			},
+		},
+		{
+			Name: "Clear the deployment labels from an app's web process",
+			SchedulerK3sLabelsTask: SchedulerK3sLabelsTask{
+				App:          "node-js-app",
+				ProcessType:  "web",
+				ResourceType: "deployment",
+				State:        StateClear,
+			},
+		},
 	})
 }
 
@@ -123,8 +146,10 @@ func (t SchedulerK3sLabelsTask) Plan(ctx context.Context) PlanResult {
 	}
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsSet(ctx, spec) },
-		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsUnset(ctx, spec) },
+		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsPresent(ctx, spec) },
+		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsAbsent(ctx, spec) },
+		StateSet:     func() PlanResult { return planSchedulerK3sScopedPairsSet(ctx, spec) },
+		StateClear:   func() PlanResult { return planSchedulerK3sScopedPairsClear(ctx, spec) },
 	})
 }
 
@@ -143,6 +168,8 @@ func (t SchedulerK3sLabelsTask) spec() schedulerK3sScopedPairsSpec {
 
 // ExportApp reconstructs the app's labels, one task per
 // (process_type, resource_type) scope, from scheduler-k3s:labels:report.
+// state:set replaces each scope's whole map, so a re-applied export reproduces
+// the exact set rather than merging into whatever the target already carries.
 func (t SchedulerK3sLabelsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
 	return exportSchedulerK3sScopedPairs(ctx, "labels", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
 		return SchedulerK3sLabelsTask{
@@ -150,6 +177,7 @@ func (t SchedulerK3sLabelsTask) ExportApp(ctx context.Context, app string) ([]in
 			ProcessType:  processType,
 			ResourceType: resourceType,
 			Labels:       pairs,
+			State:        StateSet,
 		}
 	})
 }
@@ -163,6 +191,7 @@ func (t SchedulerK3sLabelsTask) ExportGlobal(ctx context.Context) ([]interface{}
 			ProcessType:  processType,
 			ResourceType: resourceType,
 			Labels:       pairs,
+			State:        StateSet,
 		}
 	})
 }

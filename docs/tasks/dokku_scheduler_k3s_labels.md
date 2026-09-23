@@ -24,8 +24,8 @@ Keyed by `app`, `global`, `process_type`, and `resource_type`. Fields left empty
 | `global` | bool | no |  |  | Flag indicating if the labels should be applied globally |
 | `process_type` | string | no |  |  | Process type to scope the labels to. Defaults to the global process type when empty. |
 | `resource_type` | string | yes |  |  | Kubernetes resource type to scope the labels to (e.g. deployment, ingress). |
-| `labels` | dict | no |  |  | Map of label key to value to apply at the scope. |
-| `state` | string | no | present | present, absent | Desired state of the labels |
+| `labels` | dict | no |  |  | Map of label key to value to apply at the scope; omit for state 'clear'. Under state 'set' a key must not contain '=', and an empty value is stored rather than clearing the key. |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the labels. 'set' declares the complete map for this (process_type, resource_type) scope, removing any label the recipe does not name; 'clear' empties that scope alone, leaving other scopes on the app untouched. |
 
 ## Examples
 
@@ -71,6 +71,28 @@ dokku_scheduler_k3s_labels:
     labels:
         tier: ""
     state: absent
+```
+
+### Replace the deployment labels on an app's web process
+
+```yaml
+dokku_scheduler_k3s_labels:
+    app: node-js-app
+    process_type: web
+    resource_type: deployment
+    labels:
+        managed-by: docket
+    state: set
+```
+
+### Clear the deployment labels from an app's web process
+
+```yaml
+dokku_scheduler_k3s_labels:
+    app: node-js-app
+    process_type: web
+    resource_type: deployment
+    state: clear
 ```
 
 ## Return Values

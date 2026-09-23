@@ -457,3 +457,98 @@ func TestExportSchedulerK3sProfileResourceAddressReportsAMissingProfile(t *testi
 		t.Errorf("warning = %q, want it to name EdgePool", res.Report.Warnings[0])
 	}
 }
+
+// TestExportSchedulerK3sMapTasksUseStateSet pins that every exported
+// scheduler-k3s map carries state:set, so re-applying an export reproduces the
+// exact map rather than merging into whatever the target already holds. The
+// default state is present, which would leave a key the source server does not
+// have in place on the target.
+func TestExportSchedulerK3sMapTasksUseStateSet(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet scheduler-k3s:annotations:report myapp --format json":         `{"global.deployment.managed-by":"docket"}`,
+		"--quiet scheduler-k3s:annotations:report --global --format json":      `{"global.deployment.managed-by":"docket"}`,
+		"--quiet scheduler-k3s:labels:report myapp --format json":              `{"global.deployment.tier":"edge"}`,
+		"--quiet scheduler-k3s:labels:report --global --format json":           `{"global.deployment.tier":"edge"}`,
+		"--quiet scheduler-k3s:autoscaling-auth:report myapp --format json":    `{"datadog.apiKey":"secret"}`,
+		"--quiet scheduler-k3s:autoscaling-auth:report --global --format json": `{"datadog.apiKey":"secret"}`,
+		nodeSysctlsReportKey: `{"--global":{"vm.swappiness":"10"}}`,
+	}))
+
+	cases := []struct {
+		name   string
+		bodies func() ([]interface{}, error)
+		state  func(interface{}) State
+	}{
+		{
+			name:   "annotations app",
+			bodies: func() ([]interface{}, error) { return SchedulerK3sAnnotationsTask{}.ExportApp(ctx, "myapp") },
+			state:  func(b interface{}) State { return b.(SchedulerK3sAnnotationsTask).State },
+		},
+		{
+			name:   "annotations global",
+			bodies: func() ([]interface{}, error) { return SchedulerK3sAnnotationsTask{}.ExportGlobal(ctx) },
+			state:  func(b interface{}) State { return b.(SchedulerK3sAnnotationsTask).State },
+		},
+		{
+			name:   "labels app",
+			bodies: func() ([]interface{}, error) { return SchedulerK3sLabelsTask{}.ExportApp(ctx, "myapp") },
+			state:  func(b interface{}) State { return b.(SchedulerK3sLabelsTask).State },
+		},
+		{
+			name:   "labels global",
+			bodies: func() ([]interface{}, error) { return SchedulerK3sLabelsTask{}.ExportGlobal(ctx) },
+			state:  func(b interface{}) State { return b.(SchedulerK3sLabelsTask).State },
+		},
+		{
+			name:   "autoscaling auth app",
+			bodies: func() ([]interface{}, error) { return SchedulerK3sAutoscalingAuthTask{}.ExportApp(ctx, "myapp") },
+			state:  func(b interface{}) State { return b.(SchedulerK3sAutoscalingAuthTask).State },
+		},
+		{
+			name:   "autoscaling auth global",
+			bodies: func() ([]interface{}, error) { return SchedulerK3sAutoscalingAuthTask{}.ExportGlobal(ctx) },
+			state:  func(b interface{}) State { return b.(SchedulerK3sAutoscalingAuthTask).State },
+		},
+		{
+			name:   "node sysctls global",
+			bodies: func() ([]interface{}, error) { return SchedulerK3sNodeSysctlsTask{}.ExportGlobal(ctx) },
+			state:  func(b interface{}) State { return b.(SchedulerK3sNodeSysctlsTask).State },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bodies, err := tc.bodies()
+			if err != nil {
+				t.Fatalf("export: %v", err)
+			}
+			if len(bodies) == 0 {
+				t.Fatal("expected at least one exported body")
+			}
+			for _, body := range bodies {
+				if got := tc.state(body); got != StateSet {
+					t.Errorf("State = %q, want %q for %+v", got, StateSet, body)
+				}
+			}
+		})
+	}
+}
+
+// TestSchedulerK3sNodeSysctlsExportGlobalEmpty checks the scope with nothing
+// stored exports nothing, rather than a task carrying an empty map that
+// state:set would then refuse to validate.
+func TestSchedulerK3sNodeSysctlsExportGlobalEmpty(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		nodeSysctlsReportKey: `{"--global":{},"edge-workers":{"vm.swappiness":"10"}}`,
+	}))
+
+	bodies, err := SchedulerK3sNodeSysctlsTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if bodies != nil {
+		t.Errorf("expected no bodies, got %+v", bodies)
+	}
+}
