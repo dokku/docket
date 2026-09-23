@@ -220,7 +220,7 @@ func planHttpAuthDomainsSet(ctx context.Context, t HttpAuthDomainTask) PlanResul
 		desired[d] = true
 	}
 	mutations := []string{}
-	for _, d := range t.Domains {
+	for _, d := range sortedSetKeys(desired) {
 		if !current[d] {
 			mutations = append(mutations, "add "+d)
 		}

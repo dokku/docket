@@ -233,7 +233,7 @@ func planHttpAuthAllowedIpsSet(ctx context.Context, t HttpAuthAllowedIpTask) Pla
 		desired[ip] = true
 	}
 	mutations := []string{}
-	for _, ip := range t.AllowedIps {
+	for _, ip := range sortedSetKeys(desired) {
 		if !current[ip] {
 			mutations = append(mutations, "add "+ip)
 		}

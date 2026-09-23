@@ -174,9 +174,11 @@ func TestHttpAuthAllowedIpsSetPlansFullReplacement(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthAllowedIpReport("192.0.2.1 198.51.100.2")))
 
+	// The addresses are declared out of sorted order on purpose: the mutation
+	// lines come out sorted, while the command keeps the declared order.
 	plan := HttpAuthAllowedIpTask{
 		App:        "web",
-		AllowedIps: []string{"203.0.113.5"},
+		AllowedIps: []string{"203.0.113.5", "198.51.100.9"},
 		State:      StateSet,
 	}.Plan(ctx)
 	if plan.Error != nil {
@@ -192,10 +194,15 @@ func TestHttpAuthAllowedIpsSetPlansFullReplacement(t *testing.T) {
 		t.Fatalf("expected exactly one planned command, got %v", plan.Commands)
 	}
 	// The command carries the complete desired list, not the per-address delta.
-	if !strings.HasSuffix(plan.Commands[0], "http-auth:set-allowed-ips web 203.0.113.5") {
+	if !strings.HasSuffix(plan.Commands[0], "http-auth:set-allowed-ips web 203.0.113.5 198.51.100.9") {
 		t.Errorf("expected http-auth:set-allowed-ips with the full desired list, got %q", plan.Commands[0])
 	}
-	want := []string{"add 203.0.113.5", "remove 192.0.2.1", "remove 198.51.100.2"}
+	want := []string{
+		"add 198.51.100.9",
+		"add 203.0.113.5",
+		"remove 192.0.2.1",
+		"remove 198.51.100.2",
+	}
 	if !reflect.DeepEqual(plan.Mutations, want) {
 		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
 	}

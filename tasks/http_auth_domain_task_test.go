@@ -107,9 +107,11 @@ func TestHttpAuthDomainsSetPlansFullReplacement(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthDomainReport("www.example.com app.example.com")))
 
+	// The domains are declared out of sorted order on purpose: the mutation
+	// lines come out sorted, while the command keeps the declared order.
 	plan := HttpAuthDomainTask{
 		App:     "web",
-		Domains: []string{"api.example.com"},
+		Domains: []string{"web.example.com", "api.example.com"},
 		State:   StateSet,
 	}.Plan(ctx)
 	if plan.Error != nil {
@@ -125,10 +127,15 @@ func TestHttpAuthDomainsSetPlansFullReplacement(t *testing.T) {
 		t.Fatalf("expected exactly one planned command, got %v", plan.Commands)
 	}
 	// The command carries the complete desired list, not the per-domain delta.
-	if !strings.HasSuffix(plan.Commands[0], "http-auth:set-domains web api.example.com") {
+	if !strings.HasSuffix(plan.Commands[0], "http-auth:set-domains web web.example.com api.example.com") {
 		t.Errorf("expected http-auth:set-domains with the full desired list, got %q", plan.Commands[0])
 	}
-	want := []string{"add api.example.com", "remove app.example.com", "remove www.example.com"}
+	want := []string{
+		"add api.example.com",
+		"add web.example.com",
+		"remove app.example.com",
+		"remove www.example.com",
+	}
 	if !reflect.DeepEqual(plan.Mutations, want) {
 		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
 	}
