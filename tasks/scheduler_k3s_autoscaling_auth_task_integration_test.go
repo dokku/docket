@@ -73,8 +73,11 @@ func TestIntegrationSchedulerK3sAutoscalingAuthAll(t *testing.T) {
 	}
 }
 
-// TestIntegrationSchedulerK3sAutoscalingAuthPartialClear verifies the
-// wipe-and-restore dance preserves keys the absent task does not name.
+// TestIntegrationSchedulerK3sAutoscalingAuthPartialClear verifies the absent
+// state preserves keys it does not name. `:autoscaling-auth:set` still has no
+// per-key delete, so the survivors are re-declared; what changed with #527 is
+// that they are re-declared by the same --replace call that drops the rest,
+// rather than restored by a second call after a wipe.
 func TestIntegrationSchedulerK3sAutoscalingAuthPartialClear(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 

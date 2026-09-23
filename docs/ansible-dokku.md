@@ -393,8 +393,9 @@ Per-plugin property tasks, each wrapping a `<plugin>:set`:
 `dokku_scheduler_property`, `dokku_traefik_property`.
 
 The scheduler-k3s set: `dokku_scheduler_k3s_annotations`, `dokku_scheduler_k3s_autoscaling_auth`,
-`dokku_scheduler_k3s_chart`, `dokku_scheduler_k3s_labels`, `dokku_scheduler_k3s_profile`,
-`dokku_scheduler_k3s_property`, plus `dokku_scheduler_docker_local_property`.
+`dokku_scheduler_k3s_chart`, `dokku_scheduler_k3s_labels`, `dokku_scheduler_k3s_node_sysctls`,
+`dokku_scheduler_k3s_profile`, `dokku_scheduler_k3s_property`, plus
+`dokku_scheduler_docker_local_property`.
 
 Finer-grained HTTP auth than the module's on/off switch: `dokku_http_auth_allowed_ip`,
 `dokku_http_auth_domain`, `dokku_http_auth_user`.

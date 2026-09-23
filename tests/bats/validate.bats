@@ -216,6 +216,91 @@ EOF
   assert_output --partial "must not contain whitespace"
 }
 
+@test "docket validate exits 0 on scheduler-k3s map tasks in state set and clear (#527)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_annotations:
+        app: web
+        resource_type: deployment
+        state: set
+        annotations:
+          managed-by: docket
+    - dokku_scheduler_k3s_labels:
+        app: web
+        resource_type: deployment
+        state: clear
+    - dokku_scheduler_k3s_node_sysctls:
+        global: true
+        state: set
+        sysctls:
+          vm.max_map_count: "262144"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on scheduler-k3s state clear carrying entries" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_annotations:
+        app: web
+        resource_type: deployment
+        state: clear
+        annotations:
+          managed-by: docket
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'annotations' must not be set for state 'clear'"
+}
+
+@test "docket validate exits 1 on scheduler-k3s state set with an empty map" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_labels:
+        app: web
+        resource_type: deployment
+        state: set
+        labels: {}
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'labels' must not be empty for state 'set'"
+}
+
+@test "docket validate exits 1 on a scheduler-k3s set key carrying an equals sign" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_annotations:
+        app: web
+        resource_type: deployment
+        state: set
+        annotations:
+          "bad=key": value
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "annotation keys must not contain '='"
+}
+
+@test "docket validate exits 1 on node sysctls without the global scope" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_node_sysctls:
+        sysctls:
+          vm.max_map_count: "262144"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'global' must be set to true"
+}
+
 @test "docket validate exits 1 on two port mappings sharing a scheme and host port (#432)" {
   write_tasks_file <<EOF
 ---

@@ -413,6 +413,45 @@ while the `chart.*` guard lived in `Plan()` alone and `docket validate` reported
 unsupported-name error instead (#458). The family is published as `property_schema.rejected` too, so
 a consumer validating a recipe offline can give the same answer.
 
+## Authoritative collection tasks
+
+A task whose collection field carries `identity:"collection"` owns that collection outright - the
+Identity section calls the collection the resource, not part of its key. Such a task can offer two
+states beyond `present` and `absent`:
+
+- **`set`** declares the complete collection. Every entry the recipe names is written, and every
+  entry stored on the server that it does not name is removed. It requires a non-empty collection.
+- **`clear`** empties the collection. It takes no entries at all.
+
+`present` and `absent` stay additive alongside them: `present` writes the named entries and leaves
+the rest, `absent` removes the named entries and leaves the rest. That is the whole point of the
+split - an additive task cannot express "and nothing else", so an entry a recipe stopped declaring
+survives every apply.
+
+Both states must route through a **single server-side whole-set command**, not a loop over the
+entries. `dokku_domains` uses `domains:set` and `domains:clear`, `dokku_ports` uses `ports:set` and
+`ports:clear`, and the scheduler-k3s map tasks use `<plugin>:set --replace` and `<plugin>:clear`.
+Emitting one command per entry would leave the collection carrying a mixture of the old and new sets
+when a run fails partway, which is the outcome these states exist to rule out. Where dokku has no
+whole-set command, the task does not get the states.
+
+Two validation rules go with them, and every task carrying the states shares both:
+
+- an empty collection under `set` is an error, not a request to remove everything. `clear` owns
+  that, and the rule keeps a generated list that expands to nothing from silently emptying a
+  collection. Dokku enforces the same rule on its side.
+- a collection supplied under `clear` is an error rather than something to ignore, since the command
+  cannot act on it and silently discarding it would read as a removal that never happened.
+
+`planPairsReplace` and `planPairsClear` in `tasks/pairs.go` implement both states for a
+`map[string]string` collection: pass the desired map, a probe, and a builder for the one command,
+and they handle the two-directional diff, the mutation lines and the in-sync case. The list-valued
+tasks build their commands through `dokkuArgsInputs` / `applyDokkuArgs` in `tasks/domains_task.go`
+instead.
+
+`docket export` emits an authoritative collection as `state: set`, so re-applying an export
+reproduces the exact collection rather than merging into whatever the target already holds.
+
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,

@@ -19,6 +19,18 @@ func validateAppGlobalExclusive(app string, global bool) error {
 	return nil
 }
 
+// sortedPairKeys returns a map's keys in sorted order, so a validation error
+// blames the same key run to run rather than whichever one Go's map iteration
+// reached first.
+func sortedPairKeys(pairs map[string]string) []string {
+	keys := make([]string, 0, len(pairs))
+	for key := range pairs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // driftedKeys returns the sorted list of keys in desired whose value differs
 // from current (or which are missing from current). allNew is true when every
 // drifted key is brand new (not present in current at all), so a caller can
@@ -37,6 +49,20 @@ func driftedKeys(desired, current map[string]string) (drifted []string, allNew b
 	}
 	sort.Strings(drifted)
 	return drifted, allNew
+}
+
+// removedKeys returns the sorted list of keys in current that desired does not
+// declare. Only the authoritative states need it: present and absent leave a
+// key the recipe does not name alone, while set exists to remove it.
+func removedKeys(desired, current map[string]string) []string {
+	out := []string{}
+	for k := range current {
+		if _, declared := desired[k]; !declared {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // intersectingKeys returns the sorted list of keys in target that also exist

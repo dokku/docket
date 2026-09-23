@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -48,7 +49,8 @@ func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
 	ctx := subprocess.ContextWithMasker(testCtx(), masker)
 
 	// The server holds two metadata keys; the task clears one, so the other
-	// survives and is read back (with its secret value) for the restore call.
+	// survives and is read back (with its secret value) to be re-declared in
+	// the replacing call.
 	ctx = subprocess.ContextWithRunner(ctx, fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:autoscaling-auth:report test-app --format json": `{"aws-secret-manager.secretName":"my-secret","aws-secret-manager.awsSecretAccessKey":"REALSECRET"}`,
 	}))
@@ -79,11 +81,12 @@ func TestSchedulerK3sAutoscalingAuthUnsetMasksProbedSecrets(t *testing.T) {
 		}
 	}
 
-	// The rendered mutations (unset ... (was "my-secret"), restore ...=REALSECRET)
-	// must mask to *** once the probed values are registered.
-	for _, m := range result.Mutations {
-		if masked := masker.String(m); strings.Contains(masked, "REALSECRET") || strings.Contains(masked, "my-secret") {
-			t.Errorf("mutation leaked a probed secret after masking: %q -> %q", m, masked)
+	// The rendered mutations (unset ... (was "my-secret")) and the rendered
+	// command (which re-declares the survivor as --metadata k=REALSECRET) must
+	// both mask to *** once the probed values are registered.
+	for _, line := range append(append([]string{}, result.Mutations...), result.Commands...) {
+		if masked := masker.String(line); strings.Contains(masked, "REALSECRET") || strings.Contains(masked, "my-secret") {
+			t.Errorf("plan output leaked a probed secret after masking: %q -> %q", line, masked)
 		}
 	}
 }
@@ -228,5 +231,234 @@ func TestSchedulerK3sAutoscalingAuthTaskAbsentEmptyValueAllowed(t *testing.T) {
 	}
 	if err := task.Validate(); err != nil {
 		t.Fatalf("absent-state empty value should be allowed (clears the key), got %v", err)
+	}
+}
+
+// autoscalingAuthReportKey is the fakeDokku key for the probe every
+// autoscaling-auth planner runs.
+const autoscalingAuthReportKey = "--quiet scheduler-k3s:autoscaling-auth:report node-js-app --format json"
+
+func TestSchedulerK3sAutoscalingAuthSetPlansFullReplacement(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		autoscalingAuthReportKey: `{"datadog.apiKey":"old","datadog.datadogSite":"gone"}`,
+	}))
+
+	plan := SchedulerK3sAutoscalingAuthTask{
+		App:      "node-js-app",
+		Trigger:  "datadog",
+		Metadata: map[string]string{"apiKey": "new", "appKey": "added"},
+		State:    StateSet,
+	}.Plan(ctx)
+
+	if plan.Error != nil {
+		t.Fatalf("Plan() error: %v", plan.Error)
+	}
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected exactly one command, got %v", plan.Commands)
+	}
+	// The whole declared map travels in one --replace call, so the trigger is
+	// never left carrying a mixture of the old and new sets.
+	if !strings.HasSuffix(plan.Commands[0], "scheduler-k3s:autoscaling-auth:set --replace node-js-app datadog --metadata apiKey=new --metadata appKey=added") {
+		t.Errorf("unexpected command: %q", plan.Commands[0])
+	}
+	want := []string{`set apiKey=new (was "old")`, `set appKey=added (new)`, `unset datadogSite (was "gone")`}
+	if !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthSetConvergesWhenReportMatches(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		autoscalingAuthReportKey: `{"datadog.apiKey":"key"}`,
+	}))
+
+	plan := SchedulerK3sAutoscalingAuthTask{
+		App:      "node-js-app",
+		Trigger:  "datadog",
+		Metadata: map[string]string{"apiKey": "key"},
+		State:    StateSet,
+	}.Plan(ctx)
+
+	if !plan.InSync {
+		t.Errorf("expected in sync, got %v", plan.Mutations)
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthClearWipesTheTrigger(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		autoscalingAuthReportKey: `{"datadog.apiKey":"key","other-trigger.apiKey":"untouched"}`,
+	}))
+
+	plan := SchedulerK3sAutoscalingAuthTask{
+		App:     "node-js-app",
+		Trigger: "datadog",
+		State:   StateClear,
+	}.Plan(ctx)
+
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected exactly one command, got %v", plan.Commands)
+	}
+	// There is no :autoscaling-auth:clear subcommand; a bare :set with no
+	// --metadata is what dokku reads as "wipe this trigger".
+	if !strings.HasSuffix(plan.Commands[0], "scheduler-k3s:autoscaling-auth:set node-js-app datadog") {
+		t.Errorf("unexpected command: %q", plan.Commands[0])
+	}
+	// Only this trigger's keys are in scope; another trigger's are not.
+	if want := []string{`unset apiKey (was "key")`}; !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthClearIsInSyncWhenTriggerIsEmpty(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		autoscalingAuthReportKey: `{"other-trigger.apiKey":"untouched"}`,
+	}))
+
+	plan := SchedulerK3sAutoscalingAuthTask{
+		App:     "node-js-app",
+		Trigger: "datadog",
+		State:   StateClear,
+	}.Plan(ctx)
+
+	if !plan.InSync {
+		t.Errorf("expected in sync, got %v", plan.Mutations)
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthAbsentReplacesInOneCall(t *testing.T) {
+	t.Parallel()
+	// Before dokku grew --replace this was a wipe followed by a restore, so a
+	// failure between the two took every surviving key with it. One call now
+	// drops the named keys and re-declares the survivors together.
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		autoscalingAuthReportKey: `{"datadog.apiKey":"key","datadog.datadogSite":"site"}`,
+	}))
+
+	plan := SchedulerK3sAutoscalingAuthTask{
+		App:      "node-js-app",
+		Trigger:  "datadog",
+		Metadata: map[string]string{"datadogSite": ""},
+		State:    StateAbsent,
+	}.Plan(ctx)
+
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected exactly one command, got %v", plan.Commands)
+	}
+	if !strings.HasSuffix(plan.Commands[0], "scheduler-k3s:autoscaling-auth:set --replace node-js-app datadog --metadata apiKey=key") {
+		t.Errorf("unexpected command: %q", plan.Commands[0])
+	}
+	// Nothing is removed and re-added any more, so there is no restore to report.
+	if want := []string{`unset datadogSite (was "site")`}; !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthAbsentWipesWhenNothingSurvives(t *testing.T) {
+	t.Parallel()
+	// --replace rejects an empty --metadata list, so clearing the last key has
+	// to fall back to the bare wipe.
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		autoscalingAuthReportKey: `{"datadog.apiKey":"key"}`,
+	}))
+
+	plan := SchedulerK3sAutoscalingAuthTask{
+		App:      "node-js-app",
+		Trigger:  "datadog",
+		Metadata: map[string]string{"apiKey": ""},
+		State:    StateAbsent,
+	}.Plan(ctx)
+
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected exactly one command, got %v", plan.Commands)
+	}
+	if !strings.HasSuffix(plan.Commands[0], "scheduler-k3s:autoscaling-auth:set node-js-app datadog") {
+		t.Errorf("unexpected command: %q", plan.Commands[0])
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthGlobalSetOmitsGlobalPositional(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet scheduler-k3s:autoscaling-auth:report --global --format json": `{}`,
+	}))
+
+	plan := SchedulerK3sAutoscalingAuthTask{
+		Global:   true,
+		Trigger:  "datadog",
+		Metadata: map[string]string{"apiKey": "key"},
+		State:    StateSet,
+	}.Plan(ctx)
+
+	if !strings.HasSuffix(plan.Commands[0], "scheduler-k3s:autoscaling-auth:set --replace --global datadog --metadata apiKey=key") {
+		t.Errorf("unexpected command: %q", plan.Commands[0])
+	}
+}
+
+func TestSchedulerK3sAutoscalingAuthValidateStates(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		task    SchedulerK3sAutoscalingAuthTask
+		wantErr string
+	}{
+		{
+			name:    "set rejects an empty map",
+			task:    SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", State: StateSet},
+			wantErr: "'metadata' must not be empty for state 'set'",
+		},
+		{
+			name:    "clear rejects a map",
+			task:    SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", Metadata: map[string]string{"k": "v"}, State: StateClear},
+			wantErr: "'metadata' must not be set for state 'clear'",
+		},
+		{
+			name: "clear accepts no map",
+			task: SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", State: StateClear},
+		},
+		{
+			name:    "clear still requires a trigger",
+			task:    SchedulerK3sAutoscalingAuthTask{App: "a", State: StateClear},
+			wantErr: "trigger is required",
+		},
+		{
+			// Every state carries its keys in a --metadata key=value flag, so
+			// unlike annotations and labels the present state needs the check
+			// too: dokku splits on the first '=' and would store "bad".
+			name:    "present rejects a key carrying an equals sign",
+			task:    SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", Metadata: map[string]string{"bad=key": "v"}},
+			wantErr: "metadata keys must not contain '=' for state 'present'",
+		},
+		{
+			name:    "set rejects a key carrying an equals sign",
+			task:    SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", Metadata: map[string]string{"bad=key": "v"}, State: StateSet},
+			wantErr: "metadata keys must not contain '=' for state 'set'",
+		},
+		{
+			name: "set accepts an empty value",
+			task: SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", Metadata: map[string]string{"k": ""}, State: StateSet},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.task.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected an error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
 	}
 }
