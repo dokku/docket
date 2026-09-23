@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
@@ -226,23 +225,22 @@ func planHttpAuthDomainsSet(ctx context.Context, t HttpAuthDomainTask) PlanResul
 			mutations = append(mutations, "add "+d)
 		}
 	}
-	toRemove := []string{}
-	for d := range current {
+	for _, d := range sortedSetKeys(current) {
 		if !desired[d] {
-			toRemove = append(toRemove, d)
+			mutations = append(mutations, "remove "+d)
 		}
-	}
-	sort.Strings(toRemove)
-	for _, d := range toRemove {
-		mutations = append(mutations, "remove "+d)
 	}
 	if len(mutations) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
+	status := PlanStatusModify
+	if len(current) == 0 {
+		status = PlanStatusCreate
+	}
 	inputs := dokkuArgsInputs("http-auth:set-domains", t.App, t.Domains)
 	return PlanResult{
 		InSync:    false,
-		Status:    PlanStatusModify,
+		Status:    status,
 		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
@@ -259,11 +257,7 @@ func planHttpAuthDomainsClear(ctx context.Context, t HttpAuthDomainTask) PlanRes
 	if len(current) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
-	domains := make([]string, 0, len(current))
-	for d := range current {
-		domains = append(domains, d)
-	}
-	sort.Strings(domains)
+	domains := sortedSetKeys(current)
 	mutations := make([]string, 0, len(domains))
 	for _, d := range domains {
 		mutations = append(mutations, "remove "+d)

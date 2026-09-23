@@ -201,6 +201,23 @@ func TestHttpAuthAllowedIpsSetPlansFullReplacement(t *testing.T) {
 	}
 }
 
+func TestHttpAuthAllowedIpsSetOnAppWithNoAddressesIsACreate(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthAllowedIpReport("")))
+
+	plan := HttpAuthAllowedIpTask{
+		App:        "web",
+		AllowedIps: []string{"203.0.113.5"},
+		State:      StateSet,
+	}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.Status != PlanStatusCreate {
+		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusCreate)
+	}
+}
+
 func TestHttpAuthAllowedIpsSetConvergesWhenReportMatches(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthAllowedIpReport("198.51.100.2 192.0.2.1")))

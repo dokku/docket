@@ -449,6 +449,14 @@ and they handle the two-directional diff, the mutation lines and the in-sync cas
 tasks build their commands through `dokkuArgsInputs` / `applyDokkuArgs` in `tasks/domains_task.go`
 instead.
 
+Both states itemize the replacement they work out to in `PlanResult.Mutations`, and those lines
+must come out in the same order every run - a probe hands its result back as a map, and a
+`Mutations` slice formatted straight out of a map range makes two plans of an unchanged server
+disagree, which is churn for anyone diffing the output or the [`--json`](json-output.md) stream.
+Sort the probe's keys with `sortedSetKeys` (a `map[string]bool` set) or `sortedPairKeys` (a
+`map[string]string`) before formatting from them; `sortedPortMappings` is the same helper for
+`dokku_ports`.
+
 `docket export` emits an authoritative collection as `state: set`, so re-applying an export
 reproduces the exact collection rather than merging into whatever the target already holds.
 

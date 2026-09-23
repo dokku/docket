@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -239,23 +238,22 @@ func planHttpAuthAllowedIpsSet(ctx context.Context, t HttpAuthAllowedIpTask) Pla
 			mutations = append(mutations, "add "+ip)
 		}
 	}
-	toRemove := []string{}
-	for ip := range current {
+	for _, ip := range sortedSetKeys(current) {
 		if !desired[ip] {
-			toRemove = append(toRemove, ip)
+			mutations = append(mutations, "remove "+ip)
 		}
-	}
-	sort.Strings(toRemove)
-	for _, ip := range toRemove {
-		mutations = append(mutations, "remove "+ip)
 	}
 	if len(mutations) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
+	status := PlanStatusModify
+	if len(current) == 0 {
+		status = PlanStatusCreate
+	}
 	inputs := dokkuArgsInputs("http-auth:set-allowed-ips", t.App, t.AllowedIps)
 	return PlanResult{
 		InSync:    false,
-		Status:    PlanStatusModify,
+		Status:    status,
 		Reason:    fmt.Sprintf("%d allowed ip change(s)", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
@@ -272,11 +270,7 @@ func planHttpAuthAllowedIpsClear(ctx context.Context, t HttpAuthAllowedIpTask) P
 	if len(current) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
-	ips := make([]string, 0, len(current))
-	for ip := range current {
-		ips = append(ips, ip)
-	}
-	sort.Strings(ips)
+	ips := sortedSetKeys(current)
 	mutations := make([]string, 0, len(ips))
 	for _, ip := range ips {
 		mutations = append(mutations, "remove "+ip)
