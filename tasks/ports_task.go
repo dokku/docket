@@ -267,8 +267,9 @@ func planPortsAbsent(ctx context.Context, t PortsTask) PlanResult {
 }
 
 // planPortsSet reports drift for the set-state full replacement. The itemized
-// mutations are the adds and removes the replacement works out to; the command
-// itself always carries the complete desired list.
+// mutations are the adds and removes the replacement works out to, sorted on
+// both sides so an unchanged app plans the same list every run; the command
+// itself always carries the complete desired list, in the order declared.
 func planPortsSet(ctx context.Context, t PortsTask) PlanResult {
 	currentPorts, err := getPorts(ctx, t.App)
 	if err != nil {
@@ -279,9 +280,9 @@ func planPortsSet(ctx context.Context, t PortsTask) PlanResult {
 		desired[pm.String()] = true
 	}
 	mutations := []string{}
-	for _, pm := range t.PortMappings {
-		if _, ok := currentPorts[pm.String()]; !ok {
-			mutations = append(mutations, fmt.Sprintf("add %s", pm.String()))
+	for _, mapping := range sortedSetKeys(desired) {
+		if _, ok := currentPorts[mapping]; !ok {
+			mutations = append(mutations, fmt.Sprintf("add %s", mapping))
 		}
 	}
 	for _, mapping := range sortedPortMappings(currentPorts) {

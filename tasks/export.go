@@ -902,7 +902,9 @@ func (res *ExportResult) uniqueVarName(app, key string) string {
 }
 
 // sortedSetKeys returns the keys of a set (map[string]bool) in sorted order, a
-// common shape for the list-returning readers the exporters reuse.
+// common shape for the list-returning readers the exporters reuse. The
+// collection planners format their mutation lines from it too, so a plan of an
+// unchanged server itemizes the same drift in the same order every run.
 func sortedSetKeys(set map[string]bool) []string {
 	keys := make([]string, 0, len(set))
 	for k := range set {

@@ -158,10 +158,15 @@ func TestPortsSetPlansFullReplacement(t *testing.T) {
 		portsReportKey: `[{"container_port":5000,"host_port":80,"scheme":"http"},{"container_port":5000,"host_port":443,"scheme":"https"}]`,
 	}))
 
+	// The mappings are declared out of sorted order on purpose: the mutation
+	// lines come out sorted, while the command keeps the declared order.
 	plan := PortsTask{
-		App:          "web",
-		PortMappings: []PortMapping{{Scheme: "http", Host: 8080, Container: 5000}},
-		State:        StateSet,
+		App: "web",
+		PortMappings: []PortMapping{
+			{Scheme: "https", Host: 8443, Container: 5000},
+			{Scheme: "http", Host: 8080, Container: 5000},
+		},
+		State: StateSet,
 	}.Plan(ctx)
 	if plan.Error != nil {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
@@ -176,10 +181,15 @@ func TestPortsSetPlansFullReplacement(t *testing.T) {
 		t.Fatalf("expected exactly one planned command, got %v", plan.Commands)
 	}
 	// The command carries the complete desired list, not the per-mapping delta.
-	if !strings.HasSuffix(plan.Commands[0], "ports:set web http:8080:5000") {
+	if !strings.HasSuffix(plan.Commands[0], "ports:set web https:8443:5000 http:8080:5000") {
 		t.Errorf("expected ports:set with the full desired list, got %q", plan.Commands[0])
 	}
-	want := []string{"add http:8080:5000", "remove http:80:5000", "remove https:443:5000"}
+	want := []string{
+		"add http:8080:5000",
+		"add https:8443:5000",
+		"remove http:80:5000",
+		"remove https:443:5000",
+	}
 	if !reflect.DeepEqual(plan.Mutations, want) {
 		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
 	}

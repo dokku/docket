@@ -68,6 +68,11 @@ A few fields need a word of explanation:
   group envelope itself.
 - On a plan task, `state` mirrors `desired_state`. Plan never mutates, so it has no post-mutation
   state to report; the field exists so `task` events have the same key set on both commands.
+- `mutations` is ordered deterministically for a given server state, so two plans of a server
+  nothing has touched emit the same list in the same order and a consumer diffing them sees no
+  churn. The list itemizes the change rather than the order the work happens in: an
+  authoritative `set` or `clear` sends the whole collection in a single command however many
+  lines it carries.
 
 A `warning` event precedes the `task` event it is associated with so consumers can correlate by
 ordering. The `reason` is a stable machine key so consumers can branch on the category:

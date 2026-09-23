@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/dokku/docket/subprocess"
-	"sort"
 	"strings"
 )
 
@@ -197,18 +196,22 @@ func planDomainsSet(ctx context.Context, t DomainsTask) PlanResult {
 		desired[d] = true
 	}
 	mutations := []string{}
-	for d := range desired {
+	for _, d := range sortedSetKeys(desired) {
 		if !currentDomains[d] {
 			mutations = append(mutations, fmt.Sprintf("add %s", d))
 		}
 	}
-	for d := range currentDomains {
+	for _, d := range sortedSetKeys(currentDomains) {
 		if !desired[d] {
 			mutations = append(mutations, fmt.Sprintf("remove %s", d))
 		}
 	}
 	if len(mutations) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	status := PlanStatusModify
+	if len(currentDomains) == 0 {
+		status = PlanStatusCreate
 	}
 	subcommand := "domains:set"
 	appName := t.App
@@ -219,7 +222,7 @@ func planDomainsSet(ctx context.Context, t DomainsTask) PlanResult {
 	inputs := dokkuArgsInputs(subcommand, appName, t.Domains)
 	return PlanResult{
 		InSync:    false,
-		Status:    PlanStatusModify,
+		Status:    status,
 		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
@@ -236,8 +239,9 @@ func planDomainsClear(ctx context.Context, t DomainsTask) PlanResult {
 	if len(currentDomains) == 0 {
 		return PlanResult{InSync: true, Status: PlanStatusOK}
 	}
-	mutations := make([]string, 0, len(currentDomains))
-	for d := range currentDomains {
+	domains := sortedSetKeys(currentDomains)
+	mutations := make([]string, 0, len(domains))
+	for _, d := range domains {
 		mutations = append(mutations, fmt.Sprintf("remove %s", d))
 	}
 	subcommand := "domains:clear"
@@ -309,12 +313,7 @@ func (t DomainsTask) ExportApp(ctx context.Context, app string) ([]interface{}, 
 	if len(domains) == 0 {
 		return nil, nil
 	}
-	list := make([]string, 0, len(domains))
-	for d := range domains {
-		list = append(list, d)
-	}
-	sort.Strings(list)
-	return []interface{}{DomainsTask{App: app, Domains: list, State: StateSet}}, nil
+	return []interface{}{DomainsTask{App: app, Domains: sortedSetKeys(domains), State: StateSet}}, nil
 }
 
 // getDomains fetches current domains for an app or globally

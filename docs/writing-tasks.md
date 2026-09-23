@@ -449,6 +449,17 @@ and they handle the two-directional diff, the mutation lines and the in-sync cas
 tasks build their commands through `dokkuArgsInputs` / `applyDokkuArgs` in `tasks/domains_task.go`
 instead.
 
+Both states itemize the replacement they work out to in `PlanResult.Mutations`, and those lines
+must come out in the same order every run - a probe hands its result back as a map, and a
+`Mutations` slice formatted straight out of a map range makes two plans of an unchanged server
+disagree, which is churn for anyone diffing the output or the [`--json`](json-output.md) stream.
+Sort both sides of the diff, the entries being added as well as the ones being removed, with
+`sortedSetKeys` (a `map[string]bool` set) or `sortedPairKeys` (a `map[string]string`);
+`sortedPortMappings` is the same helper for `dokku_ports`. Sorting the adds costs nothing here
+because the command carries the recipe's list verbatim whatever the mutation lines say - which
+is not true of the additive `present` and `absent` states, where the itemized list and the
+command are built from the same slice and the declared order is the order the work happens in.
+
 `docket export` emits an authoritative collection as `state: set`, so re-applying an export
 reproduces the exact collection rather than merging into whatever the target already holds.
 

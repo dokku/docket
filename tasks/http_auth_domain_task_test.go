@@ -1,8 +1,11 @@
 package tasks
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 func TestHttpAuthDomainTaskInvalidState(t *testing.T) {
@@ -89,6 +92,96 @@ func TestHttpAuthDomainTaskClearRejectsDomains(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "'domains' must not be set for state 'clear'") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// httpAuthDomainReport builds the report body getHttpAuthDomains parses. Both
+// http-auth probes read the same blob, so it reuses httpAuthAllowedIpReportKey.
+func httpAuthDomainReport(domains string) map[string]string {
+	return map[string]string{
+		httpAuthAllowedIpReportKey: `{"enabled":"true","users":"","allowed-ips":"","domains":"` + domains + `"}`,
+	}
+}
+
+func TestHttpAuthDomainsSetPlansFullReplacement(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthDomainReport("www.example.com app.example.com")))
+
+	// The domains are declared out of sorted order on purpose: the mutation
+	// lines come out sorted, while the command keeps the declared order.
+	plan := HttpAuthDomainTask{
+		App:     "web",
+		Domains: []string{"web.example.com", "api.example.com"},
+		State:   StateSet,
+	}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when the desired domains differ from the report")
+	}
+	if plan.Status != PlanStatusModify {
+		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusModify)
+	}
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected exactly one planned command, got %v", plan.Commands)
+	}
+	// The command carries the complete desired list, not the per-domain delta.
+	if !strings.HasSuffix(plan.Commands[0], "http-auth:set-domains web web.example.com api.example.com") {
+		t.Errorf("expected http-auth:set-domains with the full desired list, got %q", plan.Commands[0])
+	}
+	want := []string{
+		"add api.example.com",
+		"add web.example.com",
+		"remove app.example.com",
+		"remove www.example.com",
+	}
+	if !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+func TestHttpAuthDomainsSetOnAppWithNoDomainsIsACreate(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthDomainReport("")))
+
+	plan := HttpAuthDomainTask{
+		App:     "web",
+		Domains: []string{"api.example.com"},
+		State:   StateSet,
+	}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.Status != PlanStatusCreate {
+		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusCreate)
+	}
+}
+
+func TestHttpAuthDomainsClearPlansEveryDomain(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(httpAuthDomainReport("www.example.com app.example.com")))
+
+	plan := HttpAuthDomainTask{App: "web", State: StateClear}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when the app has domains to clear")
+	}
+	if plan.Status != PlanStatusDestroy {
+		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusDestroy)
+	}
+	if len(plan.Commands) != 1 {
+		t.Fatalf("expected exactly one planned command, got %v", plan.Commands)
+	}
+	// Clearing is http-auth:set-domains with no domains at all.
+	if !strings.HasSuffix(plan.Commands[0], "http-auth:set-domains web") {
+		t.Errorf("expected a bare http-auth:set-domains command, got %q", plan.Commands[0])
+	}
+	want := []string{"remove app.example.com", "remove www.example.com"}
+	if !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
 	}
 }
 
