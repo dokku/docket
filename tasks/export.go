@@ -70,9 +70,9 @@ var globalExportOrder = []string{
 	"dokku_certs",
 	"dokku_storage_entry",
 	"dokku_scheduler_k3s_profile",
-	// node sysctls follow the profiles: only the global scope is exported
-	// today, but dokku scopes sysctls to a node profile too, and that profile
-	// has to exist before its sysctls can be written (#555).
+	// node sysctls follow the profiles: dokku scopes sysctls to a node profile
+	// as well as globally, and a profile has to exist before its sysctls can
+	// be written.
 	"dokku_scheduler_k3s_node_sysctls",
 	"dokku_scheduler_k3s_chart",
 	// scheduler-k3s annotations/labels/trigger-auth can be set globally as well

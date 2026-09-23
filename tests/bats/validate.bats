@@ -235,6 +235,11 @@ EOF
         state: set
         sysctls:
           vm.max_map_count: "262144"
+    - dokku_scheduler_k3s_node_sysctls:
+        profile: edge-workers
+        state: set
+        sysctls:
+          vm.swappiness: "60"
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_success
@@ -288,7 +293,7 @@ EOF
   assert_output --partial "annotation keys must not contain '='"
 }
 
-@test "docket validate exits 1 on node sysctls without the global scope" {
+@test "docket validate exits 1 on node sysctls without a scope" {
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -298,7 +303,37 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'global' must be set to true"
+  assert_output --partial "'profile' is required when 'global' is not set to true"
+}
+
+@test "docket validate exits 1 on node sysctls naming both scopes" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_node_sysctls:
+        global: true
+        profile: edge-workers
+        sysctls:
+          vm.max_map_count: "262144"
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'profile' must not be set when 'global' is set to true"
+}
+
+# dokku refuses to write or clear sysctls for a profile it cannot derive a helm
+# release name from, so the rule holds for state clear as well.
+@test "docket validate exits 1 on node sysctls for an uppercase profile" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_node_sysctls:
+        profile: EdgeWorkers
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'profile' must be lowercase"
 }
 
 @test "docket validate exits 1 on two port mappings sharing a scheme and host port (#432)" {

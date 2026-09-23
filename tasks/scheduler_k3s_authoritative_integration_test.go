@@ -74,13 +74,15 @@ func reportedSchedulerK3sTriggerMetadata(t *testing.T, target, trigger string) m
 	return metadata
 }
 
-// reportedSchedulerK3sNodeSysctls reads the global scope out of
-// `scheduler-k3s:node-sysctls:report`.
-func reportedSchedulerK3sNodeSysctls(t *testing.T) map[string]string {
+// reportedSchedulerK3sNodeSysctls reads one scope's stored map out of an
+// unfiltered `scheduler-k3s:node-sysctls:report --stored`, keyed by profile
+// name or "--global". Unlike the probe it does not narrow the report, so it
+// sees every scope the server holds and picks the one it wants.
+func reportedSchedulerK3sNodeSysctls(t *testing.T, scope string) map[string]string {
 	t.Helper()
 	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"--quiet", "scheduler-k3s:node-sysctls:report", "--format", "json"},
+		Args:    []string{"--quiet", "scheduler-k3s:node-sysctls:report", "--stored", "--format", "json"},
 	})
 	if err != nil {
 		t.Fatalf("scheduler-k3s:node-sysctls:report: %v", err)
@@ -91,7 +93,7 @@ func reportedSchedulerK3sNodeSysctls(t *testing.T) map[string]string {
 		t.Fatalf("parse scheduler-k3s:node-sysctls:report json: %v", err)
 	}
 	sysctls := map[string]string{}
-	for name, value := range payload["--global"] {
+	for name, value := range payload[scope] {
 		sysctls[name] = value
 	}
 	return sysctls
@@ -451,7 +453,9 @@ func TestIntegrationSchedulerK3sNodeSysctlsAll(t *testing.T) {
 			Global: true,
 			State:  StateClear,
 		},
-		reported: reportedSchedulerK3sNodeSysctls,
+		reported: func(t *testing.T) map[string]string {
+			return reportedSchedulerK3sNodeSysctls(t, "--global")
+		},
 	})
 }
 
@@ -477,4 +481,131 @@ func TestIntegrationSchedulerK3sNodeSysctlsPresentAndAbsent(t *testing.T) {
 			State:   StateAbsent,
 		},
 	})
+}
+
+// schedulerK3sNodeSysctlsTestProfile is the node profile the profile-scoped
+// node sysctls tests write to.
+const schedulerK3sNodeSysctlsTestProfile = "docket-test-sysctls"
+
+// withSchedulerK3sNodeSysctlsProfile creates the test profile and seeds the
+// global scope with sysctls the profile inherits, so every profile-scoped
+// assertion runs with inherited values present in the resolved report - the
+// case #555 could not converge. It returns the cleanup.
+func withSchedulerK3sNodeSysctlsProfile(t *testing.T) func() {
+	t.Helper()
+	profile := SchedulerK3sProfileTask{Name: schedulerK3sNodeSysctlsTestProfile, Role: "worker", State: StatePresent}
+	global := SchedulerK3sNodeSysctlsTask{Global: true, State: StateClear}
+	cleanup := func() {
+		global.Execute(testCtx())
+		// profiles:remove deletes the profile's stored sysctls too.
+		SchedulerK3sProfileTask{Name: schedulerK3sNodeSysctlsTestProfile, Role: "worker", State: StateAbsent}.Execute(testCtx())
+	}
+	cleanup()
+
+	if result := profile.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("create profile: %v", result.Error)
+	}
+	seed := SchedulerK3sNodeSysctlsTask{
+		Global:  true,
+		Sysctls: map[string]string{"vm.swappiness": "20", "vm.overcommit_memory": "1"},
+		State:   StateSet,
+	}
+	if result := seed.Execute(testCtx()); result.Error != nil {
+		cleanup()
+		t.Fatalf("seed global sysctls: %v", result.Error)
+	}
+	return cleanup
+}
+
+func TestIntegrationSchedulerK3sNodeSysctlsProfileAll(t *testing.T) {
+	skipUnlessSchedulerK3sT(t)
+	defer withSchedulerK3sNodeSysctlsProfile(t)()
+
+	runAuthoritativeStateTest(t, authoritativeStateCase{
+		label: "node sysctls profile",
+		seed: SchedulerK3sNodeSysctlsTask{
+			Profile: schedulerK3sNodeSysctlsTestProfile,
+			Sysctls: map[string]string{"vm.swappiness": "60", "vm.max_map_count": "65530"},
+			State:   StatePresent,
+		},
+		set: SchedulerK3sNodeSysctlsTask{
+			Profile: schedulerK3sNodeSysctlsTestProfile,
+			Sysctls: map[string]string{"vm.swappiness": "10"},
+			State:   StateSet,
+		},
+		want: map[string]string{"vm.swappiness": "10"},
+		clear: SchedulerK3sNodeSysctlsTask{
+			Profile: schedulerK3sNodeSysctlsTestProfile,
+			State:   StateClear,
+		},
+		reported: func(t *testing.T) map[string]string {
+			return reportedSchedulerK3sNodeSysctls(t, schedulerK3sNodeSysctlsTestProfile)
+		},
+	})
+
+	// The global scope is untouched by every profile-scoped write.
+	want := map[string]string{"vm.swappiness": "20", "vm.overcommit_memory": "1"}
+	if got := reportedSchedulerK3sNodeSysctls(t, "--global"); !reflect.DeepEqual(got, want) {
+		t.Errorf("global scope holds %v, want %v", got, want)
+	}
+}
+
+// TestIntegrationSchedulerK3sNodeSysctlsProfilePresentAndAbsent covers the
+// additive states on a profile. The profile's own vm.swappiness shadows the
+// global one, and clearing it must converge even though the profile still
+// inherits the global value.
+func TestIntegrationSchedulerK3sNodeSysctlsProfilePresentAndAbsent(t *testing.T) {
+	skipUnlessSchedulerK3sT(t)
+	defer withSchedulerK3sNodeSysctlsProfile(t)()
+
+	runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+		label: "scheduler-k3s node sysctls profile",
+		setTask: SchedulerK3sNodeSysctlsTask{
+			Profile: schedulerK3sNodeSysctlsTestProfile,
+			Sysctls: map[string]string{"vm.swappiness": "60"},
+			State:   StatePresent,
+		},
+		unsetTask: SchedulerK3sNodeSysctlsTask{
+			Profile: schedulerK3sNodeSysctlsTestProfile,
+			Sysctls: map[string]string{"vm.swappiness": ""},
+			State:   StateAbsent,
+		},
+	})
+}
+
+// TestIntegrationSchedulerK3sNodeSysctlsProfileExportRoundTrips checks a
+// profile's exported body carries only its own map, not the sysctls it
+// inherits, and plans in sync straight back against the server.
+func TestIntegrationSchedulerK3sNodeSysctlsProfileExportRoundTrips(t *testing.T) {
+	skipUnlessSchedulerK3sT(t)
+	defer withSchedulerK3sNodeSysctlsProfile(t)()
+
+	set := SchedulerK3sNodeSysctlsTask{
+		Profile: schedulerK3sNodeSysctlsTestProfile,
+		Sysctls: map[string]string{"vm.swappiness": "60"},
+		State:   StateSet,
+	}
+	if result := set.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("set: %v", result.Error)
+	}
+
+	bodies, err := SchedulerK3sNodeSysctlsTask{}.ExportGlobal(testCtx())
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	var found *SchedulerK3sNodeSysctlsTask
+	for _, body := range bodies {
+		if b := body.(SchedulerK3sNodeSysctlsTask); b.Profile == schedulerK3sNodeSysctlsTestProfile {
+			found = &b
+		}
+	}
+	if found == nil {
+		t.Fatalf("no exported body for profile %s in %+v", schedulerK3sNodeSysctlsTestProfile, bodies)
+	}
+	if !reflect.DeepEqual(found.Sysctls, set.Sysctls) {
+		t.Errorf("exported sysctls = %v, want %v", found.Sysctls, set.Sysctls)
+	}
+	if plan := found.Plan(testCtx()); !plan.InSync {
+		t.Errorf("exported body should report no drift, got %v", plan.Mutations)
+	}
 }

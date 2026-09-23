@@ -186,32 +186,49 @@ var helmReleaseName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0
 // where the removal genuinely cannot succeed. Upstream tracking for having
 // dokku reject these at `profiles:add`: dokku/dokku#8971.
 func validateSchedulerK3sProfileName(name string, state State) error {
-	if name == "" {
-		return errors.New("name is required")
-	}
-	if !schedulerK3sProfileName.MatchString(name) {
-		return fmt.Errorf("name must contain only alphanumeric characters and dashes and must not start or end with a dash, got %q", name)
-	}
-	if len(name) > schedulerK3sProfileNameMaxLength {
-		return fmt.Errorf("name must be at most %d characters, got %d", schedulerK3sProfileNameMaxLength, len(name))
+	if err := validateSchedulerK3sProfileNameStored("name", name); err != nil {
+		return err
 	}
 	if state == StateAbsent {
 		return nil
 	}
+	return validateSchedulerK3sProfileNameRelease("name", " for state 'present'", name)
+}
 
+// validateSchedulerK3sProfileNameStored applies dokku's own profile-name
+// rules, the ones `profiles:add` and `profiles:remove` both enforce. field names
+// the recipe key the name came from, so each task's message points at its own
+// input.
+func validateSchedulerK3sProfileNameStored(field, name string) error {
+	if name == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if !schedulerK3sProfileName.MatchString(name) {
+		return fmt.Errorf("%s must contain only alphanumeric characters and dashes and must not start or end with a dash, got %q", field, name)
+	}
+	if len(name) > schedulerK3sProfileNameMaxLength {
+		return fmt.Errorf("%s must be at most %d characters, got %d", field, schedulerK3sProfileNameMaxLength, len(name))
+	}
+	return nil
+}
+
+// validateSchedulerK3sProfileNameRelease rejects a profile name dokku cannot
+// derive a node-sysctls helm release name from. qualifier is appended to the
+// rule, so a task that only enforces it for some states can say which.
+func validateSchedulerK3sProfileNameRelease(field, qualifier, name string) error {
 	release := nodeSysctlsReleasePrefix + name
 	if len(name) > schedulerK3sProfileNameHelmMaxLength {
-		return fmt.Errorf("name must be at most %d characters for state 'present', got %d: dokku derives the node-sysctls helm release name %q from it, and helm caps a release name at %d characters",
-			schedulerK3sProfileNameHelmMaxLength, len(name), release, helmReleaseNameMaxLength)
+		return fmt.Errorf("%s must be at most %d characters%s, got %d: dokku derives the node-sysctls helm release name %q from it, and helm caps a release name at %d characters",
+			field, schedulerK3sProfileNameHelmMaxLength, qualifier, len(name), release, helmReleaseNameMaxLength)
 	}
-	// The charset check above has already ruled out everything helm's regexp
-	// rejects except case, so this can only fire on an uppercase name - which
-	// is why the message names that specifically. Running helm's real regexp
-	// rather than a case comparison keeps the check honest if dokku ever
-	// widens its own charset.
+	// The charset check has already ruled out everything helm's regexp rejects
+	// except case, so this can only fire on an uppercase name - which is why
+	// the message names that specifically. Running helm's real regexp rather
+	// than a case comparison keeps the check honest if dokku ever widens its
+	// own charset.
 	if !helmReleaseName.MatchString(release) {
-		return fmt.Errorf("name must be lowercase for state 'present', got %q: dokku derives the node-sysctls helm release name %q from it, and helm requires a lowercase release name",
-			name, release)
+		return fmt.Errorf("%s must be lowercase%s, got %q: dokku derives the node-sysctls helm release name %q from it, and helm requires a lowercase release name",
+			field, qualifier, name, release)
 	}
 	return nil
 }
