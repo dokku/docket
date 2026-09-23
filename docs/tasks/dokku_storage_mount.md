@@ -62,7 +62,7 @@ dokku_storage_mount:
 dokku_storage_mount:
     app: node-js-app
     host_dir: /var/lib/dokku/data/storage/node-js-app
-    container_dir: /app/storage
+    container_dir: /app/uploads
 ```
 
 ### Mount a host directory with SELinux relabeling
@@ -71,7 +71,7 @@ dokku_storage_mount:
 dokku_storage_mount:
     app: node-js-app
     host_dir: /var/lib/dokku/data/storage/node-js-app
-    container_dir: /app/storage
+    container_dir: /app/shared
     volume_options: Z
 ```
 

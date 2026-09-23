@@ -15,9 +15,9 @@ import (
 //
 // Only the schedule is idempotent: dokku can read it back via
 // <service>:backup-schedule-cat. The auth and encryption pieces have no
-// read command, so when those fields are provided they are applied
-// unconditionally and the task reports Changed=true, mirroring the
-// no-probe pattern used by dokku_registry_auth.
+// read command - not even a comparator of the kind registry:auth-status
+// gives dokku_registry_auth - so when those fields are provided they are
+// applied unconditionally and the task reports Changed=true.
 type ServiceBackupTask struct {
 	// Service is the type of service to back up (e.g. redis, postgres, mysql)
 	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to back up (e.g. redis, postgres, mysql)"`

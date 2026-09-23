@@ -14,7 +14,7 @@ import (
 // is no report that dumps it, but idempotency does not need one: dokku's
 // git:auth-status compares the stored entry against credentials it is handed
 // and answers with its exit code, which is the only question Plan() asks. See
-// gitAuthMatches for the two shapes that answers.
+// gitAuthStatus for the two shapes that answers.
 //
 // The password never reaches argv on either path. Both git:auth and
 // git:auth-status read it from stdin when the username is supplied and the
@@ -119,12 +119,22 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			matches, err := gitAuthMatches(ctx, t.Host, t.Username, t.Password)
+			code, err := gitAuthStatus(ctx, t.Host, t.Username, t.Password)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if matches {
+			if code == gitAuthMatch {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
+			}
+			if code == gitAuthInvalidArguments {
+				return gitAuthArgumentError(t.Host)
+			}
+			status, reason, priorState := PlanStatusModify, "netrc entry does not match", StatePresent
+			switch code {
+			case gitAuthDiffers:
+				// the default above is this case's own answer
+			case gitAuthMissing:
+				status, reason, priorState = PlanStatusCreate, "no netrc entry", StateAbsent
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
@@ -133,22 +143,25 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 			}}
 			return PlanResult{
 				InSync:    false,
-				Status:    PlanStatusModify,
-				Reason:    "netrc entry does not match",
+				Status:    status,
+				Reason:    reason,
 				Mutations: []string{"git:auth " + t.Host + " as " + t.Username},
 				Commands:  resolveCommands(ctx, inputs),
 				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+					return runExecInputs(ctx, TaskOutputState{State: priorState}, StatePresent, inputs)
 				},
 			}
 		},
 		StateAbsent: func() PlanResult {
-			cleared, err := gitAuthMatches(ctx, t.Host, "", "")
+			code, err := gitAuthStatus(ctx, t.Host, "", "")
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if cleared {
+			if code == gitAuthMatch {
 				return PlanResult{InSync: true, Status: PlanStatusOK}
+			}
+			if code == gitAuthInvalidArguments {
+				return gitAuthArgumentError(t.Host)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
@@ -168,7 +181,25 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 	})
 }
 
-// gitAuthMatches reports whether the netrc entry for host already matches the
+// git:auth-status exit codes. dokku reports the comparison through the exit
+// code alone, so these are the whole protocol. They are the same codes
+// registry:auth-status uses for the equivalent states, minus the two that only
+// a registry credential can be in.
+const (
+	// gitAuthMatch means the stored netrc entry matches the requested state
+	gitAuthMatch = 0
+
+	// gitAuthMissing means the host has no netrc entry
+	gitAuthMissing = 1
+
+	// gitAuthDiffers means the host has an entry but it does not match
+	gitAuthDiffers = 2
+
+	// gitAuthInvalidArguments means the state could not be checked
+	gitAuthInvalidArguments = 3
+)
+
+// gitAuthStatus asks dokku how the netrc entry for host compares to the
 // requested state. git:auth-status is a comparator rather than a dump: it
 // prints nothing and exits 0 when the stored entry equals what it was handed.
 // Handed no username it answers the absent-state question instead - exit 0
@@ -177,14 +208,11 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 // The password goes over stdin, where dokku's fn-git-auth-read-password picks
 // it up, so it never reaches the argv of the dokku process on the server.
 //
-// Returns (false, err) when the probe could not run - a transport failure, a
-// missing dokku binary, or a cancellation; (true, nil) when the server is
-// already in the requested state; (false, nil) otherwise. A "no" is one answer
-// and not two: git:auth-status exits non-zero both for a host with no entry
-// and for a host whose entry differs, so the present-state plan reports a
-// modify rather than telling a create apart from a replacement. Tracking
-// distinct exit codes upstream in dokku/dokku#8995.
-func gitAuthMatches(ctx context.Context, host, username, password string) (bool, error) {
+// Returns the exit code dokku terminated with. An error means the probe never
+// produced an answer - a transport failure, a missing dokku binary, or a
+// cancellation - and the caller should surface it rather than reading it as
+// drift.
+func gitAuthStatus(ctx context.Context, host, username, password string) (int, error) {
 	input := subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "git:auth-status", host},
@@ -193,7 +221,25 @@ func gitAuthMatches(ctx context.Context, host, username, password string) (bool,
 		input.Args = append(input.Args, username)
 		input.Stdin = strings.NewReader(password)
 	}
-	return subprocess.Probe(ctx, input)
+
+	result, err := subprocess.ProbeCode(ctx, input)
+	if err != nil {
+		return 0, err
+	}
+	return result.ExitCode, nil
+}
+
+// gitAuthArgumentError turns an invalid-arguments exit into a plan error.
+// git:auth-status reports it for a missing host or an empty password, both of
+// which Validate() already rejects, so reaching it means dokku could not
+// answer the question docket asked and writing the entry anyway would be
+// acting on an answer that was never given.
+func gitAuthArgumentError(host string) PlanResult {
+	return PlanResult{
+		Status:   PlanStatusError,
+		Error:    fmt.Errorf("dokku git:auth-status rejected the probe for %s", host),
+		ExitCode: gitAuthInvalidArguments,
+	}
 }
 
 // init registers the GitAuthTask with the task registry

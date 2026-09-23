@@ -245,30 +245,61 @@ var (
 // reports `ExitCode 0` and so cannot be told apart by exit code.
 //
 // Use this for any plan-time probe that today reads exit code only
-// (`apps:exists`, `network:exists`, `<service>:linked`, etc.). Probes
-// that need stdout should call CallExecCommand directly and use
+// (`apps:exists`, `network:exists`, `<service>:linked`, etc.). A probe
+// whose command distinguishes its answers by exit code - `git:auth-status`
+// and `registry:auth-status` both do - wants ProbeCode instead, which is
+// the same discrimination with the code left intact. Probes that need
+// stdout should call CallExecCommand directly and use
 // `errors.As(err, &*SSHError)` to discriminate.
 func Probe(ctx context.Context, input ExecCommandInput) (bool, error) {
+	result, err := ProbeCode(ctx, input)
+	if err != nil {
+		return false, err
+	}
+	return result.ExitCode == 0, nil
+}
+
+// ProbeCode is Probe with the exit code left intact, for a probe whose
+// command answers with more than yes or no. dokku's `*:auth-status`
+// comparators are the motivating case: they separate "nothing is stored"
+// from "something else is stored" from "stored, but I cannot read it",
+// and collapsing those into one "no" loses the distinction between a
+// create and a replacement - and, for the third, between drift and a
+// server that will never converge.
+//
+// The error discrimination is exactly Probe's, because it is the same
+// question: a command that ran and exited non-zero produced a real
+// answer, and anything that stopped it from running did not. On the
+// answered path the response is returned with a nil error, so callers
+// switch on `result.ExitCode` without unwrapping. On the unanswered path
+// the error is propagated and the response is not meaningful.
+//
+// Note that the exit code is read off the response on both paths. A
+// non-zero exit arrives as an `*ExecError` from the real runner, but an
+// injected test runner reports one by returning a response with a
+// non-zero ExitCode and no error at all.
+func ProbeCode(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error) {
 	result, err := CallExecCommand(ctx, input)
 	if err != nil {
 		// Transport-level failure (ssh connect/auth/host-key): propagate
 		// so the caller can render `! ssh: ...`.
 		var sshErr *SSHError
 		if errors.As(err, &sshErr) {
-			return false, err
+			return ExecCommandResponse{}, err
 		}
-		// The command executed and exited non-zero: the probed state is
-		// absent. Report (false, nil) so idempotent probes need not unwrap.
+		// The command executed and exited non-zero: that is the probe's
+		// answer, so the response carrying it is returned rather than the
+		// error wrapping it.
 		var execErr *ExecError
 		if errors.As(err, &execErr) && execErr.Ran {
-			return false, nil
+			return execErr.Response, nil
 		}
 		// Anything else - the command could not be executed (binary not
 		// found, permission denied) or was cancelled - is a real failure
-		// the caller must surface, not "state absent".
-		return false, err
+		// the caller must surface, not an answer.
+		return ExecCommandResponse{}, err
 	}
-	return result.ExitCode == 0, nil
+	return result, nil
 }
 
 func ensureSshAvailable() error {

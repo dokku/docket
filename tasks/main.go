@@ -203,9 +203,18 @@ const (
 	// WarnReasonProbeRejected marks a probe warning raised when an older plugin
 	// rejects `:report --format json` outright.
 	WarnReasonProbeRejected = "probe_rejected"
+	// WarnReasonProbeIndeterminate marks a probe warning raised when a probe
+	// ran, was understood, and still could not answer: the server holds the
+	// state but will not reveal enough of it to compare. dokku's
+	// registry:auth-status reports exactly that when a docker credential
+	// helper or an identity token holds the secret, or when the config it
+	// would read does not parse. The task drifts and applies rather than
+	// assuming a match, so the warning is what tells the operator why a run
+	// against that server never settles.
+	WarnReasonProbeIndeterminate = "probe_indeterminate"
 	// WarnReasonServiceImageDrift marks a warning raised when a datastore
 	// service is running an image other than the one the recipe pins, and the
-	// task is leaving it alone. Unlike the two above it is not a probe failure:
+	// task is leaving it alone. Unlike the three above it is not a probe failure:
 	// the state was read successfully and the task is declining to reconcile
 	// it, because dokku's only remedy recreates the container. It also covers
 	// the case where the running image could not be read at all, so a recipe

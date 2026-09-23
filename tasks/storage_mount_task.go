@@ -127,12 +127,17 @@ func (t StorageMountTask) Examples() ([]Doc, error) {
 				Readonly:     true,
 			},
 		},
+		// The host-directory examples mount somewhere other than /app/storage
+		// on purpose: dokku 0.38.29 refuses a second source at a container path
+		// an existing attachment already holds, so a recipe that copied the
+		// named-entry example above and then one of these verbatim would be
+		// rejected rather than merely confusing.
 		{
 			Name: "Mount a host directory into an app (legacy form)",
 			StorageMountTask: StorageMountTask{
 				App:          "node-js-app",
 				HostDir:      "/var/lib/dokku/data/storage/node-js-app",
-				ContainerDir: "/app/storage",
+				ContainerDir: "/app/uploads",
 			},
 		},
 		{
@@ -140,7 +145,7 @@ func (t StorageMountTask) Examples() ([]Doc, error) {
 			StorageMountTask: StorageMountTask{
 				App:           "node-js-app",
 				HostDir:       "/var/lib/dokku/data/storage/node-js-app",
-				ContainerDir:  "/app/storage",
+				ContainerDir:  "/app/shared",
 				VolumeOptions: "Z",
 			},
 		},

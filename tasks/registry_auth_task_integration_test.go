@@ -62,6 +62,15 @@ func startTestRegistry(t *testing.T) string {
 	return server
 }
 
+// TestIntegrationRegistryAuthApp is the convergence proof: registry:auth-status
+// compares what registry:login wrote, password included, so a re-apply of the
+// same credential is a no-op and a rotated one is drift. Both credentials
+// travel on stdin, so this also proves the probe's --password-stdin form lines
+// up with the login's.
+//
+// It stays app-scoped on purpose. The global config is root's own
+// ~/.docker/config.json, and a credential helper configured there makes dokku
+// answer "cannot compare" for every server - see TestIntegrationRegistryAuthGlobal.
 func TestIntegrationRegistryAuthApp(t *testing.T) {
 	skipIfNoDokkuT(t)
 	server := startTestRegistry(t)
@@ -74,6 +83,18 @@ func TestIntegrationRegistryAuthApp(t *testing.T) {
 	// best-effort cleanup of any leftover credential
 	(&RegistryAuthTask{App: appName, Server: server, State: StateAbsent}).Execute(testCtx())
 
+	// logging out of an app that never logged in is a no-op rather than the
+	// failure it used to be: registry:logout errors with "No registry
+	// credentials found", and the probe now settles before it is ever run.
+	logoutTask := RegistryAuthTask{App: appName, Server: server, State: StateAbsent}
+	result := logoutTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("logging out with no credential should be a no-op: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false when the app has no credential")
+	}
+
 	// log in
 	loginTask := RegistryAuthTask{
 		App:      appName,
@@ -82,7 +103,7 @@ func TestIntegrationRegistryAuthApp(t *testing.T) {
 		Password: "testpassword",
 		State:    StatePresent,
 	}
-	result := loginTask.Execute(testCtx())
+	result = loginTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to log in: %v", result.Error)
 	}
@@ -93,8 +114,30 @@ func TestIntegrationRegistryAuthApp(t *testing.T) {
 		t.Errorf("expected state 'present', got '%s'", result.State)
 	}
 
+	// re-applying the same credential changes nothing, which is the whole
+	// point: no network round trip to the registry, no credential rewritten.
+	result = loginTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to re-apply the login: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false when the stored credential already matches")
+	}
+
+	// a rotated password is drift even though the server and username are
+	// unchanged, so the probe has to be comparing the secret and not just the
+	// credential's existence
+	rotateTask := loginTask
+	rotateTask.Password = "rotatedpassword"
+	result = rotateTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to rotate the password: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true when the password changed")
+	}
+
 	// log out
-	logoutTask := RegistryAuthTask{App: appName, Server: server, State: StateAbsent}
 	result = logoutTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to log out: %v", result.Error)
@@ -105,8 +148,23 @@ func TestIntegrationRegistryAuthApp(t *testing.T) {
 	if result.State != StateAbsent {
 		t.Errorf("expected state 'absent', got '%s'", result.State)
 	}
+
+	// and removing a credential that is already gone is a no-op again
+	result = logoutTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to re-apply the logout: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false when the credential is already gone")
+	}
 }
 
+// TestIntegrationRegistryAuthGlobal covers the --global scope, which reads
+// root's own ~/.docker/config.json rather than a directory dokku owns. A
+// credential helper configured there holds every secret outside the file, so
+// dokku answers "cannot compare" and the task cannot converge - an operator's
+// choice rather than a docket bug, and the reason the convergence assertions
+// below are guarded rather than unconditional.
 func TestIntegrationRegistryAuthGlobal(t *testing.T) {
 	skipIfNoDokkuT(t)
 	server := startTestRegistry(t)
@@ -132,6 +190,18 @@ func TestIntegrationRegistryAuthGlobal(t *testing.T) {
 		t.Errorf("expected Changed=true on global login")
 	}
 
+	if globalCredentialHelperConfigured(t) {
+		t.Log("a docker credential helper holds the global credential; skipping the convergence assertions")
+	} else {
+		result = loginTask.Execute(testCtx())
+		if result.Error != nil {
+			t.Fatalf("failed to re-apply the global login: %v", result.Error)
+		}
+		if result.Changed {
+			t.Errorf("expected Changed=false when the stored global credential already matches")
+		}
+	}
+
 	logoutTask := RegistryAuthTask{Global: true, Server: server, State: StateAbsent}
 	result = logoutTask.Execute(testCtx())
 	if result.Error != nil {
@@ -140,6 +210,21 @@ func TestIntegrationRegistryAuthGlobal(t *testing.T) {
 	if !result.Changed {
 		t.Errorf("expected Changed=true on global logout")
 	}
+}
+
+// globalCredentialHelperConfigured reports whether root's docker config names a
+// credential helper, which puts every stored secret out of dokku's reach.
+func globalCredentialHelperConfigured(t *testing.T) bool {
+	t.Helper()
+	result, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		Command: "sudo",
+		Args:    []string{"cat", "/root/.docker/config.json"},
+	})
+	if err != nil {
+		return false
+	}
+	body := result.StdoutContents()
+	return strings.Contains(body, "credsStore") || strings.Contains(body, "credHelpers")
 }
 
 func TestIntegrationRegistryAuthPasswordNotInArgs(t *testing.T) {
@@ -176,4 +261,65 @@ func TestIntegrationRegistryAuthPasswordNotInArgs(t *testing.T) {
 	}
 
 	(&RegistryAuthTask{App: appName, Server: server, State: StateAbsent}).Execute(testCtx())
+}
+
+// TestIntegrationRegistryAuthExport proves the export half against a real
+// server: registry:report names the server the app holds a credential for, and
+// the credential itself - which dokku will not reveal in either half - comes
+// back as two required inputs rather than being dropped on the floor.
+func TestIntegrationRegistryAuthExport(t *testing.T) {
+	skipIfNoDokkuT(t)
+	server := startTestRegistry(t)
+
+	appName := "docket-test-registry-export"
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	login := RegistryAuthTask{
+		App:      appName,
+		Server:   server,
+		Username: "testuser",
+		Password: "testpassword",
+		State:    StatePresent,
+	}
+	if result := login.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to log in: %v", result.Error)
+	}
+	t.Cleanup(func() {
+		(&RegistryAuthTask{App: appName, Server: server, State: StateAbsent}).Execute(testCtx())
+	})
+
+	res, err := ExportRecipe(testCtx(), ExportOptions{Apps: []string{appName}})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	var found *RegistryAuthTask
+	for _, play := range res.Plays() {
+		for _, task := range play.Tasks {
+			if b, ok := task.Body.(RegistryAuthTask); ok && b.Server == server {
+				found = &b
+			}
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected a dokku_registry_auth task for %s in the exported recipe", server)
+	}
+	if found.App != appName {
+		t.Errorf("App = %q, want %q", found.App, appName)
+	}
+	// The credential is unreadable, so both halves are template references
+	// rather than values - and the real password must not have leaked in.
+	if !strings.HasPrefix(found.Username, "{{ .") || !strings.HasPrefix(found.Password, "{{ .") {
+		t.Errorf("expected both credentials lifted into inputs, got username=%q password=%q", found.Username, found.Password)
+	}
+	if strings.Contains(found.Password, "testpassword") {
+		t.Errorf("the stored password must not appear in the exported recipe, got %q", found.Password)
+	}
+	for name, value := range res.Vars {
+		if strings.Contains(name, "registry_") && value != "" {
+			t.Errorf("%s = %q, want an empty placeholder", name, value)
+		}
+	}
 }

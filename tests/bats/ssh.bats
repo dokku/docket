@@ -6,6 +6,12 @@ load test_helper
 # netrc entry on the dokku server.
 SSH_GIT_AUTH_HOST="docket-test-ssh.example.com"
 
+# SSH_REGISTRY_SERVER names a registry that does not exist. registry:auth-status
+# only reads the stored docker config, so a probe against it is well defined
+# without anything listening - which is what lets these tests run `plan` on a
+# host with no registry container.
+SSH_REGISTRY_SERVER="docket-test-ssh-registry.example.com"
+
 setup() {
   require_remote_dokku
   docket_build
@@ -182,6 +188,57 @@ EOF
   assert_success
   assert_output --partial "0 would change"
   refute_output --partial "[~]"
+
+  # The password is masked in the run's own output, but it must not be on the
+  # remote argv either - that is what stdin buys.
+  DOKKU_TRACE=1 DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  refute_output --partial "ghp_examplepat"
+}
+
+# The registry-auth tests plan but never apply. registry:auth-status reads the
+# stored docker config and contacts nothing, while registry:login shells out to
+# a real `docker login` and would need a registry container this job does not
+# run. The probe is the part that has to survive the ssh hop, and plan exercises
+# all of it.
+#
+# They use --global rather than an app because the answer is then the same
+# whatever the runner's docker config holds: with no entry for the server,
+# dokku never reaches the credential-helper branch that would report "cannot
+# compare".
+@test "dokku_registry_auth probes a clean server over ssh as in sync" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: no registry credential
+      dokku_registry_auth:
+        global: true
+        server: $SSH_REGISTRY_SERVER
+        state: absent
+EOF
+  DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "0 would change"
+  refute_output --partial "[-]"
+}
+
+@test "dokku_registry_auth probes over ssh with the password on stdin" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - name: configure registry auth
+      dokku_registry_auth:
+        global: true
+        server: $SSH_REGISTRY_SERVER
+        username: deploy-bot
+        password: ghp_examplepat
+EOF
+  # No credential is stored for the server, which the probe reports distinctly
+  # from one that differs - so this is a create rather than a modify.
+  DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "1 would change"
+  assert_output --partial "[+]"
 
   # The password is masked in the run's own output, but it must not be on the
   # remote argv either - that is what stdin buys.

@@ -60,6 +60,10 @@ var globalExportOrder = []string{
 	// (dokku_network_property, emitted in the app plays) bind to.
 	"dokku_network",
 	"dokku_ssh_key",
+	// global registry credentials: a private image cannot be pulled without
+	// them, so they precede every task that deploys one. dokku_registry_auth
+	// also appears in appExportOrder, where it emits the per-app scope.
+	"dokku_registry_auth",
 	// global SSL certificate: requires the dokku-global-cert plugin, installed
 	// by the dokku_plugin tasks emitted first. dokku_certs also appears in
 	// appExportOrder, where it emits the per-app scope.
@@ -182,6 +186,10 @@ var appExportOrder = []string{
 	// service links bind an already-created datastore service (from the leading
 	// global play) to the app.
 	"dokku_service_link",
+	// registry credentials before the deploy source below: a private image
+	// cannot be pulled until the app can authenticate to the registry holding
+	// it.
+	"dokku_registry_auth",
 	// deploy source last: only one of these emits per app
 	"dokku_git_sync",
 	"dokku_git_from_image",
@@ -529,6 +537,8 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 		return res.processHttpAuthUser(app, b, opts)
 	case MaintenanceCustomPageTask:
 		return res.processMaintenanceCustomPage(app, b, opts)
+	case RegistryAuthTask:
+		return res.processRegistryAuth(app, b, opts)
 	case SchedulerK3sAutoscalingAuthTask:
 		return res.processSchedulerK3sAutoscalingAuth(app, b, opts)
 	case LetsencryptPropertyTask:
@@ -737,6 +747,51 @@ func (res *ExportResult) processMaintenanceCustomPage(app string, b MaintenanceC
 		"required": true,
 	}}
 	return b, inputs
+}
+
+// processRegistryAuth fills in the half of a registry login that cannot be
+// read back. ExportApp / ExportGlobal recover the server from registry:report,
+// which names every server a credential exists for and nothing about the
+// credential itself - dokku exposes no username field either, so both halves
+// are unreadable rather than just the secret.
+//
+// Both are therefore lifted into required inputs in both modes, the way an
+// unreadable maintenance page is: an empty placeholder in the vars map, a
+// template reference in the body, and the operator supplies the real values
+// before apply. Leaving them blank is not an option, because
+// RegistryAuthTask.Validate() rejects an empty username or password when the
+// state is present, so a blanked task would fail `docket validate` rather than
+// merely needing to be filled in.
+func (res *ExportResult) processRegistryAuth(app string, b RegistryAuthTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if b.Server == "" || b.State != StatePresent {
+		return b, nil
+	}
+
+	userName := res.uniqueVarName(app, "registry_username_"+b.Server)
+	passName := res.uniqueVarName(app, "registry_password_"+b.Server)
+	b.Username = "{{ ." + userName + " }}"
+	b.Password = "{{ ." + passName + " }}"
+	// the credential is not readable, so there is no value to write here in
+	// either mode; the user fills these in
+	res.Vars[userName] = ""
+	res.Vars[passName] = ""
+
+	if opts.Inline {
+		res.Report.Warnings = append(res.Report.Warnings,
+			fmt.Sprintf("%s: the registry credential for %s is not readable; supply the username and password as inputs before apply", app, b.Server))
+	}
+
+	return b, []map[string]interface{}{
+		{
+			"name":     userName,
+			"required": true,
+		},
+		{
+			"name":      passName,
+			"required":  true,
+			"sensitive": true,
+		},
+	}
 }
 
 // processConfig lifts config values into the vars map (file mode) or blanks

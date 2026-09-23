@@ -383,3 +383,20 @@ teardown() {
   assert_output --partial "vars.yml holds hcl"
   assert_output --partial "rename it vars.hcl"
 }
+
+@test "docket export emits no registry auth task for an app without credentials" {
+  # The positive case needs a registry container to log in against, so it lives
+  # in the Go integration tests, which manage one. What matters here is that the
+  # common case stays quiet: an app with no registry login must not leave a task
+  # behind, and must not declare inputs the operator has to go and ask about.
+  require_dokku
+  dokku apps:create docket-test-export
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --app docket-test-export --output tasks.yml --vars-output tasks.vars.yml
+  assert_success
+
+  run grep -q 'dokku_registry_auth' tasks.yml
+  assert_failure
+  run grep -q 'registry_password' tasks.yml
+  assert_failure
+}

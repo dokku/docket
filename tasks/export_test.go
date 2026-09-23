@@ -1478,3 +1478,185 @@ func TestExportPsScaleSkipsAnUnscaledApp(t *testing.T) {
 		t.Errorf("expected no exported task, got %v", bodies)
 	}
 }
+
+// registryAuthExportFixture answers the two registry:report reads an export
+// makes - the global play's and one app's - with the auth-servers keys set to
+// the given comma-separated lists.
+func registryAuthExportFixture(appServers, globalServers string) map[string]string {
+	return map[string]string{
+		"--quiet apps:list": "web",
+		"--quiet registry:report web --format json": `{"auth-servers":"` + appServers +
+			`","global-auth-servers":"` + globalServers + `","computed-auth-servers":"","image-repo":"","server":""}`,
+		"--quiet registry:report --global --format json": `{"global-auth-servers":"` + globalServers +
+			`","computed-auth-servers":"","global-server":""}`,
+	}
+}
+
+// TestExportRegistryAuthLiftsCredentialsIntoInputs is the shape the whole
+// registry-auth export turns on: registry:report names the servers a credential
+// exists for and nothing about the credential itself - there is no username
+// field either - so both halves become required inputs with empty placeholders
+// and the operator fills them in before apply. Leaving them blank is not an
+// option, because RegistryAuthTask.Validate() rejects an empty username or
+// password when the state is present.
+func TestExportRegistryAuthLiftsCredentialsIntoInputs(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(registryAuthExportFixture("ghcr.io", "")))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	for _, name := range []string{"web_registry_username_ghcr_io", "web_registry_password_ghcr_io"} {
+		v, ok := res.Vars[name]
+		if !ok {
+			t.Fatalf("expected %s in the vars map; got %v", name, res.Vars)
+		}
+		if v != "" {
+			t.Errorf("%s = %q, want an empty placeholder - the credential is not readable", name, v)
+		}
+	}
+
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+	out := string(recipe)
+	for _, want := range []string{
+		"dokku_registry_auth",
+		"server: ghcr.io",
+		"{{ .web_registry_username_ghcr_io }}",
+		"{{ .web_registry_password_ghcr_io }}",
+		"name: web_registry_username_ghcr_io",
+		"name: web_registry_password_ghcr_io",
+		"sensitive: true",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe should contain %q; got:\n%s", want, out)
+		}
+	}
+
+	// Nothing was read, so nothing needs masking - unlike every other
+	// credential-bearing exporter, this one never learns a secret.
+	if len(res.SensitiveValues()) != 0 {
+		t.Errorf("export read no credential, so none may be collected for masking; got %v", res.SensitiveValues())
+	}
+}
+
+// TestExportRegistryAuthEmitsOnePerServer pins the split of the comma-separated
+// report field, and that the two scopes read different keys: an app with a
+// credential of its own shadows the global config rather than merging with it,
+// so the same server never lands in both plays from one read.
+func TestExportRegistryAuthEmitsOnePerServer(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(registryAuthExportFixture("quay.io, ghcr.io", "docker.io")))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	var global, app []string
+	for _, play := range res.Plays() {
+		for _, task := range play.Tasks {
+			b, ok := task.Body.(RegistryAuthTask)
+			if !ok {
+				continue
+			}
+			if b.Global {
+				global = append(global, b.Server)
+			} else {
+				app = append(app, b.Server)
+			}
+		}
+	}
+
+	// sorted, so an export of the same server twice is a diff and not a shuffle
+	if !reflect.DeepEqual(app, []string{"ghcr.io", "quay.io"}) {
+		t.Errorf("app servers = %v, want [ghcr.io quay.io]", app)
+	}
+	if !reflect.DeepEqual(global, []string{"docker.io"}) {
+		t.Errorf("global servers = %v, want [docker.io]", global)
+	}
+}
+
+// TestExportRegistryAuthEmitsNothingWithoutCredentials is the common case: a
+// server with no registry logins should produce no tasks and, critically, no
+// stray inputs for the operator to wonder about.
+func TestExportRegistryAuthEmitsNothingWithoutCredentials(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(registryAuthExportFixture("", "")))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+	if strings.Contains(string(recipe), "dokku_registry_auth") {
+		t.Errorf("no credential exists, so no task should be emitted; got:\n%s", recipe)
+	}
+	for name := range res.Vars {
+		if strings.Contains(name, "registry_username") || strings.Contains(name, "registry_password") {
+			t.Errorf("no credential exists, so no input should be declared; got %v", res.Vars)
+		}
+	}
+}
+
+// TestExportRegistryAuthInlineWarnsAboutTheCredential covers the stdout path,
+// which has no companion vars-file: the recipe still has to be valid, so the
+// inputs stay, and the warning is the only place the operator is told they have
+// to be supplied.
+func TestExportRegistryAuthInlineWarnsAboutTheCredential(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(registryAuthExportFixture("ghcr.io", "")))
+
+	res, err := ExportRecipe(ctx, ExportOptions{Inline: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	var found bool
+	for _, w := range res.Report.Warnings {
+		if strings.Contains(w, "registry credential for ghcr.io is not readable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an inline warning naming the unreadable credential; got %v", res.Report.Warnings)
+	}
+}
+
+// TestExportRegistryAuthIsAddressable pins that the new exporter reaches the
+// --resource path too. Addressability is derived from the export order lists
+// rather than declared separately, so this is really a test that both entries
+// landed.
+func TestExportRegistryAuthIsAddressable(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(registryAuthExportFixture("quay.io,ghcr.io", "")))
+
+	selectors, err := ParseResourceSelectors([]string{"dokku_registry_auth[app=web,server=ghcr.io]"})
+	if err != nil {
+		t.Fatalf("ParseResourceSelectors: %v", err)
+	}
+	res, err := ExportRecipe(ctx, ExportOptions{Resources: selectors})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+	out := string(recipe)
+	if !strings.Contains(out, "server: ghcr.io") {
+		t.Errorf("the addressed resource should be emitted; got:\n%s", out)
+	}
+	if strings.Contains(out, "server: quay.io") {
+		t.Errorf("only the addressed resource should be emitted; got:\n%s", out)
+	}
+}

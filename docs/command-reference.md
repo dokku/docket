@@ -545,9 +545,9 @@ running anything:
 ```text
 $ docket apply --list-tasks
 ==> Play: api
-[0] dokku apps:create api  [tags=core]
-[1] dokku registry:login docker.io  (never converges)
-[2] dokku git:from-image api  (partial probe)
+[0] dokku_app[app=api]  [tags=core]
+[1] dokku_service_property[service=redis,name=cache,property=shm-size]  (never converges)
+[2] dokku_git_from_image[app=api]  (partial probe)
 ```
 
 With `--json`, the same information is a `probe` field (`unsupported` or `partial`) plus a
