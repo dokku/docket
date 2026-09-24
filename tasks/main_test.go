@@ -693,17 +693,6 @@ func TestGetTasksFromRealExample(t *testing.T) {
 	}
 }
 
-func TestAllTasksExamplesReturnNoError(t *testing.T) {
-	for name, task := range RegisteredTasks {
-		t.Run(name, func(t *testing.T) {
-			_, err := task.Examples()
-			if err != nil {
-				t.Errorf("Examples() returned error: %v", err)
-			}
-		})
-	}
-}
-
 // TestAllTaskExamplesValidate proves every documented example is valid by
 // decoding it the same way the loader does and running the task's optional
 // input validation, so a broken snippet cannot ship into docs/tasks/*.md.
@@ -721,7 +710,7 @@ func TestAllTasksExamplesReturnNoError(t *testing.T) {
 func TestAllTaskExamplesValidate(t *testing.T) {
 	for name, task := range RegisteredTasks {
 		t.Run(name, func(t *testing.T) {
-			examples, err := task.Examples()
+			examples, err := TaskExamples(task)
 			if err != nil {
 				t.Fatalf("Examples() returned error: %v", err)
 			}
@@ -901,7 +890,7 @@ func TestGetTasksTagsScalarFormDecodes(t *testing.T) {
 
 func TestTaskDocStrings(t *testing.T) {
 	tests := []struct {
-		task Task
+		task Documented
 		want string
 	}{
 		{&AclAppTask{}, "Manages the dokku-acl access list for a dokku application"},

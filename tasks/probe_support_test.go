@@ -11,8 +11,6 @@ import (
 // generator omit the section and the coverage test name the offender.
 type probelessTask struct{}
 
-func (t probelessTask) Doc() string                                 { return "" }
-func (t probelessTask) Examples() ([]Doc, error)                    { return nil, nil }
 func (t probelessTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
 func (t probelessTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
 

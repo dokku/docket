@@ -110,7 +110,8 @@ type TaskSchema struct {
 	// such as "dokku_apps_property".
 	Type string `json:"type"`
 
-	// Synopsis is the task's Doc(), verbatim.
+	// Synopsis is the task's Doc(), trimmed. Empty for a task that does not
+	// implement Documented.
 	Synopsis string `json:"synopsis"`
 
 	// Deprecation is the notice a deprecated task declares. Absent when the
@@ -452,7 +453,7 @@ func RegisteredTaskNames() []string {
 func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 	schema := TaskSchema{
 		Type:     typeKey,
-		Synopsis: strings.TrimSpace(task.Doc()),
+		Synopsis: strings.TrimSpace(TaskSynopsis(task)),
 		Fields:   buildFields(taskStructOf(task)),
 		Identity: IdentitySchema{Keys: IdentityKeyNames(task)},
 	}
@@ -477,7 +478,7 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 		schema.PropertySchema = &propertySchema
 	}
 
-	examples, err := task.Examples()
+	examples, err := TaskExamples(task)
 	if err != nil {
 		return TaskSchema{}, fmt.Errorf("examples for task %s: %w", typeKey, err)
 	}

@@ -11,8 +11,6 @@ type mockTask struct {
 	state State
 }
 
-func (m mockTask) Doc() string              { return "" }
-func (m mockTask) Examples() ([]Doc, error) { return nil, nil }
 func (m mockTask) Plan(ctx context.Context) PlanResult {
 	return PlanResult{InSync: true, Status: PlanStatusOK}
 }
