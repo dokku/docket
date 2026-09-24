@@ -1560,7 +1560,7 @@ func TestExportRegistryAuthEmitsOnePerServer(t *testing.T) {
 	var global, app []string
 	for _, play := range res.Plays() {
 		for _, task := range play.Tasks {
-			b, ok := task.Body.(RegistryAuthTask)
+			b, ok := As[RegistryAuthTask](task)
 			if !ok {
 				continue
 			}

@@ -1,6 +1,8 @@
 package tasks
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
@@ -38,7 +40,7 @@ func TestExportPlaysReturnsTypedTaskBodies(t *testing.T) {
 			if task.Type != "dokku_config" {
 				continue
 			}
-			cfg, ok := task.Body.(ConfigTask)
+			cfg, ok := As[ConfigTask](task)
 			if !ok {
 				t.Fatalf("dokku_config body is %T, want ConfigTask", task.Body)
 			}
@@ -115,7 +117,7 @@ func TestExportPlaysKeepsVarsLiftingOutOfTheBodies(t *testing.T) {
 
 	for _, play := range res.Plays() {
 		for _, task := range play.Tasks {
-			cfg, ok := task.Body.(ConfigTask)
+			cfg, ok := As[ConfigTask](task)
 			if !ok {
 				continue
 			}
@@ -137,6 +139,118 @@ func TestExportPlaysKeepsVarsLiftingOutOfTheBodies(t *testing.T) {
 	}
 	if !lifted {
 		t.Errorf("expected the secret in Vars; got %v", keysOfStrings(res.Vars))
+	}
+}
+
+// exportedConfigTask returns app-one's dokku_config task from an inline export
+// of exportFixture.
+func exportedConfigTask(t *testing.T) ExportedTask {
+	t.Helper()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
+	res, err := ExportRecipe(ctx, ExportOptions{Inline: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	for _, play := range res.Plays() {
+		if play.Name != "app-one" {
+			continue
+		}
+		for _, task := range play.Tasks {
+			if task.Type == "dokku_config" {
+				return task
+			}
+		}
+	}
+	t.Fatalf("no dokku_config task on the app-one play; got %+v", res.Plays())
+	return ExportedTask{}
+}
+
+// TestAsReturnsTheTypedBody is the accessor #566 asks for: the body comes back
+// as the task's own type without a hand-written assertion.
+func TestAsReturnsTheTypedBody(t *testing.T) {
+	t.Parallel()
+	cfg, ok := As[ConfigTask](exportedConfigTask(t))
+	if !ok {
+		t.Fatal("As[ConfigTask] returned false for a dokku_config task")
+	}
+	if cfg.App != "app-one" || cfg.Config["SECRET_KEY"] != "s3cr3t" {
+		t.Errorf("As[ConfigTask] = %+v, want the populated app-one config", cfg)
+	}
+}
+
+// TestAsRejectsAnotherTaskType pins that asking for the wrong type is a false
+// rather than a panic.
+func TestAsRejectsAnotherTaskType(t *testing.T) {
+	t.Parallel()
+	app, ok := As[AppTask](exportedConfigTask(t))
+	if ok {
+		t.Fatal("As[AppTask] returned true for a dokku_config task")
+	}
+	if !reflect.DeepEqual(app, AppTask{}) {
+		t.Errorf("As[AppTask] = %+v, want the zero value", app)
+	}
+}
+
+// TestAsRejectsAPointerBody pins the value-only contract: As does not reach
+// through a pointer, which is why the engine never lets one into a play.
+func TestAsRejectsAPointerBody(t *testing.T) {
+	t.Parallel()
+	if _, ok := As[ConfigTask](ExportedTask{Type: "dokku_config", Body: &ConfigTask{}}); ok {
+		t.Error("As[ConfigTask] returned true for a *ConfigTask body")
+	}
+}
+
+// TestAppendBodiesRejectsAPointerBody pins that a pointer body is dropped with
+// a warning before processBody sees it. processBody only recognises value
+// types, so a *ConfigTask would otherwise skip processConfig and reach the
+// recipe with its values inline instead of lifted into Vars.
+func TestAppendBodiesRejectsAPointerBody(t *testing.T) {
+	t.Parallel()
+	res := &ExportResult{Vars: map[string]string{}, usedVarNames: map[string]bool{}}
+	body := &ConfigTask{App: "app-one", Config: map[string]string{"K": "v"}}
+
+	exported, inputs := res.appendBodies("app-one", "dokku_config", []interface{}{body}, ExportOptions{})
+	if len(exported) != 0 || len(inputs) != 0 {
+		t.Errorf("appendBodies kept the pointer body: tasks %+v, inputs %+v", exported, inputs)
+	}
+	if len(res.Vars) != 0 {
+		t.Errorf("appendBodies lifted values from a dropped body: %v", res.Vars)
+	}
+	want := "app-one: dokku_config: exporter returned *tasks.ConfigTask, want tasks.ConfigTask"
+	if !reflect.DeepEqual(res.Report.Warnings, []string{want}) {
+		t.Errorf("warnings = %q, want [%q]", res.Report.Warnings, want)
+	}
+}
+
+// TestAppendBodiesRejectsTheWrongTaskType pins that a body filed under another
+// task's type-key is dropped rather than emitted under the wrong key.
+func TestAppendBodiesRejectsTheWrongTaskType(t *testing.T) {
+	t.Parallel()
+	res := &ExportResult{Vars: map[string]string{}, usedVarNames: map[string]bool{}}
+
+	exported, _ := res.appendBodies("global", "dokku_config", []interface{}{AppTask{App: "app-one"}}, ExportOptions{})
+	if len(exported) != 0 {
+		t.Errorf("appendBodies kept an AppTask under dokku_config: %+v", exported)
+	}
+	want := "global: dokku_config: exporter returned tasks.AppTask, want tasks.ConfigTask"
+	if !reflect.DeepEqual(res.Report.Warnings, []string{want}) {
+		t.Errorf("warnings = %q, want [%q]", res.Report.Warnings, want)
+	}
+}
+
+// TestExportFixtureRaisesNoBodyTypeWarnings pins that the check accepts what
+// real exporters return.
+func TestExportFixtureRaisesNoBodyTypeWarnings(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(exportFixture()))
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	for _, w := range res.Report.Warnings {
+		if strings.Contains(w, "exporter returned") {
+			t.Errorf("unexpected body type warning: %s", w)
+		}
 	}
 }
 
