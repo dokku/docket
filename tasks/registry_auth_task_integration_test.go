@@ -298,7 +298,7 @@ func TestIntegrationRegistryAuthExport(t *testing.T) {
 	var found *RegistryAuthTask
 	for _, play := range res.Plays() {
 		for _, task := range play.Tasks {
-			if b, ok := task.Body.(RegistryAuthTask); ok && b.Server == server {
+			if b, ok := As[RegistryAuthTask](task); ok && b.Server == server {
 				found = &b
 			}
 		}

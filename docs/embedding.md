@@ -42,7 +42,7 @@ if err != nil {
 
 for _, play := range res.Plays() {
     for _, task := range play.Tasks {
-        cfg, ok := task.Body.(tasks.ConfigTask)
+        cfg, ok := tasks.As[tasks.ConfigTask](task)
         if !ok {
             continue
         }
@@ -55,8 +55,10 @@ for _, play := range res.Plays() {
 file can never describe different exports. Each task body is the task's own type - `dokku_config`
 comes back as a `ConfigTask` - so there is no marshalling to YAML and parsing it straight back.
 
-Bodies are values, not pointers, because that is what an exporter returns. Type-assert the concrete
-type (`tasks.ConfigTask`), not the `Task` interface.
+Read a body with `tasks.As`, passing the concrete value type (`tasks.ConfigTask`). It returns
+`false` for any other task, so a loop over every task can ask for the one type it wants. A body is
+always the value form of the type registered under `task.Type`, never a pointer, so
+`tasks.As[*tasks.ConfigTask]` never matches.
 
 ### Narrowing the read
 

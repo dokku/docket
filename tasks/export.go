@@ -243,13 +243,26 @@ type ExportReport struct {
 // emitted under, and the task's own struct populated from the server.
 //
 // Body is the task value, not a marshalled form of it - `dokku_config` comes
-// back as a ConfigTask - so a Go caller can type-assert it and read fields
-// rather than parsing YAML the export just produced. It is `interface{}`
-// rather than Task because an exporter returns bodies by value and Task is
-// implemented on the pointer for most types; assert the concrete type.
+// back as a ConfigTask - so a Go caller can read fields rather than parsing
+// YAML the export just produced. It is always the value form of the task type
+// registered under Type: the engine drops any body an exporter returns as a
+// pointer or as another task's type (see exportedBodyType). Read it with As.
 type ExportedTask struct {
 	Type string      `yaml:"-"`
 	Body interface{} `yaml:"-"`
+}
+
+// As returns e's body as the task type T, and false when the body is any other
+// type, so a caller reads fields without hand-writing an assertion on Body:
+//
+//	if cfg, ok := tasks.As[tasks.ConfigTask](task); ok { ... }
+//
+// Pass the value type. Bodies are never pointers, so As[*ConfigTask] is always
+// false. If an exporter ever needs to return a pointer, this and
+// exportedBodyType are the places to absorb it.
+func As[T Task](e ExportedTask) (T, bool) {
+	body, ok := e.Body.(T)
+	return body, ok
 }
 
 // MarshalYAML emits the task the way a recipe spells it: a single-key mapping
@@ -441,19 +454,9 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 				fmt.Sprintf("global: %s: %v", typeKey, err))
 			continue
 		}
-		for _, body := range bodies {
-			keep, err := res.filter.keepBody(typeKey, body)
-			if err != nil {
-				res.Report.Warnings = append(res.Report.Warnings,
-					fmt.Sprintf("global: %s: %v", typeKey, err))
-			}
-			if !keep {
-				continue
-			}
-			body, ins := res.processBody("global", body, opts)
-			taskList = append(taskList, ExportedTask{Type: typeKey, Body: body})
-			inputs = append(inputs, ins...)
-		}
+		exported, ins := res.appendBodies("global", typeKey, bodies, opts)
+		taskList = append(taskList, exported...)
+		inputs = append(inputs, ins...)
 	}
 
 	if len(taskList) == 0 {
@@ -496,19 +499,9 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 				fmt.Sprintf("%s: %s: %v", app, typeKey, err))
 			continue
 		}
-		for _, body := range bodies {
-			keep, err := res.filter.keepBody(typeKey, body)
-			if err != nil {
-				res.Report.Warnings = append(res.Report.Warnings,
-					fmt.Sprintf("%s: %s: %v", app, typeKey, err))
-			}
-			if !keep {
-				continue
-			}
-			body, ins := res.processBody(app, body, opts)
-			taskList = append(taskList, ExportedTask{Type: typeKey, Body: body})
-			inputs = append(inputs, ins...)
-		}
+		exported, ins := res.appendBodies(app, typeKey, bodies, opts)
+		taskList = append(taskList, exported...)
+		inputs = append(inputs, ins...)
 	}
 
 	if len(taskList) == 0 {
@@ -516,6 +509,54 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 	}
 
 	return &ExportedPlay{Name: app, Inputs: inputs, Tasks: taskList}
+}
+
+// appendBodies turns one exporter's bodies into exported tasks for a play.
+// scope is the app name, or "global" for the leading play, and prefixes every
+// warning. A body that is not the registered value type for typeKey is dropped
+// before the resource filter or the secret lifters see it: processBody's switch
+// only recognises value types, so a pointer body would otherwise skip the
+// lifting its type needs and reach the recipe with its secrets inline.
+func (res *ExportResult) appendBodies(scope, typeKey string, bodies []interface{}, opts ExportOptions) ([]ExportedTask, []map[string]interface{}) {
+	var taskList []ExportedTask
+	var inputs []map[string]interface{}
+	for _, body := range bodies {
+		if err := exportedBodyType(typeKey, body); err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("%s: %s: %v", scope, typeKey, err))
+			continue
+		}
+		keep, err := res.filter.keepBody(typeKey, body)
+		if err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("%s: %s: %v", scope, typeKey, err))
+		}
+		if !keep {
+			continue
+		}
+		body, ins := res.processBody(scope, body, opts)
+		taskList = append(taskList, ExportedTask{Type: typeKey, Body: body})
+		inputs = append(inputs, ins...)
+	}
+	return taskList, inputs
+}
+
+// exportedBodyType reports an error when body is not the value form of the task
+// type registered under typeKey - a pointer to it, or another task's type. The
+// error names only the types, never the body, so it is safe to surface before
+// the body's secrets are registered for masking.
+func exportedBodyType(typeKey string, body interface{}) error {
+	want := reflect.TypeOf(RegisteredTasks[typeKey])
+	if want == nil {
+		return fmt.Errorf("no task is registered under %s", typeKey)
+	}
+	if want.Kind() == reflect.Ptr {
+		want = want.Elem()
+	}
+	if got := reflect.TypeOf(body); got != want {
+		return fmt.Errorf("exporter returned %v, want %v", got, want)
+	}
+	return nil
 }
 
 // processBody applies vars-extraction (file mode) or redaction (inline mode) to

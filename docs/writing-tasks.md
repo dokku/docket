@@ -214,6 +214,10 @@ an exporter no order list names, and for a task that claims to export without im
 Emit the desired `state` explicitly rather than leaning on the field's `default`, so the body is
 plannable exactly as the exporter returns it.
 
+Return the task's own struct by value, never a pointer to it or another task's type. The engine drops
+any other body from the export with a warning, because the secret-lifting it applies and the
+`tasks.As` accessor Go callers read bodies with both expect the value type.
+
 When an exporter needs to say something about a particular resource - an asset it could not capture,
 a resource it read back but cannot emit as a task the loader would accept - implement the reporting
 form instead of logging: `ExportAppReport(ctx, app, warn)` or
