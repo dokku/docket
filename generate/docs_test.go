@@ -102,3 +102,37 @@ func TestGeneratedDocsCoverEveryTask(t *testing.T) {
 		t.Errorf("%s/%s.md describes no registered task; delete it", docsDir, name)
 	}
 }
+
+// TestRunnerRequirementsSection covers the section the catalog's runner_file
+// flag renders into (#568), including an element field, which the Parameters
+// table only lists by name and so has no other place to be called out.
+func TestRunnerRequirementsSection(t *testing.T) {
+	if got := runnerRequirementsSection([]tasks.FieldSchema{{Name: "app"}}); got != "" {
+		t.Errorf("untagged fields rendered %q; want no section", got)
+	}
+
+	got := runnerRequirementsSection([]tasks.FieldSchema{
+		{Name: "app"},
+		{Name: "tarball", RunnerFile: true},
+		{Name: "pages", Type: tasks.TypeList, Item: &tasks.ItemSchema{
+			Type:   tasks.TypeObject,
+			Fields: []tasks.FieldSchema{{Name: "name"}, {Name: "file", RunnerFile: true}},
+		}},
+	})
+	want := "## Runner requirements\n\n" +
+		"- `tarball` is read from the machine running docket, not the dokku server, so the file must exist there even when docket drives the server over `--host`.\n" +
+		"- `pages[].file` is read from the machine running docket, not the dokku server, so the file must exist there even when docket drives the server over `--host`.\n"
+	if got != want {
+		t.Errorf("runnerRequirementsSection =\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestParamDescriptionMarksRunnerFile pins the Parameters-table suffix and its
+// order against the sensitive one.
+func TestParamDescriptionMarksRunnerFile(t *testing.T) {
+	got := paramDescription(tasks.FieldSchema{Description: "Path to a file.", RunnerFile: true, Sensitive: true})
+	want := "Path to a file. (read from the machine running docket) (sensitive)"
+	if got != want {
+		t.Errorf("paramDescription = %q; want %q", got, want)
+	}
+}

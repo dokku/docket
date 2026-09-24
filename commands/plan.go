@@ -129,7 +129,7 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.json, "json", false, "emit one JSON-lines event per play/task/summary instead of human-readable output. Schema is keyed by `version: 1`; sensitive values mask to `***`.")
 	f.BoolVar(&c.detailedExitCode, "detailed-exitcode", false, "exit 0 when no drift is detected, 2 when drift is detected, 1 on error. Without this flag plan exits 0 regardless of drift.")
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
-	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via `sudo -n` - remotely with --host, locally without. Covers dokku only, not the local helper commands some tasks run. Equivalent to DOKKU_SUDO=1.")
+	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via `sudo -n` - remotely with --host, locally without. Covers dokku only, not docket's own reads of local files. Equivalent to DOKKU_SUDO=1.")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list are planned")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")

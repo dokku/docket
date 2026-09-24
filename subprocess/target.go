@@ -15,14 +15,17 @@ import "context"
 type Target struct {
 	// Host is the remote as [user@]host[:port]. When non-empty, `dokku`
 	// invocations are routed through an `ssh` subprocess instead of running
-	// locally. Only `dokku` is routed: a task's local helper commands (docker,
-	// curl, tar) stay local, because the remote side may not have them.
+	// locally. Only `dokku` is routed. Everything else stays in docket's own
+	// process on this machine: the `ssh` client itself, and every file docket
+	// reads - the recipe, and the runner-side file fields the task catalog
+	// marks `runner_file`.
 	Host string
 
 	// Sudo wraps the dokku invocation so it runs as root: `sudo -n` on the
 	// remote when Host is set, `sudo -n -u root` locally when it is not.
 	// Passwordless sudo only - `-n` never prompts. Like Host, this applies to
-	// `dokku` alone, so a task's local helper commands are not elevated.
+	// `dokku` alone, so docket's own file reads - a `runner_file` field, or the
+	// local certs drift probe - run as the invoking user.
 	Sudo bool
 
 	// AcceptNewHostKeys adds `-o StrictHostKeyChecking=accept-new`, so ssh

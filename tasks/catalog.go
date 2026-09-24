@@ -212,6 +212,12 @@ type FieldSchema struct {
 	// a recipe must mask it.
 	Sensitive bool `json:"sensitive,omitempty"`
 
+	// RunnerFile marks a field naming a file docket reads on the machine it
+	// runs on rather than on the dokku server, so the file must exist there
+	// even when docket drives the server over --host. A path a task hands to
+	// dokku as an argument resolves on the server and is not marked.
+	RunnerFile bool `json:"runner_file,omitempty"`
+
 	// Identity is "key" or "collection" when the field carries an identity
 	// tag, and absent otherwise.
 	Identity string `json:"identity,omitempty"`
@@ -533,6 +539,7 @@ func buildFields(rt reflect.Type) []FieldSchema {
 			Default:     def,
 			Description: field.Tag.Get("description"),
 			Sensitive:   field.Tag.Get("sensitive") == "true",
+			RunnerFile:  field.Tag.Get("runner_file") == "true",
 		}
 		if opts := field.Tag.Get("options"); opts != "" {
 			schema.Choices = strings.Split(opts, ",")

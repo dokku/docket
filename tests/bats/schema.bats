@@ -71,6 +71,26 @@ setup() {
     fail "dokku_letsencrypt_property value is not marked sensitive"
 }
 
+@test "docket schema marks runner-side file fields (#568)" {
+  run "$(docket_bin)" schema
+  assert_success
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_maintenance_custom_page") | .fields[] | select(.name == "tarball") | .runner_file == true' >/dev/null ||
+    fail "dokku_maintenance_custom_page tarball is not marked runner_file"
+
+  # dokku_certs hands cert and key to dokku as arguments, so they resolve on
+  # the server and must stay unmarked.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_certs") | all(.fields[] | select(.name == "cert" or .name == "key"); (.runner_file // false) == false)' >/dev/null ||
+    fail "dokku_certs cert or key is marked runner_file"
+
+  run "$(docket_bin)" schema --task dokku_maintenance_custom_page
+  assert_success
+  echo "$output" |
+    jq -e '.tasks[0].fields[] | select(.name == "tarball") | .runner_file == true' >/dev/null ||
+    fail "a narrowed catalog drops runner_file"
+}
+
 @test "docket schema publishes the whole shape of a property task (#454)" {
   run "$(docket_bin)" schema
   assert_success

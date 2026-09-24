@@ -202,6 +202,66 @@ func TestCatalogSensitiveMatchesTags(t *testing.T) {
 	}
 }
 
+// TestCatalogRunnerFileMatchesTags checks the runner_file flag against the tag
+// on every field, element fields included, and pins which paths are runner-side
+// (#568). dokku_certs is the trap: its cert and key are paths too, but they are
+// handed to dokku and resolve on the server, so marking them would tell a
+// consumer to refuse a recipe that works over --host.
+func TestCatalogRunnerFileMatchesTags(t *testing.T) {
+	catalog := wholeCatalog(t)
+
+	var check func(t *testing.T, where string, rt reflect.Type, fields []FieldSchema)
+	check = func(t *testing.T, where string, rt reflect.Type, fields []FieldSchema) {
+		for _, field := range fields {
+			structField, ok := structFieldByYAMLName(rt, field.Name)
+			if !ok {
+				continue
+			}
+			want := structField.Tag.Get("runner_file") == "true"
+			if field.RunnerFile != want {
+				t.Errorf("%s.%s RunnerFile = %v; want %v", where, field.Name, field.RunnerFile, want)
+			}
+			if field.Item != nil && field.Item.Type == TypeObject {
+				check(t, where+"."+field.Name+"[]", structElem(sliceOrMapElem(structField.Type)), field.Item.Fields)
+			}
+		}
+	}
+
+	for _, schema := range catalog.Tasks {
+		check(t, schema.Type, taskStructType(lookupTask(schema.Type)), schema.Fields)
+	}
+
+	if !fieldFor(t, schemaFor(t, catalog, "dokku_maintenance_custom_page").Fields, "tarball").RunnerFile {
+		t.Error("dokku_maintenance_custom_page.tarball must be a runner-side file")
+	}
+	certs := schemaFor(t, catalog, "dokku_certs").Fields
+	for _, name := range []string{"cert", "key"} {
+		if fieldFor(t, certs, name).RunnerFile {
+			t.Errorf("dokku_certs.%s is a server path and must not be a runner-side file", name)
+		}
+	}
+}
+
+// TestCatalogRunnerFileFieldsAreStrings catches the tag landing on a field that
+// cannot hold a path.
+func TestCatalogRunnerFileFieldsAreStrings(t *testing.T) {
+	var check func(t *testing.T, where string, fields []FieldSchema)
+	check = func(t *testing.T, where string, fields []FieldSchema) {
+		for _, field := range fields {
+			if field.RunnerFile && field.Type != TypeString {
+				t.Errorf("%s.%s is a runner-side file of type %q; want %q", where, field.Name, field.Type, TypeString)
+			}
+			if field.Item != nil {
+				check(t, where+"."+field.Name+"[]", field.Item.Fields)
+			}
+		}
+	}
+
+	for _, schema := range wholeCatalog(t).Tasks {
+		check(t, schema.Type, schema.Fields)
+	}
+}
+
 // TestCatalogIdentityMatchesTaskIdentity checks the catalog against the same
 // helpers the loader and the export filter read. The "every key is a field"
 // half also guards the two yaml-name helpers staying in agreement: a key hidden

@@ -75,6 +75,9 @@ func paramDescription(field tasks.FieldSchema) string {
 		}
 		desc = strings.TrimSpace(desc + " Each item has: " + strings.Join(items, ", ") + ".")
 	}
+	if field.RunnerFile {
+		desc = strings.TrimSpace(desc + " (read from the machine running docket)")
+	}
 	if field.Sensitive {
 		desc = strings.TrimSpace(desc + " (sensitive)")
 	}
@@ -189,6 +192,39 @@ func requirementsSection(requirements []string) string {
 		b.WriteString("- " + r + "\n")
 	}
 	return b.String()
+}
+
+// runnerRequirementsSection renders the Runner requirements bullet list for a
+// task with fields naming files docket reads on the machine it runs on rather
+// than on the dokku server. Element fields are included under a `parent[].child`
+// name, since the Parameters table lists those by name only. Returns ""
+// otherwise.
+func runnerRequirementsSection(fields []tasks.FieldSchema) string {
+	names := runnerFileNames("", fields)
+	if len(names) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Runner requirements\n\n")
+	for _, name := range names {
+		b.WriteString(fmt.Sprintf("- `%s` is read from the machine running docket, not the dokku server, so the file must exist there even when docket drives the server over `--host`.\n", name))
+	}
+	return b.String()
+}
+
+// runnerFileNames returns the names of the runner-side file fields in
+// declaration order, descending into structured list and dict elements.
+func runnerFileNames(prefix string, fields []tasks.FieldSchema) []string {
+	var names []string
+	for _, field := range fields {
+		if field.RunnerFile {
+			names = append(names, prefix+field.Name)
+		}
+		if field.Item != nil && field.Item.Type == tasks.TypeObject {
+			names = append(names, runnerFileNames(prefix+field.Name+"[].", field.Item.Fields)...)
+		}
+	}
+	return names
 }
 
 // exportSupportSection renders the Export support section, stating whether
@@ -360,6 +396,9 @@ func renderPage(schema tasks.TaskSchema) string {
 	}
 	if req := requirementsSection(schema.Requirements); req != "" {
 		sections = append(sections, strings.TrimRight(req, "\n"))
+	}
+	if rr := runnerRequirementsSection(schema.Fields); rr != "" {
+		sections = append(sections, strings.TrimRight(rr, "\n"))
 	}
 	if es := exportSupportSection(schema.Export); es != "" {
 		sections = append(sections, es)

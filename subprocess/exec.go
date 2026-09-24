@@ -241,10 +241,11 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 
 	command := input.Command
 	commandArgs := input.Args
-	// Elevation is scoped to dokku for the same reason routing is: a task's
-	// local helper commands (docker, curl, tar) are docket's own plumbing, and
-	// requiring passwordless root for them because the operator asked for a
-	// sudo-wrapped dokku would be a surprise.
+	// Elevation is scoped to dokku for the same reason routing is: dokku is the
+	// only command docket runs on a task's behalf, and anything else passed
+	// through here is docket's own plumbing, for which requiring passwordless
+	// root because the operator asked for a sudo-wrapped dokku would be a
+	// surprise.
 	if target.Sudo && input.Command == "dokku" {
 		commandArgs = append([]string{"-n", "-u", "root", command}, commandArgs...)
 		command = "sudo"
