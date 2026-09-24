@@ -1104,3 +1104,95 @@ EOF
   assert_success
   assert_output --partial "is valid"
 }
+
+@test "docket validate exits 0 on config state set with preserve (#562)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_config:
+        app: web
+        state: set
+        config:
+          KEY: value
+        preserve:
+          - SECRET_KEY_BASE
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 0 on config state clear without config (#562)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_config:
+        app: web
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on config state set with an empty config" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_config:
+        app: web
+        state: set
+        config: {}
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'config' must not be empty for state 'set'"
+}
+
+@test "docket validate exits 1 on config state clear carrying config" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_config:
+        app: web
+        state: clear
+        config:
+          KEY: value
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'config' must not be set for state 'clear'"
+}
+
+@test "docket validate exits 1 on config preserve under state present" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_config:
+        app: web
+        config:
+          KEY: value
+        preserve:
+          - OTHER
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'preserve' is only valid for state 'set' or 'clear', got state 'present'"
+}
+
+@test "docket validate exits 1 on a key in both config and preserve" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_config:
+        app: web
+        state: set
+        config:
+          KEY: value
+        preserve:
+          - KEY
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "key \"KEY\" must not be in both 'config' and 'preserve'"
+}

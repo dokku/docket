@@ -315,8 +315,8 @@ func TestCatalogFieldShapes(t *testing.T) {
 	}
 
 	state := fieldFor(t, config.Fields, "state")
-	if !reflect.DeepEqual(state.Choices, []string{"present", "absent"}) {
-		t.Errorf("state choices = %v; want [present absent]", state.Choices)
+	if !reflect.DeepEqual(state.Choices, []string{"present", "absent", "set", "clear"}) {
+		t.Errorf("state choices = %v; want [present absent set clear]", state.Choices)
 	}
 }
 

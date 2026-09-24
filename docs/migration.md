@@ -60,6 +60,16 @@ lifted into `tasks.vars.yml`; the recipe references them through inputs, so the 
 together with `--vars-file`. If you already maintain a recipe as the source of truth for the old
 server, skip this and use it directly.
 
+Each app's config is exported as `dokku_config` with `state: set`, so applying it makes the
+declared map the app's whole config rather than merging into whatever the new server holds. A few
+keys are left out because other tasks or dokku itself own them: the `<ALIAS>_URL` values a service
+link wrote (the exported `dokku_service_link` writes them again with the new server's credentials),
+`NO_VHOST` (the exported `dokku_domains_toggle` sets it), and the git rev-env-var key (`GIT_REV` by
+default, written again by the next build). `state: set` leaves those same keys in place on apply, so
+it never removes a link another task created. A value counts as a link's when it contains the DSN of
+a service linked to the app, ignoring the scheme - the same test `<service>:unlink` uses to find what
+to remove, so a `DATABASE_URL` pointing at an external database is still the recipe's.
+
 Some state cannot be read back and is left out with a warning - notably write-only credentials
 (`dokku_git_auth` and datastore backup credentials), datastore service data, and service properties
 (`dokku_service_property`), which you add by hand. Registry logins sit in between: dokku reports

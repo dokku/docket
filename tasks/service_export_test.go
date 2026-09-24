@@ -296,8 +296,11 @@ func TestExportConfigExcludesLinkedServiceDSNs(t *testing.T) {
 	t.Parallel()
 	dsn := "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db"
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		"--quiet apps:list":                       "web",
-		"--quiet config:export --format json web": `{"DATABASE_URL":"` + dsn + `","SECRET_KEY":"s3cr3t"}`,
+		"--quiet apps:list": "web",
+		// DATABASE_URL is the plain link; ALT_DB_URL is the same link made with
+		// a scheme override and a querystring, which an exact match misses.
+		"--quiet config:export --format json web": `{"DATABASE_URL":"` + dsn + `","ALT_DB_URL":"postgresql://postgres:pw@dokku-postgres-my-db:5432/my_db?sslmode=disable","SECRET_KEY":"s3cr3t","NO_VHOST":"1","COMMIT_SHA":"abc123"}`,
+		"git:report web --git-rev-env-var":        "COMMIT_SHA",
 		"--quiet plugin:trigger service-list":     "postgres:my-db",
 		"--quiet postgres:links my-db":            "web",
 		"--quiet postgres:info my-db --dsn":       dsn,
@@ -311,11 +314,40 @@ func TestExportConfigExcludesLinkedServiceDSNs(t *testing.T) {
 		t.Fatalf("expected 1 config task, got %d", len(bodies))
 	}
 	c := bodies[0].(ConfigTask)
-	if _, ok := c.Config["DATABASE_URL"]; ok {
-		t.Errorf("linked-service DSN should be excluded from config export: %+v", c.Config)
+	if !reflect.DeepEqual(c.Config, map[string]string{"SECRET_KEY": "s3cr3t"}) {
+		t.Errorf("config = %+v, want only SECRET_KEY: link keys, NO_VHOST and the rev var are not the recipe's", c.Config)
 	}
-	if c.Config["SECRET_KEY"] != "s3cr3t" {
-		t.Errorf("non-link config should be kept: %+v", c.Config)
+	if c.State != StateSet {
+		t.Errorf("state = %q, want %q so the export declares the app's entire config", c.State, StateSet)
+	}
+}
+
+func TestIsLinkedServiceValue(t *testing.T) {
+	t.Parallel()
+	dsn := "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db"
+	cases := []struct {
+		name  string
+		value string
+		dsns  map[string]bool
+		want  bool
+	}{
+		{"exact dsn", dsn, map[string]bool{dsn: true}, true},
+		{"scheme override", "postgresql://postgres:pw@dokku-postgres-my-db:5432/my_db", map[string]bool{dsn: true}, true},
+		{"querystring", dsn + "?sslmode=disable", map[string]bool{dsn: true}, true},
+		{"unrelated value", "info", map[string]bool{dsn: true}, false},
+		{"external database", "postgres://postgres:other@mydb.abc123.us-east-1.rds.amazonaws.com:5432/my_db", map[string]bool{dsn: true}, false},
+		{"another service", "postgres://postgres:pw@dokku-postgres-other:5432/other", map[string]bool{dsn: true}, false},
+		{"no linked services", dsn, map[string]bool{}, false},
+		{"empty dsn never matches", "anything", map[string]bool{"": true}, false},
+		{"scheme-only dsn never matches", "anything", map[string]bool{"postgres://": true}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isLinkedServiceValue(tc.value, tc.dsns); got != tc.want {
+				t.Errorf("isLinkedServiceValue(%q) = %v, want %v", tc.value, got, tc.want)
+			}
+		})
 	}
 }
 

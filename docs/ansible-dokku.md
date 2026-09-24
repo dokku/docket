@@ -249,7 +249,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_certs` | `dokku_certs` | | docket adds `cert_content` / `key_content` for inline PEM, and replaces an installed certificate whose material differs where the module leaves it alone. |
 | `dokku_checks` | `dokku_checks_toggle` | | `checks:enable` / `checks:disable`. |
 | `dokku_clone` | `dokku_app` and `dokku_git_sync` | | The module runs core `git:sync`, and creates the app first. Emit both tasks. `version` becomes `git_ref`. |
-| `dokku_config` | `dokku_config` | | docket also supports `state: absent` (`config:unset`). |
+| `dokku_config` | `dokku_config` | | docket also supports `state: absent` (`config:unset`), `state: set` (`config:import --replace`), which treats the declared map as the app's whole config and unsets every key it omits, and `state: clear`. Both leave service-link keys, `NO_VHOST`, the git rev-env-var key, and any key listed in `preserve` in place. |
 | `dokku_docker_options` | `dokku_docker_options` | | docket adds `process_type`. |
 | `dokku_domains` | `dokku_domains` and `dokku_domains_toggle` | | `state: enable` / `disable` become `dokku_domains_toggle`; the rest map onto `dokku_domains`. |
 | `dokku_git_sync` | none | dokku-git-sync | See [what cannot be delegated](#what-cannot-be-delegated-yet). |
@@ -348,7 +348,7 @@ same file, and it is the spec that Ansible enforces. Those modules are `dokku_bu
 |-------|---------------|--------|--------------------------|
 | `users` | Required on `dokku_acl_app` and `dokku_acl_service` | Optional | Nothing; a stricter caller is always safe. |
 | `buildpacks` | Required | Optional | Nothing. |
-| `config` | Required | Optional | Nothing. |
+| `config` | Required | Optional, but required and non-empty for `state: set` and rejected for `state: clear` | Nothing for the states the module has. |
 | `domains` | Required | Optional | Nothing. |
 | `app` on `dokku_certs` | Required | Optional, but exactly one of `app` or `global` must be set | Nothing for the app case; the global case goes through the same task. |
 | `cert` / `key` | Optional in the spec | Optional, but `state: present` requires `cert` + `key` or `cert_content` + `key_content` | A `state: present` call with no material passes Ansible's arg spec and fails `docket validate`. Validate before applying. |
