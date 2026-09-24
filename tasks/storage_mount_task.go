@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,11 +27,9 @@ const storageDefaultProcessType = "_default_"
 //     mount-time fields describe one attachment, for state present or absent.
 //     A named entry maps to `storage:mount <app> <entry_name> --container-dir
 //     <container_dir>` plus the matching attachment flags; host_dir passes the
-//     legacy host:container[:opts] colon form. Idempotency is keyed on
-//     (source, container_path, process_type, volume_options); the other
-//     attachment attributes are applied at mount time only and are not
-//     drift-detected (mirroring the partial-probe pattern in service_backup and
-//     storage_ensure).
+//     legacy host:container[:opts] colon form. The attachment is found by
+//     (source, container_path, process_type), and drift in any of its
+//     mount-time attributes is remediated with an in-place upsert.
 //   - Mount list: `mounts` lists the attachments of one process-type scope, for
 //     any of the four states. Every state is a single whole-scope command -
 //     `storage:mount --replace` or `storage:unmount --all --process-type` - and
@@ -139,7 +139,7 @@ func (t StorageMountTask) ExportSupport() ExportSupport {
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t StorageMountTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "the mounts list is probed in full; the single-mount form probes the mount source, container path, process type, and volume options, while its phases, subpath, readonly, and volume_chown apply at mount time and are not drift-detected"}
+	return ProbeSupport{Status: ProbeSupported}
 }
 
 // Examples returns the examples for the storage mount task
@@ -286,67 +286,152 @@ func (t StorageMountTask) Plan(ctx context.Context) PlanResult {
 		})
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult {
-			existing, err := findMount(ctx, t.App, t.EntryName, t.HostDir, t.ContainerDir, t.ProcessType)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if existing != nil && existing.VolumeOptions == t.VolumeOptions {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
-			}
-			var args []string
-			reason := "mount missing"
-			// A brand-new attachment is a create; drift on an existing one
-			// is an in-place modify, matching the create-vs-modify split in
-			// sibling tasks such as service_expose.
-			status := PlanStatusCreate
-			if existing == nil {
-				args = t.mountArgs()
-			} else {
-				// Drift on an existing attachment: re-mount via the
-				// named-entry CLI form so dokku upserts in place. The
-				// legacy CLI form would error with "Mount path already
-				// exists." (dokku/dokku#8713 kept that contract).
-				args = t.namedMountArgs(existing.EntryName)
-				reason = fmt.Sprintf("volume_options drift (have %q, want %q)", existing.VolumeOptions, t.VolumeOptions)
-				status = PlanStatusModify
-			}
-			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
-				InSync:    false,
-				Status:    status,
-				Reason:    reason,
-				Mutations: []string{fmt.Sprintf("mount %s on %s", t.describeMount(), t.App)},
-				Commands:  resolveCommands(ctx, inputs),
-				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
-				},
-			}
-		},
-		StateAbsent: func() PlanResult {
-			existing, err := findMount(ctx, t.App, t.EntryName, t.HostDir, t.ContainerDir, t.ProcessType)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if existing == nil {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
-			}
-			inputs := []subprocess.ExecCommandInput{{
-				Command: "dokku",
-				Args:    t.namedUnmountArgs(existing.EntryName),
-			}}
-			return PlanResult{
-				InSync:    false,
-				Status:    PlanStatusDestroy,
-				Reason:    "mount present",
-				Mutations: []string{fmt.Sprintf("unmount %s on %s", t.describeMount(), t.App)},
-				Commands:  resolveCommands(ctx, inputs),
-				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
-				},
-			}
-		},
+		StatePresent: func() PlanResult { return planStorageMountPresent(ctx, t) },
+		StateAbsent:  func() PlanResult { return planStorageMountAbsent(ctx, t) },
 	})
+}
+
+// planStorageMountPresent reports drift for the single-mount present state. A
+// missing attachment is a create; drift in any mount-time field of an existing
+// one is an in-place modify, matching the create-vs-modify split in sibling
+// tasks such as service_expose.
+func planStorageMountPresent(ctx context.Context, t StorageMountTask) PlanResult {
+	attachments, err := readStorageAttachments(ctx, t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	existing := findSingleMount(attachments, t.EntryName, t.HostDir, t.ContainerDir, t.scope())
+	if existing == nil {
+		inputs := t.firstMountInputs(attachments)
+		return PlanResult{
+			InSync:    false,
+			Status:    PlanStatusCreate,
+			Reason:    "mount missing",
+			Mutations: []string{fmt.Sprintf("mount %s on %s", t.describeMount(), t.App)},
+			Commands:  resolveCommands(ctx, inputs),
+			apply: func(ctx context.Context) TaskOutputState {
+				return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+			},
+		}
+	}
+	drift := t.singleMountDrift(*existing)
+	if len(drift) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	// Re-mount via the named-entry CLI form so dokku upserts every mount-time
+	// field in place. The legacy CLI form would error with "Mount path already
+	// exists." (dokku/dokku#8713 kept that contract).
+	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: t.namedMountArgs(existing.EntryName)}}
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusModify,
+		Reason:    strings.Join(drift, "; "),
+		Mutations: []string{fmt.Sprintf("remount %s on %s", t.describeMount(), t.App)},
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
+		},
+	}
+}
+
+// planStorageMountAbsent reports drift for the single-mount absent state.
+// `storage:unmount <entry> --container-dir` removes the entry at that path from
+// every process type, so it is only used when the recipe's scope is the one
+// holding it; otherwise the scope alone is rewritten with the whole-scope
+// commands the mounts list uses.
+func planStorageMountAbsent(ctx context.Context, t StorageMountTask) PlanResult {
+	attachments, err := readStorageAttachments(ctx, t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	scope := t.scope()
+	existing := findSingleMount(attachments, t.EntryName, t.HostDir, t.ContainerDir, scope)
+	if existing == nil {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	mutations := []string{fmt.Sprintf("unmount %s on %s", t.describeMount(), t.App)}
+
+	var remaining []reportAttachment
+	shared := false
+	for _, a := range attachments {
+		inScope := effectiveStorageProcessType(a.ProcessType) == scope
+		switch {
+		case inScope && a.EntryName == existing.EntryName && a.ContainerPath == existing.ContainerPath:
+		case inScope:
+			remaining = append(remaining, a)
+		case a.EntryName == existing.EntryName && a.ContainerPath == existing.ContainerPath:
+			shared = true
+		}
+	}
+
+	if !shared {
+		inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: t.namedUnmountArgs(existing.EntryName)}}
+		return PlanResult{
+			InSync:    false,
+			Status:    PlanStatusDestroy,
+			Reason:    "mount present",
+			Mutations: mutations,
+			Commands:  resolveCommands(ctx, inputs),
+			apply: func(ctx context.Context) TaskOutputState {
+				return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+			},
+		}
+	}
+	if len(remaining) == 0 {
+		return storageMountsPlan(ctx, PlanStatusDestroy, "mount present", mutations,
+			"storage:unmount", t.App, storageUnmountAllArgs(scope), StateAbsent, StatePresent)
+	}
+	specs := make([]string, 0, len(remaining))
+	for _, a := range remaining {
+		spec, err := attachmentSpec(a)
+		if err != nil {
+			return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("another process type also mounts %s, so only the %s scope can be rewritten, but %w", describeAttachment(*existing), scope, err)}
+		}
+		specs = append(specs, spec)
+	}
+	return storageMountsPlan(ctx, PlanStatusDestroy, "mount present", mutations,
+		"storage:mount", t.App, storageReplaceArgs(specs, scope), StateAbsent, StatePresent)
+}
+
+// asMount returns the single-mount fields as a mounts-list entry, so the
+// single-mount form shares the list form's field comparison.
+func (t StorageMountTask) asMount() StorageMount {
+	return StorageMount{
+		EntryName:     t.EntryName,
+		HostDir:       t.HostDir,
+		ContainerDir:  t.ContainerDir,
+		Phases:        t.Phases,
+		Subpath:       t.Subpath,
+		Readonly:      t.Readonly,
+		VolumeChown:   t.VolumeChown,
+		VolumeOptions: t.VolumeOptions,
+	}
+}
+
+// singleMountDrift names every mount-time field of an existing attachment that
+// differs from the recipe, or returns nil when none does.
+func (t StorageMountTask) singleMountDrift(a reportAttachment) []string {
+	if t.asMount().fieldsMatch(a) {
+		return nil
+	}
+	var drift []string
+	have, want := strings.Join(canonicalStoragePhases(a.Phases), ","), strings.Join(canonicalStoragePhases(t.Phases), ",")
+	if have != want {
+		drift = append(drift, fmt.Sprintf("phases drift (have %q, want %q)", have, want))
+	}
+	if a.Subpath != t.Subpath {
+		drift = append(drift, fmt.Sprintf("subpath drift (have %q, want %q)", a.Subpath, t.Subpath))
+	}
+	if a.Readonly != t.Readonly {
+		drift = append(drift, fmt.Sprintf("readonly drift (have %t, want %t)", a.Readonly, t.Readonly))
+	}
+	if a.VolumeChown != t.VolumeChown {
+		drift = append(drift, fmt.Sprintf("volume_chown drift (have %q, want %q)", a.VolumeChown, t.VolumeChown))
+	}
+	if a.VolumeOptions != t.VolumeOptions {
+		drift = append(drift, fmt.Sprintf("volume_options drift (have %q, want %q)", a.VolumeOptions, t.VolumeOptions))
+	}
+	return drift
 }
 
 // hasSingleMount reports whether any of the single-mount fields is set.
@@ -511,19 +596,53 @@ func describeStorageMount(entryName, hostDir, containerDir string) string {
 	return fmt.Sprintf("%s:%s", hostDir, containerDir)
 }
 
-// mountArgs renders the storage:mount invocation for the first-time
-// mount of a recipe. When entry_name is set, the named-entry CLI form
-// is used directly. When host_dir is set and no attachment yet exists,
-// the legacy host:container[:opts] colon form is used so dokku
-// auto-generates a `legacy-<id>` entry; later operations against that
-// attachment go through namedMountArgs/namedUnmountArgs via the entry
-// name discovered from storage:report.
-func (t StorageMountTask) mountArgs() []string {
-	if t.EntryName != "" {
-		return t.namedMountArgs(t.EntryName)
+// firstMountInputs renders the commands that create the recipe's attachment
+// when none exists in its scope. attachments is the app's storage:report.
+//
+// When entry_name is set, the named-entry CLI form is used directly. A host_dir
+// needs its dokku-generated `legacy-<hash>` entry registered before the named
+// form can address it. When an attachment on the app already uses that entry,
+// it is registered and the named form is used directly. Otherwise the legacy
+// host:container[:opts] colon form registers it. That form ignores every
+// mount-time flag other than the ro and Docker options in its spec, and always
+// writes a _default_, both-phases attachment, so a recipe with other phases, a
+// subpath, a chown, or a process type follows it with a named-form upsert. For a
+// process type other than _default_ the colon form's attachment is unmounted
+// first, since dokku refuses a named scope at a path _default_ holds; no other
+// scope can hold that path once the colon form's _default_ mount succeeded.
+func (t StorageMountTask) firstMountInputs(attachments []reportAttachment) []subprocess.ExecCommandInput {
+	dokku := func(args []string) subprocess.ExecCommandInput {
+		return subprocess.ExecCommandInput{Command: "dokku", Args: args}
 	}
-	args := []string{"--quiet", "storage:mount", t.App, t.legacySpec()}
-	return append(args, t.attachmentFlags()...)
+	if t.EntryName != "" {
+		return []subprocess.ExecCommandInput{dokku(t.namedMountArgs(t.EntryName))}
+	}
+	legacy := legacyStorageEntryName(t.HostDir)
+	for _, a := range attachments {
+		if a.EntryName == legacy {
+			return []subprocess.ExecCommandInput{dokku(t.namedMountArgs(legacy))}
+		}
+	}
+	inputs := []subprocess.ExecCommandInput{dokku([]string{"--quiet", "storage:mount", t.App, t.legacySpec()})}
+	if t.scope() != storageDefaultProcessType {
+		inputs = append(inputs, dokku(t.namedUnmountArgs(legacy)))
+	} else if isDefaultPhases(canonicalStoragePhases(t.Phases)) && t.Subpath == "" && t.VolumeChown == "" {
+		return inputs
+	}
+	return append(inputs, dokku(t.namedMountArgs(legacy)))
+}
+
+// legacyStorageEntryName mirrors dokku's LegacyMountToEntry: the entry the colon
+// form registers for a host path (or docker volume name) is `legacy-` plus the
+// first ten hex digits of the SHA-1 of the path, or of `vol:<name>` for a
+// volume.
+func legacyStorageEntryName(hostDir string) string {
+	hashInput := hostDir
+	if !strings.HasPrefix(hostDir, "/") {
+		hashInput = "vol:" + hostDir
+	}
+	sum := sha1.Sum([]byte(hashInput))
+	return "legacy-" + hex.EncodeToString(sum[:])[:10]
 }
 
 // namedMountArgs renders storage:mount in the named-entry CLI form for
@@ -546,12 +665,20 @@ func (t StorageMountTask) namedUnmountArgs(entryName string) []string {
 }
 
 // legacySpec renders the legacy host:container[:opts] colon syntax used
-// for the first-time mount when the recipe specifies host_dir. volume_options
-// is appended as the third segment so dokku's parser stores it in
-// Attachment.VolumeOptions verbatim.
+// for the first-time mount when the recipe specifies host_dir. readonly becomes
+// a leading ro token, which dokku's parser hoists into Attachment.Readonly, and
+// volume_options follows it so the parser stores it in Attachment.VolumeOptions
+// verbatim.
 func (t StorageMountTask) legacySpec() string {
+	var tokens []string
+	if t.Readonly {
+		tokens = append(tokens, "ro")
+	}
 	if t.VolumeOptions != "" {
-		return fmt.Sprintf("%s:%s:%s", t.HostDir, t.ContainerDir, t.VolumeOptions)
+		tokens = append(tokens, t.VolumeOptions)
+	}
+	if len(tokens) > 0 {
+		return fmt.Sprintf("%s:%s:%s", t.HostDir, t.ContainerDir, strings.Join(tokens, ","))
 	}
 	return fmt.Sprintf("%s:%s", t.HostDir, t.ContainerDir)
 }
@@ -957,20 +1084,6 @@ func planStorageMountsAbsent(ctx context.Context, t StorageMountTask) PlanResult
 		"storage:mount", t.App, storageReplaceArgs(specs, t.scope()), StateAbsent, StatePresent)
 }
 
-// existingMount captures the subset of an existing attachment that
-// docket compares against the desired state. EntryName is the attachment's
-// dokku-side identifier (user-supplied for named-entry recipes; auto-
-// generated as `legacy-<id>` for attachments created via the legacy CLI
-// form), and is the address docket uses for follow-up mount/unmount
-// commands. VolumeOptions enables option-drift detection on
-// state: present. The other mount-time attributes (phases, subpath,
-// readonly, volume_chown) are read by the exporter but intentionally not
-// drift-detected here.
-type existingMount struct {
-	EntryName     string
-	VolumeOptions string
-}
-
 // ExportApp reads the app's storage attachments via storage:report and returns
 // one dokku_storage_mount per process type, with state set and a mounts list
 // reconstructing every mount-time attribute (phases, subpath, readonly,
@@ -1177,34 +1290,30 @@ func isDefaultPhases(phases []string) bool {
 	return seen["deploy"] && seen["run"]
 }
 
-// findMount returns the existing attachment matching either the named-entry
-// form (entry_name + container_path) or the legacy form (host_path +
-// container_path) in the given process type's scope, or nil if none exists.
-// The scope matters because dokku keys an attachment on (entry, container path,
-// process type): the same entry at the same path for another process type is a
-// different attachment. It reads storage:report (via readStorageAttachments) so
-// attachments on any phase are visible - storage:list only reports the deploy
-// phase, which would hide run-only mounts. A transport-level failure
-// (`*subprocess.SSHError`) is propagated; a dokku-level non-zero exit (e.g. app
-// does not exist) is treated as "no mount."
-func findMount(ctx context.Context, app, entryName, hostDir, containerDir, processType string) (*existingMount, error) {
-	attachments, err := scopeAttachments(ctx, app, effectiveStorageProcessType(processType))
-	if err != nil {
-		return nil, err
-	}
-
-	for _, a := range attachments {
-		if a.ContainerPath != containerDir {
+// findSingleMount returns the attachment matching either the named-entry form
+// (entry_name + container_path) or the legacy form (host_path + container_path)
+// in the given process-type scope, or nil if none exists. The scope matters
+// because dokku keys an attachment on (entry, container path, process type): the
+// same entry at the same path for another process type is a different
+// attachment. attachments comes from readStorageAttachments, which reads
+// storage:report so attachments on any phase are visible - storage:list only
+// reports the deploy phase, which would hide run-only mounts. The returned
+// attachment's EntryName is the address docket uses for follow-up mount and
+// unmount commands: user-supplied for named entries, dokku-generated
+// `legacy-<hash>` for host directories.
+func findSingleMount(attachments []reportAttachment, entryName, hostDir, containerDir, scope string) *reportAttachment {
+	for i, a := range attachments {
+		if a.ContainerPath != containerDir || effectiveStorageProcessType(a.ProcessType) != scope {
 			continue
 		}
 		if entryName != "" && a.EntryName == entryName {
-			return &existingMount{EntryName: a.EntryName, VolumeOptions: a.VolumeOptions}, nil
+			return &attachments[i]
 		}
 		if hostDir != "" && a.HostPath == hostDir {
-			return &existingMount{EntryName: a.EntryName, VolumeOptions: a.VolumeOptions}, nil
+			return &attachments[i]
 		}
 	}
-	return nil, nil
+	return nil
 }
 
 // init registers the StorageMountTask with the task registry

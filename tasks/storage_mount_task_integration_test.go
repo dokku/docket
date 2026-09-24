@@ -460,3 +460,157 @@ func TestIntegrationStorageMountList(t *testing.T) {
 		t.Errorf("web mounts = %v, want %v", got, want)
 	}
 }
+
+// TestIntegrationStorageMountSingleFieldDrift changes each mount-time field of
+// a single mount in turn and verifies the plan reports it, the apply converges
+// it in place, and a host_dir mount carrying fields the colon form drops
+// converges in one apply.
+func TestIntegrationStorageMountSingleFieldDrift(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-mount-drift"
+	entryName := "docket-test-mount-drift-entry"
+	hostDir := "/var/lib/dokku/data/storage/docket-test-mount-drift"
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		Command: "mkdir",
+		Args:    []string{"-p", hostDir},
+	})
+
+	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
+	if r := entry.Execute(testCtx()); r.Error != nil {
+		t.Fatalf("failed to create entry: %v", r.Error)
+	}
+	defer func() {
+		destroy := StorageEntryTask{Name: entryName, State: StateAbsent}
+		destroy.Execute(testCtx())
+	}()
+
+	mustApply := func(label string, task StorageMountTask, wantChanged bool) {
+		t.Helper()
+		result := task.Execute(testCtx())
+		if result.Error != nil {
+			t.Fatalf("%s: %v", label, result.Error)
+		}
+		if result.Changed != wantChanged {
+			t.Errorf("%s: changed = %v, want %v", label, result.Changed, wantChanged)
+		}
+	}
+	stored := func(scope, containerDir string) *reportAttachment {
+		t.Helper()
+		attachments, err := scopeAttachments(testCtx(), appName, scope)
+		if err != nil {
+			t.Fatalf("read attachments: %v", err)
+		}
+		for i := range attachments {
+			if attachments[i].ContainerPath == containerDir {
+				return &attachments[i]
+			}
+		}
+		return nil
+	}
+
+	mount := StorageMountTask{App: appName, EntryName: entryName, ContainerDir: "/app/named", State: StatePresent}
+	mustApply("mount", mount, true)
+
+	steps := []struct {
+		name  string
+		edit  func(*StorageMountTask)
+		check func(reportAttachment) bool
+	}{
+		{"subpath", func(m *StorageMountTask) { m.Subpath = "nested" }, func(a reportAttachment) bool { return a.Subpath == "nested" }},
+		{"phases", func(m *StorageMountTask) { m.Phases = []string{"run"} }, func(a reportAttachment) bool { return equalStrings(a.Phases, []string{"run"}) }},
+		{"readonly", func(m *StorageMountTask) { m.Readonly = true }, func(a reportAttachment) bool { return a.Readonly }},
+		{"volume_chown", func(m *StorageMountTask) { m.VolumeChown = "herokuish" }, func(a reportAttachment) bool { return a.VolumeChown == "herokuish" }},
+	}
+	for _, step := range steps {
+		step.edit(&mount)
+		if plan := mount.Plan(testCtx()); plan.Status != PlanStatusModify {
+			t.Errorf("%s: expected Modify, got %q (reason %q)", step.name, plan.Status, plan.Reason)
+		}
+		mustApply(step.name, mount, true)
+		mustApply(step.name+" again", mount, false)
+		if a := stored(storageDefaultProcessType, "/app/named"); a == nil || !step.check(*a) {
+			t.Errorf("%s: stored attachment = %+v", step.name, a)
+		}
+	}
+
+	// Dropping every field resets the attachment to dokku's defaults.
+	reset := StorageMountTask{App: appName, EntryName: entryName, ContainerDir: "/app/named", State: StatePresent}
+	mustApply("reset", reset, true)
+	mustApply("reset again", reset, false)
+
+	hostMount := StorageMountTask{
+		App:          appName,
+		HostDir:      hostDir,
+		ContainerDir: "/app/host",
+		Phases:       []string{"deploy"},
+		Readonly:     true,
+		VolumeChown:  "herokuish",
+		State:        StatePresent,
+	}
+	mustApply("host_dir with fields", hostMount, true)
+	mustApply("host_dir with fields again", hostMount, false)
+
+	webMount := StorageMountTask{App: appName, HostDir: hostDir, ContainerDir: "/app/web-host", ProcessType: "web", State: StatePresent}
+	mustApply("host_dir for web", webMount, true)
+	mustApply("host_dir for web again", webMount, false)
+	if a := stored(storageDefaultProcessType, "/app/web-host"); a != nil {
+		t.Errorf("host_dir for web left a _default_ attachment: %+v", a)
+	}
+	if a := stored("web", "/app/web-host"); a == nil {
+		t.Error("host_dir for web is missing from the web scope")
+	}
+}
+
+// TestIntegrationStorageMountSingleAbsentScope verifies a single-mount absent
+// removes only its own process type's attachment when another process type
+// mounts the same entry at the same path.
+func TestIntegrationStorageMountSingleAbsentScope(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-mount-absent-scope"
+	entryName := "docket-test-mount-absent-scope-entry"
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
+	if r := entry.Execute(testCtx()); r.Error != nil {
+		t.Fatalf("failed to create entry: %v", r.Error)
+	}
+	defer func() {
+		destroy := StorageEntryTask{Name: entryName, State: StateAbsent}
+		destroy.Execute(testCtx())
+	}()
+
+	for _, processType := range []string{"web", "worker"} {
+		mount := StorageMountTask{App: appName, EntryName: entryName, ContainerDir: "/app/shared", ProcessType: processType, State: StatePresent}
+		if r := mount.Execute(testCtx()); r.Error != nil {
+			t.Fatalf("mount for %s: %v", processType, r.Error)
+		}
+	}
+
+	unmount := StorageMountTask{App: appName, EntryName: entryName, ContainerDir: "/app/shared", ProcessType: "web", State: StateAbsent}
+	if r := unmount.Execute(testCtx()); r.Error != nil || !r.Changed {
+		t.Fatalf("absent for web: changed=%v err=%v", r.Changed, r.Error)
+	}
+	if r := unmount.Execute(testCtx()); r.Error != nil || r.Changed {
+		t.Errorf("absent for web again: changed=%v err=%v", r.Changed, r.Error)
+	}
+
+	for scope, want := range map[string]int{"web": 0, "worker": 1} {
+		attachments, err := scopeAttachments(testCtx(), appName, scope)
+		if err != nil {
+			t.Fatalf("read %s attachments: %v", scope, err)
+		}
+		if len(attachments) != want {
+			t.Errorf("%s attachments = %+v, want %d", scope, attachments, want)
+		}
+	}
+}
