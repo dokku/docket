@@ -735,6 +735,10 @@ type no exporter reaches, or a key the task does not declare fails immediately. 
 matches nothing on the server is reported by name and exits non-zero, the same way a nonexistent
 `--app` is.
 
+When every address either names its app or is global, export reads only the named apps and does not
+list the server's apps first. An app that does not exist is still reported as the address that named
+it.
+
 | Flag | Effect |
 |------|--------|
 | `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. Because a stream has no vars-file and touches no file on disk, combining `-` with `--vars-output` or `--overwrite` is an error rather than a silently ignored flag. |

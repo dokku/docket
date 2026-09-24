@@ -221,6 +221,24 @@ func (f *resourceFilter) appNames(inApp map[string]bool) ([]string, bool) {
 	return out, true
 }
 
+// matchState returns a copy of which selectors have matched so far, for
+// restoreMatches to rewind to. nil for a nil filter.
+func (f *resourceFilter) matchState() []bool {
+	if f == nil {
+		return nil
+	}
+	return append([]bool(nil), f.matched...)
+}
+
+// restoreMatches rewinds the match state to one matchState returned, so the
+// bodies of a play the export discarded do not count as having matched.
+func (f *resourceFilter) restoreMatches(state []bool) {
+	if f == nil {
+		return
+	}
+	copy(f.matched, state)
+}
+
 // unmatchedAddresses returns the addresses that selected nothing, in the
 // order they were given.
 func (f *resourceFilter) unmatchedAddresses() []string {

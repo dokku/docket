@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -38,6 +39,38 @@ func TestAppExportOrderIsValid(t *testing.T) {
 		}
 		if _, ok := proto.(AppExporter); !ok {
 			t.Errorf("task %q in appExportOrder does not implement AppExporter", key)
+		}
+	}
+}
+
+// TestAppExportersEmitNothingForAMissingApp pins the AppExporter contract a
+// pinned --resource run relies on in place of apps:list (#567): against a
+// server that answers every command the way dokku answers one naming an app
+// that does not exist, each exporter returns an error or no bodies. dokku_app
+// is the one exception, since it reads nothing; the engine probes for it.
+func TestAppExportersEmitNothingForAMissingApp(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		resp := subprocess.ExecCommandResponse{ExitCode: 1, Stderr: " !     App ghost does not exist"}
+		return resp, &subprocess.ExecError{Response: resp, Err: errors.New("App ghost does not exist"), Ran: true}
+	})
+
+	for _, key := range appExportOrder {
+		if key == "dokku_app" {
+			continue
+		}
+		proto, ok := Lookup(key)
+		if !ok {
+			continue
+		}
+		var bodies []interface{}
+		if reporter, ok := proto.(appExportReporter); ok {
+			bodies, _ = reporter.ExportAppReport(ctx, "ghost", func(string) {})
+		} else if exporter, ok := proto.(AppExporter); ok {
+			bodies, _ = exporter.ExportApp(ctx, "ghost")
+		}
+		if len(bodies) > 0 {
+			t.Errorf("%s exported %d bodies for an app that does not exist: %+v", key, len(bodies), bodies)
 		}
 	}
 }

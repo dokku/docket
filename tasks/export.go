@@ -15,6 +15,13 @@ import (
 // zero or more task bodies (each the task's own struct, populated with real
 // values); the engine wraps each under the task's type-key and applies
 // vars-extraction/redaction uniformly afterwards.
+//
+// For an app that does not exist, ExportApp must return an error or no bodies.
+// A --resource run that pins its apps does not list the server's apps first,
+// so it relies on this to tell a missing app from one that has nothing to
+// export. dokku_app is the one exception - it reads nothing and always returns
+// its body - and the engine confirms that app exists itself (see
+// exportPinnedAppPlay).
 type AppExporter interface {
 	ExportApp(ctx context.Context, app string) ([]interface{}, error)
 }
@@ -350,11 +357,14 @@ func (res *ExportResult) SensitiveValues() []string {
 // and assembles a recipe describing it. It enumerates apps, runs every
 // registered AppExporter for each, lifts sensitive values into a vars map
 // (unless opts.Inline), and returns the result for the caller to marshal.
+// A --resource run whose addresses all pin an app or are global does not
+// enumerate: it reads only the pinned apps (#567).
 //
 // The result is never nil, including on error: the global play is exported
-// before the app list is read, so a failure there still hands back what was
-// already collected - and with it the sensitive values the caller has to
-// register before it prints the failure (#488).
+// before any app is read, so a failure there - listing the apps, or probing
+// whether a pinned one exists - still hands back what was already collected,
+// and with it the sensitive values the caller has to register before it
+// prints the failure (#488).
 func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
 	res := &ExportResult{
 		Vars:         map[string]string{},
@@ -382,7 +392,6 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	// an export of one app's config does not enumerate every app on the
 	// server. A run whose addresses are all global-scoped wants no app plays
 	// at all, which is distinct from "no restriction".
-	wantApps := opts.Apps
 	selectedApps, restricted := res.filter.appNames(inApp)
 	if restricted {
 		if len(selectedApps) == 0 {
@@ -393,24 +402,33 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 			res.Report.MissingResources = res.filter.unmatchedAddresses()
 			return res, nil
 		}
-		wantApps = selectedApps
+		// Every app-scoped address pins its app, so listing the server's apps
+		// would only filter that list back down to these names. The narrowed
+		// exporters read each app anyway; see exportPinnedAppPlay for how a
+		// missing one is told apart without the listing (#567).
+		for _, app := range selectedApps {
+			play, err := res.exportPinnedAppPlay(ctx, app, opts)
+			if err != nil {
+				return res, err
+			}
+			if play != nil {
+				res.plays = append(res.plays, *play)
+			}
+		}
+		res.Report.MissingResources = res.filter.unmatchedAddresses()
+		return res, nil
 	}
 
 	apps, err := listApps(ctx)
 	if err != nil {
 		return res, err
 	}
-	// A resource-driven run derives its app list from the addresses, so an app
-	// that does not exist is reported as the address the user actually typed
-	// rather than as an app name they never wrote.
-	if !restricted {
-		res.Report.MissingApps = missingApps(apps, wantApps)
-	}
-	apps = filterApps(apps, wantApps)
+	res.Report.MissingApps = missingApps(apps, opts.Apps)
+	apps = filterApps(apps, opts.Apps)
 	sort.Strings(apps)
 
 	for _, app := range apps {
-		play := res.exportAppPlay(ctx, app, opts)
+		play, _ := res.exportAppPlay(ctx, app, opts)
 		if play != nil {
 			res.plays = append(res.plays, *play)
 		}
@@ -466,11 +484,68 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 	return &ExportedPlay{Name: "global", Inputs: inputs, Tasks: taskList}
 }
 
+// exportPinnedAppPlay is exportAppPlay for an app named by a --resource
+// address, which no apps:list has confirmed exists. The exporters' own reads
+// answer that question, so apps:exists is only asked when they cannot:
+//
+//   - Nothing came back and nothing failed. The app either has none of the
+//     addressed resources or does not exist, and both leave the addresses
+//     unmatched - the same MissingResources a listed run reports.
+//   - An exporter failed. A missing app is the likely cause, so it is probed.
+//   - A dokku_app body came back. Its exporter reads nothing - the resource is
+//     the app's existence - so apps:exists is its read.
+//
+// Anything else came from a server read that succeeded against the app, and
+// the AppExporter contract says that cannot happen for a missing one.
+//
+// An app the probe finds absent is dropped as if the listing had filtered it:
+// no play, no warnings from its failed reads, and its addresses unmatched so
+// they are reported as the user typed them rather than as an app name they
+// never wrote. Only the warnings and matches need rewinding. A missing app
+// yields no body but dokku_app's, which carries no vars or sensitive values.
+func (res *ExportResult) exportPinnedAppPlay(ctx context.Context, app string, opts ExportOptions) (*ExportedPlay, error) {
+	warnings := len(res.Report.Warnings)
+	matches := res.filter.matchState()
+
+	play, failed := res.exportAppPlay(ctx, app, opts)
+	if !failed && !playHasTask[AppTask](play) {
+		return play, nil
+	}
+
+	exists, err := appExists(ctx, app)
+	if err != nil {
+		return nil, fmt.Errorf("checking app %q exists: %w", app, err)
+	}
+	if exists {
+		return play, nil
+	}
+	res.Report.Warnings = res.Report.Warnings[:warnings]
+	res.filter.restoreMatches(matches)
+	return nil, nil
+}
+
+// playHasTask reports whether play carries a body of task type T.
+func playHasTask[T Task](play *ExportedPlay) bool {
+	if play == nil {
+		return false
+	}
+	for _, task := range play.Tasks {
+		if _, ok := As[T](task); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // exportAppPlay builds one play for a single app by running each app-scoped
-// exporter in appExportOrder. Returns nil when the app yields no tasks.
-func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts ExportOptions) *ExportedPlay {
+// exporter in appExportOrder. Returns nil when the app yields no tasks, and
+// reports whether any exporter failed. A failure is only an exporter's own
+// error; a warning it raised or a body the engine dropped does not count,
+// since neither suggests the app is missing.
+func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts ExportOptions) (*ExportedPlay, bool) {
 	var taskList []ExportedTask
 	var inputs []map[string]interface{}
+	failed := false
 
 	for _, typeKey := range appExportOrder {
 		if !res.filter.wantsType(typeKey) {
@@ -497,6 +572,7 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 		if err != nil {
 			res.Report.Warnings = append(res.Report.Warnings,
 				fmt.Sprintf("%s: %s: %v", app, typeKey, err))
+			failed = true
 			continue
 		}
 		exported, ins := res.appendBodies(app, typeKey, bodies, opts)
@@ -505,10 +581,10 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 	}
 
 	if len(taskList) == 0 {
-		return nil
+		return nil, failed
 	}
 
-	return &ExportedPlay{Name: app, Inputs: inputs, Tasks: taskList}
+	return &ExportedPlay{Name: app, Inputs: inputs, Tasks: taskList}, failed
 }
 
 // appendBodies turns one exporter's bodies into exported tasks for a play.
