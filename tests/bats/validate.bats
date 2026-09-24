@@ -630,6 +630,112 @@ EOF
   assert_success
 }
 
+@test "docket validate accepts a storage mount set" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_mount:
+        app: docket-test-validate
+        process_type: web
+        mounts:
+          - entry_name: docket-test-validate-data
+            container_dir: /app/storage
+            subpath: uploads
+            readonly: true
+          - host_dir: /var/lib/dokku/data/storage/docket-test-validate
+            container_dir: /app/shared
+            volume_options: Z
+            phases:
+              - run
+        state: set
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+}
+
+@test "docket validate exits 1 on a storage mount set without mounts" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_mount:
+        app: docket-test-validate
+        entry_name: docket-test-validate-data
+        container_dir: /app/storage
+        state: set
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "must not be set for state 'set'; use 'mounts'"
+}
+
+@test "docket validate exits 1 on storage mounts alongside the single-mount fields" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_mount:
+        app: docket-test-validate
+        container_dir: /app/storage
+        mounts:
+          - entry_name: docket-test-validate-data
+            container_dir: /app/storage
+        state: present
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'mounts' and the single-mount fields"
+}
+
+@test "docket validate exits 1 on a storage mount with a key=value volume option" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_mount:
+        app: docket-test-validate
+        mounts:
+          - entry_name: docket-test-validate-data
+            container_dir: /app/storage
+            volume_options: addr=10.0.0.1
+        state: set
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "key=value option \"addr=10.0.0.1\""
+}
+
+@test "docket validate exits 1 on storage mounts sharing a container_dir" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_mount:
+        app: docket-test-validate
+        mounts:
+          - entry_name: docket-test-validate-data
+            container_dir: /app/storage
+          - entry_name: docket-test-validate-cache
+            container_dir: /app/storage
+        state: set
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "container_dir \"/app/storage\" is listed more than once"
+}
+
+@test "docket validate exits 1 on a storage mount clear with mounts" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_storage_mount:
+        app: docket-test-validate
+        mounts:
+          - entry_name: docket-test-validate-data
+            container_dir: /app/storage
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'mounts' must not be set for state 'clear'"
+}
+
 @test "docket validate exits 1 on a scheduler-k3s profile name too long for its helm release (#482)" {
   write_tasks_file <<EOF
 ---

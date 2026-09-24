@@ -294,32 +294,169 @@ func TestIntegrationStorageMountExportRoundTrip(t *testing.T) {
 		t.Fatalf("ExportApp: %v", err)
 	}
 	if len(bodies) != 1 {
-		t.Fatalf("expected 1 exported mount, got %d", len(bodies))
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
 	}
 	got := bodies[0].(StorageMountTask)
-	if got.EntryName != entryName {
-		t.Errorf("expected entry_name %q, got %q", entryName, got.EntryName)
-	}
-	if got.ContainerDir != containerDir {
-		t.Errorf("expected container_dir %q, got %q", containerDir, got.ContainerDir)
+	if got.State != StateSet {
+		t.Errorf("expected state set, got %q", got.State)
 	}
 	if got.ProcessType != "web" {
 		t.Errorf("expected process_type web, got %q", got.ProcessType)
 	}
-	if got.Subpath != "nested" {
-		t.Errorf("expected subpath nested, got %q", got.Subpath)
+	if len(got.Mounts) != 1 {
+		t.Fatalf("expected 1 exported mount, got %d", len(got.Mounts))
 	}
-	if !got.Readonly {
+	m := got.Mounts[0]
+	if m.EntryName != entryName {
+		t.Errorf("expected entry_name %q, got %q", entryName, m.EntryName)
+	}
+	if m.ContainerDir != containerDir {
+		t.Errorf("expected container_dir %q, got %q", containerDir, m.ContainerDir)
+	}
+	if m.Subpath != "nested" {
+		t.Errorf("expected subpath nested, got %q", m.Subpath)
+	}
+	if !m.Readonly {
 		t.Error("expected readonly true, got false")
 	}
 	// phases default to {deploy, run}, so the exporter omits the field.
-	if len(got.Phases) != 0 {
-		t.Errorf("expected default phases to be omitted, got %v", got.Phases)
+	if len(m.Phases) != 0 {
+		t.Errorf("expected default phases to be omitted, got %v", m.Phases)
 	}
 
-	// The exporter omits state; set it so the body can be planned directly.
-	got.State = StatePresent
 	if plan := got.Plan(testCtx()); !plan.InSync {
-		t.Errorf("exported mount should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+		t.Errorf("exported mounts should report no drift, got status %v mutations %v", plan.Status, plan.Mutations)
+	}
+}
+
+// TestIntegrationStorageMountList drives the mounts list form through every
+// state against a live dokku: set converges the scope in one write (removing
+// a mount attached out of band), present and absent change only the listed
+// mounts, clear empties the scope, and none of them touch another process
+// type's mounts.
+func TestIntegrationStorageMountList(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-mount-list"
+	entryName := "docket-test-mount-list-entry"
+	hostDir := "/var/lib/dokku/data/storage/docket-test-mount-list"
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		Command: "mkdir",
+		Args:    []string{"-p", hostDir},
+	})
+
+	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
+	if r := entry.Execute(testCtx()); r.Error != nil {
+		t.Fatalf("failed to create entry: %v", r.Error)
+	}
+	defer func() {
+		destroy := StorageEntryTask{Name: entryName, State: StateAbsent}
+		destroy.Execute(testCtx())
+	}()
+
+	mustApply := func(label string, task StorageMountTask, wantChanged bool) {
+		t.Helper()
+		result := task.Execute(testCtx())
+		if result.Error != nil {
+			t.Fatalf("%s: %v", label, result.Error)
+		}
+		if result.Changed != wantChanged {
+			t.Errorf("%s: changed = %v, want %v", label, result.Changed, wantChanged)
+		}
+	}
+	scopeMounts := func(scope string) []string {
+		t.Helper()
+		attachments, err := scopeAttachments(testCtx(), appName, scope)
+		if err != nil {
+			t.Fatalf("read attachments: %v", err)
+		}
+		var out []string
+		for _, a := range attachments {
+			out = append(out, a.ContainerPath)
+		}
+		return out
+	}
+
+	// A web mount the _default_ tasks below must leave alone.
+	web := StorageMountTask{
+		App:         appName,
+		ProcessType: "web",
+		Mounts:      []StorageMount{{EntryName: entryName, ContainerDir: "/app/web", Subpath: "web"}},
+		State:       StateSet,
+	}
+	mustApply("set web", web, true)
+	mustApply("set web again", web, false)
+
+	set := StorageMountTask{
+		App: appName,
+		Mounts: []StorageMount{
+			{EntryName: entryName, ContainerDir: "/app/uploads", Subpath: "uploads", Readonly: true},
+			{EntryName: entryName, ContainerDir: "/app/cache", Subpath: "cache", Phases: []string{"run"}},
+			{HostDir: hostDir, ContainerDir: "/app/shared", VolumeOptions: "Z"},
+		},
+		State: StateSet,
+	}
+	mustApply("set", set, true)
+	if plan := set.Plan(testCtx()); !plan.InSync {
+		t.Errorf("set should be in sync after apply, got %v", plan.Mutations)
+	}
+
+	// A mount attached out of band is removed by the next set.
+	if _, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "storage:mount", appName, entryName, "--container-dir", "/app/stray"},
+	}); err != nil {
+		t.Fatalf("out-of-band mount: %v", err)
+	}
+	mustApply("set removes the stray mount", set, true)
+	if got, want := scopeMounts(storageDefaultProcessType), []string{"/app/cache", "/app/shared", "/app/uploads"}; !equalStrings(got, want) {
+		t.Errorf("_default_ mounts = %v, want %v", got, want)
+	}
+
+	// Drift in a per-mount field is detected and converged.
+	drifted := set
+	drifted.Mounts = append([]StorageMount{}, set.Mounts...)
+	drifted.Mounts[0].Readonly = false
+	mustApply("set with changed readonly", drifted, true)
+	mustApply("set again", drifted, false)
+
+	present := StorageMountTask{
+		App:    appName,
+		Mounts: []StorageMount{{EntryName: entryName, ContainerDir: "/app/tmp", VolumeOptions: "noexec"}},
+		State:  StatePresent,
+	}
+	mustApply("present", present, true)
+	mustApply("present again", present, false)
+	if got, want := scopeMounts(storageDefaultProcessType), []string{"/app/cache", "/app/shared", "/app/tmp", "/app/uploads"}; !equalStrings(got, want) {
+		t.Errorf("_default_ mounts after present = %v, want %v", got, want)
+	}
+
+	absent := StorageMountTask{
+		App: appName,
+		Mounts: []StorageMount{
+			{EntryName: entryName, ContainerDir: "/app/tmp"},
+			{HostDir: hostDir, ContainerDir: "/app/shared"},
+		},
+		State: StateAbsent,
+	}
+	mustApply("absent", absent, true)
+	mustApply("absent again", absent, false)
+	if got, want := scopeMounts(storageDefaultProcessType), []string{"/app/cache", "/app/uploads"}; !equalStrings(got, want) {
+		t.Errorf("_default_ mounts after absent = %v, want %v", got, want)
+	}
+
+	clear := StorageMountTask{App: appName, State: StateClear}
+	mustApply("clear", clear, true)
+	mustApply("clear again", clear, false)
+	if got := scopeMounts(storageDefaultProcessType); len(got) != 0 {
+		t.Errorf("_default_ mounts after clear = %v, want none", got)
+	}
+	if got, want := scopeMounts("web"), []string{"/app/web"}; !equalStrings(got, want) {
+		t.Errorf("web mounts = %v, want %v", got, want)
 	}
 }

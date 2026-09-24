@@ -119,15 +119,18 @@ func TestCollectionItemsDeclareTheirOwnIdentity(t *testing.T) {
 }
 
 // TestSetValuedTasksDeclareTheirCollection pins the decision #427 asked for on
-// the three tasks whose resource is an unordered set. Each keys on its scope
-// alone - the collection is the resource, not part of its key - and each says
-// so by tagging the collection rather than leaving the reader to infer it from
-// the absence of a tag.
+// the tasks whose resource is an unordered set. Each keys on its scope alone -
+// the collection is the resource, not part of its key - and each says so by
+// tagging the collection rather than leaving the reader to infer it from the
+// absence of a tag. dokku_storage_mount also declares a container_dir key, but
+// that key belongs to its single-mount form: it is empty alongside mounts, so a
+// mounts task's address is its app and process_type scope alone.
 func TestSetValuedTasksDeclareTheirCollection(t *testing.T) {
 	want := map[string]string{
-		"dokku_domains": "domains",
-		"dokku_ports":   "port_mappings",
-		"dokku_acl_app": "users",
+		"dokku_domains":       "domains",
+		"dokku_ports":         "port_mappings",
+		"dokku_acl_app":       "users",
+		"dokku_storage_mount": "mounts",
 	}
 	for name, field := range want {
 		task, ok := RegisteredTasks[name]

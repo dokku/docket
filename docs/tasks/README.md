@@ -76,5 +76,5 @@ A task marked `(never converges)` cannot read its own state, so it plans as drif
 - [dokku_ssh_key](dokku_ssh_key.md) - Manages an SSH public key for git push access via dokku's ssh-keys plugin
 - [dokku_storage_ensure](dokku_storage_ensure.md) - Ensures the storage for a given dokku application (deprecated) (never converges)
 - [dokku_storage_entry](dokku_storage_entry.md) - Creates or destroys a named storage registry entry
-- [dokku_storage_mount](dokku_storage_mount.md) - Attaches or detaches storage on a dokku application
+- [dokku_storage_mount](dokku_storage_mount.md) - Attaches, detaches or replaces storage mounts on a dokku application
 - [dokku_traefik_property](dokku_traefik_property.md) - Manages the traefik configuration for a given dokku application

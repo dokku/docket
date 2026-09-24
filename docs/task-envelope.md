@@ -259,7 +259,8 @@ result marks the task failed; a falsy result fully clears the failure:
   dokku_storage_mount:
     app: api
     state: absent
-    mount: /old/path:/var/data
+    host_dir: /old/path
+    container_dir: /var/data
 
 - name: log only if real failure
   when: 'registered.unmount.Error != nil'
@@ -285,7 +286,8 @@ does not abort and the error does not count toward the summary:
       dokku_storage_mount:
         app: api
         state: absent
-        mount: /old/path:/var/data
+        host_dir: /old/path
+        container_dir: /var/data
     - name: continues regardless
       dokku_config:
         app: api

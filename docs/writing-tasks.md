@@ -163,7 +163,8 @@ as `dokku_config[app=***]`, which the reader can see but cannot type back into `
 `docket export --resource`. `TestIdentityKeysAreNeverSensitive` enforces this.
 
 Leave a collection untagged when it is an *attribute* of the resource rather than the set of items
-the task manages: `dokku_storage_mount`'s `phases` narrows one mount, it is not a set of mounts.
+the task manages: `dokku_storage_mount`'s `phases` narrows one mount, it is not a set of mounts. Its
+`mounts` list is the set of mounts, and it carries the tag.
 
 ## Validating inputs
 
