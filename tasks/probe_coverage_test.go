@@ -21,7 +21,7 @@ import (
 // declaration fails the build here rather than silently shipping without a
 // probe decision.
 func TestEveryTaskDeclaresProbeSupport(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		support, ok := TaskProbeSupport(task)
 		if !ok {
 			t.Errorf("task %q does not implement ProbeDocer (add a ProbeSupport() declaration)", name)
@@ -73,8 +73,10 @@ func TestProbeSupportMatchesPlanWiring(t *testing.T) {
 	}
 	failures := map[planFuncKey]branchFailure{}
 
-	for _, name := range sortedTaskNames() {
-		task := RegisteredTasks[name]
+	// TaskTypes is sorted, so the task blamed for a shared helper's broken
+	// branch does not change run to run.
+	for _, name := range TaskTypes() {
+		task := lookupTask(name)
 		support, ok := TaskProbeSupport(task)
 		if !ok {
 			continue // TestEveryTaskDeclaresProbeSupport reports this
@@ -155,17 +157,6 @@ func TestProbeSupportMatchesPlanWiring(t *testing.T) {
 			filepath.Base(f.branch.pos.Filename), f.branch.pos.Line, f.branch.state, f.branch.owner,
 			f.branch.state, f.task)
 	}
-}
-
-// sortedTaskNames returns the registered task names in a stable order, so the
-// task blamed for a shared helper's broken branch does not change run to run.
-func sortedTaskNames() []string {
-	names := make([]string, 0, len(RegisteredTasks))
-	for name := range RegisteredTasks {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }
 
 // TestPlanResultInSyncImpliesStatusOK asserts that every `InSync: true`

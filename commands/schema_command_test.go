@@ -109,10 +109,10 @@ func TestSchemaCommandEmitsEveryRegisteredTask(t *testing.T) {
 	}
 
 	emitted := catalogTasks(t, doc)
-	if len(emitted) != len(tasks.RegisteredTasks) {
-		t.Errorf("catalog has %d tasks; registry has %d", len(emitted), len(tasks.RegisteredTasks))
+	if len(emitted) != len(tasks.TaskTypes()) {
+		t.Errorf("catalog has %d tasks; registry has %d", len(emitted), len(tasks.TaskTypes()))
 	}
-	for name := range tasks.RegisteredTasks {
+	for _, name := range tasks.TaskTypes() {
 		if _, ok := emitted[name]; !ok {
 			t.Errorf("catalog is missing task %q", name)
 		}
@@ -523,7 +523,7 @@ func TestSchemaCommandAutocompletesTaskTypes(t *testing.T) {
 	if !ok || predictor == nil {
 		t.Fatal("--task has no completion predictor")
 	}
-	if got := predictor.Predict(complete.Args{}); !reflect.DeepEqual(got, tasks.RegisteredTaskNames()) {
+	if got := predictor.Predict(complete.Args{}); !reflect.DeepEqual(got, tasks.TaskTypes()) {
 		t.Errorf("--task predicts %v; want every registered task type", got)
 	}
 }

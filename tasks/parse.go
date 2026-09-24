@@ -482,7 +482,7 @@ func parseTaskEntry(task *yaml.Node, index int, playLabel string) *parsedTaskEnt
 					fmt.Sprintf("activates with %s", dependentIssue), keyNode)
 				continue
 			}
-			if _, registered := RegisteredTasks[key]; registered {
+			if _, registered := registeredType(key); registered {
 				taskTypeKeys = append(taskTypeKeys, key)
 				e.TypeKey = key
 				e.TypeNode = keyNode
@@ -754,11 +754,11 @@ func init() {
 //	app := task.(*tasks.AppTask)
 //	app.App = "api"
 func NewTask(typeKey string) (Task, error) {
-	registered, ok := RegisteredTasks[typeKey]
+	registered, ok := registeredType(typeKey)
 	if !ok {
 		return nil, fmt.Errorf("unknown task type %q", typeKey)
 	}
-	v := reflect.New(reflect.TypeOf(registered).Elem())
+	v := reflect.New(registered)
 	defaults.SetDefaults(v.Interface())
 	task, ok := v.Interface().(Task)
 	if !ok {
@@ -775,11 +775,11 @@ func DecodeTask(typeKey string, body []byte) (Task, error) {
 }
 
 func decodeTaskBytes(typeKey string, body []byte) (Task, error) {
-	registered, ok := RegisteredTasks[typeKey]
+	registered, ok := registeredType(typeKey)
 	if !ok {
 		return nil, fmt.Errorf("unknown task type %q", typeKey)
 	}
-	v := reflect.New(reflect.TypeOf(registered).Elem())
+	v := reflect.New(registered)
 	if err := yaml.Unmarshal(body, v.Interface()); err != nil {
 		return nil, err
 	}

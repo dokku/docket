@@ -20,7 +20,7 @@ func taskStructType(task Task) reflect.Type {
 // here rather than silently shipping with no address, which would leave it
 // unnamed in the event stream and unreachable from `export --resource`.
 func TestEveryTaskDeclaresIdentity(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		if len(TaskIdentity(task)) == 0 {
 			t.Errorf("task %q declares no identity:\"key\" field (tag the fields that select the resource it manages)", name)
 		}
@@ -36,7 +36,7 @@ func TestEveryTaskDeclaresIdentity(t *testing.T) {
 // sensitive (an image reference, an archive URL, a password, a certificate)
 // are never the address.
 func TestIdentityKeysAreNeverSensitive(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		rt := taskStructType(task)
 		for i := 0; i < rt.NumField(); i++ {
 			field := rt.Field(i)
@@ -60,7 +60,7 @@ func TestIdentityKeysAreNeverSensitive(t *testing.T) {
 // state changed, and would give `dokku_domains` four addresses for one app's
 // domain list.
 func TestIdentityTagsAreWellFormed(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		rt := taskStructType(task)
 		for i := 0; i < rt.NumField(); i++ {
 			field := rt.Field(i)
@@ -105,7 +105,7 @@ func TestIdentityTagsAreWellFormed(t *testing.T) {
 // HttpAuthUser's username - and a comment is exactly what #427 set out to
 // replace with something the code can read.
 func TestCollectionItemsDeclareTheirOwnIdentity(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		for _, collection := range TaskIdentityCollections(task) {
 			if collection.Item != ItemIdentityFields {
 				continue
@@ -133,7 +133,7 @@ func TestSetValuedTasksDeclareTheirCollection(t *testing.T) {
 		"dokku_storage_mount": "mounts",
 	}
 	for name, field := range want {
-		task, ok := RegisteredTasks[name]
+		task, ok := Lookup(name)
 		if !ok {
 			t.Errorf("task %q is not registered", name)
 			continue
@@ -154,7 +154,7 @@ func TestSetValuedTasksDeclareTheirCollection(t *testing.T) {
 // into task names and export addresses while appearing nowhere in the task's
 // Parameters table, so a user could neither reproduce nor target it.
 func TestIdentityKeysAreDocumentedParameters(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		rt := taskStructType(task)
 		for i := 0; i < rt.NumField(); i++ {
 			field := rt.Field(i)

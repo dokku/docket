@@ -57,13 +57,13 @@ func TestCatalogCoversEveryRegisteredTask(t *testing.T) {
 	if catalog.Version != CatalogVersion {
 		t.Errorf("Version = %d; want %d", catalog.Version, CatalogVersion)
 	}
-	if len(catalog.Tasks) != len(RegisteredTasks) {
-		t.Errorf("catalog has %d tasks; registry has %d", len(catalog.Tasks), len(RegisteredTasks))
+	if len(catalog.Tasks) != len(TaskTypes()) {
+		t.Errorf("catalog has %d tasks; registry has %d", len(catalog.Tasks), len(TaskTypes()))
 	}
 
 	seen := map[string]bool{}
 	for i, schema := range catalog.Tasks {
-		if _, ok := RegisteredTasks[schema.Type]; !ok {
+		if _, ok := Lookup(schema.Type); !ok {
 			t.Errorf("catalog names %q, which is not registered", schema.Type)
 		}
 		if seen[schema.Type] {
@@ -141,7 +141,7 @@ func TestCatalogFieldTypesAreKnown(t *testing.T) {
 func TestCatalogRequiredMatchesTags(t *testing.T) {
 	catalog := wholeCatalog(t)
 	for _, schema := range catalog.Tasks {
-		rt := taskStructType(RegisteredTasks[schema.Type])
+		rt := taskStructType(lookupTask(schema.Type))
 		for _, field := range schema.Fields {
 			structField, ok := structFieldByYAMLName(rt, field.Name)
 			if !ok {
@@ -187,7 +187,7 @@ func TestCatalogSensitiveMatchesTags(t *testing.T) {
 	}
 
 	for _, schema := range catalog.Tasks {
-		check(t, schema.Type, taskStructType(RegisteredTasks[schema.Type]), schema.Fields)
+		check(t, schema.Type, taskStructType(lookupTask(schema.Type)), schema.Fields)
 	}
 
 	// Pin the case the nesting exists for.
@@ -208,7 +208,7 @@ func TestCatalogSensitiveMatchesTags(t *testing.T) {
 // behind `yaml:"-"` would be in Identity.Keys but absent from Fields.
 func TestCatalogIdentityMatchesTaskIdentity(t *testing.T) {
 	for _, schema := range wholeCatalog(t).Tasks {
-		task := RegisteredTasks[schema.Type]
+		task := lookupTask(schema.Type)
 
 		if want := IdentityKeyNames(task); !reflect.DeepEqual(schema.Identity.Keys, want) {
 			t.Errorf("%s Identity.Keys = %v; want %v", schema.Type, schema.Identity.Keys, want)
@@ -240,7 +240,7 @@ func TestCatalogIdentityMatchesTaskIdentity(t *testing.T) {
 
 func TestCatalogSupportMatchesDeclarations(t *testing.T) {
 	for _, schema := range wholeCatalog(t).Tasks {
-		task := RegisteredTasks[schema.Type]
+		task := lookupTask(schema.Type)
 		if want, _ := TaskExportSupport(task); schema.Export != want {
 			t.Errorf("%s Export = %+v; want %+v", schema.Type, schema.Export, want)
 		}
@@ -324,7 +324,7 @@ func TestCatalogFieldShapes(t *testing.T) {
 // against the runtime table each task actually validates and probes with.
 func TestCatalogPropertySchemaMatchesTable(t *testing.T) {
 	for _, schema := range wholeCatalog(t).Tasks {
-		table, declared := TaskPropertyTable(RegisteredTasks[schema.Type])
+		table, declared := TaskPropertyTable(lookupTask(schema.Type))
 		if !declared {
 			if schema.PropertySchema != nil {
 				t.Errorf("%s publishes a property schema without declaring a table", schema.Type)
@@ -485,7 +485,7 @@ func TestCatalogPropertySchemaSpotChecks(t *testing.T) {
 			t.Errorf("scheduler-k3s publishes %q as supported and rejected at once", property.Name)
 		}
 	}
-	if _, ok := RegisteredTasks[wantRejected[0].Replacement]; !ok {
+	if _, ok := Lookup(wantRejected[0].Replacement); !ok {
 		t.Errorf("scheduler-k3s points at %q, which is not a registered task", wantRejected[0].Replacement)
 	}
 
@@ -502,7 +502,7 @@ func TestCatalogPropertySchemaSpotChecks(t *testing.T) {
 	}
 }
 
-// TestCatalogEncodeIsStable guards the ordering: RegisteredTasks is a map, and
+// TestCatalogEncodeIsStable guards the ordering: the registry is a map, and
 // a consumer diffing two catalogs (or a test comparing two runs) needs the
 // bytes to depend only on the code.
 func TestCatalogEncodeIsStable(t *testing.T) {
@@ -673,31 +673,6 @@ func TestCatalogForEntriesMatchTheFullCatalog(t *testing.T) {
 	for _, schema := range catalog.Tasks {
 		if want := schemaFor(t, full, schema.Type); !reflect.DeepEqual(schema, want) {
 			t.Errorf("narrowed entry for %q differs from the full catalog's", schema.Type)
-		}
-	}
-}
-
-// TestRegisteredTaskNamesIsSortedAndComplete guards the helper the catalog,
-// the --task validator and the shell completion all read from.
-func TestRegisteredTaskNamesIsSortedAndComplete(t *testing.T) {
-	names := RegisteredTaskNames()
-	if len(names) != len(RegisteredTasks) {
-		t.Errorf("got %d names; registry has %d", len(names), len(RegisteredTasks))
-	}
-	if !sort.StringsAreSorted(names) {
-		t.Errorf("names are not sorted: %v", names)
-	}
-	for _, name := range names {
-		if _, ok := RegisteredTasks[name]; !ok {
-			t.Errorf("name %q is not in the registry", name)
-		}
-	}
-
-	// The result is a copy, so a caller may sort or truncate it in place.
-	if len(names) > 0 {
-		names[0] = "mutated"
-		if again := RegisteredTaskNames(); again[0] == "mutated" {
-			t.Error("RegisteredTaskNames returned a slice aliasing shared state")
 		}
 	}
 }

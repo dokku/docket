@@ -37,7 +37,7 @@ func ParseResourceSelectors(addresses []string) ([]ResourceSelector, error) {
 			return nil, err
 		}
 
-		task, ok := RegisteredTasks[typeKey]
+		task, ok := Lookup(typeKey)
 		if !ok {
 			msg := fmt.Sprintf("unknown task type %q in resource address %q", typeKey, address)
 			if near := nearestEnvelopeOrTaskKey(typeKey); near != "" {

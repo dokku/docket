@@ -29,7 +29,7 @@ func exportOrderMembership() (app, global map[string]bool) {
 func TestExportSupportMatchesExportWiring(t *testing.T) {
 	inAppOrder, inGlobalOrder := exportOrderMembership()
 
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		support, ok := TaskExportSupport(task)
 		if !ok {
 			continue // TestEveryTaskDeclaresExportSupport reports this
@@ -72,7 +72,7 @@ func TestExportSupportMatchesExportWiring(t *testing.T) {
 // ExportSupport() declaration fails the build here rather than silently
 // shipping without an export decision.
 func TestEveryTaskDeclaresExportSupport(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		support, ok := TaskExportSupport(task)
 		if !ok {
 			t.Errorf("task %q does not implement ExportDocer (add an ExportSupport() declaration)", name)
@@ -98,7 +98,7 @@ func TestEveryTaskDeclaresExportSupport(t *testing.T) {
 // nothing at all, silently, which is the opposite of what declaring the
 // reporting form was meant to achieve.
 func TestExportReportersAlsoImplementTheBaseExporter(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		if _, ok := task.(appExportReporter); ok {
 			if _, ok := task.(AppExporter); !ok {
 				t.Errorf("task %q implements ExportAppReport but not ExportApp, so exportAppPlay skips it entirely", name)

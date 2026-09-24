@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"reflect"
 	"regexp"
 	"strings"
 
 	"github.com/dokku/docket/subprocess"
-	"github.com/gobuffalo/flect"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -362,9 +360,6 @@ type InputValidator interface {
 	Validate() error
 }
 
-// Global registry for Tasks.
-var RegisteredTasks map[string]Task
-
 // ReservedInputNames is the set of recipe input names that collide with a
 // built-in CLI flag on apply, plan, or validate. Declaring an input with
 // one of these names used to make pflag panic with "flag redefined"
@@ -494,23 +489,6 @@ func unescapeLoopVars(data []byte, captured []string) []byte {
 		out = []byte(strings.ReplaceAll(string(out), sentinel, tok))
 	}
 	return out
-}
-
-// RegisterTask registers a task
-func RegisterTask(t Task) {
-	if len(RegisteredTasks) == 0 {
-		RegisteredTasks = make(map[string]Task)
-	}
-
-	var name string
-	if t := reflect.TypeOf(t); t.Kind() == reflect.Ptr {
-		name = "*" + t.Elem().Name()
-	} else {
-		name = t.Name()
-	}
-
-	name = flect.Underscore(name)
-	RegisteredTasks[fmt.Sprintf("dokku_%s", strings.TrimSuffix(name, "_task"))] = t
 }
 
 // SetValue sets the value of the input
@@ -1133,7 +1111,7 @@ func nearestEnvelopeOrTaskKey(candidate string) string {
 			best = k
 		}
 	}
-	for k := range RegisteredTasks {
+	for _, k := range TaskTypes() {
 		d := levenshtein(candidate, k)
 		if d < bestDist {
 			bestDist = d

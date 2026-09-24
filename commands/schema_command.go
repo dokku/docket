@@ -101,7 +101,7 @@ func (c *SchemaCommand) AutocompleteFlags() complete.Flags {
 		c.Meta.AutocompleteFlags(command.FlagSetClient),
 		complete.Flags{
 			"--output": complete.PredictFiles("*.json"),
-			"--task":   complete.PredictSet(tasks.RegisteredTaskNames()...),
+			"--task":   complete.PredictSet(tasks.TaskTypes()...),
 		},
 	)
 }
@@ -119,11 +119,11 @@ func validateTaskTypeFilter(values []string) error {
 		if value == "" {
 			return fmt.Errorf("invalid --task %q: a task type is required", value)
 		}
-		if _, ok := tasks.RegisteredTasks[value]; ok {
+		if _, ok := tasks.Lookup(value); ok {
 			continue
 		}
 		msg := fmt.Sprintf("unknown task type %q", value)
-		if near := nearestInputName(value, tasks.RegisteredTaskNames()); near != "" {
+		if near := nearestInputName(value, tasks.TaskTypes()); near != "" {
 			msg += fmt.Sprintf(" (did you mean %q?)", near)
 		}
 		return fmt.Errorf("%s", msg)
@@ -148,7 +148,7 @@ func (c *SchemaCommand) Run(args []string) int {
 		msg := fmt.Sprintf("unexpected argument %q: schema takes no arguments", rest[0])
 		// A bare task type is the mistake --task invites, so point at the
 		// flag rather than leaving the reader at a dead end.
-		if _, ok := tasks.RegisteredTasks[rest[0]]; ok {
+		if _, ok := tasks.Lookup(rest[0]); ok {
 			msg += fmt.Sprintf("; did you mean --task %s?", rest[0])
 		}
 		c.Ui.Error(msg)

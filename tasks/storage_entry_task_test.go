@@ -31,7 +31,7 @@ func TestStorageEntryAbsentStateAllowed(t *testing.T) {
 
 func TestStorageEntryRegistered(t *testing.T) {
 	t.Parallel()
-	if _, ok := RegisteredTasks["dokku_storage_entry"]; !ok {
+	if _, ok := Lookup("dokku_storage_entry"); !ok {
 		t.Fatal("expected dokku_storage_entry to be registered")
 	}
 }

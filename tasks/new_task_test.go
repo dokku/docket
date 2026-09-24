@@ -63,8 +63,19 @@ func TestNewTaskReturnsADistinctValue(t *testing.T) {
 	if got := second.(*AppTask).App; got != "" {
 		t.Errorf("second task saw the first's App = %q; the prototype is being shared", got)
 	}
-	if proto := RegisteredTasks["dokku_app"]; proto == first || proto == second {
-		t.Error("NewTask handed back the registry prototype itself")
+	looked, ok := Lookup("dokku_app")
+	if !ok {
+		t.Fatal("Lookup(dokku_app) reported it unregistered")
+	}
+	if looked == first || looked == second {
+		t.Error("NewTask and Lookup handed back the same instance")
+	}
+	// Lookup is for metadata and applies no defaults; NewTask does.
+	if got := looked.(*AppTask).State; got != "" {
+		t.Errorf("Lookup applied defaults: State = %q", got)
+	}
+	if got := second.(*AppTask).State; got != StatePresent {
+		t.Errorf("NewTask did not apply defaults: State = %q", got)
 	}
 }
 
