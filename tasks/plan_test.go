@@ -11,10 +11,10 @@ import (
 // compile-time guarantee, but this test fails loudly if a future refactor
 // loosens the contract or registers a task that does not implement Plan.
 func TestAllTasksImplementPlan(t *testing.T) {
-	if len(RegisteredTasks) == 0 {
+	if len(TaskTypes()) == 0 {
 		t.Fatal("no tasks registered; init() side effects didn't run")
 	}
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		var _ Task = task
 		if name == "" {
 			t.Errorf("task with empty name: %T", task)

@@ -19,7 +19,7 @@ import (
 // honest. It sits next to TestRegisteredTaskCount deliberately: adding a
 // task type trips both at once, and the failure names the file to edit.
 // The prior art for what happens without a guard is
-// TestRegisteredTasksExist, whose hardcoded allowlist drifted to 56 of
+// TestTaskTypesExist, whose hardcoded allowlist drifted to 56 of
 // 73 without anyone noticing.
 
 const ansibleMappingDoc = "../docs/ansible-dokku.md"
@@ -113,13 +113,13 @@ func TestAnsibleMappingCoversEveryRegisteredTask(t *testing.T) {
 	}
 
 	var missing, unknown []string
-	for name := range RegisteredTasks {
+	for _, name := range TaskTypes() {
 		if !documented[name] {
 			missing = append(missing, name)
 		}
 	}
 	for name := range documented {
-		if _, ok := RegisteredTasks[name]; !ok {
+		if _, ok := Lookup(name); !ok {
 			unknown = append(unknown, name)
 		}
 	}

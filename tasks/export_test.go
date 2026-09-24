@@ -31,7 +31,7 @@ func exportFixture() map[string]string {
 func TestAppExportOrderIsValid(t *testing.T) {
 	t.Parallel()
 	for _, key := range appExportOrder {
-		proto, ok := RegisteredTasks[key]
+		proto, ok := Lookup(key)
 		if !ok {
 			t.Errorf("appExportOrder has unknown task key %q", key)
 			continue
@@ -45,7 +45,7 @@ func TestAppExportOrderIsValid(t *testing.T) {
 func TestGlobalExportOrderIsValid(t *testing.T) {
 	t.Parallel()
 	for _, key := range globalExportOrder {
-		proto, ok := RegisteredTasks[key]
+		proto, ok := Lookup(key)
 		if !ok {
 			t.Errorf("globalExportOrder has unknown task key %q", key)
 			continue

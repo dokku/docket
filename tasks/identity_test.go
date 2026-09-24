@@ -324,7 +324,7 @@ func TestTaskIdentityCollections(t *testing.T) {
 // generator relies on this: it renders the Identity section from prototypes,
 // which hold no values.
 func TestTaskIdentityReportsUnsetKeys(t *testing.T) {
-	keys := TaskIdentity(RegisteredTasks["dokku_apps_property"])
+	keys := TaskIdentity(lookupTask("dokku_apps_property"))
 	if len(keys) != 3 {
 		t.Fatalf("got %d keys, want 3", len(keys))
 	}
@@ -333,7 +333,7 @@ func TestTaskIdentityReportsUnsetKeys(t *testing.T) {
 			t.Errorf("key %q reports Present on a zero-valued prototype", key.YAMLName)
 		}
 	}
-	if got := IdentityKeyNames(RegisteredTasks["dokku_apps_property"]); !reflect.DeepEqual(got, []string{"app", "global", "property"}) {
+	if got := IdentityKeyNames(lookupTask("dokku_apps_property")); !reflect.DeepEqual(got, []string{"app", "global", "property"}) {
 		t.Errorf("IdentityKeyNames() = %v, want [app global property]", got)
 	}
 }

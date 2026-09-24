@@ -431,7 +431,7 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 		if !res.filter.wantsType(typeKey) {
 			continue
 		}
-		proto, ok := RegisteredTasks[typeKey]
+		proto, ok := Lookup(typeKey)
 		if !ok {
 			continue
 		}
@@ -476,7 +476,7 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 		if !res.filter.wantsType(typeKey) {
 			continue
 		}
-		proto, ok := RegisteredTasks[typeKey]
+		proto, ok := Lookup(typeKey)
 		if !ok {
 			continue
 		}
@@ -546,12 +546,9 @@ func (res *ExportResult) appendBodies(scope, typeKey string, bodies []interface{
 // error names only the types, never the body, so it is safe to surface before
 // the body's secrets are registered for masking.
 func exportedBodyType(typeKey string, body interface{}) error {
-	want := reflect.TypeOf(RegisteredTasks[typeKey])
-	if want == nil {
+	want, ok := registeredType(typeKey)
+	if !ok {
 		return fmt.Errorf("no task is registered under %s", typeKey)
-	}
-	if want.Kind() == reflect.Ptr {
-		want = want.Elem()
 	}
 	if got := reflect.TypeOf(body); got != want {
 		return fmt.Errorf("exporter returned %v, want %v", got, want)

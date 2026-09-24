@@ -98,8 +98,8 @@ func registerSensitiveMapValues(ctx context.Context, m map[string]string) {
 // sensitiveValuesFromTask returns the masked-value set for a single task.
 //
 // It takes interface{} rather than Task because docket export walks task
-// bodies an exporter returns as values, while RegisteredTasks holds pointers
-// (RegisterTask(&ConfigTask{})). Requiring the interface would silently
+// bodies an exporter returns as values, while Lookup and NewTask hand out
+// pointers (*ConfigTask). Requiring the interface would silently
 // contribute nothing for a task whose Task methods happen to have a pointer
 // receiver - the wrong failure mode for a masking collector. Both steps below
 // work on any value.

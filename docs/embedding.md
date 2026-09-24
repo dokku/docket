@@ -116,8 +116,22 @@ state := app.Execute(ctx)  // plans, then applies
 `tasks.DecodeTask` is the same thing from a YAML task body, for a caller that already holds a recipe
 fragment.
 
+### Listing task types
+
+`tasks.TaskTypes()` returns every registered task type, sorted. `tasks.Lookup` reports whether a
+type is registered and returns an instance of it for reading metadata:
+
+```go
+for _, typeKey := range tasks.TaskTypes() {
+    task, _ := tasks.Lookup(typeKey)
+    fmt.Println(typeKey, tasks.TaskSynopsis(task))
+}
+```
+
+Each `Lookup` call returns a new zero-value instance, so changing it affects nothing else. It has no
+defaults applied; use `tasks.NewTask` for a task to run.
+
 ## What is not stable
 
-The engine is exported, not frozen. Task struct fields follow the recipe format and change with it;
-`RegisteredTasks` is a live map and writing to it is not supported. Treat anything not on this page
-as internal.
+The engine is exported, not frozen. Task struct fields follow the recipe format and change with it.
+Treat anything not on this page as internal.

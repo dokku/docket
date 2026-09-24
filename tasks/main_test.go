@@ -164,7 +164,7 @@ func TestGetTasksWithTemplateContext(t *testing.T) {
 	}
 }
 
-func TestRegisteredTasksExist(t *testing.T) {
+func TestTaskTypesExist(t *testing.T) {
 	expectedTasks := []string{
 		"dokku_acl_app",
 		"dokku_acl_service",
@@ -226,7 +226,7 @@ func TestRegisteredTasksExist(t *testing.T) {
 	}
 
 	for _, name := range expectedTasks {
-		if _, ok := RegisteredTasks[name]; !ok {
+		if _, ok := Lookup(name); !ok {
 			t.Errorf("expected task %q to be registered", name)
 		}
 	}
@@ -708,7 +708,7 @@ func TestGetTasksFromRealExample(t *testing.T) {
 // that omits `state: absent` decodes to state "present", which a property
 // task's Validate() then rejects for having no value.
 func TestAllTaskExamplesValidate(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		t.Run(name, func(t *testing.T) {
 			examples, err := TaskExamples(task)
 			if err != nil {
@@ -748,7 +748,7 @@ func TestAllTaskExamplesValidate(t *testing.T) {
 
 func TestRegisteredTaskCount(t *testing.T) {
 	expected := 74
-	if got := len(RegisteredTasks); got != expected {
+	if got := len(TaskTypes()); got != expected {
 		t.Errorf("expected %d registered tasks, got %d", expected, got)
 	}
 }

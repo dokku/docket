@@ -86,7 +86,7 @@ func TestGeneratedDocsCoverEveryTask(t *testing.T) {
 		onDisk[strings.TrimSuffix(name, ".md")] = true
 	}
 
-	for name := range tasks.RegisteredTasks {
+	for _, name := range tasks.TaskTypes() {
 		if !onDisk[name] {
 			t.Errorf("task %q has no page at %s/%s.md (run make docs)", name, docsDir, name)
 		}

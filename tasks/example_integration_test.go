@@ -136,7 +136,7 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 // paired "clear"/"destroy". Per-task prerequisites and opt-outs live in
 // exampleIntegrationPolicy.
 func TestIntegrationTaskExamples(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		policy := exampleIntegrationPolicy[name]
 		t.Run(name, func(t *testing.T) {
 			skipIfNoDokkuT(t)

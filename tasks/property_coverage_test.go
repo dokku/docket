@@ -25,7 +25,7 @@ var propertyTasksWithoutTable = map[string]string{
 // odd one out. Checking the allowlist in both directions keeps it from rotting
 // once such a task grows a real table.
 func TestEveryPropertyTaskDeclaresPropertyTable(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		if !strings.HasSuffix(name, "_property") {
 			continue
 		}
@@ -41,7 +41,7 @@ func TestEveryPropertyTaskDeclaresPropertyTable(t *testing.T) {
 	}
 
 	for name := range propertyTasksWithoutTable {
-		if _, ok := RegisteredTasks[name]; !ok {
+		if _, ok := Lookup(name); !ok {
 			t.Errorf("propertyTasksWithoutTable names %q, which is not a registered task", name)
 		}
 	}
@@ -52,7 +52,7 @@ func TestEveryPropertyTaskDeclaresPropertyTable(t *testing.T) {
 // prevent: a new property task written by copying an existing one, where the
 // key map got renamed but the subcommand did not.
 func TestPropertyTablePluginMatchesTaskType(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		table, declared := TaskPropertyTable(task)
 		if !declared {
 			continue
@@ -68,7 +68,7 @@ func TestPropertyTablePluginMatchesTaskType(t *testing.T) {
 // entry with neither a per-app nor a global report key is rejected in both
 // scopes by validateProperty, so it can never be set at all.
 func TestPropertyTableEntriesHaveAScope(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		table, declared := TaskPropertyTable(task)
 		if !declared {
 			continue
@@ -90,7 +90,7 @@ func TestPropertyTableEntriesHaveAScope(t *testing.T) {
 // global-only entry in its table would be unreachable - and would be published
 // by the catalog as settable when nothing can set it.
 func TestPropertyTableGlobalKeysRequireAGlobalField(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		table, declared := TaskPropertyTable(task)
 		if !declared {
 			continue
@@ -136,7 +136,7 @@ func TestPropertyTasksDeclareTheSharedFields(t *testing.T) {
 		"SensitivePropertyFields": reflect.TypeOf(SensitivePropertyFields{}),
 	}
 
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		if !strings.HasSuffix(name, "_property") {
 			continue
 		}
@@ -160,7 +160,7 @@ func TestPropertyTasksDeclareTheSharedFields(t *testing.T) {
 	}
 
 	for name := range propertyTasksWithOwnFields {
-		if _, ok := RegisteredTasks[name]; !ok {
+		if _, ok := Lookup(name); !ok {
 			t.Errorf("propertyTasksWithOwnFields names %q, which is not a registered task", name)
 		}
 	}
@@ -337,7 +337,7 @@ func TestDynamicFamilySensitivityIsIndependentOfProbing(t *testing.T) {
 // other test here would still pass for one of them.
 func TestPropertyTablesAreDistinct(t *testing.T) {
 	seen := map[string]string{}
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		table, declared := TaskPropertyTable(task)
 		if !declared {
 			continue
@@ -355,7 +355,7 @@ func TestPropertyTablesAreDistinct(t *testing.T) {
 // enforce structurally: what the catalog says a recipe may write is exactly
 // what the task accepts.
 func TestPropertyTaskValidatesAgainstItsPublishedTable(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		table, declared := TaskPropertyTable(task)
 		if !declared {
 			continue
@@ -396,7 +396,7 @@ func TestPropertyTaskValidatesAgainstItsPublishedTable(t *testing.T) {
 // a name the table publishes, or a dynamic family the plugin accepts, would
 // make a legal recipe unwritable.
 func TestRejectedPropertyFamiliesAreWellFormed(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		table, declared := TaskPropertyTable(task)
 		if !declared {
 			continue
@@ -406,7 +406,7 @@ func TestRejectedPropertyFamiliesAreWellFormed(t *testing.T) {
 				t.Errorf("task %q declares an incomplete rejected family %+v", name, family)
 				continue
 			}
-			if _, ok := RegisteredTasks[family.Replacement]; !ok {
+			if _, ok := Lookup(family.Replacement); !ok {
 				t.Errorf("task %q points %q at %q, which is not a registered task", name, family.Prefix, family.Replacement)
 			}
 			for property := range table.Keys {
@@ -435,7 +435,7 @@ func TestRejectedPropertyFamiliesAreWellFormed(t *testing.T) {
 // probes anything.
 func TestRejectedPropertyFamiliesReportIdenticallyFromPlanAndValidate(t *testing.T) {
 	checked := 0
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		table, declared := TaskPropertyTable(task)
 		if !declared {
 			continue

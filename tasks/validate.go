@@ -540,7 +540,7 @@ func validateEntry(entry *parsedTaskEntry, playLabel string) []Problem {
 		return problems
 	}
 
-	registered, ok := RegisteredTasks[entry.TypeKey]
+	registered, ok := registeredType(entry.TypeKey)
 	if !ok {
 		return problems
 	}
@@ -552,7 +552,7 @@ func validateEntry(entry *parsedTaskEntry, playLabel string) []Problem {
 // validateTaskBody decodes the task body into the registered struct, applies
 // defaults, and reports any required:"true" field whose value is still the
 // zero value of its type.
-func validateTaskBody(registered Task, typeName string, body *yaml.Node, playLabel, taskLabel string) []Problem {
+func validateTaskBody(registered reflect.Type, typeName string, body *yaml.Node, playLabel, taskLabel string) []Problem {
 	var problems []Problem
 
 	marshaled, err := yaml.Marshal(body)
@@ -567,7 +567,7 @@ func validateTaskBody(registered Task, typeName string, body *yaml.Node, playLab
 		})
 	}
 
-	v := reflect.New(reflect.TypeOf(registered).Elem())
+	v := reflect.New(registered)
 	if err := yaml.Unmarshal(marshaled, v.Interface()); err != nil {
 		return append(problems, Problem{
 			Code:    "task_body_decode",

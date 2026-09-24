@@ -11,7 +11,7 @@ import (
 // a synopsis or examples and its generated page and `docket schema` entry would
 // silently lose them.
 func TestEveryTaskIsDocumented(t *testing.T) {
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		doc, ok := task.(Documented)
 		if !ok {
 			t.Errorf("task %q does not implement Documented (add Doc() and Examples())", name)

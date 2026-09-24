@@ -37,7 +37,7 @@ func TestToggleTasksDeclareTheSharedFields(t *testing.T) {
 	shared := reflect.TypeOf(ToggleFields{})
 
 	toggles := map[string]bool{}
-	for name, task := range RegisteredTasks {
+	for name, task := range allRegisteredTasks() {
 		rt := taskStructType(task)
 		if !g.reaches(planFuncKey(rt.Name()+".Plan"), "planToggle") {
 			continue
@@ -58,14 +58,14 @@ func TestToggleTasksDeclareTheSharedFields(t *testing.T) {
 	// A walk that silently found nothing would leave the whole test vacuous, so
 	// cross-check the AST predicate against the independent one it replaced:
 	// every task named `*_toggle` had better be in the set.
-	for name := range RegisteredTasks {
+	for _, name := range TaskTypes() {
 		if strings.HasSuffix(name, "_toggle") && !toggles[name] {
 			t.Errorf("task %q is named as a toggle but its Plan() does not reach planToggle, so the shared-field check skipped it", name)
 		}
 	}
 
 	for name := range toggleTasksWithOwnFields {
-		if _, ok := RegisteredTasks[name]; !ok {
+		if _, ok := Lookup(name); !ok {
 			t.Errorf("toggleTasksWithOwnFields names %q, which is not a registered task", name)
 		}
 	}

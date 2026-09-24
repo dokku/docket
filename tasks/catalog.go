@@ -21,8 +21,8 @@ import (
 //
 // The document describes the recipe surface, not the Go one: every name in it
 // is a key a recipe author types. Go field names and Go type names are
-// deliberately absent - an in-repo caller that wants those still has
-// RegisteredTasks and reflect.
+// deliberately absent - an in-repo caller that wants those still has Lookup
+// and reflect.
 
 // CatalogVersion is the wire-format version every emitted catalog carries in
 // its `version` field.
@@ -408,12 +408,12 @@ func Catalog() (TaskCatalog, error) {
 // The other error comes from Examples(), which yaml-marshals each example
 // struct. Nothing else here can fail.
 func CatalogFor(typeKeys []string) (TaskCatalog, error) {
-	names := RegisteredTaskNames()
+	names := TaskTypes()
 	if len(typeKeys) > 0 {
 		seen := make(map[string]bool, len(typeKeys))
 		names = make([]string, 0, len(typeKeys))
 		for _, key := range typeKeys {
-			if _, ok := RegisteredTasks[key]; !ok {
+			if _, ok := registeredType(key); !ok {
 				return TaskCatalog{}, fmt.Errorf("unknown task type %q", key)
 			}
 			if seen[key] {
@@ -427,25 +427,14 @@ func CatalogFor(typeKeys []string) (TaskCatalog, error) {
 
 	catalog := TaskCatalog{Version: CatalogVersion, Tasks: make([]TaskSchema, 0, len(names))}
 	for _, name := range names {
-		schema, err := TaskSchemaOf(name, RegisteredTasks[name])
+		task, _ := Lookup(name)
+		schema, err := TaskSchemaOf(name, task)
 		if err != nil {
 			return TaskCatalog{}, err
 		}
 		catalog.Tasks = append(catalog.Tasks, schema)
 	}
 	return catalog, nil
-}
-
-// RegisteredTaskNames returns every registered task type, sorted. The result is
-// a fresh slice, so a caller may sort, filter or truncate it without disturbing
-// the registry.
-func RegisteredTaskNames() []string {
-	names := make([]string, 0, len(RegisteredTasks))
-	for name := range RegisteredTasks {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }
 
 // TaskSchemaOf describes one task. Exported so a caller holding a single
