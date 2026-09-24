@@ -170,6 +170,7 @@ func TestIntegrationConfigSetAndClear(t *testing.T) {
 		App:     appName,
 		Restart: boolPtr(false),
 		Config:  map[string]string{"STALE": "old", "KEEP_ME": "kept", "SHARED": "before"},
+		State:   StatePresent,
 	}
 	if result := seed.Execute(testCtx()); result.Error != nil {
 		t.Fatalf("failed to seed config: %v", result.Error)
