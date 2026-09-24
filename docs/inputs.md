@@ -193,10 +193,13 @@ Declaring one is reported as `reserved_input_name` by `docket validate` (and rej
 - `accept-new-host-keys`
 - `detailed-exitcode`
 - `fail-fast`
+- `force`
 - `host`
 - `json`
 - `list-tasks`
 - `no-color`
+- `output`
+- `plan`
 - `play`
 - `skip-tags`
 - `start-at-task`

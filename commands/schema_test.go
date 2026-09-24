@@ -31,6 +31,10 @@ const (
 	// taskCatalogSchemaPath describes one whole document rather than one
 	// line, since `docket schema` emits a single JSON object.
 	taskCatalogSchemaPath = "../docs/schemas/task-catalog-v1.schema.json"
+
+	// planSchemaPath also describes one whole document: the saved plan
+	// `docket plan --output` writes.
+	planSchemaPath = "../docs/schemas/plan-v1.schema.json"
 )
 
 var (

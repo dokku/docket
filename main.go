@@ -52,7 +52,7 @@ func Run(args []string) int {
 func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFactory {
 	return map[string]cli.CommandFactory{
 		"apply": func() (cli.Command, error) {
-			return &commands.ApplyCommand{Meta: meta, Ctx: ctx, Argv: os.Args}, nil
+			return &commands.ApplyCommand{Meta: meta, Ctx: ctx, Argv: os.Args, Version: Version}, nil
 		},
 		"export": func() (cli.Command, error) {
 			return &commands.ExportCommand{Meta: meta, Ctx: ctx, Stdout: os.Stdout}, nil
@@ -64,7 +64,7 @@ func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFact
 			return &commands.InitCommand{Meta: meta, Stdout: os.Stdout}, nil
 		},
 		"plan": func() (cli.Command, error) {
-			return &commands.PlanCommand{Meta: meta, Ctx: ctx, Argv: os.Args}, nil
+			return &commands.PlanCommand{Meta: meta, Ctx: ctx, Argv: os.Args, Version: Version}, nil
 		},
 		"schema": func() (cli.Command, error) {
 			return &commands.SchemaCommand{Meta: meta, Stdout: os.Stdout}, nil

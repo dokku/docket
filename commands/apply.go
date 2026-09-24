@@ -69,7 +69,13 @@ type ApplyCommand struct {
 	listTasks         bool
 	startAtTask       string
 	detailedExitCode  bool
+	planFile          string
 	arguments         map[string]*Argument
+
+	// Version is the running docket's version, checked against the one a
+	// saved plan was written by. Populated from main.go; empty falls back to
+	// CLI_VERSION, which cli-skeleton sets at startup.
+	Version string
 
 	// tasksData caches the recipe bytes read while building the FlagSet (to
 	// pre-register input flags). Run reuses them instead of reading the
@@ -101,6 +107,7 @@ func (c *ApplyCommand) Examples() map[string]string {
 		"Apply tasks from a remote URL":          fmt.Sprintf("%s %s --tasks http://dokku.com/docket/example.yml", appName, c.Name()),
 		"Apply a recipe piped in on stdin":       fmt.Sprintf("%s export --output - | %s %s -", appName, appName, c.Name()),
 		"Override a task input":                  fmt.Sprintf("%s %s --name lollipop", appName, c.Name()),
+		"Apply a plan saved by plan --output":    fmt.Sprintf("%s %s --plan plan.json", appName, c.Name()),
 	}
 }
 
@@ -133,6 +140,15 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without running. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
 	f.StringVar(&c.startAtTask, "start-at-task", "", "skip every task before the matched name; the matched task and successors run normally. Filter order: --start-at-task -> --tags/--skip-tags -> per-task when: at execution. The name search walks every play in source order, narrowed by --play.")
 	f.BoolVar(&c.detailedExitCode, "detailed-exitcode", false, "exit 0 when nothing changed, 2 when at least one task changed, 1 on error. Without this flag apply exits 0 whether or not anything changed.")
+	f.StringVar(&c.planFile, "plan", "", "apply a plan saved by `docket plan --output`. The recipe, inputs, filters and target all come from the file; every task is probed first, and nothing runs if the server no longer matches the saved plan.")
+
+	// A saved plan brings its own recipe and inputs, so there is nothing to
+	// pre-read: registering the flags of whatever tasks.yml sits in the
+	// working directory would let an input flag typed beside --plan be
+	// silently ignored instead of rejected as unknown.
+	if planFlagFromArgs(c.argv()) {
+		return f
+	}
 
 	data, format, source := preloadRecipeForFlags(c.baseDir(), c.argv(), true, c.stdinSource())
 	if data == nil {
@@ -176,6 +192,7 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 			"--list-tasks":           complete.PredictNothing,
 			"--start-at-task":        complete.PredictAnything,
 			"--detailed-exitcode":    complete.PredictNothing,
+			"--plan":                 complete.PredictFiles("*"),
 		},
 	)
 }
@@ -205,57 +222,39 @@ func (c *ApplyCommand) Run(args []string) int {
 		return 1
 	}
 
-	varsFileKeys, varsWarnings, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	var saved *savedPlan
+	if flags.Changed("plan") {
+		if err := checkPlanFlagCombination(flags); err != nil {
+			c.Ui.Error(err.Error())
+			return 1
+		}
+		plan, warnings, err := readSavedPlan(c.baseDir(), c.planFile, docketVersion(c.Version))
+		if err != nil {
+			c.Ui.Error(err.Error())
+			return 1
+		}
+		for _, w := range warnings {
+			c.Ui.Warn(w)
+		}
+		saved = plan
+	}
+
+	src, err := c.resolveRun(flags, saved)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
 	}
-	// Warned about on stderr in every mode, --json included: the JSON stream
-	// goes to stdout through the emitter, so this cannot land in it (#489).
-	for _, w := range varsWarnings {
-		c.Ui.Warn(w)
-	}
+	target := src.target
+	inputCtx := src.inputCtx
+	userSet := src.userSet
+	c.tasksFile = src.recipe.Path
+	c.tasksFormat = src.recipe.Format
 
 	ctx := runContext(c.Ctx)
 	// The target rides on the run context, so every task planned or executed
 	// below routes to the same server without any of them holding a reference
 	// to it - and a second run in the same process can carry a different one.
-	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
 	ctx = subprocess.ContextWithTarget(ctx, target)
-
-	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
-	if err != nil {
-		c.Ui.Error(err.Error())
-		return 1
-	}
-
-	taskFile, err := resolveTaskFileArg(c.tasksFile, flags.Args())
-	if err != nil {
-		c.Ui.Error(err.Error())
-		return 1
-	}
-	// The cached bytes are the ones FlagSet already read for this source
-	// (see tasksData); for a --tasks URL this avoids a second HTTP fetch
-	// of the same recipe.
-	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
-	if err != nil {
-		c.Ui.Error(fmt.Sprintf("read error: %v", err))
-		return 1
-	}
-	if msg := ambiguousTaskFileWarning(recipe.Path, recipe.Ambiguous); msg != "" {
-		c.Ui.Warn(msg)
-	}
-	c.tasksFile = recipe.Path
-	c.tasksFormat = recipe.Format
-	data := recipe.Data
-
-	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
-
-	inputCtx, sensitiveValues, err := buildInputContext(c.arguments, userSet)
-	if err != nil {
-		c.Ui.Error(err.Error())
-		return 1
-	}
 
 	// Register the sensitive CLI/vars-file input values before the recipe is
 	// parsed and rendered, so a template or parse error that interpolated one
@@ -264,10 +263,10 @@ func (c *ApplyCommand) Run(args []string) int {
 	// The masker belongs to this run and goes out of scope with it, so there
 	// is no teardown: the deferred clear this replaces is exactly what made a
 	// second run in the same process lose its secrets.
-	masker := subprocess.NewMasker(sensitiveValues...)
+	masker := subprocess.NewMasker(src.sensitive...)
 	ctx = subprocess.ContextWithMasker(ctx, masker)
 
-	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)
+	plays, err := tasks.GetPlaysWithFormat(src.recipe.Data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
 		c.Ui.Error(masker.String(fmt.Sprintf("task error: %v", err)))
 		return 1
@@ -331,6 +330,20 @@ func (c *ApplyCommand) Run(args []string) int {
 	// run-wide one. controlPath already keys on the host, so the sockets do
 	// not collide; nothing was closing the extra ones.
 	defer closeControlMasters(target, plays)
+
+	if saved != nil {
+		if exit, ok := c.checkSavedPlan(ctx, saved, planWalkOptions{
+			plays:         plays,
+			target:        target,
+			inputCtx:      inputCtx,
+			userSet:       userSet,
+			fileLevelKeys: fileLevelKeys,
+			tags:          c.tags,
+			skipTags:      c.skipTags,
+		}, masker); !ok {
+			return exit
+		}
+	}
 
 	emitter := c.newEmitter(masker)
 	start := time.Now()
@@ -438,6 +451,157 @@ playLoop:
 	emitter.ApplySummary(counts, time.Since(start))
 
 	return c.runExit(ctx, hasError, counts.Changed)
+}
+
+// runSource is what a run resolves before it parses the recipe: where it
+// runs, what it parses, and the inputs it renders with. It comes either from
+// the command line or, under --plan, from a saved plan.
+type runSource struct {
+	target    subprocess.Target
+	recipe    recipeSource
+	inputCtx  map[string]interface{}
+	userSet   map[string]bool
+	sensitive []string
+}
+
+// resolveRun resolves the run's target, recipe and inputs. With a saved plan
+// every one of them comes from the file - the target included, so DOKKU_HOST
+// and friends are ignored - and the plan's --play / --tags / --skip-tags
+// become this run's. Otherwise they come from the flags, the environment,
+// and the recipe on disk, as they always have.
+func (c *ApplyCommand) resolveRun(flags *flag.FlagSet, saved *savedPlan) (runSource, error) {
+	if saved != nil {
+		arguments, userSet, err := saved.arguments()
+		if err != nil {
+			return runSource{}, err
+		}
+		inputCtx, sensitive, err := buildInputContext(arguments, userSet)
+		if err != nil {
+			return runSource{}, err
+		}
+		c.play = saved.Play
+		c.tags = saved.Tags
+		c.skipTags = saved.SkipTags
+		return runSource{
+			target:    saved.target(),
+			recipe:    saved.recipe(),
+			inputCtx:  inputCtx,
+			userSet:   userSet,
+			sensitive: sensitive,
+		}, nil
+	}
+
+	varsFileKeys, varsWarnings, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	if err != nil {
+		return runSource{}, err
+	}
+	// Warned about on stderr in every mode, --json included: the JSON stream
+	// goes to stdout through the emitter, so this cannot land in it (#489).
+	for _, w := range varsWarnings {
+		c.Ui.Warn(w)
+	}
+
+	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
+
+	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
+	if err != nil {
+		return runSource{}, err
+	}
+
+	taskFile, err := resolveTaskFileArg(c.tasksFile, flags.Args())
+	if err != nil {
+		return runSource{}, err
+	}
+	// The cached bytes are the ones FlagSet already read for this source
+	// (see tasksData); for a --tasks URL this avoids a second HTTP fetch
+	// of the same recipe.
+	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, true, c.tasksData, c.tasksDataSource, c.stdinSource())
+	if err != nil {
+		return runSource{}, fmt.Errorf("read error: %v", err)
+	}
+	if msg := ambiguousTaskFileWarning(recipe.Path, recipe.Ambiguous); msg != "" {
+		c.Ui.Warn(msg)
+	}
+
+	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
+
+	inputCtx, sensitiveValues, err := buildInputContext(c.arguments, userSet)
+	if err != nil {
+		return runSource{}, err
+	}
+	return runSource{
+		target:    target,
+		recipe:    recipe,
+		inputCtx:  inputCtx,
+		userSet:   userSet,
+		sensitive: sensitiveValues,
+	}, nil
+}
+
+// planConflictFlags are the flags --plan refuses, each with why. Every one
+// of them would change what the run does, and a saved plan exists to fix
+// exactly that.
+var planConflictFlags = []struct {
+	name   string
+	reason string
+}{
+	{"tasks", "the saved plan carries its own recipe"},
+	{"tasks-format", "the saved plan carries its own recipe"},
+	{"vars-file", "the saved plan carries its own inputs"},
+	{"play", "the saved plan carries its own --play"},
+	{"tags", "the saved plan carries its own --tags"},
+	{"skip-tags", "the saved plan carries its own --skip-tags"},
+	{"host", "the saved plan carries its own target"},
+	{"sudo", "the saved plan carries its own target"},
+	{"accept-new-host-keys", "the saved plan carries its own target"},
+	{"start-at-task", "a saved plan is applied whole"},
+	{"list-tasks", "a saved plan is not a recipe to preview; read it with docket plan instead"},
+}
+
+// checkPlanFlagCombination rejects --plan alongside anything that would
+// contradict what the saved plan froze. It runs straight after parsing, so a
+// --vars-file is refused before it is read rather than failing as an unknown
+// input against a recipe that was never pre-read.
+func checkPlanFlagCombination(flags *flag.FlagSet) error {
+	if flags.Lookup("plan").Value.String() == "" {
+		return fmt.Errorf("--plan needs a path")
+	}
+	for _, f := range planConflictFlags {
+		if flags.Changed(f.name) {
+			return fmt.Errorf("--plan cannot be used with --%s; %s", f.name, f.reason)
+		}
+	}
+	if len(flags.Args()) > 0 {
+		return fmt.Errorf("--plan cannot be used with a recipe argument; the saved plan carries its own recipe")
+	}
+	return nil
+}
+
+// checkSavedPlan probes every task the saved plan covers, silently, and
+// compares the result with what the plan recorded. ok is true when they
+// match and the run may go ahead; otherwise exit is the code to return, and
+// the differences have been printed. Nothing is mutated either way: this is
+// plan's own walk, which only ever calls Plan().
+//
+// The check happens once, before the first task. What the server does after
+// it is absorbed the way apply always absorbs it, by each task re-reading its
+// state as it runs.
+func (c *ApplyCommand) checkSavedPlan(ctx context.Context, saved *savedPlan, o planWalkOptions, masker *subprocess.Masker) (int, bool) {
+	recorder := newRecordingEmitter(discardEmitter{}, masker)
+	o.emitter = recorder
+	runPlanWalk(ctx, o)
+	if ctx.Err() != nil {
+		return c.runExit(ctx, true, 0), false
+	}
+	diff := staleSavedPlanDiff(saved.Events, recorder.events)
+	if len(diff) == 0 {
+		return 0, true
+	}
+	c.Ui.Error(fmt.Sprintf("saved plan is stale: %s no longer matches what docket would do; run docket plan again", c.planFile))
+	for _, line := range diff {
+		c.Ui.Error("  " + line)
+	}
+	return 1, false
 }
 
 // runExit turns the run's verdict into an exit code, and is the one place that

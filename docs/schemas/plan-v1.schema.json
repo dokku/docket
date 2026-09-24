@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/dokku/docket/main/docs/schemas/plan-v1.schema.json",
+  "title": "docket saved plan",
+  "description": "The file `docket plan --output` writes and `docket apply --plan` reads. Like the task catalog, and unlike the JSON-lines streams, this describes one whole document - validate it as a unit. It holds every resolved input in the clear, sensitive ones included. See docs/command-reference.md#saved-plans.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "docket_version", "created_at", "recipe", "inputs", "play", "tags", "skip_tags", "target", "events"],
+  "properties": {
+    "format": {
+      "const": "docket-plan",
+      "description": "Marks the document as a docket saved plan."
+    },
+    "version": {
+      "const": 1,
+      "description": "The saved plan's wire format. Independent of the --json event stream's version."
+    },
+    "docket_version": {
+      "type": "string",
+      "description": "The docket version that wrote the plan. `apply --plan` refuses a plan written by any other version. Empty for an unversioned build."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the plan was written, RFC 3339 in UTC."
+    },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "format", "data"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Where the recipe was read from - a path, a URL, or `<stdin>`. Display only; the recipe is never read from it again."
+        },
+        "format": {
+          "enum": ["yaml", "json5", "hcl"],
+          "description": "The format `data` is parsed as."
+        },
+        "data": {
+          "type": "string",
+          "description": "The recipe text exactly as the plan read it."
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Every input the recipe declares, keyed by name, resolved to the value the plan rendered with.",
+      "additionalProperties": { "$ref": "#/$defs/input" }
+    },
+    "play": {
+      "type": "string",
+      "description": "The --play the plan was made with; empty when every play was planned."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The --tags the plan was made with."
+    },
+    "skip_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The --skip-tags the plan was made with."
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "sudo", "accept_new_host_keys"],
+      "description": "The run-wide target the plan probed, after --host / --sudo / --accept-new-host-keys and their environment variables. A play's own host:, sudo: and accept_new_host_keys: still come from the recipe.",
+      "properties": {
+        "host": { "type": "string" },
+        "sudo": { "type": "boolean" },
+        "accept_new_host_keys": { "type": "boolean" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/event" },
+      "description": "The plan's fingerprint: every play and task event in order, without timing or warnings, masked as the --json stream masks them. `apply --plan` probes again and refuses to run when the result differs."
+    }
+  },
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value", "sensitive", "has_default", "user_set"],
+      "properties": {
+        "type": {
+          "enum": ["string", "int", "float", "bool"],
+          "description": "The input's declared type; `value` is parsed as it."
+        },
+        "value": {
+          "type": "string",
+          "description": "The resolved value, spelled as a string. Not masked, even for a sensitive input."
+        },
+        "sensitive": {
+          "type": "boolean",
+          "description": "Whether the recipe declared the input `sensitive: true`."
+        },
+        "has_default": {
+          "type": "boolean",
+          "description": "Whether the recipe declared a non-empty `default:`."
+        },
+        "user_set": {
+          "type": "boolean",
+          "description": "Whether the value came from the command line or a --vars-file rather than the recipe."
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name"],
+      "properties": {
+        "type": {
+          "enum": ["play_start", "play_skipped", "task"]
+        },
+        "play": {
+          "type": "string",
+          "description": "The enclosing play, on a `task` event."
+        },
+        "name": {
+          "type": "string",
+          "description": "The play or task name."
+        },
+        "host": {
+          "type": "string",
+          "description": "The play's remote host, on a `play_start` event."
+        },
+        "when": {
+          "type": "string",
+          "description": "The play's `when:` source, on a `play_skipped` event."
+        },
+        "status": {
+          "enum": ["ok", "+", "~", "-", "skipped"],
+          "description": "The task's plan marker, on a `task` event."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the task would change."
+        },
+        "mutations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The changes the task would make."
+        },
+        "commands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The masked dokku commands apply would run, as of the plan."
+        },
+        "phase": {
+          "enum": ["block", "rescue", "always"],
+          "description": "The group clause a child task belongs to."
+        },
+        "group": {
+          "type": "boolean",
+          "description": "True on a group's own summary event."
+        }
+      }
+    }
+  }
+}

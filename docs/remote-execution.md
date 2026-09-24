@@ -39,6 +39,11 @@ the key yourself:
 ssh-keyscan dokku.example.com >> ~/.ssh/known_hosts
 ```
 
+A [saved plan](command-reference.md#saved-plans) records the target it was planned against.
+`docket apply --plan` runs against that target and ignores `DOKKU_HOST`, `DOKKU_SUDO`, and
+`DOKKU_SSH_ACCEPT_NEW_HOST_KEYS`, and it refuses `--host`, `--sudo`, and `--accept-new-host-keys`.
+A plan made against one server cannot be pointed at another.
+
 ## A recipe that spans hosts
 
 The flags above set one target for the whole run. A play can name its own instead, which is how a
