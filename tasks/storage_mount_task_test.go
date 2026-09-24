@@ -86,53 +86,113 @@ func TestStorageMountNamedEntryCommandShape(t *testing.T) {
 		VolumeChown:   "herokuish",
 		VolumeOptions: "noexec,nosuid",
 	}
-	args := task.mountArgs()
+	got := firstMountCommands(task, nil)
 	want := []string{
-		"--quiet", "storage:mount", "test-app", "data",
-		"--container-dir", "/app/storage",
-		"--phase", "deploy", "--phase", "run",
-		"--process-type", "web",
-		"--volume-subpath", "sub",
-		"--volume-readonly",
-		"--volume-chown", "herokuish",
-		"--volume-options", "noexec,nosuid",
+		"--quiet storage:mount test-app data --container-dir /app/storage --phase deploy --phase run --process-type web --volume-subpath sub --volume-readonly --volume-chown herokuish --volume-options noexec,nosuid",
 	}
-	if !equalStrings(args, want) {
-		t.Errorf("mountArgs mismatch:\n  got: %v\n want: %v", args, want)
+	if !equalStrings(got, want) {
+		t.Errorf("first mount mismatch:\n  got: %v\n want: %v", got, want)
 	}
 }
 
-func TestStorageMountLegacyFirstMountCommandShape(t *testing.T) {
-	t.Parallel()
-	task := StorageMountTask{
-		App:          "test-app",
-		HostDir:      "/var/data",
-		ContainerDir: "/app/storage",
+// firstMountCommands renders task.firstMountInputs as one string per command.
+func firstMountCommands(task StorageMountTask, attachments []reportAttachment) []string {
+	var out []string
+	for _, in := range task.firstMountInputs(attachments) {
+		out = append(out, strings.Join(in.Args, " "))
 	}
-	args := task.mountArgs()
-	want := []string{"--quiet", "storage:mount", "test-app", "/var/data:/app/storage"}
-	if !equalStrings(args, want) {
-		t.Errorf("legacy first-mount args mismatch:\n  got: %v\n want: %v", args, want)
-	}
+	return out
 }
 
-func TestStorageMountLegacyFirstMountWithVolumeOptions(t *testing.T) {
+func TestStorageMountLegacyEntryName(t *testing.T) {
 	t.Parallel()
-	task := StorageMountTask{
-		App:           "test-app",
-		HostDir:       "/var/data",
-		ContainerDir:  "/app/storage",
-		VolumeOptions: "Z",
+	// Hashes computed with `printf '<input>' | shasum`, matching dokku's
+	// LegacyMountToEntry.
+	cases := map[string]string{
+		"/var/data": "legacy-a62ee098ef",
+		"myvolume":  "legacy-d2d3fba93a", // hashed as "vol:myvolume"
 	}
-	args := task.mountArgs()
-	want := []string{"--quiet", "storage:mount", "test-app", "/var/data:/app/storage:Z"}
-	if !equalStrings(args, want) {
-		t.Errorf("legacy first-mount with volume_options mismatch:\n  got: %v\n want: %v", args, want)
-	}
-	for _, a := range args {
-		if a == "--volume-options" {
-			t.Errorf("legacy first-mount must not emit --volume-options flag (carried in colon spec): %v", args)
+	for host, want := range cases {
+		if got := legacyStorageEntryName(host); got != want {
+			t.Errorf("legacyStorageEntryName(%q) = %q, want %q", host, got, want)
 		}
+	}
+}
+
+func TestStorageMountLegacyFirstMountCommands(t *testing.T) {
+	t.Parallel()
+	const legacy = "legacy-a62ee098ef"
+	base := StorageMountTask{App: "test-app", HostDir: "/var/data", ContainerDir: "/app/storage"}
+	cases := []struct {
+		name        string
+		edit        func(*StorageMountTask)
+		attachments []reportAttachment
+		want        []string
+	}{
+		{
+			name: "plain",
+			want: []string{"--quiet storage:mount test-app /var/data:/app/storage"},
+		},
+		{
+			name: "volume options ride in the colon spec",
+			edit: func(t *StorageMountTask) { t.VolumeOptions = "Z" },
+			want: []string{"--quiet storage:mount test-app /var/data:/app/storage:Z"},
+		},
+		{
+			name: "readonly rides in the colon spec",
+			edit: func(t *StorageMountTask) { t.Readonly = true },
+			want: []string{"--quiet storage:mount test-app /var/data:/app/storage:ro"},
+		},
+		{
+			name: "readonly and volume options",
+			edit: func(t *StorageMountTask) { t.Readonly = true; t.VolumeOptions = "Z" },
+			want: []string{"--quiet storage:mount test-app /var/data:/app/storage:ro,Z"},
+		},
+		{
+			name: "both phases listed need no upsert",
+			edit: func(t *StorageMountTask) { t.Phases = []string{"run", "deploy"} },
+			want: []string{"--quiet storage:mount test-app /var/data:/app/storage"},
+		},
+		{
+			name: "fields the colon form drops are upserted",
+			edit: func(t *StorageMountTask) {
+				t.Phases = []string{"run"}
+				t.Subpath = "sub"
+				t.VolumeChown = "herokuish"
+				t.Readonly = true
+			},
+			want: []string{
+				"--quiet storage:mount test-app /var/data:/app/storage:ro",
+				"--quiet storage:mount test-app " + legacy + " --container-dir /app/storage --phase run --volume-subpath sub --volume-readonly --volume-chown herokuish",
+			},
+		},
+		{
+			name: "a named process type moves off _default_",
+			edit: func(t *StorageMountTask) { t.ProcessType = "web" },
+			want: []string{
+				"--quiet storage:mount test-app /var/data:/app/storage",
+				"--quiet storage:unmount test-app " + legacy + " --container-dir /app/storage",
+				"--quiet storage:mount test-app " + legacy + " --container-dir /app/storage --process-type web",
+			},
+		},
+		{
+			name:        "an already registered entry skips the colon form",
+			edit:        func(t *StorageMountTask) { t.ProcessType = "web" },
+			attachments: []reportAttachment{{EntryName: legacy, HostPath: "/var/data", ContainerPath: "/app/storage", ProcessType: "worker"}},
+			want:        []string{"--quiet storage:mount test-app " + legacy + " --container-dir /app/storage --process-type web"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			task := base
+			if tc.edit != nil {
+				tc.edit(&task)
+			}
+			if got := firstMountCommands(task, tc.attachments); !equalStrings(got, tc.want) {
+				t.Errorf("first mount mismatch:\n  got: %v\n want: %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -1141,6 +1201,170 @@ func TestStorageMountSinglePlanRespectsProcessType(t *testing.T) {
 	task.ProcessType = ""
 	if plan := task.Plan(ctx); !plan.InSync {
 		t.Errorf("expected absent in the _default_ scope to leave the web mount alone, got %v", plan.Mutations)
+	}
+}
+
+func TestStorageMountSingleDetectsFieldDrift(t *testing.T) {
+	t.Parallel()
+	base := reportAttachment{EntryName: "data", HostPath: "/h/data", ContainerPath: "/app/storage"}
+	cases := []struct {
+		name   string
+		report func(a *reportAttachment)
+		recipe func(t *StorageMountTask)
+		reason string
+		want   string
+	}{
+		{
+			name:   "phases",
+			report: func(a *reportAttachment) { a.Phases = []string{"deploy"} },
+			reason: `phases drift (have "deploy", want "deploy,run")`,
+			want:   "--quiet storage:mount node-js-app data --container-dir /app/storage",
+		},
+		{
+			name:   "subpath",
+			recipe: func(t *StorageMountTask) { t.Subpath = "new" },
+			report: func(a *reportAttachment) { a.Subpath = "old" },
+			reason: `subpath drift (have "old", want "new")`,
+			want:   "--quiet storage:mount node-js-app data --container-dir /app/storage --volume-subpath new",
+		},
+		{
+			name:   "readonly set",
+			recipe: func(t *StorageMountTask) { t.Readonly = true },
+			reason: "readonly drift (have false, want true)",
+			want:   "--quiet storage:mount node-js-app data --container-dir /app/storage --volume-readonly",
+		},
+		{
+			name:   "readonly cleared",
+			report: func(a *reportAttachment) { a.Readonly = true },
+			reason: "readonly drift (have true, want false)",
+			want:   "--quiet storage:mount node-js-app data --container-dir /app/storage",
+		},
+		{
+			name:   "volume_chown",
+			recipe: func(t *StorageMountTask) { t.VolumeChown = "herokuish" },
+			reason: `volume_chown drift (have "", want "herokuish")`,
+			want:   "--quiet storage:mount node-js-app data --container-dir /app/storage --volume-chown herokuish",
+		},
+		{
+			name: "every drifted field is named",
+			recipe: func(t *StorageMountTask) {
+				t.Phases = []string{"run"}
+				t.VolumeOptions = "Z"
+			},
+			report: func(a *reportAttachment) { a.Subpath = "old" },
+			reason: `phases drift (have "deploy,run", want "run"); subpath drift (have "old", want ""); volume_options drift (have "", want "Z")`,
+			want:   "--quiet storage:mount node-js-app data --container-dir /app/storage --phase run --volume-options Z",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			a := base
+			if tc.report != nil {
+				tc.report(&a)
+			}
+			task := StorageMountTask{App: "node-js-app", EntryName: "data", ContainerDir: "/app/storage", State: StatePresent}
+			if tc.recipe != nil {
+				tc.recipe(&task)
+			}
+			plan, calls := applyStorageMounts(t, task, storageReport(a))
+			if plan.InSync {
+				t.Fatal("expected drift")
+			}
+			if plan.Status != PlanStatusModify {
+				t.Errorf("expected Modify, got %q", plan.Status)
+			}
+			if plan.Reason != tc.reason {
+				t.Errorf("reason = %q, want %q", plan.Reason, tc.reason)
+			}
+			if want := []string{"remount data at /app/storage on node-js-app"}; !equalStrings(plan.Mutations, want) {
+				t.Errorf("mutations = %v, want %v", plan.Mutations, want)
+			}
+			if len(calls) != 1 || calls[0] != tc.want {
+				t.Errorf("calls = %v, want [%s]", calls, tc.want)
+			}
+		})
+	}
+}
+
+func TestStorageMountSingleInSyncWithEveryField(t *testing.T) {
+	t.Parallel()
+	report := storageReport(reportAttachment{
+		EntryName: "legacy-a62ee098ef", HostPath: "/var/data", ContainerPath: "/app/storage", ProcessType: "web",
+		Phases: []string{"deploy", "run"}, Subpath: "s", Readonly: true, VolumeChown: "herokuish", VolumeOptions: "Z",
+	})
+	task := StorageMountTask{
+		App: "node-js-app", HostDir: "/var/data", ContainerDir: "/app/storage", ProcessType: "web",
+		Phases: []string{"run", "deploy"}, Subpath: "s", Readonly: true, VolumeChown: "herokuish", VolumeOptions: "Z",
+		State: StatePresent,
+	}
+	plan, calls := applyStorageMounts(t, task, report)
+	if !plan.InSync {
+		t.Errorf("expected in sync, got %q", plan.Reason)
+	}
+	if len(calls) != 0 {
+		t.Errorf("expected no commands, got %v", calls)
+	}
+}
+
+func TestStorageMountSingleAbsentStaysInItsScope(t *testing.T) {
+	t.Parallel()
+	web := reportAttachment{EntryName: "data", HostPath: "/h/data", ContainerPath: "/app/storage", ProcessType: "web"}
+	worker := web
+	worker.ProcessType = "worker"
+	webOther := reportAttachment{EntryName: "cache", HostPath: "/h/cache", ContainerPath: "/app/cache", ProcessType: "web", Subpath: "c"}
+	task := StorageMountTask{App: "node-js-app", EntryName: "data", ContainerDir: "/app/storage", ProcessType: "web", State: StateAbsent}
+
+	cases := []struct {
+		name   string
+		report string
+		want   string
+	}{
+		{
+			name:   "sole holder uses the entry unmount",
+			report: storageReport(web, webOther),
+			want:   "--quiet storage:unmount node-js-app data --container-dir /app/storage",
+		},
+		{
+			name:   "shared path empties the scope",
+			report: storageReport(web, worker),
+			want:   "--quiet storage:unmount node-js-app --all --process-type web",
+		},
+		{
+			name:   "shared path rewrites the rest of the scope",
+			report: storageReport(web, worker, webOther),
+			want:   "--quiet storage:mount node-js-app cache:/app/cache:volume-subpath=c --replace --process-type web",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			plan, calls := applyStorageMounts(t, task, tc.report)
+			if plan.InSync || plan.Status != PlanStatusDestroy {
+				t.Fatalf("expected a destroy, got in_sync=%v status=%q", plan.InSync, plan.Status)
+			}
+			if want := []string{"unmount data at /app/storage on node-js-app"}; !equalStrings(plan.Mutations, want) {
+				t.Errorf("mutations = %v, want %v", plan.Mutations, want)
+			}
+			if len(calls) != 1 || calls[0] != tc.want {
+				t.Errorf("calls = %v, want [%s]", calls, tc.want)
+			}
+		})
+	}
+}
+
+func TestStorageMountSingleAbsentUncarriableScope(t *testing.T) {
+	t.Parallel()
+	report := storageReport(
+		reportAttachment{EntryName: "data", HostPath: "/h/data", ContainerPath: "/app/storage", ProcessType: "web"},
+		reportAttachment{EntryName: "data", HostPath: "/h/data", ContainerPath: "/app/storage", ProcessType: "worker"},
+		reportAttachment{EntryName: "nfs", ContainerPath: "/app/nfs", ProcessType: "web", VolumeOptions: "addr=10.0.0.1"},
+	)
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{storageReportKey: report}))
+	task := StorageMountTask{App: "node-js-app", EntryName: "data", ContainerDir: "/app/storage", ProcessType: "web", State: StateAbsent}
+	plan := task.Plan(ctx)
+	if plan.Error == nil || !strings.Contains(plan.Error.Error(), "another process type also mounts data at /app/storage") {
+		t.Errorf("expected an uncarriable-scope error, got %v", plan.Error)
 	}
 }
 

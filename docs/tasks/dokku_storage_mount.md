@@ -10,7 +10,7 @@ Supported.
 
 ## Probe support
 
-Partial - the mounts list is probed in full; the single-mount form probes the mount source, container path, process type, and volume options, while its phases, subpath, readonly, and volume_chown apply at mount time and are not drift-detected.
+Supported.
 
 ## Identity
 
