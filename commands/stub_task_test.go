@@ -127,7 +127,7 @@ func (t StubTask) Execute(ctx context.Context) tasks.TaskOutputState {
 		}
 	}
 	return tasks.TaskOutputState{
-		Changed:      fixture.Changed,
+		Changed:      fixture.Changed && !fixture.ExecuteInSync,
 		DesiredState: tasks.StatePresent,
 		State:        tasks.StatePresent,
 		Stdout:       fixture.Stdout,
@@ -148,6 +148,10 @@ type StubFixture struct {
 	Stderr        string
 	ExitCode      int
 	MismatchState bool
+	// ExecuteInSync makes Execute report no change even when Plan reports
+	// drift. It stands in for a server someone else reconciled between a
+	// saved plan's up-front check and the task itself running.
+	ExecuteInSync bool
 	// Warnings are echoed onto the drift PlanResult (plan mode) and the
 	// success TaskOutputState (apply mode) so tests can drive the run loops'
 	// warning drain. #353.

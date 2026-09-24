@@ -381,11 +381,85 @@ optimistically predicting `[+] create` for state it never actually read.
 | `--host <user@host:port>` | Plan against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
+| `--output <path>` | Save the plan to a file for `docket apply --plan`. Written `0600`, and not written at all when the plan has errors. Not valid with `-` or `--list-tasks`. See [saved plans](#saved-plans). |
+| `--force` | Overwrite an existing `--output` file. |
 
 ```bash
 # CI gate: fail the job if any task would change the server.
 docket plan --detailed-exitcode || exit $?
 ```
+
+### Saved plans
+
+`docket plan --output plan.json` saves the plan, and `docket apply --plan plan.json` applies it
+later. This is the workflow for reviewing a change before it runs: plan in one step, have someone
+approve what it printed, and apply that plan in another.
+
+```bash
+docket plan --output plan.json --vars-file prod.yml
+# ...review the output...
+docket apply --plan plan.json
+```
+
+The plan file freezes everything that decides what `apply` does:
+
+- The recipe text, so a recipe read from a URL or stdin is not read again, and a recipe edited after
+  the plan was saved does not change what is applied.
+- Every input's resolved value, whether it came from a default, a flag, or a `--vars-file`.
+- `--play`, `--tags`, and `--skip-tags`.
+- The target: `--host`, `--sudo`, `--accept-new-host-keys`, and the `DOKKU_HOST`, `DOKKU_SUDO`,
+  and `DOKKU_SSH_ACCEPT_NEW_HOST_KEYS` they fall back to. Under `--plan` those variables are ignored.
+  A play's own `host:` still comes from the saved recipe.
+- The plan itself: every play and task, what each would change, and the commands it would run.
+
+Because all of that comes from the file, `apply --plan` refuses the flags that would contradict it:
+`--tasks`, a positional recipe, `--tasks-format`, `--vars-file`, input flags, `--play`, `--tags`,
+`--skip-tags`, `--host`, `--sudo`, `--accept-new-host-keys`, `--start-at-task`, and
+`--list-tasks`. `--json`, `--verbose`, `--fail-fast`, and `--detailed-exitcode` work as usual.
+
+**The saved plan is checked before anything runs.** `apply --plan` first probes every task again,
+exactly as `plan` does, and compares the result with what the file recorded. If anything differs -
+the server changed, a probe failed, or a local file the recipe reads now says something else - it
+refuses with `saved plan is stale`, lists what moved, and exits `1` without running any task:
+
+```text
+saved plan is stale: plan.json no longer matches what docket would do; run docket plan again
+  tasks/ensure api: planned "+ app missing", now "ok"
+```
+
+This means every task is probed twice: once for the check, and once more as it runs. Terraform only
+notices a stale plan when its own state file has moved on. docket has no state file, so it asks the
+server directly, which also catches changes made outside docket.
+
+**After the check, `apply` behaves as it always does.** Each task reads the server again right before
+it acts, and decides what to do from what it finds at that moment. So a saved plan guarantees that
+the server matched what was reviewed when `apply` started, and that `apply` then brought the server
+to what the recipe describes. It does not guarantee that the exact commands in the plan ran:
+
+- A change someone else makes after the check is absorbed rather than reported. If the app already
+  exists by the time its task runs, the task reports `[ok]`; if a config key was changed, it is set
+  back.
+- A change that breaks a later task - the app deleted halfway through - fails that task the normal
+  way, through `--fail-fast`, `rescue`, and `ignore_errors`.
+- As with every `apply`, a change that lands between one task's read and its own write goes unseen.
+
+A few more rules:
+
+- **The file holds secrets in the clear.** The recipe and every input value are stored as-is,
+  `sensitive: true` inputs included, so the plan can be applied without them. It is written `0600`,
+  and `apply --plan` warns on stderr when the file is readable by other users. The output `plan`
+  prints stays masked as usual.
+- **Files the recipe reads from disk are read again at apply time.** Only the recipe itself is
+  frozen. A change to such a file shows up as a stale plan only when it changes what a task would do.
+- **A plan is applied only by the docket version that wrote it.** What a task reads and how it
+  applies can change between releases, so `apply --plan` refuses a plan written by another version.
+  Run `plan` again after upgrading.
+- **An existing file is kept unless `--force` is passed**, and that check happens before anything is
+  probed.
+- **A plan with errors is not saved.** When a probe fails, `plan` prints
+  `plan has errors; not writing plan.json` and exits `1`.
+
+The file is JSON, described by [`schemas/plan-v1.schema.json`](schemas/plan-v1.schema.json).
 
 ## docket apply
 
@@ -442,6 +516,7 @@ recipe cannot be loaded or a `when:` fails to evaluate, and `0` otherwise.
 | `--host <user@host:port>` | Apply against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
+| `--plan <path>` | Apply a plan saved by `docket plan --output`, after checking the server still matches it. Takes the recipe, inputs, filters and target from the file. See [saved plans](#saved-plans). |
 
 A multi-command task renders one continuation line per invocation under `--verbose`:
 

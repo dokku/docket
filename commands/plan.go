@@ -67,7 +67,14 @@ type PlanCommand struct {
 	varsFiles         []string
 	play              string
 	listTasks         bool
+	output            string
+	force             bool
 	arguments         map[string]*Argument
+
+	// Version is the running docket's version, stamped into a saved plan so
+	// apply can refuse one a different build wrote. Populated from main.go;
+	// empty falls back to CLI_VERSION, which cli-skeleton sets at startup.
+	Version string
 
 	// tasksData caches the recipe bytes read while building the FlagSet (to
 	// pre-register input flags). Run reuses them instead of reading the
@@ -93,12 +100,13 @@ func (c *PlanCommand) Help() string {
 func (c *PlanCommand) Examples() map[string]string {
 	appName := os.Getenv("CLI_APP_NAME")
 	return map[string]string{
-		"Plan tasks from the default tasks.yml": fmt.Sprintf("%s %s", appName, c.Name()),
-		"Plan tasks from a specific YAML file":  fmt.Sprintf("%s %s --tasks path/to/task.yml", appName, c.Name()),
-		"Plan tasks from a JSON5 file":          fmt.Sprintf("%s %s --tasks path/to/tasks.json", appName, c.Name()),
-		"Plan tasks from a remote URL":          fmt.Sprintf("%s %s --tasks http://dokku.com/docket/example.yml", appName, c.Name()),
-		"Plan a recipe piped in on stdin":       fmt.Sprintf("cat tasks.yml | %s %s -", appName, c.Name()),
-		"Override a task input":                 fmt.Sprintf("%s %s --name lollipop", appName, c.Name()),
+		"Plan tasks from the default tasks.yml":  fmt.Sprintf("%s %s", appName, c.Name()),
+		"Plan tasks from a specific YAML file":   fmt.Sprintf("%s %s --tasks path/to/task.yml", appName, c.Name()),
+		"Plan tasks from a JSON5 file":           fmt.Sprintf("%s %s --tasks path/to/tasks.json", appName, c.Name()),
+		"Plan tasks from a remote URL":           fmt.Sprintf("%s %s --tasks http://dokku.com/docket/example.yml", appName, c.Name()),
+		"Plan a recipe piped in on stdin":        fmt.Sprintf("cat tasks.yml | %s %s -", appName, c.Name()),
+		"Override a task input":                  fmt.Sprintf("%s %s --name lollipop", appName, c.Name()),
+		"Save the plan for a later apply --plan": fmt.Sprintf("%s %s --output plan.json", appName, c.Name()),
 	}
 }
 
@@ -128,6 +136,8 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a file in any recipe format ("+recipeFormatList()+"; repeatable; later files override earlier; CLI --name=value flags always win). The format follows the extension, defaulting to YAML.")
 	f.StringVar(&c.play, "play", "", "plan only the play with this name (matches the play's `name:` field; auto-named plays use `play #N`)")
 	f.BoolVar(&c.listTasks, "list-tasks", false, "print the resolved task plan and exit without contacting the server. Honors --play / --tags / --skip-tags and shows expanded loop iterations and [skipped] markers for when:-skipped tasks.")
+	f.StringVar(&c.output, "output", "", "save the plan to this file for `docket apply --plan`. The file holds the recipe and every resolved input, secrets included, and is written 0600. Not written when the plan has errors.")
+	f.BoolVar(&c.force, "force", false, "overwrite an existing --output file")
 
 	data, format, source := preloadRecipeForFlags(c.baseDir(), c.argv(), true, c.stdinSource())
 	if data == nil {
@@ -168,6 +178,8 @@ func (c *PlanCommand) AutocompleteFlags() complete.Flags {
 			"--vars-file":            complete.PredictFiles("*"),
 			"--play":                 complete.PredictAnything,
 			"--list-tasks":           complete.PredictNothing,
+			"--output":               complete.PredictFiles("*"),
+			"--force":                complete.PredictNothing,
 		},
 	)
 }
@@ -192,6 +204,11 @@ func (c *PlanCommand) Run(args []string) int {
 	if err := flags.Parse(args); err != nil {
 		c.Ui.Error(err.Error())
 		c.Ui.Error(command.CommandErrorText(c))
+		return 1
+	}
+
+	if err := c.checkOutputFlags(flags); err != nil {
+		c.Ui.Error(err.Error())
 		return 1
 	}
 
@@ -311,11 +328,116 @@ func (c *PlanCommand) Run(args []string) int {
 	defer closeControlMasters(target, plays)
 
 	emitter := c.newEmitter(masker)
+	// --output records the plan's events as it streams them, so the saved
+	// fingerprint is exactly what this run showed.
+	var recorder *recordingEmitter
+	if c.output != "" {
+		recorder = newRecordingEmitter(emitter, masker)
+		emitter = recorder
+	}
+
+	walk := runPlanWalk(ctx, planWalkOptions{
+		plays:         plays,
+		target:        target,
+		inputCtx:      inputCtx,
+		userSet:       userSet,
+		fileLevelKeys: fileLevelKeys,
+		tags:          c.tags,
+		skipTags:      c.skipTags,
+		emitter:       emitter,
+	})
+
+	// An interrupt that lands mid-probe also fails that task, so the loop
+	// leaves through the error path rather than its own cancellation check;
+	// asking here catches every route out. See ApplyCommand.runExit.
+	if ctx.Err() != nil {
+		c.Ui.Error("run cancelled")
+		return 1
+	}
+	if c.output != "" {
+		// A plan that could not read every task is not a plan anyone can
+		// review, so there is nothing to save; terraform refuses the same way.
+		if walk.hasError {
+			c.Ui.Error(fmt.Sprintf("plan has errors; not writing %s", c.output))
+			return 1
+		}
+		saved := newSavedPlan(docketVersion(c.Version), recipe, c.arguments, userSet, c.play, c.tags, c.skipTags, target, recorder.events)
+		if err := writeSavedPlan(inDir(c.baseDir(), c.output), saved, c.Ui.Warn); err != nil {
+			c.Ui.Error(fmt.Sprintf("could not write %s: %v", c.output, err))
+			return 1
+		}
+		// stderr, so a --json stream on stdout stays nothing but events.
+		c.Ui.Warn(fmt.Sprintf("Saved plan to %s", c.output))
+	}
+	if walk.hasError {
+		return 1
+	}
+	if c.detailedExitCode && walk.hasDrift {
+		return 2
+	}
+	return 0
+}
+
+// checkOutputFlags rejects the --output / --force combinations that cannot be
+// honoured, before anything is read or probed. The existence check runs here
+// rather than at write time so a missing --force costs no server round trips.
+func (c *PlanCommand) checkOutputFlags(flags *flag.FlagSet) error {
+	if flags.Changed("force") && !flags.Changed("output") {
+		return fmt.Errorf("--force only applies to --output")
+	}
+	if !flags.Changed("output") {
+		return nil
+	}
+	switch {
+	case c.output == "":
+		return fmt.Errorf("--output needs a path")
+	case c.output == taskFileStdin:
+		return fmt.Errorf("--output cannot be -; stdout carries the plan output, so name a file instead")
+	case c.listTasks:
+		return fmt.Errorf("--output cannot be used with --list-tasks; --list-tasks probes nothing, so there is no plan to save")
+	}
+	exists, err := pathExists(c.baseDir(), c.output)
+	if err != nil {
+		return err
+	}
+	if exists && !c.force {
+		return fmt.Errorf("file %s already exists; pass --force to overwrite", c.output)
+	}
+	return nil
+}
+
+// planWalkOptions is everything runPlanWalk needs from the command that
+// resolved the recipe.
+type planWalkOptions struct {
+	plays         []*tasks.Play
+	target        subprocess.Target
+	inputCtx      map[string]interface{}
+	userSet       map[string]bool
+	fileLevelKeys map[string]bool
+	tags          []string
+	skipTags      []string
+	emitter       EventEmitter
+}
+
+// planWalkResult is the run-level verdict of a plan walk.
+type planWalkResult struct {
+	counts   PlanCounts
+	hasError bool
+	hasDrift bool
+}
+
+// runPlanWalk probes every play and task, emitting one event per play and
+// task and a closing summary. It is the whole of `docket plan` once the recipe
+// is resolved, and it is also how `docket apply --plan` checks a saved plan
+// before running anything: one walk for both, so what plan printed and what
+// apply compares can never drift apart.
+func runPlanWalk(ctx context.Context, o planWalkOptions) planWalkResult {
+	emitter := o.emitter
 	start := time.Now()
 	counts := PlanCounts{}
 	hasError := false
 	hasDrift := false
-	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(inputCtx, fileLevelKeys, userSet))
+	playWhenExprCtx := buildEnvelopeExprContext(buildPlayWhenContext(o.inputCtx, o.fileLevelKeys, o.userSet))
 	// registered + loopAccum carry the same role as in apply: predicates
 	// in plan mode see `.registered.<name>` based on the
 	// post-override synthesized TaskOutputState of prior tasks.
@@ -325,7 +447,7 @@ func (c *PlanCommand) Run(args []string) int {
 	loopAccum := loopRegisterAccumulator{}
 
 playLoop:
-	for _, play := range plays {
+	for _, play := range o.plays {
 		// Checked per play as well as per task so a cancelled run does not
 		// print the header of a play whose tasks will never be probed.
 		if ctx.Err() != nil {
@@ -356,12 +478,12 @@ playLoop:
 		// target. Resolving here and deriving a child context is the whole
 		// of the per-play routing: the tasks below read the target off the
 		// context they are handed and need to know nothing about plays.
-		playTarget := play.ResolveTarget(target)
+		playTarget := play.ResolveTarget(o.target)
 		playCtx := subprocess.ContextWithTarget(ctx, playTarget)
 
 		emitter.PlayStart(play.Name, playTarget.Host)
 
-		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(inputCtx, play.Inputs, userSet))
+		playExprCtx := buildEnvelopeExprContext(tasks.BuildPerPlayContext(o.inputCtx, play.Inputs, o.userSet))
 
 		pc := &planContext{
 			ctx:         playCtx,
@@ -373,7 +495,7 @@ playLoop:
 			counts:      &counts,
 		}
 
-		for _, name := range tasks.FilterByTags(play.Tasks, c.tags, c.skipTags) {
+		for _, name := range tasks.FilterByTags(play.Tasks, o.tags, o.skipTags) {
 			if ctx.Err() != nil {
 				break playLoop
 			}
@@ -389,21 +511,7 @@ playLoop:
 	}
 
 	emitter.PlanSummary(counts, time.Since(start))
-
-	// An interrupt that lands mid-probe also fails that task, so the loop
-	// leaves through the error path rather than its own cancellation check;
-	// asking here catches every route out. See ApplyCommand.runExit.
-	if ctx.Err() != nil {
-		c.Ui.Error("run cancelled")
-		return 1
-	}
-	if hasError {
-		return 1
-	}
-	if c.detailedExitCode && hasDrift {
-		return 2
-	}
-	return 0
+	return planWalkResult{counts: counts, hasError: hasError, hasDrift: hasDrift}
 }
 
 // newEmitter constructs the EventEmitter for this run. --json builds a

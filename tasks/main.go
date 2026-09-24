@@ -398,6 +398,9 @@ var ReservedInputNames = map[string]bool{
 	"accept-new-host-keys": true,
 	"detailed-exitcode":    true,
 	"strict":               true,
+	"output":               true,
+	"force":                true,
+	"plan":                 true,
 }
 
 // envelopeAllowlistKeys are the cross-cutting envelope keys the loader

@@ -196,6 +196,11 @@ its schema - [`schemas/task-catalog-v1.schema.json`](schemas/task-catalog-v1.sch
 validates the whole document at once. Its `version` is its own, independent of the `version` on
 the events above.
 
+The [saved plan](command-reference.md#saved-plans) `docket plan --output` writes is a whole document
+too, described by [`schemas/plan-v1.schema.json`](schemas/plan-v1.schema.json). Its `events` array
+records the same plays and tasks the `plan --json` stream reports, without timing or warnings, and
+masked the same way - but its `inputs` hold every resolved value in the clear.
+
 `--list-tasks --json` has its own schema because it is a different stream, not a subset of the run
 stream: no task executes, no server is contacted, its per-task event is `list_task` rather than
 `task`, there is no `summary`, and its `play_skipped` carries `play` where the run stream's carries
