@@ -15,17 +15,13 @@ type fakeTask struct {
 	SecretMap map[string]string
 }
 
-func (f *fakeTask) Doc() string                  { return "" }
-func (f *fakeTask) Examples() ([]Doc, error)     { return nil, nil }
-func (f *fakeTask) Plan(ctx context.Context) PlanResult             { return PlanResult{} }
-func (f *fakeTask) Execute(ctx context.Context) TaskOutputState     { return TaskOutputState{} }
+func (f *fakeTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
+func (f *fakeTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
 
 type taggedSliceTask struct {
 	Tokens []string `sensitive:"true"`
 }
 
-func (t *taggedSliceTask) Doc() string              { return "" }
-func (t *taggedSliceTask) Examples() ([]Doc, error) { return nil, nil }
 func (t *taggedSliceTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
 func (t *taggedSliceTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
 
@@ -33,8 +29,6 @@ type taggedMapTask struct {
 	Headers map[string]string `sensitive:"true"`
 }
 
-func (t *taggedMapTask) Doc() string              { return "" }
-func (t *taggedMapTask) Examples() ([]Doc, error) { return nil, nil }
 func (t *taggedMapTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
 func (t *taggedMapTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
 
@@ -44,8 +38,6 @@ type nestedTask struct {
 	}
 }
 
-func (n *nestedTask) Doc() string              { return "" }
-func (n *nestedTask) Examples() ([]Doc, error) { return nil, nil }
 func (n *nestedTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
 func (n *nestedTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
 
@@ -54,10 +46,8 @@ type overrideTask struct {
 	Map   map[string]string
 }
 
-func (o *overrideTask) Doc() string                { return "" }
-func (o *overrideTask) Examples() ([]Doc, error)   { return nil, nil }
-func (o *overrideTask) Plan(ctx context.Context) PlanResult           { return PlanResult{} }
-func (o *overrideTask) Execute(ctx context.Context) TaskOutputState   { return TaskOutputState{} }
+func (o *overrideTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
+func (o *overrideTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
 func (o *overrideTask) SensitiveValues() []string {
 	out := make([]string, 0, len(o.Map))
 	for _, v := range o.Map {

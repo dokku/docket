@@ -35,7 +35,7 @@ type ProbeSupport struct {
 // ProbeDocer is the interface a task implements to declare whether Plan() can
 // read its current state. Every registered task is expected to implement it - a
 // coverage test enforces that so no task ships without a probe decision - but
-// it is modelled as an optional interface to match ExportDocer,
+// it is modelled as an optional interface to match Documented, ExportDocer,
 // DeprecationDocer and RequirementsDocer. The docs generator renders the result
 // in a Probe support section on the task's page, and `--list-tasks` marks the
 // tasks that will never converge.

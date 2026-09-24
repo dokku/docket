@@ -156,7 +156,7 @@ func TestIntegrationTaskExamples(t *testing.T) {
 				skipIfDockerLinkUnsupportedT(t)
 			}
 
-			examples, err := task.Examples()
+			examples, err := TaskExamples(task)
 			if err != nil {
 				t.Fatalf("Examples() returned error: %v", err)
 			}

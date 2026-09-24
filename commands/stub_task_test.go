@@ -37,8 +37,9 @@ type StubTaskExample struct {
 // GetName returns the name of the example
 func (e StubTaskExample) GetName() string { return e.Name }
 
-// Doc / Examples are not exercised by the apply / plan tests. They exist so
-// StubTask satisfies the Task interface.
+// Doc / Examples are not exercised by the apply / plan tests, and Task does not
+// require them. They are declared because every real task declares them and the
+// stub is registered, so `docket schema` describes it alongside the built-ins.
 func (t StubTask) Doc() string { return "stub task for tests" }
 
 func (t StubTask) Examples() ([]tasks.Doc, error) {

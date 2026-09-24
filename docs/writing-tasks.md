@@ -103,6 +103,11 @@ A few conventions to follow:
   `apply` and `plan` emit a one-time `warning` line above each deprecated task's result line.
   Keep the message short and name the replacement, e.g.
   `"use dokku_storage_entry instead; storage:ensure-directory has been deprecated"`.
+- Every task must also implement `Doc() string` and `Examples() ([]Doc, error)`, the optional
+  `Documented` interface. They are not part of `Task`, since running a task never needs them, but
+  they supply the Synopsis and Examples on the task's generated page and in
+  [`docket schema`](task-catalog.md). `TestEveryTaskIsDocumented` fails the build if a task ships
+  without them, with an empty `Doc()`, or with no examples.
 - Every task must implement `ExportSupport() ExportSupport`, declaring whether `docket export` can
   reconstruct it from a live server: `ExportSupported`, `ExportPartial`, or `ExportUnsupported`,
   with a `Caveat` explaining anything short of supported. The generator renders it in an Export

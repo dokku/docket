@@ -33,7 +33,7 @@ type ExportSupport struct {
 // ExportDocer is the interface a task implements to declare its export
 // support. Every registered task is expected to implement it - a coverage
 // test enforces that so no task ships without an export decision - but it is
-// modelled as an optional interface to match DeprecationDocer and
+// modelled as an optional interface to match Documented, DeprecationDocer and
 // RequirementsDocer. The docs generator renders the result in an Export
 // support section on the task's page.
 //

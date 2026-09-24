@@ -330,14 +330,10 @@ func planErr(err error) PlanResult {
 	return PlanResult{Status: PlanStatusError, Error: err}
 }
 
-// Task represents a task
+// Task represents a task. It is only what running a task needs; the synopsis
+// and examples a task documents itself with live on the optional Documented
+// interface.
 type Task interface {
-	// Doc returns the docblock for the task
-	Doc() string
-
-	// Examples returns the examples for the task
-	Examples() ([]Doc, error)
-
 	// Plan reports the drift the task would produce against the live server,
 	// without mutating it. Plan must never call mutating dokku commands.
 	//
