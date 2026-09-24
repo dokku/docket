@@ -157,7 +157,8 @@ func splitImageRef(ref string) (string, string) {
 }
 
 // linkedServiceDSNs returns the set of datastore DSNs that service links have
-// injected into an app's config, so the config exporter can omit them: the
+// injected into an app's config, so the config exporter can omit them and
+// dokku_config's set and clear states leave them in place: the
 // dokku_service_link task recreates those `<ALIAS>_URL` vars on apply (with the
 // new server's credentials), and re-exporting the stale value would clobber the
 // fresh one. Enumerates services, keeps those linked to the app, and reads each
@@ -185,4 +186,35 @@ func linkedServiceDSNs(ctx context.Context, app string) (map[string]bool, error)
 		}
 	}
 	return dsns, nil
+}
+
+// serviceDSNBody returns a DSN with its `scheme://` prefix removed, leaving the
+// credentials, host, port and database that identify the service instance.
+func serviceDSNBody(dsn string) string {
+	if i := strings.Index(dsn, "://"); i >= 0 {
+		return dsn[i+len("://"):]
+	}
+	return dsn
+}
+
+// isLinkedServiceValue reports whether a config value was written by a service
+// link, given the DSNs of the services linked to the app (see
+// linkedServiceDSNs). Dokku keeps no record of which key a link wrote; the
+// datastore plugins find a link's keys by value, treating any key whose value
+// contains the service URL as linked, and `<service>:unlink` removes exactly
+// those. This mirrors that rule with the scheme dropped from both sides: a link
+// renders the URL with the app's `<PLUGIN>_DATABASE_SCHEME` override when one
+// is set, and may append a `?querystring`, neither of which `<service>:info
+// --dsn` reflects. The body left carries the service's generated password and
+// its `dokku-<type>-<name>` host, so a DSN for an external database never
+// matches. An empty body never matches either, as it would otherwise claim
+// every value.
+func isLinkedServiceValue(value string, dsns map[string]bool) bool {
+	for dsn := range dsns {
+		body := serviceDSNBody(dsn)
+		if body != "" && strings.Contains(value, body) {
+			return true
+		}
+	}
+	return false
 }

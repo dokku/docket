@@ -464,6 +464,17 @@ command are built from the same slice and the declared order is the order the wo
 `docket export` emits an authoritative collection as `state: set`, so re-applying an export
 reproduces the exact collection rather than merging into whatever the target already holds.
 
+Sometimes the server stores entries in the collection that belong to something other than the
+recipe, and a whole-set command would remove them too. `dokku_config` is the case in point. The
+app's env file also holds the `<ALIAS>_URL` keys a service link wrote, `NO_VHOST` from
+`domains:disable`, and the git rev-env-var key dokku rewrites on every build. `config:import
+--replace` would wipe all of them. `configKeptKeys` in `tasks/config_task.go` draws that line. `set`
+passes the kept keys through the one `config:import` with their current values, and `clear`
+removes only the other keys, in one `config:unset`, because `config:clear` would take the kept keys
+with it. Export leaves out the same keys, so a round trip agrees with itself. A task with an
+ownership line like this should draw it in one helper that `set`, `clear` and the exporter all call,
+and offer a field (config's `preserve`) for keys the task cannot recognise on its own.
+
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
