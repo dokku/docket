@@ -78,8 +78,31 @@ teardown() {
   assert_failure
   assert_output --partial "dokku_config[app=docket-nonexistent-xyz]"
   assert_output --partial "not found on server"
+  # The app is never listed, so its failed read must not leak out as a warning.
+  refute_output --partial "warning:"
   run test -f "$BATS_TEST_TMPDIR/tasks.yml"
   assert_failure
+}
+
+@test "docket export --resource dokku_app fails on an app that does not exist" {
+  require_dokku
+  run "$(docket_bin)" export --resource 'dokku_app[app=docket-nonexistent-xyz]' --output "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_failure
+  assert_output --partial "dokku_app[app=docket-nonexistent-xyz]"
+  assert_output --partial "not found on server"
+  run test -f "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_failure
+}
+
+@test "docket export --resource dokku_app exports an app that exists" {
+  require_dokku
+  dokku apps:create docket-test-export
+  run "$(docket_bin)" export --resource 'dokku_app[app=docket-test-export]' --output "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
+  run cat "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
+  assert_output --partial "dokku_app:"
+  assert_output --partial "docket-test-export"
 }
 
 @test "docket export --app reports the app count without the global play" {

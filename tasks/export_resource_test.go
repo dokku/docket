@@ -2,7 +2,10 @@ package tasks
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dokku/docket/subprocess"
@@ -261,5 +264,240 @@ func TestExportResourceGlobalAddressSurvivesAppNarrowing(t *testing.T) {
 	// resource, so no app play should be emitted at all.
 	if strings.Contains(string(recipe), "name: app-one") {
 		t.Errorf("a global-only address must not emit app plays; got:\n%s", recipe)
+	}
+}
+
+// pinnedRunner answers from responses, except that any command naming one of
+// the missing apps fails the way dokku does for an app that does not exist - a
+// completed command with a non-zero exit - including `apps:exists`. It records
+// every command it sees so a test can assert which round trips were made.
+type pinnedRunner struct {
+	responses map[string]string
+	missing   map[string]bool
+
+	mu    sync.Mutex
+	calls []string
+}
+
+func (r *pinnedRunner) run(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	args := strings.Join(in.Args, " ")
+	r.mu.Lock()
+	r.calls = append(r.calls, args)
+	r.mu.Unlock()
+	for _, arg := range in.Args {
+		if r.missing[arg] {
+			resp := subprocess.ExecCommandResponse{ExitCode: 1, Stderr: fmt.Sprintf(" !     App %s does not exist", arg)}
+			return resp, &subprocess.ExecError{Response: resp, Err: fmt.Errorf("App %s does not exist", arg), Ran: true}
+		}
+	}
+	return subprocess.ExecCommandResponse{Stdout: r.responses[args]}, nil
+}
+
+// count returns how many recorded commands contain substr.
+func (r *pinnedRunner) count(substr string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, call := range r.calls {
+		if strings.Contains(call, substr) {
+			n++
+		}
+	}
+	return n
+}
+
+// exportPinned runs ExportRecipe restricted to addresses against runner and
+// returns the result.
+func exportPinned(t *testing.T, runner *pinnedRunner, addresses ...string) *ExportResult {
+	t.Helper()
+	selectors, err := ParseResourceSelectors(addresses)
+	if err != nil {
+		t.Fatalf("ParseResourceSelectors(%v): %v", addresses, err)
+	}
+	ctx := subprocess.ContextWithRunner(testCtx(), runner.run)
+	res, err := ExportRecipe(ctx, ExportOptions{Resources: selectors, Inline: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	return res
+}
+
+// TestExportResourcePinnedSkipsAppsList covers #567: an address that pins its
+// app already says which app to read, so the export neither lists every app on
+// the server nor probes the one it was given when its read succeeds.
+func TestExportResourcePinnedSkipsAppsList(t *testing.T) {
+	t.Parallel()
+	runner := &pinnedRunner{responses: exportFixture()}
+
+	res := exportPinned(t, runner, "dokku_config[app=app-one]")
+
+	if n := runner.count("apps:list"); n != 0 {
+		t.Errorf("apps:list ran %d times, want 0", n)
+	}
+	if n := runner.count("apps:exists"); n != 0 {
+		t.Errorf("apps:exists ran %d times, want 0", n)
+	}
+	if len(res.Plays()) != 1 || res.Plays()[0].Name != "app-one" {
+		t.Errorf("plays = %+v, want one app-one play", res.Plays())
+	}
+	if len(res.Report.MissingResources) > 0 {
+		t.Errorf("unexpected unmatched addresses: %v", res.Report.MissingResources)
+	}
+}
+
+// TestExportResourcePinnedMissingAppReportsAddress asserts a pinned app that
+// does not exist comes back the way it did when apps:list filtered it out: as
+// the address the user typed, with no play and none of the warnings its failed
+// reads raised.
+func TestExportResourcePinnedMissingAppReportsAddress(t *testing.T) {
+	t.Parallel()
+	runner := &pinnedRunner{responses: exportFixture(), missing: map[string]bool{"ghost": true}}
+
+	res := exportPinned(t, runner, "dokku_config[app=ghost]")
+
+	if got := res.Report.MissingResources; len(got) != 1 || got[0] != "dokku_config[app=ghost]" {
+		t.Errorf("MissingResources = %v, want [dokku_config[app=ghost]]", got)
+	}
+	if len(res.Report.MissingApps) > 0 {
+		t.Errorf("MissingApps = %v, want none: the user named an address, not an app", res.Report.MissingApps)
+	}
+	if len(res.Report.Warnings) > 0 {
+		t.Errorf("Warnings = %v, want none for an app that does not exist", res.Report.Warnings)
+	}
+	if len(res.Plays()) > 0 {
+		t.Errorf("plays = %+v, want none", res.Plays())
+	}
+	if n := runner.count("apps:list"); n != 0 {
+		t.Errorf("apps:list ran %d times, want 0", n)
+	}
+	if n := runner.count("apps:exists ghost"); n != 1 {
+		t.Errorf("apps:exists ghost ran %d times, want 1", n)
+	}
+}
+
+// TestExportResourcePinnedAppAddressProbesExistence covers dokku_app, whose
+// exporter reads nothing and always returns a body: apps:exists is its read, so
+// a missing app is not exported as though it existed.
+func TestExportResourcePinnedAppAddressProbesExistence(t *testing.T) {
+	t.Parallel()
+	runner := &pinnedRunner{responses: exportFixture(), missing: map[string]bool{"ghost": true}}
+
+	res := exportPinned(t, runner, "dokku_app[app=app-one]", "dokku_app[app=ghost]")
+
+	if len(res.Plays()) != 1 || res.Plays()[0].Name != "app-one" {
+		t.Fatalf("plays = %+v, want one app-one play", res.Plays())
+	}
+	if _, ok := As[AppTask](res.Plays()[0].Tasks[0]); !ok {
+		t.Errorf("app-one play task = %+v, want a dokku_app body", res.Plays()[0].Tasks[0])
+	}
+	if got := res.Report.MissingResources; len(got) != 1 || got[0] != "dokku_app[app=ghost]" {
+		t.Errorf("MissingResources = %v, want [dokku_app[app=ghost]]", got)
+	}
+	if n := runner.count("apps:list"); n != 0 {
+		t.Errorf("apps:list ran %d times, want 0", n)
+	}
+	for _, app := range []string{"app-one", "ghost"} {
+		if n := runner.count("apps:exists " + app); n != 1 {
+			t.Errorf("apps:exists %s ran %d times, want 1", app, n)
+		}
+	}
+}
+
+// TestExportResourcePinnedKeepsWarningsForExistingApp asserts a read that fails
+// on an app that does exist still surfaces its warning: only a missing app's
+// failures are dropped.
+func TestExportResourcePinnedKeepsWarningsForExistingApp(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") == "--quiet config:export --format json app-one" {
+			resp := subprocess.ExecCommandResponse{ExitCode: 1}
+			return resp, &subprocess.ExecError{Response: resp, Err: errors.New("config plugin broke"), Ran: true}
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	})
+	selectors, err := ParseResourceSelectors([]string{"dokku_config[app=app-one]"})
+	if err != nil {
+		t.Fatalf("ParseResourceSelectors: %v", err)
+	}
+
+	res, err := ExportRecipe(ctx, ExportOptions{Resources: selectors, Inline: true})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+
+	if len(res.Report.Warnings) != 1 || !strings.Contains(res.Report.Warnings[0], "config plugin broke") {
+		t.Errorf("Warnings = %v, want the config:export failure", res.Report.Warnings)
+	}
+	if got := res.Report.MissingResources; len(got) != 1 || got[0] != "dokku_config[app=app-one]" {
+		t.Errorf("MissingResources = %v, want [dokku_config[app=app-one]]", got)
+	}
+}
+
+// TestExportResourcePinnedProbeFailureIsFatal asserts an apps:exists probe that
+// could not run fails the export, the way an apps:list that could not run
+// does, rather than reading as "the app does not exist".
+func TestExportResourcePinnedProbeFailureIsFatal(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Contains(strings.Join(in.Args, " "), "apps:exists") {
+			return subprocess.ExecCommandResponse{}, &subprocess.ExecError{Err: errors.New("dokku: not found")}
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	})
+	selectors, err := ParseResourceSelectors([]string{"dokku_app[app=app-one]"})
+	if err != nil {
+		t.Fatalf("ParseResourceSelectors: %v", err)
+	}
+
+	res, err := ExportRecipe(ctx, ExportOptions{Resources: selectors, Inline: true})
+	if err == nil {
+		t.Fatalf("ExportRecipe succeeded, want the probe failure")
+	}
+	if !strings.Contains(err.Error(), `checking app "app-one" exists`) {
+		t.Errorf("error = %q, want it to name the probe", err)
+	}
+	if res == nil {
+		t.Errorf("result is nil on error; the global play and its secrets must survive (#488)")
+	}
+}
+
+// TestExportResourceBareTypeStillListsApps asserts an address that pins no app
+// still enumerates every app: only pinned addresses skip apps:list.
+func TestExportResourceBareTypeStillListsApps(t *testing.T) {
+	t.Parallel()
+	runner := &pinnedRunner{responses: exportFixture()}
+
+	exportPinned(t, runner, "dokku_domains")
+
+	if n := runner.count("apps:list"); n != 1 {
+		t.Errorf("apps:list ran %d times, want 1", n)
+	}
+}
+
+// TestExportResourceMixedGlobalAndPinnedSkipsAppsList asserts a global address
+// beside a pinned one exports both without listing apps: a global address
+// never decides which apps are read.
+func TestExportResourceMixedGlobalAndPinnedSkipsAppsList(t *testing.T) {
+	t.Parallel()
+	responses := exportFixture()
+	responses["--quiet plugin:list --format json"] = `[
+		{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"","branch":""}
+	]`
+	runner := &pinnedRunner{responses: responses}
+
+	res := exportPinned(t, runner, "dokku_plugin[name=redis]", "dokku_config[app=app-one]")
+
+	var names []string
+	for _, play := range res.Plays() {
+		names = append(names, play.Name)
+	}
+	if strings.Join(names, ",") != "global,app-one" {
+		t.Errorf("plays = %v, want [global app-one]", names)
+	}
+	if n := runner.count("apps:list"); n != 0 {
+		t.Errorf("apps:list ran %d times, want 0", n)
+	}
+	if len(res.Report.MissingResources) > 0 {
+		t.Errorf("unexpected unmatched addresses: %v", res.Report.MissingResources)
 	}
 }

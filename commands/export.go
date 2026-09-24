@@ -231,8 +231,9 @@ func (c *ExportCommand) Run(args []string) int {
 	// sensitive set from before the run: the values it must mask are the ones
 	// its own exporters just read back. Registered here, ahead of the failure
 	// below as well as the warnings, because the global play is exported
-	// before the app list is read - so a run that dies on apps:list can
-	// already be holding a secret (#488).
+	// before any app is read - so a run that dies on apps:list, or on the
+	// apps:exists probe of a --resource-pinned app, can already be holding a
+	// secret (#488).
 	//
 	// What masks from here on is every diagnostic built from what the server
 	// returned: the warnings, this failure, and the marshal errors further

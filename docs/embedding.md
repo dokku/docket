@@ -67,7 +67,7 @@ always the value form of the type registered under `task.Type`, never a pointer,
 | Field | Effect |
 | --- | --- |
 | `Apps` | Only these apps. The leading global play is skipped unless an address asks for it. |
-| `Resources` | Only these addresses, parsed by `tasks.ParseResourceSelectors`. |
+| `Resources` | Only these addresses, parsed by `tasks.ParseResourceSelectors`. When every address names its app or is global, only those apps are read and the server's app list is not. |
 | `Inline` | Keep sensitive values in the bodies instead of lifting them into `Vars`. |
 | `Redact` | Replace sensitive values with a placeholder. |
 
