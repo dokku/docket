@@ -31,7 +31,7 @@ type MaintenanceCustomPageTask struct {
 
 	// Tarball is the path on the machine running docket to a tar archive
 	// containing at least maintenance.html. Mutually exclusive with Content.
-	Tarball string `required:"false" yaml:"tarball,omitempty" description:"Path on the machine running docket to a tar archive containing at least maintenance.html. Mutually exclusive with content; one is required when state is present."`
+	Tarball string `required:"false" runner_file:"true" yaml:"tarball,omitempty" description:"Path on the machine running docket to a tar archive containing at least maintenance.html. Mutually exclusive with content; one is required when state is present."`
 
 	// State is the desired state of the custom maintenance page
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the custom maintenance page"`

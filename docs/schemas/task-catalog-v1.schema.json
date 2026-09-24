@@ -144,6 +144,10 @@
           "const": true,
           "description": "The value is a secret. A consumer that echoes a recipe must mask it."
         },
+        "runner_file": {
+          "const": true,
+          "description": "The value names a file docket reads on the machine it runs on rather than on the dokku server, so the file must exist there even over `--host`. Absent on a field that is not one."
+        },
         "identity": {
           "enum": ["key", "collection"],
           "description": "`key` selects which resource the task manages; `collection` is a set of items the task manages wholesale. Absent on a field that is neither."

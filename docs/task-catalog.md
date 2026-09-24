@@ -108,6 +108,7 @@ the reference page lists them in.
 | `choices` | The permitted values. Absent when the field is not an enum. |
 | `description` | Prose for a human. |
 | `sensitive` | Present and `true` when the value is a secret. |
+| `runner_file` | Present and `true` when the value names a file docket reads on the machine it runs on, not on the dokku server. |
 | `identity` | `key` or `collection`. Absent on a field that is neither. |
 | `item` | The element shape of a `list` or `dict`. Absent on a scalar. |
 
@@ -120,6 +121,12 @@ Two of these need care:
   coerces an omitted key to, not a value written into the recipe. `dokku_config`'s `restart` is
   the example: the catalog reports `"default": "true"`, and an explicit `restart: false` is still
   honoured.
+
+`runner_file` matters to a consumer that runs docket somewhere other than the dokku server. Most
+paths a task accepts are handed to dokku and resolve on the server, but a `runner_file` field is
+read by docket itself, so the file has to exist on the runner even when docket drives a
+[remote server](remote-execution.md#what-the-runner-needs). A wrapper that knows it cannot supply
+local files can warn about, or refuse, a recipe that sets one before running anything.
 
 ### Item shapes
 

@@ -28,8 +28,9 @@ You do not need to teach docket about any of it.
 
 `--sudo` works on both sides of the transport: with `--host` it wraps the remote invocation in
 `sudo -n`, and without one it runs the local `dokku` under `sudo -n -u root`. Either way it covers
-`dokku` alone - the `docker` and `curl` calls a few tasks make locally are docket's own plumbing and
-are never elevated. `-n` never prompts, so the account has to have passwordless sudo already.
+`dokku` alone - files docket reads itself, such as a [runner-side file](#what-the-runner-needs), are
+read as the user running docket. `-n` never prompts, so the account has to have passwordless sudo
+already.
 
 `--accept-new-host-keys` is convenient in CI, where seeding `known_hosts` ahead of time is awkward,
 but it gives up man-in-the-middle protection on the first connection. When you can, prefer seeding
@@ -104,12 +105,26 @@ auth, host-key mismatch) carry an `ssh:` prefix; remote `dokku` failures carry a
           ! dokku: app foo does not exist
 ```
 
+## What the runner needs
+
+Only `dokku` runs on the server. The machine running docket needs two things of its own:
+
+- The OpenSSH client on `PATH`. docket execs `ssh` rather than speaking the protocol itself, and
+  shares one connection per server through ControlMaster multiplexing, so it needs OpenSSH
+  specifically. Without it, the first `dokku` command fails with `ssh binary not found in PATH`.
+- Any runner-side file a recipe names. A few fields name a file docket reads on the machine it runs
+  on and streams to dokku, rather than a path it hands to dokku. `dokku_maintenance_custom_page`'s
+  `tarball` is one: the archive must exist on the runner, whatever server docket is driving. These
+  fields carry `"runner_file": true` in [`docket schema`](task-catalog.md#fields), and their task
+  page lists them under Runner requirements, so a wrapper can warn about or refuse a recipe whose
+  files it cannot supply.
+
 ## File paths are remote
 
-When a task references a file path - for example the `cert` and `key` fields on `dokku_certs` -
-that path is interpreted on the **remote** host, not your local machine. docket does not upload
-local files in this release, so any referenced file must already exist on the server. Place it there
-before the run.
+Unless a field is a runner-side file, a file path a task references - for example the `cert` and
+`key` fields on `dokku_certs` - is handed to dokku and interpreted on the **remote** host, not your
+local machine. docket does not upload such files, so any referenced file must already exist on the
+server. Place it there before the run.
 
 Some tasks offer an inline alternative that sidesteps this constraint. `dokku_certs`, for
 instance, accepts `cert_content` and `key_content` strings; docket streams the PEM material to
@@ -132,3 +147,5 @@ and a report that carries no usable fingerprint.
 
 - [Command reference](command-reference.md) - the commands you run over SSH
 - [dokku_certs](tasks/dokku_certs.md) - a task that references server-side file paths
+- [dokku_maintenance_custom_page](tasks/dokku_maintenance_custom_page.md) - a task that reads a
+  runner-side file

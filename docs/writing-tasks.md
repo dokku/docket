@@ -82,8 +82,8 @@ A few conventions to follow:
 - The struct holds the fields the task needs. The only required field is `State`, the desired state;
   everything else is specific to the task.
 - Give every field a `description:"..."` tag. The docs generator reads it (along with `required`,
-  `default`, `options`, and `sensitive`) to build the task's Parameters table, so a field without one
-  renders an empty description cell. Those same tags are what
+  `default`, `options`, `sensitive`, and `runner_file`) to build the task's Parameters table, so a
+  field without one renders an empty description cell. Those same tags are what
   [`docket schema`](task-catalog.md) publishes, so a missing description is a hole in the
   machine-readable catalog as well as in the docs. Add `,omitempty` to the `yaml` tag of optional
   fields so example YAML stays clean, and use `required:"false"` whenever a field has a `default`
@@ -96,6 +96,12 @@ A few conventions to follow:
   `dokku-letsencrypt`), implement the optional `Requirements() []string` method. The generator
   renders the returned entries in a Requirements section on the task's page; tasks without the
   method simply omit the section.
+- When a field names a file docket itself reads on the machine it runs on (as
+  `dokku_maintenance_custom_page` reads `tarball` and streams it to dokku), tag it
+  `runner_file:"true"`. [`docket schema`](task-catalog.md#fields) publishes the flag and the
+  generator lists the field under Runner requirements on the task's page, so someone running docket
+  against a remote server knows the file has to exist locally. Do not tag a path the task hands to
+  dokku as an argument - that resolves on the server.
 - When a task type is deprecated (typically because the underlying dokku subcommand was deprecated
   or a richer replacement task exists), implement the optional `Deprecation() string` method.
   The generator renders the returned message in a Deprecated admonition on the task's page and
@@ -489,10 +495,11 @@ and offer a field (config's `preserve`) for keys the task cannot recognise on it
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
 `Examples()`, `ExportSupport()`, `ProbeSupport()`, optional `Requirements()` and `PropertyTable()`
 methods plus its struct field tags - they are not hand-edited. Each page carries a Synopsis (from
-`Doc()`), a Requirements section (when the task implements `Requirements()`), Export support and
-Probe support sections, an Identity section, a Parameters table (reflected from the field tags), a
-Properties table (for a task with a `PropertyTable()`), the examples, and a shared Return Values
-table. After adding or changing a task, regenerate them:
+`Doc()`), a Requirements section (when the task implements `Requirements()`), a Runner requirements
+section (when a field is tagged `runner_file:"true"`), Export support and Probe support sections, an
+Identity section, a Parameters table (reflected from the field tags), a Properties table (for a task
+with a `PropertyTable()`), the examples, and a shared Return Values table. After adding or changing a
+task, regenerate them:
 
 ```bash
 make docs
