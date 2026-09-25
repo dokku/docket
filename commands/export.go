@@ -209,15 +209,16 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 
-	ctx := runContext(c.Ctx)
-	// The target rides on the run context, so every exporter reads the same
-	// server without any of them holding a reference to it - and a second
-	// export in the same process can read a different one.
+	// The session puts the target on the run context, so every exporter reads
+	// the same server without any of them holding a reference to it - and a
+	// second export in the same process can read a different one. It also
+	// closes the SSH connection the export opens on the way out. The masker
+	// starts empty: what it masks is only known once the read below returns.
 	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
-	ctx = subprocess.ContextWithTarget(ctx, target)
-	if target.Host != "" {
-		defer subprocess.CloseSshControlMaster(target.Host)
-	}
+	masker := subprocess.NewMasker()
+	session := subprocess.NewSession(masker)
+	defer session.Close()
+	ctx := session.Context(runContext(c.Ctx), target)
 
 	toStdout := c.output == taskFileStdin
 
@@ -241,7 +242,7 @@ func (c *ExportCommand) Run(args []string) int {
 	// arguments - the --app names and --resource addresses reported missing,
 	// and the output paths - because a name masked down to *** would hide the
 	// typo the message exists to report.
-	masker := subprocess.NewMasker(res.SensitiveValues()...)
+	masker.Add(res.SensitiveValues()...)
 
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("export failed: %v", masker.String(err.Error())))

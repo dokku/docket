@@ -106,10 +106,15 @@ func TestSshTargetUserHost(t *testing.T) {
 	}
 }
 
+// testSocket is the ControlPath the argv tests hand buildSshArgv. Its value is
+// never dialled; the tests only check that it lands in the argv.
+const testSocket = "/tmp/docket-test.sock"
+
 func TestControlPathStableForSamePidHost(t *testing.T) {
 	t.Parallel()
-	a := controlPath("alice@host", 1234)
-	b := controlPath("alice@host", 1234)
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	a := controlPath(target, 1234, 0)
+	b := controlPath(target, 1234, 0)
 	if a != b {
 		t.Errorf("controlPath should be stable: %q vs %q", a, b)
 	}
@@ -117,8 +122,9 @@ func TestControlPathStableForSamePidHost(t *testing.T) {
 
 func TestControlPathDiffersByPid(t *testing.T) {
 	t.Parallel()
-	a := controlPath("alice@host", 1234)
-	b := controlPath("alice@host", 5678)
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	a := controlPath(target, 1234, 0)
+	b := controlPath(target, 5678, 0)
 	if a == b {
 		t.Errorf("controlPath should differ by pid (got %q for both)", a)
 	}
@@ -126,16 +132,44 @@ func TestControlPathDiffersByPid(t *testing.T) {
 
 func TestControlPathDiffersByHost(t *testing.T) {
 	t.Parallel()
-	a := controlPath("alice@hostA", 1234)
-	b := controlPath("alice@hostB", 1234)
+	a := controlPath(sshTarget{User: "alice", Host: "hostA", Port: "22"}, 1234, 0)
+	b := controlPath(sshTarget{User: "alice", Host: "hostB", Port: "22"}, 1234, 0)
 	if a == b {
 		t.Errorf("controlPath should differ by host (got %q for both)", a)
 	}
 }
 
+// TestControlPathDiffersByPort pins that two ports on one host get their own
+// masters. ssh reuses whatever master answers on the socket, so a shared path
+// would send the second port's commands down the first port's connection.
+func TestControlPathDiffersByPort(t *testing.T) {
+	t.Parallel()
+	a := controlPath(sshTarget{User: "alice", Host: "host", Port: "22"}, 1234, 0)
+	b := controlPath(sshTarget{User: "alice", Host: "host", Port: "2222"}, 1234, 0)
+	if a == b {
+		t.Errorf("controlPath should differ by port (got %q for both)", a)
+	}
+}
+
+// TestControlPathDiffersBySession pins that two sessions in one process get
+// their own masters, so closing one cannot cut off the other - and that a call
+// outside any session does not share a master with one inside a session.
+func TestControlPathDiffersBySession(t *testing.T) {
+	t.Parallel()
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	paths := map[string]uint64{}
+	for _, session := range []uint64{0, 1, 2} {
+		got := controlPath(target, 1234, session)
+		if other, ok := paths[got]; ok {
+			t.Errorf("sessions %d and %d share control path %q", other, session, got)
+		}
+		paths[got] = session
+	}
+}
+
 func TestControlPathExtension(t *testing.T) {
 	t.Parallel()
-	got := controlPath("host", 1)
+	got := controlPath(sshTarget{Host: "host", Port: "22"}, 1, 0)
 	if !strings.HasSuffix(got, ".sock") {
 		t.Errorf("controlPath should end with .sock: %q", got)
 	}
@@ -148,7 +182,7 @@ func TestBuildSshArgvDefault(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{}, []string{"dokku", "apps:list"})
+	argv, err := buildSshArgv(parsed, Target{}, testSocket, []string{"dokku", "apps:list"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -164,8 +198,8 @@ func TestBuildSshArgvDefault(t *testing.T) {
 			t.Errorf("argv missing %q: %v", opt, argv)
 		}
 	}
-	if !strings.Contains(joined, "ControlPath=") {
-		t.Errorf("argv missing ControlPath=: %v", argv)
+	if !containsExact(argv, "ControlPath="+testSocket) {
+		t.Errorf("argv missing ControlPath=%s: %v", testSocket, argv)
 	}
 	if !containsExact(argv, "alice@host") {
 		t.Errorf("argv missing user@host: %v", argv)
@@ -193,7 +227,7 @@ func TestBuildSshArgvNonStandardPort(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "2222"}
-	argv, err := buildSshArgv(parsed, Target{}, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{}, testSocket, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -209,7 +243,7 @@ func TestBuildSshArgvAcceptNewHostKeys(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{AcceptNewHostKeys: true}, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{AcceptNewHostKeys: true}, testSocket, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -223,7 +257,7 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{Sudo: true}, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{Sudo: true}, testSocket, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -245,7 +279,7 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 func TestBuildSshArgvDoubleDashSeparator(t *testing.T) {
 	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "--no-restart"})
+	argv, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "config:set", "--no-restart"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -263,7 +297,7 @@ func TestBuildSshArgvQuotesRemoteArgs(t *testing.T) {
 	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
+	argv, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -285,7 +319,7 @@ func TestBuildSshArgvQuotesInjection(t *testing.T) {
 	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
+	argv, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -313,7 +347,7 @@ func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
 	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, []string{
+	argv, err := buildSshArgv(target, Target{}, testSocket, []string{
 		"dokku", "--quiet", "postgres:create", "my-db",
 		"--image", "postgis/postgis",
 		"--image-version", "13-master",
@@ -344,7 +378,7 @@ func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	// A newline has no POSIX-shell escape, so we refuse to build the remote
 	// command rather than corrupt it.
-	if _, err := buildSshArgv(target, Target{}, []string{"dokku", "config:set", "app", "a\nb"}); err == nil {
+	if _, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "config:set", "app", "a\nb"}); err == nil {
 		t.Fatal("expected error for argument containing a newline")
 	}
 

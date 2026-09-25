@@ -11,14 +11,14 @@
 // via OpenSSH ControlMaster multiplexing. The first `ssh` invocation
 // negotiates the master connection and writes a unix-domain socket at
 // `<tmpdir>/docket-<hash>.sock`; subsequent invocations reuse it. The
-// socket name hashes the resolved host plus the docket PID so two
-// docket processes targeting the same host do not collide on the
-// socket path.
+// socket name hashes the resolved user, host and port, the docket PID, and
+// the Session the call ran under, so neither two docket processes nor two
+// sessions in one process targeting the same host collide on the socket
+// path.
 //
 // The ControlPersist option keeps the master alive 60 seconds past the
-// last command exit; the command package additionally invokes
-// CloseSshControlMaster as a defer to tear the master down cleanly when
-// the run exits normally.
+// last command exit. A Session records every master its calls opened and
+// tears them down on Close, which is how the commands layer ends a run.
 //
 // Error attribution. OpenSSH exits with code 255 when the transport
 // itself fails (connect refused, auth, host-key mismatch) and forwards
@@ -173,11 +173,21 @@ func defaultSshUser(getenv func(string) string) string {
 }
 
 // controlPath returns the unix-domain socket path used by ControlMaster
-// for the given host and PID. Hashing the host + PID gives concurrent
+// for the given target, PID and session. Hashing the PID gives concurrent
 // docket runs against the same host distinct sockets so they cannot
-// collide.
-func controlPath(host string, pid int) string {
-	sum := sha256.Sum256([]byte(host + ":" + strconv.Itoa(pid)))
+// collide, and hashing the session does the same for two sessions in one
+// process, so closing one cannot tear down a connection the other is using.
+// session is 0 for a call made outside any Session.
+//
+// The port is part of the key because ssh reuses whatever master answers on
+// the socket: without it, `host:22` and `host:2222` in one run would share
+// the first connection and the second would never reach its own port.
+func controlPath(target sshTarget, pid int, session uint64) string {
+	key := target.UserHost() + ":" + target.Port + ":" + strconv.Itoa(pid)
+	if session != 0 {
+		key += ":" + strconv.FormatUint(session, 10)
+	}
+	sum := sha256.Sum256([]byte(key))
 	return filepath.Join(os.TempDir(), "docket-"+hex.EncodeToString(sum[:])[:16]+".sock")
 }
 
@@ -190,16 +200,19 @@ func controlPath(host string, pid int) string {
 // shell (a non-printable byte such as a tab, newline, or null) yields an
 // error rather than a corrupted remote command.
 //
+// socket is the ControlPath, computed by the caller because the session
+// that owns the connection has to record it too.
+//
 // The sudo and host-key settings come from opts, the caller's per-invocation
 // Target. They used to be read from DOKKU_SUDO and
 // DOKKU_SSH_ACCEPT_NEW_HOST_KEYS here, which meant the commands layer had to
 // write them into the process environment to communicate them - and once
 // written, they applied to every invocation in the process for the rest of its
 // life.
-func buildSshArgv(parsed sshTarget, opts Target, remote []string) ([]string, error) {
+func buildSshArgv(parsed sshTarget, opts Target, socket string, remote []string) ([]string, error) {
 	argv := []string{
 		"-o", "ControlMaster=auto",
-		"-o", "ControlPath=" + controlPath(parsed.UserHost(), os.Getpid()),
+		"-o", "ControlPath=" + socket,
 		"-o", "ControlPersist=60",
 		"-o", "BatchMode=yes",
 	}
@@ -341,8 +354,15 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 	masker := MaskerFromContext(ctx)
 
 	remote := append([]string{input.Command}, input.Args...)
-	argv, err := buildSshArgv(parsed, target, remote)
+	session := sessionFromContext(ctx)
+	socket := controlPath(parsed, os.Getpid(), session.id())
+	argv, err := buildSshArgv(parsed, target, socket, remote)
 	if err != nil {
+		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Command: remote, Err: err}
+	}
+	// Recorded before the connection is made rather than after, so a master
+	// that came up for a command that then failed is still closed.
+	if err := session.track(parsed, socket); err != nil {
 		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Command: remote, Err: err}
 	}
 
@@ -423,22 +443,31 @@ func classifySshResult(target sshTarget, remote []string, resp ExecCommandRespon
 	return resp, nil
 }
 
-// CloseSshControlMaster sends `ssh -O exit` to the ControlMaster for
-// host so the multiplexed connection is torn down cleanly. Best-effort:
-// errors are swallowed because the master may already have exited
-// (ControlPersist timeout, kill -9, etc.). Intended to be called as a
-// `defer` from command run loops.
+// CloseSshControlMaster sends `ssh -O exit` to the ControlMaster a call made
+// outside any Session opened for host, so the multiplexed connection is torn
+// down cleanly. Best-effort: errors are swallowed because the master may
+// already have exited (ControlPersist timeout, kill -9, etc.).
+//
+// Prefer a Session, which closes every master its calls opened - including
+// ones for hosts the caller never named, such as a play's own target.
 func CloseSshControlMaster(host string) error {
 	target, err := parseDokkuHost(host, os.Getenv)
 	if err != nil {
 		return nil
 	}
+	exitControlMaster(target, controlPath(target, os.Getpid(), 0))
+	return nil
+}
+
+// exitControlMaster asks the master listening on socket to exit. A socket
+// that does not exist - the connection never came up, or ControlPersist
+// already expired it - is skipped.
+func exitControlMaster(target sshTarget, socket string) {
 	if _, err := exec.LookPath("ssh"); err != nil {
-		return nil
+		return
 	}
-	socket := controlPath(target.UserHost(), os.Getpid())
 	if _, err := os.Stat(socket); err != nil {
-		return nil
+		return
 	}
 	cmd := exec.Command("ssh",
 		"-o", "ControlPath="+socket,
@@ -448,5 +477,4 @@ func CloseSshControlMaster(host string) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	_ = cmd.Run()
-	return nil
 }
