@@ -250,12 +250,6 @@ func (c *ApplyCommand) Run(args []string) int {
 	c.tasksFile = src.recipe.Path
 	c.tasksFormat = src.recipe.Format
 
-	ctx := runContext(c.Ctx)
-	// The target rides on the run context, so every task planned or executed
-	// below routes to the same server without any of them holding a reference
-	// to it - and a second run in the same process can carry a different one.
-	ctx = subprocess.ContextWithTarget(ctx, target)
-
 	// Register the sensitive CLI/vars-file input values before the recipe is
 	// parsed and rendered, so a template or parse error that interpolated one
 	// of them is masked. Task-declared sensitive values are added once the
@@ -264,7 +258,15 @@ func (c *ApplyCommand) Run(args []string) int {
 	// is no teardown: the deferred clear this replaces is exactly what made a
 	// second run in the same process lose its secrets.
 	masker := subprocess.NewMasker(src.sensitive...)
-	ctx = subprocess.ContextWithMasker(ctx, masker)
+
+	// The session puts the target and masker on the run context, so every task
+	// planned or executed below routes to the same server without any of them
+	// holding a reference to it - and a second run in the same process can
+	// carry a different one. It also records every SSH connection the run
+	// opens, a play's own `host:` included, and closes them all on the way out.
+	session := subprocess.NewSession(masker)
+	defer session.Close()
+	ctx := session.Context(runContext(c.Ctx), target)
 
 	plays, err := tasks.GetPlaysWithFormat(src.recipe.Data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
@@ -324,12 +326,6 @@ func (c *ApplyCommand) Run(args []string) int {
 			target:        target,
 		})
 	}
-
-	// Every distinct host the run will touch, so a recipe whose plays span
-	// servers tears down one ControlMaster per server rather than only the
-	// run-wide one. controlPath already keys on the host, so the sockets do
-	// not collide; nothing was closing the extra ones.
-	defer closeControlMasters(target, plays)
 
 	if saved != nil {
 		if exit, ok := c.checkSavedPlan(ctx, saved, planWalkOptions{

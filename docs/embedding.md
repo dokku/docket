@@ -12,18 +12,34 @@ Everything takes a `context.Context`, and that context carries the state a run n
 read from process globals, so two runs in one process can target different servers, mask different
 values, and be cancelled independently.
 
+Build that context from a `subprocess.Session`. The session installs the masker and target, and it
+owns the SSH connections made under it:
+
 ```go
-ctx := context.Background()
+// What gets masked in anything you render for a human.
+session := subprocess.NewSession(subprocess.NewMasker("s3cr3t"))
+defer session.Close()
 
 // Where dokku commands go. The zero Target runs locally.
-ctx = subprocess.ContextWithTarget(ctx, subprocess.Target{
+ctx := session.Context(context.Background(), subprocess.Target{
     Host: "deploy@dokku.example.com",
     Sudo: true,
 })
-
-// What gets masked in anything you render for a human.
-ctx = subprocess.ContextWithMasker(ctx, subprocess.NewMasker("s3cr3t"))
 ```
+
+Every command over SSH shares one multiplexed connection per server. The session records each
+server its contexts actually reached and closes those connections on `Close()`. Without it, each one
+stays open for up to a minute after the last command. A context derived from a session context
+still belongs to that session, so a single call can go to another server with
+`subprocess.ContextWithTarget(ctx, other)` and that connection is closed too.
+
+A session is safe to use from several goroutines, and one session can hand out contexts for
+different servers. Each session has its own connections, so closing one never interrupts another
+that is talking to the same server. `Close()` is idempotent. Call it once the calls made under the
+session have returned: a call still in flight loses its connection, and a call made after `Close()`
+fails with `subprocess.ErrSessionClosed`.
+
+`NewSession(nil)` installs no masker, leaving any masker already on the parent context in place.
 
 Cancel the context and in-flight dokku commands stop; give it a deadline and they are bounded by it.
 A signal handler is the caller's business - docket's own is installed in `main.go`, not in the

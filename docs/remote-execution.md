@@ -14,7 +14,8 @@ docket apply --host deploy@dokku.example.com:2222
 ```
 
 The host is `[user@]host[:port]`. All invocations in one run share a single SSH connection through
-OpenSSH ControlMaster multiplexing, so you pay the connection cost once.
+OpenSSH ControlMaster multiplexing, so you pay the connection cost once. The connection is closed
+when the run ends, including the ones opened for a play's own `host:`.
 
 Because docket shells out to your own `ssh` binary, everything `ssh` already knows works without
 extra configuration: your `~/.ssh/config`, `ProxyJump`, ssh-agent, and `known_hosts` all apply.

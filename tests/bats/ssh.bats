@@ -314,3 +314,47 @@ EOF
   assert_success
   refute_output --partial "StrictHostKeyChecking=accept-new"
 }
+
+# socket_dir points TMPDIR, where docket puts its ControlMaster sockets, at a
+# fresh directory the socket tests below can inspect. It lives under /tmp rather
+# than $BATS_TEST_TMPDIR because a unix socket path is capped at around 104
+# bytes on macOS, and the bats test directory alone can come close.
+socket_dir() {
+  SOCKET_DIR="$(mktemp -d /tmp/docket-sock.XXXXXX)"
+}
+
+# assert_no_sockets fails when a docket control socket outlived the run. ssh
+# removes the socket when the master exits, so one left behind is a master
+# still holding a connection open.
+assert_no_sockets() {
+  run find "$SOCKET_DIR" -name 'docket-*.sock'
+  assert_success
+  assert_output ""
+  rm -rf "$SOCKET_DIR"
+}
+
+@test "apply over ssh closes its connection on exit" {
+  argv_recipe
+  socket_dir
+  TMPDIR="$SOCKET_DIR" DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+  assert_no_sockets
+}
+
+@test "plan over ssh closes its connection on exit" {
+  argv_recipe
+  socket_dir
+  TMPDIR="$SOCKET_DIR" DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_success
+  assert_no_sockets
+}
+
+@test "export over ssh closes its connection on exit" {
+  argv_recipe
+  DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_success
+  socket_dir
+  TMPDIR="$SOCKET_DIR" DOKKU_HOST="$DOCKET_TEST_REMOTE_HOST" run "$(docket_bin)" export --app docket-test-ssh --output -
+  assert_success
+  assert_no_sockets
+}
