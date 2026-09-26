@@ -32,17 +32,21 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 
 | Property | Scopes | Report key (app) | Report key (global) |
 | --- | --- | --- | --- |
+| `cert-issuer-kind` | app, global | `cert-issuer-kind` | `global-cert-issuer-kind` |
+| `cert-issuer-name` | app, global | `cert-issuer-name` | `global-cert-issuer-name` |
 | `deploy-timeout` | app, global | `deploy-timeout` | `global-deploy-timeout` |
 | `image-pull-secrets` | app, global | `image-pull-secrets` | `global-image-pull-secrets` |
 | `ingress-class` | global |  | `global-ingress-class` |
 | `kube-context` | global |  | `global-kube-context` |
 | `kubeconfig-path` | global |  | `global-kubeconfig-path` |
 | `kustomize-root-path` | app, global | `kustomize-root-path` | `global-kustomize-root-path` |
-| `letsencrypt-email-prod` | global |  | `global-letsencrypt-email-prod` |
-| `letsencrypt-email-stag` | global |  | `global-letsencrypt-email-stag` |
+| `letsencrypt-email-prod` | app, global | `letsencrypt-email-prod` | `global-letsencrypt-email-prod` |
+| `letsencrypt-email-stag` | app, global | `letsencrypt-email-stag` | `global-letsencrypt-email-stag` |
 | `letsencrypt-server` | app, global | `letsencrypt-server` | `global-letsencrypt-server` |
 | `namespace` | app, global | `namespace` | `global-namespace` |
 | `network-interface` | global |  | `global-network-interface` |
+| `node-sysctls-image` | global |  | `global-node-sysctls-image` |
+| `node-sysctls-pause-image` | global |  | `global-node-sysctls-pause-image` |
 | `rollback-on-failure` | app, global | `rollback-on-failure` | `global-rollback-on-failure` |
 | `shm-size` | app, global | `shm-size` | `global-shm-size` |
 | `token` (sensitive) | global |  | `global-token` |

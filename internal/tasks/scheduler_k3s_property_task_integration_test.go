@@ -18,17 +18,21 @@ func TestIntegrationSchedulerK3sPropertyAll(t *testing.T) {
 		perApp   bool
 		global   bool
 	}{
+		{"cert-issuer-kind", "Issuer", true, true},
+		{"cert-issuer-name", "acme-dns", true, true},
 		{"deploy-timeout", "600s", true, true},
 		{"image-pull-secrets", "secret-name", true, true},
 		{"ingress-class", "traefik", false, true},
 		{"kube-context", "test-ctx", false, true},
 		{"kubeconfig-path", "/etc/rancher/k3s/k3s.yaml", false, true},
 		{"kustomize-root-path", "config/kustomize", true, true},
-		{"letsencrypt-email-prod", "admin@example.com", false, true},
-		{"letsencrypt-email-stag", "staging@example.com", false, true},
+		{"letsencrypt-email-prod", "admin@example.com", true, true},
+		{"letsencrypt-email-stag", "staging@example.com", true, true},
 		{"letsencrypt-server", "prod", true, true},
 		{"namespace", "test-ns", true, true},
 		{"network-interface", "eth0", false, true},
+		{"node-sysctls-image", "busybox:1.36", false, true},
+		{"node-sysctls-pause-image", "registry.k8s.io/pause:3.9", false, true},
 		{"rollback-on-failure", "true", true, true},
 		{"shm-size", "64m", true, true},
 		{"token", "test-token", false, true},

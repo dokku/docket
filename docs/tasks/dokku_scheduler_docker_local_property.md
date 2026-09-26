@@ -14,16 +14,17 @@ Supported.
 
 ## Identity
 
-Keyed by `app` and `property`. Fields left empty are omitted from the address.
+Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the address.
 
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `app` | string | yes |  |  | Name of the app |
-| `property` | string | yes |  |  | Name of the scheduler-docker-local property to set |
-| `value` | string | no |  |  | Value to set for the scheduler-docker-local property |
-| `state` | string | no | present | present, absent | Desired state of the scheduler-docker-local configuration |
+| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `global` | bool | no |  |  | Flag indicating if the property should be applied globally |
+| `property` | string | yes |  |  | Name of the property to set |
+| `value` | string | no |  |  | Value to set for the property |
+| `state` | string | no | present | present, absent | Desired state of the property |
 
 ## Properties
 
@@ -31,8 +32,8 @@ Keyed by `app` and `property`. Fields left empty are omitted from the address.
 
 | Property | Scopes | Report key (app) | Report key (global) |
 | --- | --- | --- | --- |
-| `init-process` | app | `init-process` |  |
-| `parallel-schedule-count` | app | `parallel-schedule-count` |  |
+| `init-process` | app, global | `init-process` | `global-init-process` |
+| `parallel-schedule-count` | app, global | `parallel-schedule-count` | `global-parallel-schedule-count` |
 
 ## Examples
 
@@ -50,6 +51,16 @@ dokku_scheduler_docker_local_property:
 ```yaml
 dokku_scheduler_docker_local_property:
     app: node-js-app
+    property: parallel-schedule-count
+    value: "4"
+```
+
+### Setting the parallel schedule count globally
+
+```yaml
+dokku_scheduler_docker_local_property:
+    app: ""
+    global: true
     property: parallel-schedule-count
     value: "4"
 ```
