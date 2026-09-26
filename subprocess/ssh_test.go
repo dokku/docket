@@ -476,6 +476,26 @@ func TestClassifySshResultPreProcessErrorIsSshError(t *testing.T) {
 	}
 }
 
+func TestClassifySshResultSignalDeathIsNotAnswer(t *testing.T) {
+	t.Parallel()
+	// ssh killed by a signal reports -1: no exit status from ssh or from the
+	// remote command, so it must not be marked as a real answer.
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	resp := ExecCommandResponse{ExitCode: -1}
+	_, err := classifySshResult(target, []string{"dokku", "apps:exists", "test"}, resp, nil)
+	var sshErr *SSHError
+	if !errors.As(err, &sshErr) {
+		t.Fatalf("expected *SSHError, got %T (%v)", err, err)
+	}
+	if !errors.Is(err, errKilledBySignal) {
+		t.Errorf("error should wrap errKilledBySignal, got %v", err)
+	}
+	var execErr *ExecError
+	if errors.As(err, &execErr) && execErr.Ran {
+		t.Error("a signal death must not be marked Ran")
+	}
+}
+
 func TestClassifySshResultSuccess(t *testing.T) {
 	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
@@ -560,6 +580,25 @@ func TestProbeLocalExecErrorPropagates(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("Probe should propagate a binary-not-found error, not swallow it as absent")
+	}
+}
+
+func TestProbeSignalDeathPropagates(t *testing.T) {
+	t.Parallel()
+	// A probe whose child is killed by a signal never answered. Reading its
+	// exit as "absent" is how an interrupt used to turn into a confident [+].
+	matched, err := Probe(context.Background(), ExecCommandInput{
+		Command: "sh",
+		Args:    []string{"-c", "kill -KILL $$"},
+	})
+	if matched {
+		t.Error("Probe should report matched=false when the child is killed")
+	}
+	if err == nil {
+		t.Fatal("Probe should propagate a signal death, not swallow it as absent")
+	}
+	if !errors.Is(err, errKilledBySignal) {
+		t.Errorf("propagated error should wrap errKilledBySignal, got %v", err)
 	}
 }
 

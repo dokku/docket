@@ -538,6 +538,11 @@ interrupted run reports `1` rather than the `2` `--detailed-exitcode` uses for "
 something changed", because it did not complete. A second `Ctrl-C` kills docket outright, in case
 the first one left something wedged.
 
+A `dokku` or `ssh` command killed by the interrupt is never read as the server's answer: the task in
+flight reports `[!]` rather than a predicted change, and `apply` does not act on it. A command
+killed by a signal outside an interrupt is reported as an error, `killed by a signal`, for the same
+reason.
+
 Cancellation reaches only the local process. Over SSH it ends the local `ssh` client; a `dokku`
 command already running on the remote host keeps going, so re-run `plan` afterwards to see where
 the server actually ended up.
