@@ -4,8 +4,6 @@ import (
 	"testing"
 )
 
-// SchedulerDockerLocalPropertyTask has no Global field, so only per-app
-// coverage applies.
 func TestIntegrationSchedulerDockerLocalPropertyAll(t *testing.T) {
 	skipIfNoDokkuT(t)
 
@@ -27,6 +25,15 @@ func TestIntegrationSchedulerDockerLocalPropertyAll(t *testing.T) {
 				label:     "scheduler-docker-local per-app " + tc.property,
 				setTask:   SchedulerDockerLocalPropertyTask{App: appName, Property: tc.property, Value: tc.value, State: StatePresent},
 				unsetTask: SchedulerDockerLocalPropertyTask{App: appName, Property: tc.property, State: StateAbsent},
+			})
+		})
+		t.Run(tc.property+"/global", func(t *testing.T) {
+			unsetTask := SchedulerDockerLocalPropertyTask{Global: true, Property: tc.property, State: StateAbsent}
+			defer unsetTask.Execute(testCtx())
+			runPropertyIdempotencyTest(t, propertyIdempotencyCase{
+				label:     "scheduler-docker-local global " + tc.property,
+				setTask:   SchedulerDockerLocalPropertyTask{Global: true, Property: tc.property, Value: tc.value, State: StatePresent},
+				unsetTask: unsetTask,
 			})
 		})
 	}

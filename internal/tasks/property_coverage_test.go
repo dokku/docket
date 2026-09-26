@@ -86,8 +86,8 @@ func TestPropertyTableEntriesHaveAScope(t *testing.T) {
 
 // TestPropertyTableGlobalKeysRequireAGlobalField asserts that a task with no
 // `global` recipe key declares no globally-scoped property. Such a task passes
-// a literal false for global (dokku_scheduler_docker_local_property), so a
-// global-only entry in its table would be unreachable - and would be published
+// a literal false for global, so a global-only entry in its table would be
+// unreachable - and would be published
 // by the catalog as settable when nothing can set it.
 func TestPropertyTableGlobalKeysRequireAGlobalField(t *testing.T) {
 	for name, task := range allRegisteredTasks() {
@@ -114,8 +114,7 @@ func TestPropertyTableGlobalKeysRequireAGlobalField(t *testing.T) {
 // statement that the task addresses its resource differently, not that it was
 // missed when the shared type was extracted (#454).
 var propertyTasksWithOwnFields = map[string]string{
-	"dokku_scheduler_docker_local_property": "the scheduler-docker-local properties are per-app only, so `app` is required and there is no `global` field",
-	"dokku_service_property":                "a service property is keyed by `service` plus `name` rather than by an app-or-global scope",
+	"dokku_service_property": "a service property is keyed by `service` plus `name` rather than by an app-or-global scope",
 }
 
 // TestPropertyTasksDeclareTheSharedFields asserts that every property task
@@ -483,6 +482,13 @@ func TestRejectedPropertyFamiliesReportIdenticallyFromPlanAndValidate(t *testing
 	}
 }
 
+// propertySampleValues holds a valid value for each property whose Validate()
+// checks the value itself, keyed by "<subcommand> <property>". Every other
+// property is built with the placeholder "some-value".
+var propertySampleValues = map[string]string{
+	"scheduler-k3s:set cert-issuer-kind": "ClusterIssuer",
+}
+
 // newPropertyTaskInstance builds a runnable copy of a property task addressing
 // one property, so its Validate() can be driven against its own table. Returns
 // nil for a task whose fields do not fit the shape (none today).
@@ -507,7 +513,14 @@ func newPropertyTaskInstance(t *testing.T, prototype Task, property string, glob
 		return false
 	}
 
-	if !set("property", property) || !set("value", "some-value") || !set("state", string(StatePresent)) {
+	sample := "some-value"
+	if table, declared := TaskPropertyTable(prototype); declared {
+		if v, ok := propertySampleValues[table.Subcommand+" "+property]; ok {
+			sample = v
+		}
+	}
+
+	if !set("property", property) || !set("value", sample) || !set("state", string(StatePresent)) {
 		return nil
 	}
 	if global {

@@ -227,6 +227,7 @@ func TestLogsPropertyKeys(t *testing.T) {
 	checkPropertyKeys(t, logsPropertyTable, []propertyKeysCase{
 		{"app-label-alias", "app-label-alias", "global-app-label-alias"},
 		{"max-size", "max-size", "global-max-size"},
+		{"vector-cron-sink", "vector-cron-sink", "global-vector-cron-sink"},
 		{"vector-image", "", "global-vector-image"},
 		{"vector-networks", "", "global-vector-networks"},
 		{"vector-sink", "vector-sink", "global-vector-sink"},
@@ -368,25 +369,29 @@ func TestSchedulerPropertyKeys(t *testing.T) {
 
 func TestSchedulerDockerLocalPropertyKeys(t *testing.T) {
 	checkPropertyKeys(t, schedulerDockerLocalPropertyTable, []propertyKeysCase{
-		{"init-process", "init-process", ""},
-		{"parallel-schedule-count", "parallel-schedule-count", ""},
+		{"init-process", "init-process", "global-init-process"},
+		{"parallel-schedule-count", "parallel-schedule-count", "global-parallel-schedule-count"},
 	})
 	checkUnsupportedProperty(t, schedulerDockerLocalPropertyTable)
 }
 
 func TestSchedulerK3sPropertyKeys(t *testing.T) {
 	checkPropertyKeys(t, schedulerK3sPropertyTable, []propertyKeysCase{
+		{"cert-issuer-kind", "cert-issuer-kind", "global-cert-issuer-kind"},
+		{"cert-issuer-name", "cert-issuer-name", "global-cert-issuer-name"},
 		{"deploy-timeout", "deploy-timeout", "global-deploy-timeout"},
 		{"image-pull-secrets", "image-pull-secrets", "global-image-pull-secrets"},
 		{"ingress-class", "", "global-ingress-class"},
 		{"kube-context", "", "global-kube-context"},
 		{"kubeconfig-path", "", "global-kubeconfig-path"},
 		{"kustomize-root-path", "kustomize-root-path", "global-kustomize-root-path"},
-		{"letsencrypt-email-prod", "", "global-letsencrypt-email-prod"},
-		{"letsencrypt-email-stag", "", "global-letsencrypt-email-stag"},
+		{"letsencrypt-email-prod", "letsencrypt-email-prod", "global-letsencrypt-email-prod"},
+		{"letsencrypt-email-stag", "letsencrypt-email-stag", "global-letsencrypt-email-stag"},
 		{"letsencrypt-server", "letsencrypt-server", "global-letsencrypt-server"},
 		{"namespace", "namespace", "global-namespace"},
 		{"network-interface", "", "global-network-interface"},
+		{"node-sysctls-image", "", "global-node-sysctls-image"},
+		{"node-sysctls-pause-image", "", "global-node-sysctls-pause-image"},
 		{"rollback-on-failure", "rollback-on-failure", "global-rollback-on-failure"},
 		{"shm-size", "shm-size", "global-shm-size"},
 		{"token", "", "global-token"},
