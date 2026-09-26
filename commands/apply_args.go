@@ -849,6 +849,10 @@ func editDistance(a, b string) int {
 	if lb == 0 {
 		return la
 	}
+	// Guard allocation size arithmetic (lb+1) from overflowing int.
+	if lb == int(^uint(0)>>1) {
+		return lb
+	}
 	prev := make([]int, lb+1)
 	curr := make([]int, lb+1)
 	for j := 0; j <= lb; j++ {
