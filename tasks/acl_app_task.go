@@ -193,16 +193,21 @@ func getAclAppUsers(ctx context.Context, app string) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseAclUsers(result.StdoutContents()), nil
+}
 
+// parseAclUsers turns dokku-acl listing output, one username per line, into
+// a set. Blank lines are ignored.
+func parseAclUsers(output string) map[string]bool {
 	users := map[string]bool{}
-	for _, line := range strings.Split(result.StdoutContents(), "\n") {
+	for _, line := range strings.Split(output, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
 		users[trimmed] = true
 	}
-	return users, nil
+	return users
 }
 
 // ExportApp reconstructs the app's ACL user list, or nil when it is empty.

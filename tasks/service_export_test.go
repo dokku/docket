@@ -261,34 +261,43 @@ func TestExportServiceLinkEnumeratesForApp(t *testing.T) {
 
 func TestExportAclServiceReadsUsers(t *testing.T) {
 	t.Parallel()
-	responses := map[string]string{
-		"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache",
-	}
-	// acl:list-service emits one username per line on STDERR, not stdout.
-	stderr := map[string]string{
-		"--quiet acl:list-service postgres my-db": "bob\nalice",
-		"--quiet acl:list-service redis cache":    "",
-	}
-	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
-		key := strings.Join(in.Args, " ")
-		return subprocess.ExecCommandResponse{Stdout: responses[key], Stderr: stderr[key]}, nil
-	})
+	// acl:list-service emits one username per line on stdout in dokku-acl
+	// 2.0.0+, and on stderr in 1.5.1 and earlier.
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			t.Parallel()
+			stdout := map[string]string{
+				"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache",
+			}
+			stderr := map[string]string{}
+			acl := stdout
+			if stream == "stderr" {
+				acl = stderr
+			}
+			acl["--quiet acl:list-service postgres my-db"] = "bob\nalice"
+			acl["--quiet acl:list-service redis cache"] = ""
+			ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+				key := strings.Join(in.Args, " ")
+				return subprocess.ExecCommandResponse{Stdout: stdout[key], Stderr: stderr[key]}, nil
+			})
 
-	bodies, err := AclServiceTask{}.ExportGlobal(ctx)
-	if err != nil {
-		t.Fatalf("ExportGlobal: %v", err)
-	}
-	if len(bodies) != 1 {
-		t.Fatalf("expected 1 acl task (redis has none), got %d", len(bodies))
-	}
-	a := bodies[0].(AclServiceTask)
-	// Field inversion: Service holds the instance name, Type the datastore type.
-	if a.Service != "my-db" || a.Type != "postgres" {
-		t.Errorf("acl field inversion wrong: %+v", a)
-	}
-	// sortedSetKeys yields deterministic, sorted membership.
-	if !reflect.DeepEqual(a.Users, []string{"alice", "bob"}) {
-		t.Errorf("acl users = %v, want [alice bob]", a.Users)
+			bodies, err := AclServiceTask{}.ExportGlobal(ctx)
+			if err != nil {
+				t.Fatalf("ExportGlobal: %v", err)
+			}
+			if len(bodies) != 1 {
+				t.Fatalf("expected 1 acl task (redis has none), got %d", len(bodies))
+			}
+			a := bodies[0].(AclServiceTask)
+			// Field inversion: Service holds the instance name, Type the datastore type.
+			if a.Service != "my-db" || a.Type != "postgres" {
+				t.Errorf("acl field inversion wrong: %+v", a)
+			}
+			// sortedSetKeys yields deterministic, sorted membership.
+			if !reflect.DeepEqual(a.Users, []string{"alice", "bob"}) {
+				t.Errorf("acl users = %v, want [alice bob]", a.Users)
+			}
+		})
 	}
 }
 
