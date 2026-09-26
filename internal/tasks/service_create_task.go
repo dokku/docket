@@ -711,7 +711,7 @@ func destroyService(ctx context.Context, service, name string) TaskOutputState {
 		return TaskOutputErrorFromExec(state, err, result)
 	}
 
-	state = state.WithExecResult(result)
+	state = state.withExecResult(result)
 	state.Changed = true
 	state.State = "absent"
 	return state

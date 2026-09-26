@@ -202,7 +202,7 @@ func destroyNetwork(ctx context.Context, name string) TaskOutputState {
 	if err != nil {
 		return TaskOutputErrorFromExec(state, err, result)
 	}
-	state = state.WithExecResult(result)
+	state = state.withExecResult(result)
 	state.Changed = true
 	state.State = StateAbsent
 	return state

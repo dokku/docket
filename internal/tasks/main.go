@@ -221,11 +221,11 @@ const (
 	WarnReasonServiceImageDrift = "service_image_drift"
 )
 
-// WithExecResult returns a copy of s with Stdout/Stderr/ExitCode populated
+// withExecResult returns a copy of s with Stdout/Stderr/ExitCode populated
 // from r. Callers use it from the success path so the returned state
 // mirrors the underlying subprocess.ExecCommandResponse without having to
 // assign each field by hand.
-func (s TaskOutputState) WithExecResult(r subprocess.ExecCommandResponse) TaskOutputState {
+func (s TaskOutputState) withExecResult(r subprocess.ExecCommandResponse) TaskOutputState {
 	s.Stdout = r.Stdout
 	s.Stderr = r.Stderr
 	s.ExitCode = r.ExitCode

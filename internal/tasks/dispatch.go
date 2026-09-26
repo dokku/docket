@@ -25,7 +25,7 @@ func resolveCommands(ctx context.Context, inputs []subprocess.ExecCommandInput) 
 // Plan-built apply closures that just need to invoke a list of dokku
 // commands sequentially. On success, the final input's
 // stdout/stderr/exit-code is copied onto the returned state via
-// WithExecResult so callers can inspect what the underlying subprocess
+// withExecResult so callers can inspect what the underlying subprocess
 // produced. When inputs is empty (no-op apply), the new fields stay
 // zero-valued.
 func runExecInputs(ctx context.Context, initial TaskOutputState, finalState State, inputs []subprocess.ExecCommandInput) TaskOutputState {
@@ -39,7 +39,7 @@ func runExecInputs(ctx context.Context, initial TaskOutputState, finalState Stat
 		}
 		last = result
 	}
-	state = state.WithExecResult(last)
+	state = state.withExecResult(last)
 	state.Changed = true
 	state.State = finalState
 	return state

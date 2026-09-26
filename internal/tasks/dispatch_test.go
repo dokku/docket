@@ -16,7 +16,7 @@ func TestWithExecResultCopiesFields(t *testing.T) {
 		ExitCode: 0,
 	}
 
-	got := state.WithExecResult(result)
+	got := state.withExecResult(result)
 
 	if got.Stdout != result.Stdout {
 		t.Errorf("Stdout = %q, want %q", got.Stdout, result.Stdout)
@@ -31,7 +31,7 @@ func TestWithExecResultCopiesFields(t *testing.T) {
 
 func TestWithExecResultDoesNotMutateReceiver(t *testing.T) {
 	original := TaskOutputState{Stdout: "untouched", Stderr: "untouched", ExitCode: 7}
-	_ = original.WithExecResult(subprocess.ExecCommandResponse{
+	_ = original.withExecResult(subprocess.ExecCommandResponse{
 		Stdout:   "new",
 		Stderr:   "new",
 		ExitCode: 1,
@@ -152,7 +152,7 @@ func TestWithExecResultZeroValueClears(t *testing.T) {
 	// stay zero-valued, not that they retain whatever the caller had.
 	state := TaskOutputState{Stdout: "stale", Stderr: "stale", ExitCode: 9}
 
-	got := state.WithExecResult(subprocess.ExecCommandResponse{})
+	got := state.withExecResult(subprocess.ExecCommandResponse{})
 
 	if got.Stdout != "" || got.Stderr != "" || got.ExitCode != 0 {
 		t.Errorf("zero ExecCommandResponse should clear fields, got Stdout=%q Stderr=%q ExitCode=%d", got.Stdout, got.Stderr, got.ExitCode)
