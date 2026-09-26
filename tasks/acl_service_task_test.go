@@ -163,3 +163,109 @@ func TestAclServiceTaskPlanInSyncFromStdout(t *testing.T) {
 		t.Errorf("expected no drift when the ACL is read from stdout, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
+
+func TestAclServiceTaskValidateUsersPerState(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		task    AclServiceTask
+		wantErr string
+	}{
+		{name: "set missing service", task: AclServiceTask{Type: "redis", Users: []string{"alice"}, State: StateSet}, wantErr: "'service' is required"},
+		{name: "clear missing type", task: AclServiceTask{Service: "my-redis", State: StateClear}, wantErr: "'type' is required"},
+		{name: "absent without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateAbsent}, wantErr: "'users' must not be empty for state 'absent'"},
+		{name: "set without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateSet}, wantErr: "'users' must not be empty for state 'set'"},
+		{name: "clear with users", task: AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"alice"}, State: StateClear}, wantErr: "'users' must not be set for state 'clear'"},
+		{name: "set with invalid name", task: AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"../ENV"}, State: StateSet}, wantErr: `for users[0], got "../ENV"`},
+		{name: "clear without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateClear}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.task.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestAclServiceSetPlansFullReplacement(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), aclServiceRunner("bob\nalice\n", "", nil))
+
+	plan := AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"dave", "alice"}, State: StateSet}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.Status != PlanStatusModify {
+		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusModify)
+	}
+	if len(plan.Commands) != 1 || !strings.HasSuffix(plan.Commands[0], "acl:set-service-users redis my-redis dave alice") {
+		t.Errorf("expected a single acl:set-service-users with the full desired list, got %v", plan.Commands)
+	}
+	if want := []string{"add dave", "remove bob"}; !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+func TestAclServiceClearPlansEveryUser(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), aclServiceRunner("bob\nalice\n", "", nil))
+
+	plan := AclServiceTask{Service: "my-redis", Type: "redis", State: StateClear}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.Status != PlanStatusDestroy {
+		t.Errorf("Status = %q, want %q", plan.Status, PlanStatusDestroy)
+	}
+	if len(plan.Commands) != 1 || !strings.HasSuffix(plan.Commands[0], "acl:set-service-users redis my-redis") {
+		t.Errorf("expected a single acl:set-service-users with no users, got %v", plan.Commands)
+	}
+	if want := []string{"remove alice", "remove bob"}; !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
+}
+
+func TestAclServiceSetAndClearRunOneCommand(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		task AclServiceTask
+		want []string
+	}{
+		{
+			name: "set",
+			task: AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"dave", "alice"}, State: StateSet},
+			want: []string{"--quiet acl:set-service-users redis my-redis dave alice"},
+		},
+		{
+			name: "clear",
+			task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateClear},
+			want: []string{"--quiet acl:set-service-users redis my-redis"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			runner, ran := recordingAclRunner("--quiet acl:list-service redis my-redis", "bob\ncarol\n")
+			result := tc.task.Execute(subprocess.ContextWithRunner(testCtx(), runner))
+			if result.Error != nil {
+				t.Fatalf("Execute: %v", result.Error)
+			}
+			if !result.Changed || result.State != tc.task.State {
+				t.Errorf("Changed = %v, State = %q; want true, %q", result.Changed, result.State, tc.task.State)
+			}
+			if got := ran(); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("ran %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

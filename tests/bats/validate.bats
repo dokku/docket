@@ -102,6 +102,79 @@ EOF
   assert_output --partial "'port_mappings' must not be empty for state 'set'"
 }
 
+@test "docket validate exits 0 on acl app state clear without users (#563)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_acl_app:
+        app: web
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on acl app state clear carrying users" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_acl_app:
+        app: web
+        state: clear
+        users:
+          - alice
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'users' must not be set for state 'clear'"
+}
+
+@test "docket validate exits 1 on acl app state absent with an empty users" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_acl_app:
+        app: web
+        state: absent
+        users: []
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'users' must not be empty for state 'absent'"
+}
+
+@test "docket validate exits 1 on acl service state set with an empty users" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_acl_service:
+        service: cache
+        type: redis
+        state: set
+        users: []
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'users' must not be empty for state 'set'"
+}
+
+@test "docket validate exits 1 on an acl user name dokku-acl would refuse" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_acl_service:
+        service: cache
+        type: redis
+        state: present
+        users:
+          - ../ENV
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'users' must be a valid user name for users[0]"
+}
+
 @test "docket validate exits 0 on http auth allowed ip state clear without allowed_ips (#531)" {
   write_tasks_file <<EOF
 ---

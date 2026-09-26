@@ -26,8 +26,8 @@ Keyed by `service` and `type`. Fields left empty are omitted from the address. M
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | yes |  |  | Name of the service instance |
 | `type` | string | yes |  |  | Type of service (e.g. redis, postgres) |
-| `users` | list | no |  |  | List of users to add or remove from the ACL |
-| `state` | string | no | present | present, absent | Desired state of the ACL entries |
+| `users` | list | no |  |  | List of users to add, remove, or set on the ACL; omit for state 'clear' |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the ACL entries |
 
 ## Examples
 
@@ -53,14 +53,24 @@ dokku_acl_service:
     state: absent
 ```
 
+### Replace the users with access to a redis service
+
+```yaml
+dokku_acl_service:
+    service: my-redis
+    type: redis
+    users:
+        - alice
+    state: set
+```
+
 ### Clear the entire ACL for a redis service
 
 ```yaml
 dokku_acl_service:
     service: my-redis
     type: redis
-    users: []
-    state: absent
+    state: clear
 ```
 
 ## Return Values

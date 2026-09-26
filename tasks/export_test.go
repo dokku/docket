@@ -1693,3 +1693,34 @@ func TestExportRegistryAuthIsAddressable(t *testing.T) {
 		t.Errorf("only the addressed resource should be emitted; got:\n%s", out)
 	}
 }
+
+func TestExportAclAppUsesStateSet(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet acl:list web": "bob\nalice\n",
+	}))
+
+	// state:set replaces the whole ACL, so re-applying an export converges an
+	// app carrying an extra user rather than adding to it (#563).
+	bodies, err := AclAppTask{}.ExportApp(ctx, "web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 exported task, got %d", len(bodies))
+	}
+	acl := bodies[0].(AclAppTask)
+	if acl.State != StateSet {
+		t.Errorf("State = %q, want %q", acl.State, StateSet)
+	}
+	// The probe hands back a map, so the export sorts for a stable recipe.
+	if want := []string{"alice", "bob"}; !reflect.DeepEqual(acl.Users, want) {
+		t.Errorf("Users = %v, want %v", acl.Users, want)
+	}
+	if err := acl.Validate(); err != nil {
+		t.Errorf("exported task must be valid, got: %v", err)
+	}
+	if plan := acl.Plan(ctx); !plan.InSync {
+		t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+	}
+}

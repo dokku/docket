@@ -16,11 +16,11 @@ type AclServiceTask struct {
 	// Type is the type of service (e.g. redis, postgres)
 	Type string `required:"true" identity:"key" yaml:"type" description:"Type of service (e.g. redis, postgres)"`
 
-	// Users is the list of users to add or remove from the ACL
-	Users []string `required:"false" identity:"collection" yaml:"users" description:"List of users to add or remove from the ACL"`
+	// Users is the list of users to add, remove, or set on the ACL
+	Users []string `required:"false" identity:"collection" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL; omit for state 'clear'"`
 
 	// State is the desired state of the ACL entries
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the ACL entries"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ACL entries"`
 }
 
 // AclServiceTaskExample contains an example of an AclServiceTask
@@ -57,7 +57,8 @@ func (t AclServiceTask) ProbeSupport() ProbeSupport {
 // from `acl:list-service <type> <name>` (reusing getAclServiceUsers). Note the
 // field inversion versus the other service tasks: Service holds the instance
 // name and Type the datastore type. Services with no ACL entries - and every
-// service when the dokku-acl plugin is absent - are skipped.
+// service when the dokku-acl plugin is absent - are skipped. state:set
+// replaces the whole list for an exact match.
 func (t AclServiceTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
 	services, err := listServices(ctx)
 	if err != nil {
@@ -83,7 +84,7 @@ func (t AclServiceTask) ExportGlobal(ctx context.Context) ([]interface{}, error)
 			Service: s.Name,
 			Type:    s.Type,
 			Users:   sortedSetKeys(users),
-			State:   StatePresent,
+			State:   StateSet,
 		})
 	}
 	return out, nil
@@ -115,11 +116,20 @@ func (t AclServiceTask) Examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Replace the users with access to a redis service",
+			AclServiceTask: AclServiceTask{
+				Service: "my-redis",
+				Type:    "redis",
+				Users:   []string{"alice"},
+				State:   StateSet,
+			},
+		},
+		{
 			Name: "Clear the entire ACL for a redis service",
 			AclServiceTask: AclServiceTask{
 				Service: "my-redis",
 				Type:    "redis",
-				State:   StateAbsent,
+				State:   StateClear,
 			},
 		},
 	})
@@ -135,10 +145,7 @@ func (t AclServiceTask) Validate() error {
 	if err := validateAclServiceTask(t); err != nil {
 		return err
 	}
-	if t.State == StatePresent && len(t.Users) == 0 {
-		return fmt.Errorf("'users' must not be empty for state 'present'")
-	}
-	return nil
+	return validateAclUsers(t.State, t.Users)
 }
 
 // Plan reports the drift the AclServiceTask would produce.
@@ -146,83 +153,32 @@ func (t AclServiceTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
+	probe := func() (map[string]bool, error) { return getAclServiceUsers(ctx, t.Type, t.Service) }
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			current, err := getAclServiceUsers(ctx, t.Type, t.Service)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			toAdd := []string{}
-			mutations := []string{}
-			for _, u := range t.Users {
-				if !current[u] {
-					toAdd = append(toAdd, u)
-					mutations = append(mutations, "add "+u)
-				}
-			}
-			if len(toAdd) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
-			}
-			inputs := make([]subprocess.ExecCommandInput, 0, len(toAdd))
-			for _, u := range toAdd {
-				inputs = append(inputs, subprocess.ExecCommandInput{
-					Command: "dokku",
-					Args:    []string{"--quiet", "acl:add-service", t.Type, t.Service, u},
-				})
-			}
-			return PlanResult{
-				InSync:    false,
-				Status:    PlanStatusModify,
-				Reason:    fmt.Sprintf("%d user(s) to add", len(toAdd)),
-				Mutations: mutations,
-				Commands:  resolveCommands(ctx, inputs),
-				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
-				},
-			}
+			return planAclPresent(ctx, probe, t.Users, func(u string) []string {
+				return []string{"--quiet", "acl:add-service", t.Type, t.Service, u}
+			})
 		},
 		StateAbsent: func() PlanResult {
-			current, err := getAclServiceUsers(ctx, t.Type, t.Service)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			toRemove := []string{}
-			mutations := []string{}
-			if len(t.Users) == 0 {
-				for u := range current {
-					toRemove = append(toRemove, u)
-					mutations = append(mutations, "remove "+u)
-				}
-			} else {
-				for _, u := range t.Users {
-					if current[u] {
-						toRemove = append(toRemove, u)
-						mutations = append(mutations, "remove "+u)
-					}
-				}
-			}
-			if len(toRemove) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
-			}
-			inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
-			for _, u := range toRemove {
-				inputs = append(inputs, subprocess.ExecCommandInput{
-					Command: "dokku",
-					Args:    []string{"--quiet", "acl:remove-service", t.Type, t.Service, u},
-				})
-			}
-			return PlanResult{
-				InSync:    false,
-				Status:    PlanStatusDestroy,
-				Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
-				Mutations: mutations,
-				Commands:  resolveCommands(ctx, inputs),
-				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
-				},
-			}
+			return planAclAbsent(ctx, probe, t.Users, func(u string) []string {
+				return []string{"--quiet", "acl:remove-service", t.Type, t.Service, u}
+			})
+		},
+		StateSet: func() PlanResult {
+			return planAclSet(ctx, probe, t.Users, aclSetServiceUsersInputs(t.Type, t.Service, t.Users))
+		},
+		StateClear: func() PlanResult {
+			return planAclClear(ctx, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil))
 		},
 	})
+}
+
+// aclSetServiceUsersInputs returns the single `acl:set-service-users` call
+// that replaces a service's ACL with users, clearing it when users is empty.
+func aclSetServiceUsersInputs(serviceType, service string, users []string) []subprocess.ExecCommandInput {
+	args := append([]string{"--quiet", "acl:set-service-users", serviceType, service}, users...)
+	return []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
 }
 
 // getAclServiceUsers reads the current ACL for a service via

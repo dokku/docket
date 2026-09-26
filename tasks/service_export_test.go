@@ -297,6 +297,17 @@ func TestExportAclServiceReadsUsers(t *testing.T) {
 			if !reflect.DeepEqual(a.Users, []string{"alice", "bob"}) {
 				t.Errorf("acl users = %v, want [alice bob]", a.Users)
 			}
+			// state:set replaces the whole list, so re-applying an export
+			// converges a service carrying an extra user rather than adding to it.
+			if a.State != StateSet {
+				t.Errorf("acl State = %q, want %q", a.State, StateSet)
+			}
+			if err := a.Validate(); err != nil {
+				t.Errorf("exported task must be valid, got: %v", err)
+			}
+			if plan := a.Plan(ctx); !plan.InSync {
+				t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+			}
 		})
 	}
 }

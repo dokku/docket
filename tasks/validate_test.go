@@ -543,8 +543,8 @@ func TestValidateInvalidTaskInput(t *testing.T) {
 }
 
 func TestValidateInvalidTaskInputSatisfied(t *testing.T) {
-	// A present acl_app with users, and an absent acl_app with no users
-	// (clear the whole ACL), are both valid inputs.
+	// A present acl_app with users, and a clear acl_app with no users, are
+	// both valid inputs.
 	data := []byte(`---
 - tasks:
     - dokku_acl_app:
@@ -554,11 +554,33 @@ func TestValidateInvalidTaskInputSatisfied(t *testing.T) {
         state: present
     - dokku_acl_app:
         app: my-app
-        state: absent
+        state: clear
 `)
 	problems := Validate(data, ValidateOptions{})
 	if n := countProblems(problems, "invalid_task_input"); n != 0 {
 		t.Errorf("expected no invalid_task_input, got %d: %+v", n, problems)
+	}
+}
+
+func TestValidateInvalidTaskInputAclUserName(t *testing.T) {
+	// acl_app mirrors dokku-acl's user name check, so a name the plugin would
+	// refuse is caught offline rather than at apply.
+	data := []byte(`---
+- tasks:
+    - dokku_acl_app:
+        app: my-app
+        state: set
+        users:
+            - alice
+            - ../ENV
+`)
+	problems := Validate(data, ValidateOptions{})
+	p := findProblem(problems, "invalid_task_input")
+	if p == nil {
+		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
+	}
+	if !strings.Contains(p.Message, "users[1]") {
+		t.Errorf("expected message to name the offending entry, got: %q", p.Message)
 	}
 }
 

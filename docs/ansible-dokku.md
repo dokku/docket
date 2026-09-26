@@ -241,8 +241,8 @@ dokku plugin the row needs; blank means dokku core.
 
 | ansible-dokku module | docket task | Plugin | Notes |
 |----------------------|-------------|--------|-------|
-| `dokku_acl_app` | `dokku_acl_app` | dokku-acl | Direct. |
-| `dokku_acl_service` | `dokku_acl_service` | dokku-acl | Direct. |
+| `dokku_acl_app` | `dokku_acl_app` | dokku-acl | docket also supports `state: set` (`acl:set-users`), which treats the declared list as the app's whole ACL and removes every user it omits, and `state: clear`. |
+| `dokku_acl_service` | `dokku_acl_service` | dokku-acl | docket also supports `state: set` (`acl:set-service-users`), which treats the declared list as the service's whole ACL and removes every user it omits, and `state: clear`. |
 | `dokku_app` | `dokku_app` | | Direct. |
 | `dokku_builder` | `dokku_builder_property` | | Direct; both wrap `builder:set`. |
 | `dokku_buildpacks` | `dokku_buildpacks` | | Direct. |
@@ -346,7 +346,7 @@ same file, and it is the spec that Ansible enforces. Those modules are `dokku_bu
 
 | Field | ansible-dokku | docket | What a wrapper has to do |
 |-------|---------------|--------|--------------------------|
-| `users` | Required on `dokku_acl_app` and `dokku_acl_service` | Optional | Nothing; a stricter caller is always safe. |
+| `users` | Required on `dokku_acl_app` and `dokku_acl_service` | Optional, but required and non-empty for `state: present`, `absent`, and `set`, and rejected for `state: clear` | A `state: absent` call with an empty list is a no-op in the module and fails `docket validate`. Drop it. |
 | `buildpacks` | Required | Optional | Nothing. |
 | `config` | Required | Optional, but required and non-empty for `state: set` and rejected for `state: clear` | Nothing for the states the module has. |
 | `domains` | Required | Optional | Nothing. |
