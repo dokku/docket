@@ -16,12 +16,21 @@ jobs:
   tagged-release:
     name: tagged-release
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       CI_BRANCH: release
       PACKAGECLOUD_REPOSITORY: dokku/dokku
-      VERSION: ${{ github.ref_name }}
 
     steps:
+      # Releases are tagged vX.Y.Z so Go modules can resolve them, but the
+      # binaries, packages and formula carry the bare version: dpkg requires a
+      # version to start with a digit.
+      - name: Get Version
+        id: version
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -37,7 +46,7 @@ jobs:
 
       - name: Build binaries
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
           NAME: ${{ steps.repo-name.outputs.REPOSITORY_NAME }}
         run: |
           make build/darwin/${NAME}-amd64
@@ -73,11 +82,12 @@ jobs:
 
       - name: Build Debian Packages
         run: |
-          bundle exec make build/deb/${{ steps.repo-name.outputs.REPOSITORY_NAME }}_${{ github.ref_name }}_arm64.deb
-          bundle exec make build/deb/${{ steps.repo-name.outputs.REPOSITORY_NAME }}_${{ github.ref_name }}_amd64.deb
+          bundle exec make build/deb/${{ steps.repo-name.outputs.REPOSITORY_NAME }}_${{ steps.version.outputs.version }}_arm64.deb
+          bundle exec make build/deb/${{ steps.repo-name.outputs.REPOSITORY_NAME }}_${{ steps.version.outputs.version }}_amd64.deb
           cp build/deb/*.deb dist/
         env:
           BUNDLE_GEMFILE: .github/Gemfile
+          VERSION: ${{ steps.version.outputs.version }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
@@ -90,6 +100,7 @@ jobs:
         env:
           BUNDLE_GEMFILE: .github/Gemfile
           PACKAGECLOUD_TOKEN: ${{ secrets.PACKAGECLOUD_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
 
       - name: Release
         uses: softprops/action-gh-release@v3
@@ -103,7 +114,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs: tagged-release
     env:
-      VERSION: ${{ github.ref_name }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.tagged-release.outputs.version }}
     steps:
       - name: Download release binaries
         uses: actions/download-artifact@v8
@@ -152,6 +164,18 @@ jobs:
           )
           if n != 1:
               raise SystemExit("failed to update version line")
+
+          # The download URLs interpolate the version into the tag, so they
+          # have to carry whatever prefix the tag has (v from 0.9.0 on).
+          tag = os.environ["TAG"]
+          prefix = tag[: len(tag) - len(version)]
+          content, n = re.subn(
+              r'(/releases/download/)[^/"]*#\{version\}/',
+              lambda m: f'{m.group(1)}{prefix}#{{version}}/',
+              content,
+          )
+          if n != 2:
+              raise SystemExit(f"expected 2 download urls, rewrote {n}")
 
           # Anchor each sha256 rewrite to the preceding arch-specific URL line.
           def replace_sha(text, arch, new_sha):
