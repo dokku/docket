@@ -67,8 +67,8 @@ func (t ConfigTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the config task
-func (t ConfigTask) Examples() ([]Doc, error) {
+// examples returns the examples for the config task
+func (t ConfigTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ConfigTaskExample{
 		{
 			Name: "set KEY=VALUE",

@@ -160,8 +160,8 @@ func (t ServiceBackupTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
-// Examples returns a list of ServiceBackupTaskExamples as yaml
-func (t ServiceBackupTask) Examples() ([]Doc, error) {
+// examples returns a list of ServiceBackupTaskExamples as yaml
+func (t ServiceBackupTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ServiceBackupTaskExample{
 		{
 			Name: "Schedule daily backups of a postgres service to S3",

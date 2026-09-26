@@ -34,8 +34,8 @@ func (t OpenrestyPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the openresty property task
-func (t OpenrestyPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the openresty property task
+func (t OpenrestyPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]OpenrestyPropertyTaskExample{
 		{
 			Name: "Setting the proxy read timeout for an app",
@@ -120,8 +120,8 @@ var openrestyPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t OpenrestyPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t OpenrestyPropertyTask) propertyTable() PropertyTable {
 	return openrestyPropertyTable
 }
 

@@ -68,8 +68,8 @@ func (t GitAuthTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the git auth task
-func (t GitAuthTask) Examples() ([]Doc, error) {
+// examples returns the examples for the git auth task
+func (t GitAuthTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitAuthTaskExample{
 		{
 			Name: "Configure netrc credentials for a git host",

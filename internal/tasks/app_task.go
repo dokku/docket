@@ -44,8 +44,8 @@ func (t AppTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns a list of AppTaskExamples as yaml
-func (t AppTask) Examples() ([]Doc, error) {
+// examples returns a list of AppTaskExamples as yaml
+func (t AppTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppTaskExample{
 		{
 			Name: "Create an app named hello-world",

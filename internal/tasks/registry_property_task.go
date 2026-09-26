@@ -34,8 +34,8 @@ func (t RegistryPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the registry property task
-func (t RegistryPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the registry property task
+func (t RegistryPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryPropertyTaskExample{
 		{
 			Name: "Setting the image repo for an app",
@@ -91,8 +91,8 @@ var registryPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t RegistryPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t RegistryPropertyTask) propertyTable() PropertyTable {
 	return registryPropertyTable
 }
 

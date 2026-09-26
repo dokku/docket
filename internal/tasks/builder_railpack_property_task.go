@@ -34,8 +34,8 @@ func (t BuilderRailpackPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builder-railpack property task
-func (t BuilderRailpackPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builder-railpack property task
+func (t BuilderRailpackPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderRailpackPropertyTaskExample{
 		{
 			Name: "Setting the railpack.json path for an app",
@@ -79,8 +79,8 @@ var builderRailpackPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuilderRailpackPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuilderRailpackPropertyTask) propertyTable() PropertyTable {
 	return builderRailpackPropertyTable
 }
 

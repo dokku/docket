@@ -34,8 +34,8 @@ func (t NginxPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the nginx property task
-func (t NginxPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the nginx property task
+func (t NginxPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]NginxPropertyTaskExample{
 		{
 			Name: "Setting the proxy read timeout for an app",
@@ -117,8 +117,8 @@ var nginxPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t NginxPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t NginxPropertyTask) propertyTable() PropertyTable {
 	return nginxPropertyTable
 }
 

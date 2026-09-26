@@ -46,8 +46,8 @@ func (t SchedulerDockerLocalPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-docker-local property task
-func (t SchedulerDockerLocalPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-docker-local property task
+func (t SchedulerDockerLocalPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerDockerLocalPropertyTaskExample{
 		{
 			Name: "Enabling the init process for an app",
@@ -93,8 +93,8 @@ var schedulerDockerLocalPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t SchedulerDockerLocalPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t SchedulerDockerLocalPropertyTask) propertyTable() PropertyTable {
 	return schedulerDockerLocalPropertyTable
 }
 

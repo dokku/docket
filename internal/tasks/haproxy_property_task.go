@@ -34,8 +34,8 @@ func (t HaproxyPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the haproxy property task
-func (t HaproxyPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the haproxy property task
+func (t HaproxyPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HaproxyPropertyTaskExample{
 		{
 			Name: "Setting the letsencrypt email globally",
@@ -83,8 +83,8 @@ var haproxyPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t HaproxyPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t HaproxyPropertyTask) propertyTable() PropertyTable {
 	return haproxyPropertyTable
 }
 

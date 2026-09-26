@@ -712,7 +712,7 @@ func TestAllTaskExamplesValidate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			examples, err := TaskExamples(task)
 			if err != nil {
-				t.Fatalf("Examples() returned error: %v", err)
+				t.Fatalf("examples() returned error: %v", err)
 			}
 			for _, example := range examples {
 				var body map[string]yaml.Node

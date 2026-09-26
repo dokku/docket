@@ -120,7 +120,7 @@ func (p PropertyTable) Plugin() string {
 // backs the service - deliberately does not implement it. See
 // TestEveryPropertyTaskDeclaresPropertyTable.
 type PropertyTableDocer interface {
-	PropertyTable() PropertyTable
+	propertyTable() PropertyTable
 }
 
 // TaskPropertyTable returns t's property table and whether t declared one.
@@ -128,7 +128,7 @@ type PropertyTableDocer interface {
 // one read site, mirroring TaskExportSupport and TaskProbeSupport.
 func TaskPropertyTable(t Task) (PropertyTable, bool) {
 	if d, ok := t.(PropertyTableDocer); ok {
-		return d.PropertyTable(), true
+		return d.propertyTable(), true
 	}
 	return PropertyTable{}, false
 }
@@ -286,7 +286,7 @@ func getProperty(ctx context.Context, subcommand, app string, global bool, prope
 // payload happens to carry are synthesized into it first; without that a set
 // letsencrypt `dns-provider-<KEY>` credential is dropped from the export (#449).
 func exportProperties(ctx context.Context, task PropertyTableDocer, app string, factory func(app, property, value string) interface{}) ([]interface{}, error) {
-	table := task.PropertyTable()
+	table := task.propertyTable()
 	keys := table.Keys
 	plugin := table.Plugin()
 	payload, err := readPropertyReport(ctx, plugin, app, false)
@@ -328,7 +328,7 @@ func exportProperties(ctx context.Context, task PropertyTableDocer, app string, 
 // instead of silently dropped (#327). Probeable dynamic properties are
 // synthesized into keys the same way exportProperties does it.
 func exportGlobalProperties(ctx context.Context, task PropertyTableDocer, factory func(property, value string) interface{}) ([]interface{}, error) {
-	table := task.PropertyTable()
+	table := task.propertyTable()
 	keys := table.Keys
 	plugin := table.Plugin()
 	payload, err := readPropertyReport(ctx, plugin, "", true)
@@ -649,7 +649,7 @@ func propertyEntry(plugin, property string, keys map[string]PropertyKeys) Proper
 // the export path does not have to repeat the plugin name and the map beside
 // the task type it already matched on.
 func taskPropertyEntry(task PropertyTableDocer, property string) PropertyKeys {
-	table := task.PropertyTable()
+	table := task.propertyTable()
 	return propertyEntry(table.Plugin(), property, table.Keys)
 }
 
@@ -729,7 +729,7 @@ func dynamicPropertiesFromReport(plugin string, payload map[string]string, globa
 // each property task's Validate() call it so plan and validate report the same
 // errors.
 func validatePropertyInput(task PropertyTableDocer, state State, app string, global bool, property, value string) error {
-	table := task.PropertyTable()
+	table := task.propertyTable()
 	// A rejected family is checked before anything else, including scoping:
 	// the user wrote a name this task will never manage, so naming the task
 	// that does is more use than telling them the app field is missing too.
@@ -759,7 +759,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 		return planErr(err)
 	}
 
-	table := task.PropertyTable()
+	table := task.propertyTable()
 	keys := table.Keys
 	subcommand := table.Subcommand
 	plugin := table.Plugin()

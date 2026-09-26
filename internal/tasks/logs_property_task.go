@@ -34,8 +34,8 @@ func (t LogsPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the logs property task
-func (t LogsPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the logs property task
+func (t LogsPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]LogsPropertyTaskExample{
 		{
 			Name: "Setting the max-size value for an app",
@@ -83,8 +83,8 @@ var logsPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t LogsPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t LogsPropertyTask) propertyTable() PropertyTable {
 	return logsPropertyTable
 }
 

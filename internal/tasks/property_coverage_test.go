@@ -36,7 +36,7 @@ func TestEveryPropertyTaskDeclaresPropertyTable(t *testing.T) {
 		case declared && exempt:
 			t.Errorf("task %q declares a property table but is listed as exempt (%q); drop it from propertyTasksWithoutTable", name, reason)
 		case !declared && !exempt:
-			t.Errorf("task %q does not implement PropertyTableDocer (add a PropertyTable() declaration, or explain the exemption in propertyTasksWithoutTable)", name)
+			t.Errorf("task %q does not implement PropertyTableDocer (add a propertyTable() declaration, or explain the exemption in propertyTasksWithoutTable)", name)
 		}
 	}
 

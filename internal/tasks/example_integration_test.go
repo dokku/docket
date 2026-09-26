@@ -15,7 +15,7 @@ import (
 // app:clone source). It matches the image the per-task integration tests use.
 const exampleDeployImage = "dokku/smoke-test-app:dockerfile"
 
-// exampleReq declares the extra setup a task's documented Examples() need to be
+// exampleReq declares the extra setup a task's documented examples() need to be
 // applied end to end. The zero value (a task absent from exampleIntegrationPolicy)
 // applies every example verbatim against the shared placeholder apps it
 // references, which is the common case for property, config, toggle, storage,
@@ -158,7 +158,7 @@ func TestIntegrationTaskExamples(t *testing.T) {
 
 			examples, err := TaskExamples(task)
 			if err != nil {
-				t.Fatalf("Examples() returned error: %v", err)
+				t.Fatalf("examples() returned error: %v", err)
 			}
 
 			// created tracks every app the driver stands up for this task so it

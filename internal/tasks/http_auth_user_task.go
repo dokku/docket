@@ -122,8 +122,8 @@ func (t HttpAuthUserTask) SensitiveValues() []string {
 	return out
 }
 
-// Examples returns a list of HttpAuthUserTaskExamples as yaml
-func (t HttpAuthUserTask) Examples() ([]Doc, error) {
+// examples returns a list of HttpAuthUserTaskExamples as yaml
+func (t HttpAuthUserTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HttpAuthUserTaskExample{
 		{
 			Name: "Add HTTP auth users to an app",

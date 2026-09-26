@@ -67,8 +67,8 @@ func (t PsScaleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the ps scale task
-func (t PsScaleTask) Examples() ([]Doc, error) {
+// examples returns the examples for the ps scale task
+func (t PsScaleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]PsScaleTaskExample{
 		{
 			Name: "Scale web and worker processes",

@@ -142,8 +142,8 @@ func (t StorageMountTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the storage mount task
-func (t StorageMountTask) Examples() ([]Doc, error) {
+// examples returns the examples for the storage mount task
+func (t StorageMountTask) examples() ([]Doc, error) {
 	return MarshalExamples([]StorageMountTaskExample{
 		{
 			Name: "Attach a named storage entry to an app",

@@ -34,8 +34,8 @@ func (t AppsPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the apps property task
-func (t AppsPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the apps property task
+func (t AppsPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppsPropertyTaskExample{
 		{
 			Name: "Disabling app auto-creation globally",
@@ -94,8 +94,8 @@ var appsPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t AppsPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t AppsPropertyTask) propertyTable() PropertyTable {
 	return appsPropertyTable
 }
 

@@ -51,8 +51,8 @@ func (t LetsencryptTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin"}
 }
 
-// Examples returns the examples for the letsencrypt task
-func (t LetsencryptTask) Examples() ([]Doc, error) {
+// examples returns the examples for the letsencrypt task
+func (t LetsencryptTask) examples() ([]Doc, error) {
 	return MarshalExamples([]LetsencryptTaskExample{
 		{
 			Name: "Enable letsencrypt for an app",

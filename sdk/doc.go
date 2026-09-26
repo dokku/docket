@@ -20,8 +20,8 @@
 // the same release.
 //
 // Types are aliases of the engine's own, so a value built here is the value
-// the engine runs. An exported method or field of one of them that takes or
-// returns a type this package does not name is not part of the promise.
+// the engine runs. Every type their exported fields and methods take or return
+// is named here too.
 //
 // # Runs
 //

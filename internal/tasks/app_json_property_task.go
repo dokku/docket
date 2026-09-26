@@ -34,8 +34,8 @@ func (t AppJsonPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the app.json property task
-func (t AppJsonPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the app.json property task
+func (t AppJsonPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppJsonPropertyTaskExample{
 		{
 			Name: "Setting the appjson-path for an app",
@@ -78,8 +78,8 @@ var appJsonPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t AppJsonPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t AppJsonPropertyTask) propertyTable() PropertyTable {
 	return appJsonPropertyTable
 }
 

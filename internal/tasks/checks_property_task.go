@@ -34,8 +34,8 @@ func (t ChecksPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the checks property task
-func (t ChecksPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the checks property task
+func (t ChecksPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksPropertyTaskExample{
 		{
 			Name: "Setting the wait-to-retire value for an app",
@@ -78,8 +78,8 @@ var checksPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t ChecksPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t ChecksPropertyTask) propertyTable() PropertyTable {
 	return checksPropertyTable
 }
 

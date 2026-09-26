@@ -109,7 +109,7 @@ A few conventions to follow:
   `apply` and `plan` emit a one-time `warning` line above each deprecated task's result line.
   Keep the message short and name the replacement, e.g.
   `"use dokku_storage_entry instead; storage:ensure-directory has been deprecated"`.
-- Every task must also implement `Doc() string` and `Examples() ([]Doc, error)`, the optional
+- Every task must also implement `Doc() string` and `examples() ([]Doc, error)`, the optional
   `Documented` interface. They are not part of `Task`, since running a task never needs them, but
   they supply the Synopsis and Examples on the task's generated page and in
   [`docket schema`](task-catalog.md). `TestEveryTaskIsDocumented` fails the build if a task ships
@@ -335,8 +335,8 @@ var nginxPropertyTable = PropertyTable{
   },
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t NginxPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t NginxPropertyTask) propertyTable() PropertyTable {
   return nginxPropertyTable
 }
 
@@ -494,12 +494,12 @@ and offer a field (config's `preserve`) for keys the task cannot recognise on it
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
-`Examples()`, `ExportSupport()`, `ProbeSupport()`, optional `Requirements()` and `PropertyTable()`
+`examples()`, `ExportSupport()`, `ProbeSupport()`, optional `Requirements()` and `propertyTable()`
 methods plus its struct field tags - they are not hand-edited. Each page carries a Synopsis (from
 `Doc()`), a Requirements section (when the task implements `Requirements()`), a Runner requirements
 section (when a field is tagged `runner_file:"true"`), Export support and Probe support sections, an
 Identity section, a Parameters table (reflected from the field tags), a Properties table (for a task
-with a `PropertyTable()`), the examples, and a shared Return Values table. After adding or changing a
+with a `propertyTable()`), the examples, and a shared Return Values table. After adding or changing a
 task, regenerate them:
 
 ```bash

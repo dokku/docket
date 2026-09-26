@@ -51,8 +51,8 @@ func (t AppCloneTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "only the target app's existence is probed; the clone source and the cloned contents are never read back"}
 }
 
-// Examples returns the examples for the app clone task
-func (t AppCloneTask) Examples() ([]Doc, error) {
+// examples returns the examples for the app clone task
+func (t AppCloneTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppCloneTaskExample{
 		{
 			Name: "Clone an app",

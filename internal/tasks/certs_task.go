@@ -77,8 +77,8 @@ func (t CertsTask) Requirements() []string {
 	return []string{"dokku-global-cert plugin >= 0.7.0 (required only when global: true)"}
 }
 
-// Examples returns the examples for the certs task
-func (t CertsTask) Examples() ([]Doc, error) {
+// examples returns the examples for the certs task
+func (t CertsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]CertsTaskExample{
 		{
 			Name: "Add an SSL certificate to an app",

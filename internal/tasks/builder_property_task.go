@@ -34,8 +34,8 @@ func (t BuilderPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builder property task
-func (t BuilderPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builder property task
+func (t BuilderPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderPropertyTaskExample{
 		{
 			Name: "Overriding the auto-selected builder",
@@ -88,8 +88,8 @@ var builderPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuilderPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuilderPropertyTask) propertyTable() PropertyTable {
 	return builderPropertyTable
 }
 

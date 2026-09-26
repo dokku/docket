@@ -411,7 +411,7 @@ func Catalog() (TaskCatalog, error) {
 // in the order given, so the message names the first one the caller wrote, and
 // all of them are checked before any schema is built.
 //
-// The other error comes from Examples(), which yaml-marshals each example
+// The other error comes from examples(), which yaml-marshals each example
 // struct. Nothing else here can fail.
 func CatalogFor(typeKeys []string) (TaskCatalog, error) {
 	names := TaskTypes()

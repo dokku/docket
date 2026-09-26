@@ -52,8 +52,8 @@ func (t BuildpacksTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the buildpacks task
-func (t BuildpacksTask) Examples() ([]Doc, error) {
+// examples returns the examples for the buildpacks task
+func (t BuildpacksTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuildpacksTaskExample{
 		{
 			Name: "Add buildpacks to an app",

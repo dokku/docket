@@ -34,8 +34,8 @@ func (t CaddyPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the caddy property task
-func (t CaddyPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the caddy property task
+func (t CaddyPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]CaddyPropertyTaskExample{
 		{
 			Name: "Enabling internal TLS for an app",
@@ -84,8 +84,8 @@ var caddyPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t CaddyPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t CaddyPropertyTask) propertyTable() PropertyTable {
 	return caddyPropertyTable
 }
 

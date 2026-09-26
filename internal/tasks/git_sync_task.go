@@ -63,8 +63,8 @@ func (t GitSyncTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "dokku records the resolved commit as `<remote>#<sha>`, which cannot be compared against a branch or tag name, so only the remote and the persisted deploy branch are probed"}
 }
 
-// Examples returns the examples for the git sync task
-func (t GitSyncTask) Examples() ([]Doc, error) {
+// examples returns the examples for the git sync task
+func (t GitSyncTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitSyncTaskExample{
 		{
 			Name: "Sync a git repository to an app",

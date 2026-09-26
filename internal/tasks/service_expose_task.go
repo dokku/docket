@@ -82,8 +82,8 @@ func (t ServiceExposeTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
-// Examples returns a list of ServiceExposeTaskExamples as yaml
-func (t ServiceExposeTask) Examples() ([]Doc, error) {
+// examples returns a list of ServiceExposeTaskExamples as yaml
+func (t ServiceExposeTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ServiceExposeTaskExample{
 		{
 			Name: "Expose a postgres service named my-db on host port 5432",

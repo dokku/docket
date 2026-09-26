@@ -34,8 +34,8 @@ func (t BuildsPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builds property task
-func (t BuildsPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builds property task
+func (t BuildsPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuildsPropertyTaskExample{
 		{
 			Name: "Setting the retention value for an app",
@@ -78,8 +78,8 @@ var buildsPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuildsPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuildsPropertyTask) propertyTable() PropertyTable {
 	return buildsPropertyTable
 }
 

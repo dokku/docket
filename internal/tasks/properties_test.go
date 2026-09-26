@@ -17,7 +17,7 @@ type propertyTableTask struct {
 	table PropertyTable
 }
 
-func (p propertyTableTask) PropertyTable() PropertyTable { return p.table }
+func (p propertyTableTask) propertyTable() PropertyTable { return p.table }
 
 // fakePropertyTask builds a propertyTableTask from a subcommand and key map.
 func fakePropertyTask(subcommand string, keys map[string]PropertyKeys) propertyTableTask {

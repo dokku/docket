@@ -175,5 +175,5 @@ the recipe format and change when it does: a field added, renamed or removed in 
 renamed or removed here in the same release.
 
 The types in `sdk` are aliases of the engine's own, so a value built through `sdk` is the value the
-engine runs. An exported method or field of one of them that takes or returns a type `sdk` does not
-name is not part of the promise. Nothing under `internal/` carries any guarantee.
+engine runs. Every type their exported fields and methods take or return is named in `sdk` too.
+Nothing under `internal/` carries any guarantee.

@@ -61,8 +61,8 @@ func (t GitFromImageTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "the recorded image reference is probed; the image digest is not, so a mutable tag that moved plans as in sync"}
 }
 
-// Examples returns the examples for the git from image task
-func (t GitFromImageTask) Examples() ([]Doc, error) {
+// examples returns the examples for the git from image task
+func (t GitFromImageTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromImageTaskExample{
 		{
 			Name: "Deploy an app from a docker image",

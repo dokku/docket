@@ -34,8 +34,8 @@ func (t ProxyPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the proxy property task
-func (t ProxyPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the proxy property task
+func (t ProxyPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ProxyPropertyTaskExample{
 		{
 			Name: "Setting the proxy type for an app",
@@ -89,8 +89,8 @@ var proxyPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t ProxyPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t ProxyPropertyTask) propertyTable() PropertyTable {
 	return proxyPropertyTable
 }
 

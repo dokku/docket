@@ -24,29 +24,9 @@ type StubTask struct {
 	Key string `yaml:"key" required:"true" identity:"key"`
 }
 
-// StubTaskExample wraps the stub under its recipe key, the way every real
-// task's example type does.
-type StubTaskExample struct {
-	// Name is the task name holding the StubTask description
-	Name string `yaml:"-"`
-
-	// StubTask is the StubTask configuration
-	StubTask StubTask `yaml:"dokku_stub"`
-}
-
-// GetName returns the name of the example
-func (e StubTaskExample) GetName() string { return e.Name }
-
-// Doc / Examples are not exercised by the apply / plan tests, and Task does not
-// require them. They are declared because every real task declares them and the
-// stub is registered, so `docket schema` describes it alongside the built-ins.
-func (t StubTask) Doc() string { return "stub task for tests" }
-
-func (t StubTask) Examples() ([]tasks.Doc, error) {
-	return tasks.MarshalExamples([]StubTaskExample{
-		{Name: "Run the stub", StubTask: StubTask{Key: "example"}},
-	})
-}
+// The stub declares no Doc() or examples(). Task does not require them, and
+// examples() is unexported, so a type outside the tasks package cannot supply
+// them: `docket schema` lists the stub with an empty synopsis and no examples.
 
 // ExportSupport / ProbeSupport are declared for the same reason every real
 // task declares them: the stub stands in for one, and anything that walks the

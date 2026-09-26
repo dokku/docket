@@ -70,8 +70,8 @@ func (t ServicePropertyTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
-// Examples returns a list of ServicePropertyTaskExamples as yaml
-func (t ServicePropertyTask) Examples() ([]Doc, error) {
+// examples returns a list of ServicePropertyTaskExamples as yaml
+func (t ServicePropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ServicePropertyTaskExample{
 		{
 			Name: "Set the restart-policy for a postgres service",

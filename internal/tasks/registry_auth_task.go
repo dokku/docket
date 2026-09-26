@@ -124,8 +124,8 @@ func (t RegistryAuthTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the registry auth task
-func (t RegistryAuthTask) Examples() ([]Doc, error) {
+// examples returns the examples for the registry auth task
+func (t RegistryAuthTask) examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryAuthTaskExample{
 		{
 			Name: "Log in to a registry for an app",

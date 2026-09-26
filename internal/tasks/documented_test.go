@@ -49,7 +49,7 @@ func TestTaskDocumentationDeclared(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TaskExamples returned error: %v", err)
 	}
-	want, err := task.Examples()
+	want, err := task.examples()
 	if err != nil {
 		t.Fatalf("Examples returned error: %v", err)
 	}

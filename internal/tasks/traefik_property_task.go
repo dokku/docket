@@ -38,8 +38,8 @@ func (t TraefikPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the traefik property task
-func (t TraefikPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the traefik property task
+func (t TraefikPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]TraefikPropertyTaskExample{
 		{
 			Name: "Setting the letsencrypt email globally",
@@ -107,8 +107,8 @@ var traefikPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t TraefikPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t TraefikPropertyTask) propertyTable() PropertyTable {
 	return traefikPropertyTable
 }
 

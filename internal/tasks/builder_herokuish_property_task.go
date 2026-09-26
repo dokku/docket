@@ -34,8 +34,8 @@ func (t BuilderHerokuishPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builder-herokuish property task
-func (t BuilderHerokuishPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builder-herokuish property task
+func (t BuilderHerokuishPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderHerokuishPropertyTaskExample{
 		{
 			Name: "Allowing the herokuish builder for an app",
@@ -79,8 +79,8 @@ var builderHerokuishPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuilderHerokuishPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuilderHerokuishPropertyTask) propertyTable() PropertyTable {
 	return builderHerokuishPropertyTable
 }
 

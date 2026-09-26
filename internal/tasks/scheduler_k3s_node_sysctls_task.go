@@ -71,8 +71,8 @@ func (t SchedulerK3sNodeSysctlsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-k3s node sysctls task
-func (t SchedulerK3sNodeSysctlsTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-k3s node sysctls task
+func (t SchedulerK3sNodeSysctlsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sNodeSysctlsTaskExample{
 		{
 			Name: "Set node sysctls for every unprofiled node",

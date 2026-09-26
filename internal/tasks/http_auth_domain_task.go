@@ -57,8 +57,8 @@ func (t HttpAuthDomainTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin >= 0.14.0"}
 }
 
-// Examples returns a list of HttpAuthDomainTaskExamples as yaml
-func (t HttpAuthDomainTask) Examples() ([]Doc, error) {
+// examples returns a list of HttpAuthDomainTaskExamples as yaml
+func (t HttpAuthDomainTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HttpAuthDomainTaskExample{
 		{
 			Name: "Restrict HTTP auth to specific domains for an app",

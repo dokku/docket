@@ -79,8 +79,8 @@ func (t MaintenanceTask) Requirements() []string {
 	return []string{"dokku-maintenance plugin"}
 }
 
-// Examples returns the examples for the maintenance task
-func (t MaintenanceTask) Examples() ([]Doc, error) {
+// examples returns the examples for the maintenance task
+func (t MaintenanceTask) examples() ([]Doc, error) {
 	return MarshalExamples([]MaintenanceTaskExample{
 		{
 			Name: "Enable maintenance mode for an app",

@@ -50,8 +50,8 @@ func (t ResourceLimitTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the resource limit task
-func (t ResourceLimitTask) Examples() ([]Doc, error) {
+// examples returns the examples for the resource limit task
+func (t ResourceLimitTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceLimitTaskExample{
 		{
 			Name: "Set CPU and memory limits",

@@ -51,8 +51,8 @@ func (t DomainsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the domains task
-func (t DomainsTask) Examples() ([]Doc, error) {
+// examples returns the examples for the domains task
+func (t DomainsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]DomainsTaskExample{
 		{
 			Name: "Add domains to an app",

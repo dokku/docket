@@ -61,8 +61,8 @@ func (t SchedulerK3sAnnotationsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-k3s annotations task
-func (t SchedulerK3sAnnotationsTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-k3s annotations task
+func (t SchedulerK3sAnnotationsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sAnnotationsTaskExample{
 		{
 			Name: "Set deployment annotations on an app's web process",

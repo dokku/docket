@@ -34,8 +34,8 @@ func (t BuilderDockerfilePropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builder-dockerfile property task
-func (t BuilderDockerfilePropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builder-dockerfile property task
+func (t BuilderDockerfilePropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderDockerfilePropertyTaskExample{
 		{
 			Name: "Setting the dockerfile path for an app",
@@ -79,8 +79,8 @@ var builderDockerfilePropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuilderDockerfilePropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuilderDockerfilePropertyTask) propertyTable() PropertyTable {
 	return builderDockerfilePropertyTable
 }
 

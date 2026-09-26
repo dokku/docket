@@ -65,8 +65,8 @@ func (t DomainsToggleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the domains toggle task
-func (t DomainsToggleTask) Examples() ([]Doc, error) {
+// examples returns the examples for the domains toggle task
+func (t DomainsToggleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]DomainsToggleTaskExample{
 		{
 			Name: "Enable the domains plugin for an app",

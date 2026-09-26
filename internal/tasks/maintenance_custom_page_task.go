@@ -71,8 +71,8 @@ func (t MaintenanceCustomPageTask) Requirements() []string {
 	return []string{"dokku-maintenance plugin"}
 }
 
-// Examples returns the examples for the maintenance custom page task
-func (t MaintenanceCustomPageTask) Examples() ([]Doc, error) {
+// examples returns the examples for the maintenance custom page task
+func (t MaintenanceCustomPageTask) examples() ([]Doc, error) {
 	return MarshalExamples([]MaintenanceCustomPageTaskExample{
 		{
 			Name: "Set a custom maintenance page from inline HTML",

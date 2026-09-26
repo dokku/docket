@@ -65,8 +65,8 @@ func (t ProxyToggleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the proxy toggle task
-func (t ProxyToggleTask) Examples() ([]Doc, error) {
+// examples returns the examples for the proxy toggle task
+func (t ProxyToggleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ProxyToggleTaskExample{
 		{
 			Name: "Enable the proxy for an app",

@@ -47,8 +47,8 @@ func (t NetworkTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns a list of NetworkTaskExamples as yaml
-func (t NetworkTask) Examples() ([]Doc, error) {
+// examples returns a list of NetworkTaskExamples as yaml
+func (t NetworkTask) examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkTaskExample{
 		{
 			Name: "Create a network named example-network",

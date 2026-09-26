@@ -59,8 +59,8 @@ func (t HttpAuthAllowedIpTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin >= 0.14.0"}
 }
 
-// Examples returns a list of HttpAuthAllowedIpTaskExamples as yaml
-func (t HttpAuthAllowedIpTask) Examples() ([]Doc, error) {
+// examples returns a list of HttpAuthAllowedIpTaskExamples as yaml
+func (t HttpAuthAllowedIpTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HttpAuthAllowedIpTaskExample{
 		{
 			Name: "Allow IP addresses to bypass HTTP auth for an app",

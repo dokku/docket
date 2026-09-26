@@ -59,8 +59,8 @@ func (t GitFromArchiveTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "the recorded archive source is probed; the archive contents are not hashed, so a changed archive at the same url plans as in sync"}
 }
 
-// Examples returns the examples for the git from archive task
-func (t GitFromArchiveTask) Examples() ([]Doc, error) {
+// examples returns the examples for the git from archive task
+func (t GitFromArchiveTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromArchiveTaskExample{
 		{
 			Name: "Deploy a tar.gz archive",

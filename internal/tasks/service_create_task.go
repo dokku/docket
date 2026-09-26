@@ -159,8 +159,8 @@ func (t ServiceCreateTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
-// Examples returns a list of ServiceCreateTaskExamples as yaml
-func (t ServiceCreateTask) Examples() ([]Doc, error) {
+// examples returns a list of ServiceCreateTaskExamples as yaml
+func (t ServiceCreateTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ServiceCreateTaskExample{
 		{
 			Name: "Create a redis service named my-redis",

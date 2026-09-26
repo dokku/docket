@@ -57,8 +57,8 @@ func (t SchedulerK3sAutoscalingAuthTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-k3s autoscaling-auth task
-func (t SchedulerK3sAutoscalingAuthTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-k3s autoscaling-auth task
+func (t SchedulerK3sAutoscalingAuthTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sAutoscalingAuthTaskExample{
 		{
 			Name: "Set AWS secret manager trigger metadata on an app",

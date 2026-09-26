@@ -34,8 +34,8 @@ func (t NetworkPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the network property task
-func (t NetworkPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the network property task
+func (t NetworkPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkPropertyTaskExample{
 		{
 			Name: "Associates a network after a container is created but before it is started",
@@ -92,8 +92,8 @@ var networkPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t NetworkPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t NetworkPropertyTask) propertyTable() PropertyTable {
 	return networkPropertyTable
 }
 

@@ -76,8 +76,8 @@ func (t ChecksToggleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the checks toggle task
-func (t ChecksToggleTask) Examples() ([]Doc, error) {
+// examples returns the examples for the checks toggle task
+func (t ChecksToggleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksToggleTaskExample{
 		{
 			Name: "Disable the zero downtime deployment",

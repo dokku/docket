@@ -59,8 +59,8 @@ func (t HttpAuthTask) Requirements() []string {
 	return []string{"dokku-http-auth plugin >= 0.14.0"}
 }
 
-// Examples returns a list of HttpAuthTaskExamples as yaml
-func (t HttpAuthTask) Examples() ([]Doc, error) {
+// examples returns a list of HttpAuthTaskExamples as yaml
+func (t HttpAuthTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HttpAuthTaskExample{
 		{
 			Name: "Enable HTTP authentication for an app",

@@ -74,8 +74,8 @@ func (t PortsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the ports task
-func (t PortsTask) Examples() ([]Doc, error) {
+// examples returns the examples for the ports task
+func (t PortsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]PortsTaskExample{
 		{
 			Name: "Map http port 80 to container port 5000",

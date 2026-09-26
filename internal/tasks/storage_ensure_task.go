@@ -58,8 +58,8 @@ func (t StorageEnsureTask) Deprecation() string {
 	return "use dokku_storage_entry instead; dokku's storage:ensure-directory has been deprecated in favor of storage:create"
 }
 
-// Examples returns the examples for the storage ensure task
-func (t StorageEnsureTask) Examples() ([]Doc, error) {
+// examples returns the examples for the storage ensure task
+func (t StorageEnsureTask) examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEnsureTaskExample{
 		{
 			Name: "Ensure a storage directory owned by the herokuish user",

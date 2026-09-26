@@ -60,32 +60,31 @@ var roots = []reflect.Type{
 
 // collect walks t and records every exported named type from an aliased
 // package that it is, or reaches through exported struct fields and
-// pointer, slice, array and map elements.
+// pointer, slice, array and map elements. A named type is recorded before its
+// underlying type is walked, so a named slice such as `type X []Y` gets an
+// alias for X as well as Y.
 func collect(t reflect.Type, seen map[reflect.Type]bool) {
+	if t.Name() != "" {
+		if _, ok := aliasedPackages[t.PkgPath()]; !ok || !isExported(t.Name()) {
+			return
+		}
+		if seen[t] {
+			return
+		}
+		seen[t] = true
+	}
+
 	switch t.Kind() {
 	case reflect.Pointer, reflect.Slice, reflect.Array:
 		collect(t.Elem(), seen)
-		return
 	case reflect.Map:
 		collect(t.Key(), seen)
 		collect(t.Elem(), seen)
-		return
-	}
-
-	if seen[t] {
-		return
-	}
-	if _, ok := aliasedPackages[t.PkgPath()]; !ok || !isExported(t.Name()) {
-		return
-	}
-	seen[t] = true
-
-	if t.Kind() != reflect.Struct {
-		return
-	}
-	for i := 0; i < t.NumField(); i++ {
-		if field := t.Field(i); field.IsExported() {
-			collect(field.Type, seen)
+	case reflect.Struct:
+		for i := 0; i < t.NumField(); i++ {
+			if field := t.Field(i); field.IsExported() {
+				collect(field.Type, seen)
+			}
 		}
 	}
 }
@@ -94,8 +93,9 @@ func isExported(name string) bool {
 	return name != "" && name[0] >= 'A' && name[0] <= 'Z'
 }
 
-// render returns the formatted contents of sdk/types_gen.go.
-func render() ([]byte, error) {
+// surface returns every type the sdk aliases: the roots, every registered
+// task, and what their exported fields reach.
+func surface() (map[reflect.Type]bool, error) {
 	seen := map[reflect.Type]bool{}
 	for _, root := range roots {
 		collect(root, seen)
@@ -106,6 +106,15 @@ func render() ([]byte, error) {
 			return nil, fmt.Errorf("task type %q is listed but not registered", typeKey)
 		}
 		collect(reflect.TypeOf(task), seen)
+	}
+	return seen, nil
+}
+
+// render returns the formatted contents of sdk/types_gen.go.
+func render() ([]byte, error) {
+	seen, err := surface()
+	if err != nil {
+		return nil, err
 	}
 
 	names := map[string]reflect.Type{}

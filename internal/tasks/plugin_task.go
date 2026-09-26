@@ -64,8 +64,8 @@ func (t PluginTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the plugin task
-func (t PluginTask) Examples() ([]Doc, error) {
+// examples returns the examples for the plugin task
+func (t PluginTask) examples() ([]Doc, error) {
 	return MarshalExamples([]PluginTaskExample{
 		{
 			Name: "Install a plugin from a git URL",

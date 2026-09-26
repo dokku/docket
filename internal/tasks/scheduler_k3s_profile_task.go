@@ -74,8 +74,8 @@ func (t SchedulerK3sProfileTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-k3s profile task
-func (t SchedulerK3sProfileTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-k3s profile task
+func (t SchedulerK3sProfileTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sProfileTaskExample{
 		{
 			Name: "Define a worker profile with kubelet args",

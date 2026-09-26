@@ -62,8 +62,8 @@ func (t SchedulerK3sChartTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-k3s chart task
-func (t SchedulerK3sChartTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-k3s chart task
+func (t SchedulerK3sChartTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sChartTaskExample{
 		{
 			Name: "Set chart values via a flat map of dotted paths",

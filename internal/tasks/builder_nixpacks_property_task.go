@@ -34,8 +34,8 @@ func (t BuilderNixpacksPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builder-nixpacks property task
-func (t BuilderNixpacksPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builder-nixpacks property task
+func (t BuilderNixpacksPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderNixpacksPropertyTaskExample{
 		{
 			Name: "Setting the nixpacks.toml path for an app",
@@ -79,8 +79,8 @@ var builderNixpacksPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuilderNixpacksPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuilderNixpacksPropertyTask) propertyTable() PropertyTable {
 	return builderNixpacksPropertyTable
 }
 

@@ -34,8 +34,8 @@ func (t BuildpacksPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the buildpacks property task
-func (t BuildpacksPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the buildpacks property task
+func (t BuildpacksPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuildpacksPropertyTaskExample{
 		{
 			Name: "Setting the stack value for an app",
@@ -80,8 +80,8 @@ var buildpacksPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuildpacksPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuildpacksPropertyTask) propertyTable() PropertyTable {
 	return buildpacksPropertyTable
 }
 

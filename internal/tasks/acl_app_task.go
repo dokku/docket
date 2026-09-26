@@ -54,8 +54,8 @@ func (t AclAppTask) Requirements() []string {
 	return []string{"dokku-acl plugin >= 2.0.1"}
 }
 
-// Examples returns the examples for the acl app task
-func (t AclAppTask) Examples() ([]Doc, error) {
+// examples returns the examples for the acl app task
+func (t AclAppTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AclAppTaskExample{
 		{
 			Name: "Grant users access to an app",

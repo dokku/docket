@@ -34,8 +34,8 @@ func (t SchedulerK3sPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-k3s property task
-func (t SchedulerK3sPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-k3s property task
+func (t SchedulerK3sPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sPropertyTaskExample{
 		{
 			Name: "Setting the deploy timeout for an app",
@@ -111,8 +111,8 @@ var schedulerK3sPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t SchedulerK3sPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t SchedulerK3sPropertyTask) propertyTable() PropertyTable {
 	return schedulerK3sPropertyTable
 }
 

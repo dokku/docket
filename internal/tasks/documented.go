@@ -12,8 +12,8 @@ type Documented interface {
 	// Doc returns the docblock for the task
 	Doc() string
 
-	// Examples returns the examples for the task
-	Examples() ([]Doc, error)
+	// examples returns the examples for the task
+	examples() ([]Doc, error)
 }
 
 // TaskSynopsis returns the docblock for t, or "" when t does not implement
@@ -27,11 +27,11 @@ func TaskSynopsis(t Task) string {
 }
 
 // TaskExamples returns the examples for t, or none when t does not implement
-// Documented. The error is the one Examples() returns when an example fails to
+// Documented. The error is the one examples() returns when an example fails to
 // marshal.
 func TaskExamples(t Task) ([]Doc, error) {
 	if d, ok := t.(Documented); ok {
-		return d.Examples()
+		return d.examples()
 	}
 	return nil, nil
 }

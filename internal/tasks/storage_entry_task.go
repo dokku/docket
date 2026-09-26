@@ -112,8 +112,8 @@ func (t StorageEntryTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported, Caveat: "every attribute is compared against what storage:list-entries records for the entry, which is the recorded chown and mode rather than the host directory's ownership and permissions on disk; a directory chowned or chmodded out of band is not detected"}
 }
 
-// Examples returns the examples for the storage entry task
-func (t StorageEntryTask) Examples() ([]Doc, error) {
+// examples returns the examples for the storage entry task
+func (t StorageEntryTask) examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEntryTaskExample{
 		{
 			Name: "Create a docker-local storage entry owned by the herokuish user",

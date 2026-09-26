@@ -46,8 +46,8 @@ func (t LetsencryptPropertyTask) Requirements() []string {
 	return []string{"dokku-letsencrypt plugin >= 0.25.0"}
 }
 
-// Examples returns the examples for the letsencrypt property task
-func (t LetsencryptPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the letsencrypt property task
+func (t LetsencryptPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]LetsencryptPropertyTaskExample{
 		{
 			Name: "Setting the letsencrypt email for an app",
@@ -106,8 +106,8 @@ var letsencryptPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t LetsencryptPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t LetsencryptPropertyTask) propertyTable() PropertyTable {
 	return letsencryptPropertyTable
 }
 

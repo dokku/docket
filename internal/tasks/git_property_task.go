@@ -34,8 +34,8 @@ func (t GitPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the git property task
-func (t GitPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the git property task
+func (t GitPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitPropertyTaskExample{
 		{
 			Name: "Setting the deploy branch for an app",
@@ -93,8 +93,8 @@ var gitPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t GitPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t GitPropertyTask) propertyTable() PropertyTable {
 	return gitPropertyTable
 }
 

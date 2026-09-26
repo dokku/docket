@@ -95,8 +95,8 @@ func (t AclServiceTask) Requirements() []string {
 	return []string{"dokku-acl plugin >= 2.0.1"}
 }
 
-// Examples returns the examples for the acl service task
-func (t AclServiceTask) Examples() ([]Doc, error) {
+// examples returns the examples for the acl service task
+func (t AclServiceTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AclServiceTaskExample{
 		{
 			Name: "Grant users access to a redis service",

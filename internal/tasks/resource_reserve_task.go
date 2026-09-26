@@ -50,8 +50,8 @@ func (t ResourceReserveTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the resource reserve task
-func (t ResourceReserveTask) Examples() ([]Doc, error) {
+// examples returns the examples for the resource reserve task
+func (t ResourceReserveTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceReserveTaskExample{
 		{
 			Name: "Set CPU and memory reservations",

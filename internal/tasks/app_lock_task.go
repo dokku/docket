@@ -45,8 +45,8 @@ func (t AppLockTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the app lock task
-func (t AppLockTask) Examples() ([]Doc, error) {
+// examples returns the examples for the app lock task
+func (t AppLockTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppLockTaskExample{
 		{
 			Name: "Lock an app",

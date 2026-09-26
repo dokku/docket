@@ -54,8 +54,8 @@ func (t SshKeyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the ssh key task
-func (t SshKeyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the ssh key task
+func (t SshKeyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SshKeyTaskExample{
 		{
 			Name: "Add a deploy key",

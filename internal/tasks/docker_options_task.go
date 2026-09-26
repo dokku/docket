@@ -106,8 +106,8 @@ func (t DockerOptionsTask) ExportApp(ctx context.Context, app string) ([]interfa
 	return out, nil
 }
 
-// Examples returns the examples for the docker options task
-func (t DockerOptionsTask) Examples() ([]Doc, error) {
+// examples returns the examples for the docker options task
+func (t DockerOptionsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]DockerOptionsTaskExample{
 		{
 			Name: "Mount the docker socket at deploy",

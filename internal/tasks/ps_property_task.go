@@ -34,8 +34,8 @@ func (t PsPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the ps property task
-func (t PsPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the ps property task
+func (t PsPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]PsPropertyTaskExample{
 		{
 			Name: "Setting the restart-policy value for an app",
@@ -85,8 +85,8 @@ var psPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t PsPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t PsPropertyTask) propertyTable() PropertyTable {
 	return psPropertyTable
 }
 

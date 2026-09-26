@@ -59,8 +59,8 @@ func (t SchedulerK3sLabelsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler-k3s labels task
-func (t SchedulerK3sLabelsTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler-k3s labels task
+func (t SchedulerK3sLabelsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sLabelsTaskExample{
 		{
 			Name: "Set deployment labels on an app's web process",

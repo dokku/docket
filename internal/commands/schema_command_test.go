@@ -241,6 +241,12 @@ func TestSchemaCommandIncludesExamples(t *testing.T) {
 	}
 
 	for name, task := range catalogTasks(t, decodeCatalog(t, out)) {
+		// The stub is a fixture registered from this package, which cannot
+		// implement the unexported examples(). Every shipped task is held to
+		// publishing examples by TestEveryTaskIsDocumented in internal/tasks.
+		if name == "dokku_stub" {
+			continue
+		}
 		examples, _ := task["examples"].([]interface{})
 		if len(examples) == 0 {
 			t.Errorf("task %q publishes no examples", name)

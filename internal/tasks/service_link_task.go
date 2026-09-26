@@ -79,8 +79,8 @@ func (t ServiceLinkTask) Requirements() []string {
 	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
-// Examples returns a list of ServiceLinkTaskExamples as yaml
-func (t ServiceLinkTask) Examples() ([]Doc, error) {
+// examples returns a list of ServiceLinkTaskExamples as yaml
+func (t ServiceLinkTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ServiceLinkTaskExample{
 		{
 			Name: "Link a redis service named my-redis to my-app",

@@ -34,8 +34,8 @@ func (t BuilderPackPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builder-pack property task
-func (t BuilderPackPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builder-pack property task
+func (t BuilderPackPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderPackPropertyTaskExample{
 		{
 			Name: "Setting the project.toml path for an app",
@@ -78,8 +78,8 @@ var builderPackPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuilderPackPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuilderPackPropertyTask) propertyTable() PropertyTable {
 	return builderPackPropertyTable
 }
 

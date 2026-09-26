@@ -34,8 +34,8 @@ func (t BuilderLambdaPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the builder-lambda property task
-func (t BuilderLambdaPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the builder-lambda property task
+func (t BuilderLambdaPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderLambdaPropertyTaskExample{
 		{
 			Name: "Setting the lambda.yml path for an app",
@@ -79,8 +79,8 @@ var builderLambdaPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t BuilderLambdaPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t BuilderLambdaPropertyTask) propertyTable() PropertyTable {
 	return builderLambdaPropertyTable
 }
 

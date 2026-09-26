@@ -34,8 +34,8 @@ func (t SchedulerPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the scheduler property task
-func (t SchedulerPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the scheduler property task
+func (t SchedulerPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerPropertyTaskExample{
 		{
 			Name: "Selecting the scheduler for an app",
@@ -79,8 +79,8 @@ var schedulerPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t SchedulerPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t SchedulerPropertyTask) propertyTable() PropertyTable {
 	return schedulerPropertyTable
 }
 

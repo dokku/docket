@@ -34,8 +34,8 @@ func (t CronPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Examples returns the examples for the cron property task
-func (t CronPropertyTask) Examples() ([]Doc, error) {
+// examples returns the examples for the cron property task
+func (t CronPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]CronPropertyTaskExample{
 		{
 			Name: "Enabling maintenance mode for an app",
@@ -81,8 +81,8 @@ var cronPropertyTable = PropertyTable{
 	},
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t CronPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t CronPropertyTask) propertyTable() PropertyTable {
 	return cronPropertyTable
 }
 
