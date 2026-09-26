@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"encoding/base64"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/dokku/docket/internal/subprocess"
@@ -159,5 +161,91 @@ func TestExportRegistersNothingForBenignProperties(t *testing.T) {
 	}
 	if got := res.SensitiveValues(); len(got) != 0 {
 		t.Errorf("a benign export must collect nothing, got %v", got)
+	}
+}
+
+// TestExportLiftsEverySensitivePropertyKey is the guard for #588. A property
+// table can flag a key Sensitive, but export only honours the flag for the
+// task types processBody routes to processPropertyValue - a table that gains
+// a secret without that routing exports it inline and unmasked. Every
+// Sensitive key of every registered property task must come back lifted into
+// a sensitive input and collected for masking.
+func TestExportLiftsEverySensitivePropertyKey(t *testing.T) {
+	t.Parallel()
+	checked := 0
+	for name, task := range allRegisteredTasks() {
+		table, declared := TaskPropertyTable(task)
+		if !declared {
+			continue
+		}
+		for property, entry := range table.Keys {
+			if !entry.Sensitive {
+				continue
+			}
+			global := entry.PerApp == ""
+			scope := "some-app"
+			if global {
+				scope = "global"
+			}
+			secret := "s3cr3t-" + property
+			body := newPropertyTaskBody(t, task, property, secret, global)
+			if body == nil {
+				t.Errorf("task %q: could not build a body for sensitive property %q", name, property)
+				continue
+			}
+			checked++
+
+			res := &ExportResult{Vars: map[string]string{}, usedVarNames: map[string]bool{}}
+			out, inputs := res.processBody(scope, body, ExportOptions{})
+			assertRegistered(t, res, secret)
+			if len(inputs) == 0 {
+				t.Errorf("task %q: sensitive property %q declared no input", name, property)
+			}
+			if rendered := fmt.Sprintf("%+v", out); strings.Contains(rendered, secret) {
+				t.Errorf("task %q: sensitive property %q stayed inline: %s", name, property, rendered)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no property task declares a sensitive key; the guard went untested")
+	}
+}
+
+// TestExportLogsVectorSinksLiftedAsSensitiveInputs covers both sinks in both
+// scopes, and the benign sibling that stays inline.
+func TestExportLogsVectorSinksLiftedAsSensitiveInputs(t *testing.T) {
+	t.Parallel()
+	appSink := "http://user:apppass@logs.example.com"
+	appCronSink := "http://user:cronpass@logs.example.com"
+	globalSink := "datadog_logs://?default_api_key=globalkey"
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet apps:list":                          "web",
+		"--quiet logs:report --global --format json": `{"global-vector-sink":"` + globalSink + `","global-max-size":"10m"}`,
+		"--quiet logs:report web --format json":      `{"vector-sink":"` + appSink + `","vector-cron-sink":"` + appCronSink + `","max-size":"5m"}`,
+	}))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, _ := res.MarshalRecipe("yaml")
+	out := string(recipe)
+	for _, secret := range []string{appSink, appCronSink, globalSink} {
+		assertRegistered(t, res, secret)
+		if strings.Contains(out, secret) {
+			t.Errorf("recipe leaked sink %q:\n%s", secret, out)
+		}
+	}
+	lifted := map[string]bool{}
+	for _, v := range res.Vars {
+		lifted[v] = true
+	}
+	for _, secret := range []string{appSink, appCronSink, globalSink} {
+		if !lifted[secret] {
+			t.Errorf("sink %q was not lifted into vars, got %v", secret, res.Vars)
+		}
+	}
+	for _, benign := range []string{"5m", "10m"} {
+		assertNotRegistered(t, res, benign)
 	}
 }

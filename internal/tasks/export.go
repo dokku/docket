@@ -665,6 +665,11 @@ func (res *ExportResult) processBody(app string, body interface{}, opts ExportOp
 			b.Value = v
 			return b
 		})
+	case LogsPropertyTask:
+		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
+			b.Value = v
+			return b
+		})
 	case SchedulerK3sPropertyTask:
 		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
 			b.Value = v
@@ -692,8 +697,9 @@ func (res *ExportResult) processPropertyValue(app string, body interface{}, prop
 		return body, nil
 	}
 	// Only the letsencrypt property task is built from SensitivePropertyFields,
-	// so for scheduler-k3s (the cluster token) and traefik (the dns-provider-*
-	// credentials) no struct tag says this value is a secret - the property
+	// so for logs (the vector sinks), scheduler-k3s (the cluster token) and
+	// traefik (the dns-provider-* credentials) no struct tag says this value
+	// is a secret - the property
 	// family's PropertyKeys.Sensitive flag does, and processBody's tag walk
 	// cannot see it. Noted here for the same reason internal/tasks/properties.go
 	// registers it at plan time (#488).
