@@ -128,6 +128,11 @@ func TestSecretPropertiesAreMarkedSensitive(t *testing.T) {
 	if !schedulerK3sPropertyTable.Keys["token"].Sensitive {
 		t.Error("scheduler-k3s token must be marked Sensitive")
 	}
+	for _, property := range []string{"vector-sink", "vector-cron-sink"} {
+		if !logsPropertyTable.Keys[property].Sensitive {
+			t.Errorf("logs %s must be marked Sensitive", property)
+		}
+	}
 }
 
 func TestReadPropertyReportUnparseableReportErrors(t *testing.T) {

@@ -711,7 +711,7 @@ no drift (`plan` shows every task `[ok]`).
 The two halves are written with different modes, because they hold different things. The recipe
 carries interpolations rather than values, so it lands at `0644` like every other file docket
 writes. The vars-file holds the values themselves in the clear - every `config` value, the
-scheduler-k3s cluster token, the `dns-provider-*` credentials, the http-auth password hashes - so it
+scheduler-k3s cluster token, the `dns-provider-*` credentials, the logs vector sinks, the http-auth password hashes - so it
 lands at `0600`, readable only by the user who ran the export, which is the same user who reads it
 back through `--vars-file`. That covers `--redact` too: a placeholder file is the one you then type
 the real secrets into, and it covers a vars-file already on disk, whose mode is reset on every

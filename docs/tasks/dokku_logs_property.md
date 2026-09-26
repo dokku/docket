@@ -34,10 +34,10 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 | --- | --- | --- | --- |
 | `app-label-alias` | app, global | `app-label-alias` | `global-app-label-alias` |
 | `max-size` | app, global | `max-size` | `global-max-size` |
-| `vector-cron-sink` | app, global | `vector-cron-sink` | `global-vector-cron-sink` |
+| `vector-cron-sink` (sensitive) | app, global | `vector-cron-sink` | `global-vector-cron-sink` |
 | `vector-image` | global |  | `global-vector-image` |
 | `vector-networks` | global |  | `global-vector-networks` |
-| `vector-sink` | app, global | `vector-sink` | `global-vector-sink` |
+| `vector-sink` (sensitive) | app, global | `vector-sink` | `global-vector-sink` |
 
 ## Examples
 
