@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/dokku/docket/subprocess"
 )
@@ -92,7 +91,7 @@ func (t AclServiceTask) ExportGlobal(ctx context.Context) ([]interface{}, error)
 
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t AclServiceTask) Requirements() []string {
-	return []string{"dokku-acl plugin"}
+	return []string{"dokku-acl plugin >= 2.0.1"}
 }
 
 // Examples returns the examples for the acl service task
@@ -227,9 +226,10 @@ func (t AclServiceTask) Plan(ctx context.Context) PlanResult {
 }
 
 // getAclServiceUsers reads the current ACL for a service via
-// `acl:list-service TYPE SERVICE`. The plugin's `cmd-acl-list-service`
-// emits one username per line on STDERR (via `ls -1 ... >&2`), unlike
-// `acl:list` which uses stdout, so we read stderr here.
+// `acl:list-service TYPE SERVICE`, which emits one username per line.
+// dokku-acl 2.0.0 and later print the users on stdout; 1.5.1 and earlier
+// print them on stderr (via `ls -1 ... >&2`), so stderr is read when stdout
+// is empty.
 func getAclServiceUsers(ctx context.Context, serviceType, service string) (map[string]bool, error) {
 	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
@@ -239,15 +239,11 @@ func getAclServiceUsers(ctx context.Context, serviceType, service string) (map[s
 		return nil, err
 	}
 
-	users := map[string]bool{}
-	for _, line := range strings.Split(result.StderrContents(), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		users[trimmed] = true
+	output := result.StdoutContents()
+	if output == "" {
+		output = result.StderrContents()
 	}
-	return users, nil
+	return parseAclUsers(output), nil
 }
 
 // validateAclServiceTask checks the required fields shared by both states

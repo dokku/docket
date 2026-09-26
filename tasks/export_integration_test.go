@@ -710,8 +710,7 @@ func TestIntegrationExportServiceBackup(t *testing.T) {
 
 // TestIntegrationExportAclService verifies the service-ACL exporter reads the
 // members back so the exported task re-plans with no drift. Gated on both the
-// redis datastore plugin and dokku-acl (the latter is not installed in the main
-// CI job, so this skips there).
+// redis datastore plugin and dokku-acl.
 func TestIntegrationExportAclService(t *testing.T) {
 	skipIfNoDokkuT(t)
 	skipIfPluginMissingT(t, "redis")

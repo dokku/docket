@@ -1,8 +1,14 @@
 package tasks
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/subprocess"
 )
 
 func TestAclServiceTaskInvalidState(t *testing.T) {
@@ -92,5 +98,68 @@ func TestGetTasksAclServiceTaskParsedCorrectly(t *testing.T) {
 	}
 	if aclTask.State != StatePresent {
 		t.Errorf("State = %q, want %q", aclTask.State, StatePresent)
+	}
+}
+
+// aclServiceRunner answers `acl:list-service redis my-redis` with the given
+// streams, the way dokku-acl 2.0.0+ (stdout) or 1.5.1 and earlier (stderr)
+// would.
+func aclServiceRunner(stdout, stderr string, err error) func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	return func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") != "--quiet acl:list-service redis my-redis" {
+			return subprocess.ExecCommandResponse{}, fmt.Errorf("unexpected command: %v", in.Args)
+		}
+		return subprocess.ExecCommandResponse{Stdout: stdout, Stderr: stderr}, err
+	}
+}
+
+func TestGetAclServiceUsersReadsBothStreams(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		stdout string
+		stderr string
+		want   []string
+	}{
+		{name: "stdout (dokku-acl 2.0.0+)", stdout: "bob\nalice\n", want: []string{"alice", "bob"}},
+		{name: "stderr (dokku-acl 1.5.1 and earlier)", stderr: "bob\nalice\n", want: []string{"alice", "bob"}},
+		{name: "empty acl", want: []string{}},
+		{name: "stdout wins over stderr", stdout: "alice\n", stderr: "mallory\n", want: []string{"alice"}},
+		{name: "blank lines ignored", stdout: "\n  alice  \n\n bob\n", want: []string{"alice", "bob"}},
+		{name: "whitespace-only stdout falls back", stdout: " \n", stderr: "alice\n", want: []string{"alice"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := subprocess.ContextWithRunner(testCtx(), aclServiceRunner(tc.stdout, tc.stderr, nil))
+			got, err := getAclServiceUsers(ctx, "redis", "my-redis")
+			if err != nil {
+				t.Fatalf("getAclServiceUsers: %v", err)
+			}
+			if users := sortedSetKeys(got); !reflect.DeepEqual(users, tc.want) {
+				t.Errorf("users = %v, want %v", users, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetAclServiceUsersPropagatesError(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), aclServiceRunner("", "", errors.New("boom")))
+	if _, err := getAclServiceUsers(ctx, "redis", "my-redis"); err == nil {
+		t.Fatal("expected the runner error to be returned")
+	}
+}
+
+func TestAclServiceTaskPlanInSyncFromStdout(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), aclServiceRunner("alice\nbob\n", "", nil))
+	task := AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"alice"}, State: StatePresent}
+	plan := task.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("Plan: %v", plan.Error)
+	}
+	if !plan.InSync {
+		t.Errorf("expected no drift when the ACL is read from stdout, got status %v reason %q", plan.Status, plan.Reason)
 	}
 }
