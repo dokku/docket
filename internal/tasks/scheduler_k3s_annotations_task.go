@@ -1,0 +1,204 @@
+package tasks
+
+import "context"
+
+// SchedulerK3sAnnotationsTask manages a group of scheduler-k3s annotations
+// scoped to a (process_type, resource_type) pair on a dokku application or
+// globally.
+type SchedulerK3sAnnotationsTask struct {
+	// App is the name of the app. Required if Global is false.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+
+	// Global is a flag indicating if the annotations should be applied globally
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the annotations should be applied globally"`
+
+	// ProcessType narrows the annotations to a specific process type. When
+	// empty, dokku stores the annotations under its default global process
+	// type.
+	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to scope the annotations to. Defaults to the global process type when empty."`
+
+	// ResourceType narrows the annotations to a specific kubernetes resource
+	// type (e.g. deployment, ingress, service). Required, mirroring dokku's
+	// own scheduler-k3s:annotations:set rejection of empty resource types.
+	ResourceType string `required:"true" identity:"key" yaml:"resource_type" description:"Kubernetes resource type to scope the annotations to (e.g. deployment, ingress)."`
+
+	// Annotations is the desired set of annotation key/value pairs to apply at
+	// the (process_type, resource_type) scope.
+	Annotations map[string]string `required:"false" identity:"collection" yaml:"annotations,omitempty" description:"Map of annotation key to value to apply at the scope; omit for state 'clear'. Under state 'set' a key must not contain '=', and an empty value is stored rather than clearing the key."`
+
+	// State is the desired state of the annotations. 'present' and 'absent'
+	// are additive, naming keys to write or clear; 'set' declares the complete
+	// map for the scope and 'clear' empties it.
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the annotations. 'set' declares the complete map for this (process_type, resource_type) scope, removing any annotation the recipe does not name; 'clear' empties that scope alone, leaving other scopes on the app untouched."`
+}
+
+// SchedulerK3sAnnotationsTaskExample contains an example of a SchedulerK3sAnnotationsTask
+type SchedulerK3sAnnotationsTaskExample struct {
+	// Name is the task name holding the SchedulerK3sAnnotationsTask description
+	Name string `yaml:"-"`
+
+	// SchedulerK3sAnnotationsTask is the SchedulerK3sAnnotationsTask configuration
+	SchedulerK3sAnnotationsTask SchedulerK3sAnnotationsTask `yaml:"dokku_scheduler_k3s_annotations"`
+}
+
+// GetName returns the name of the example
+func (e SchedulerK3sAnnotationsTaskExample) GetName() string {
+	return e.Name
+}
+
+// Doc returns the docblock for the scheduler-k3s annotations task
+func (t SchedulerK3sAnnotationsTask) Doc() string {
+	return "Manages scheduler-k3s annotations scoped to a (process_type, resource_type) pair for a dokku application or globally"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t SchedulerK3sAnnotationsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t SchedulerK3sAnnotationsTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
+// examples returns the examples for the scheduler-k3s annotations task
+func (t SchedulerK3sAnnotationsTask) examples() ([]Doc, error) {
+	return MarshalExamples([]SchedulerK3sAnnotationsTaskExample{
+		{
+			Name: "Set deployment annotations on an app's web process",
+			SchedulerK3sAnnotationsTask: SchedulerK3sAnnotationsTask{
+				App:          "node-js-app",
+				ProcessType:  "web",
+				ResourceType: "deployment",
+				Annotations: map[string]string{
+					"prometheus.io/scrape": "true",
+					"prometheus.io/port":   "9090",
+				},
+			},
+		},
+		{
+			Name: "Set ingress annotations on an app at the global process scope",
+			SchedulerK3sAnnotationsTask: SchedulerK3sAnnotationsTask{
+				App:          "node-js-app",
+				ResourceType: "ingress",
+				Annotations: map[string]string{
+					"nginx.ingress.kubernetes.io/rewrite-target": "/",
+				},
+			},
+		},
+		{
+			Name: "Set a global deployment annotation across all apps",
+			SchedulerK3sAnnotationsTask: SchedulerK3sAnnotationsTask{
+				Global:       true,
+				ResourceType: "deployment",
+				Annotations: map[string]string{
+					"managed-by": "docket",
+				},
+			},
+		},
+		{
+			Name: "Remove specific annotations from an app's deployment",
+			SchedulerK3sAnnotationsTask: SchedulerK3sAnnotationsTask{
+				App:          "node-js-app",
+				ResourceType: "deployment",
+				Annotations: map[string]string{
+					"prometheus.io/scrape": "",
+				},
+				State: StateAbsent,
+			},
+		},
+		{
+			Name: "Replace the deployment annotations on an app's web process",
+			SchedulerK3sAnnotationsTask: SchedulerK3sAnnotationsTask{
+				App:          "node-js-app",
+				ProcessType:  "web",
+				ResourceType: "deployment",
+				Annotations: map[string]string{
+					"managed-by": "docket",
+				},
+				State: StateSet,
+			},
+		},
+		{
+			Name: "Clear the deployment annotations from an app's web process",
+			SchedulerK3sAnnotationsTask: SchedulerK3sAnnotationsTask{
+				App:          "node-js-app",
+				ProcessType:  "web",
+				ResourceType: "deployment",
+				State:        StateClear,
+			},
+		},
+	})
+}
+
+// Execute sets or clears the scheduler-k3s annotations for the configured scope
+func (t SchedulerK3sAnnotationsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
+}
+
+// Validate checks the SchedulerK3sAnnotationsTask's inputs without contacting the server.
+func (t SchedulerK3sAnnotationsTask) Validate() error {
+	return validateSchedulerK3sScopedPairs(t.spec(), t.State)
+}
+
+// Plan reports the drift the SchedulerK3sAnnotationsTask would produce.
+func (t SchedulerK3sAnnotationsTask) Plan(ctx context.Context) PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
+	spec := t.spec()
+	return DispatchPlan(t.State, map[State]func() PlanResult{
+		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsPresent(ctx, spec) },
+		StateAbsent:  func() PlanResult { return planSchedulerK3sScopedPairsAbsent(ctx, spec) },
+		StateSet:     func() PlanResult { return planSchedulerK3sScopedPairsSet(ctx, spec) },
+		StateClear:   func() PlanResult { return planSchedulerK3sScopedPairsClear(ctx, spec) },
+	})
+}
+
+// spec adapts the task to the kind-agnostic scoped-pairs spec shared with the
+// labels task.
+func (t SchedulerK3sAnnotationsTask) spec() schedulerK3sScopedPairsSpec {
+	return schedulerK3sScopedPairsSpec{
+		Kind:         "annotations",
+		App:          t.App,
+		Global:       t.Global,
+		ProcessType:  t.ProcessType,
+		ResourceType: t.ResourceType,
+		Pairs:        t.Annotations,
+	}
+}
+
+// ExportApp reconstructs the app's annotations, one task per
+// (process_type, resource_type) scope, from scheduler-k3s:annotations:report.
+// state:set replaces each scope's whole map, so a re-applied export reproduces
+// the exact set rather than merging into whatever the target already carries.
+func (t SchedulerK3sAnnotationsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs(ctx, "annotations", app, false, func(processType, resourceType string, pairs map[string]string) interface{} {
+		return SchedulerK3sAnnotationsTask{
+			App:          app,
+			ProcessType:  processType,
+			ResourceType: resourceType,
+			Annotations:  pairs,
+			State:        StateSet,
+		}
+	})
+}
+
+// ExportGlobal reconstructs the global-scope annotations, one task per
+// (process_type, resource_type) scope, from scheduler-k3s:annotations:report.
+func (t SchedulerK3sAnnotationsTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportSchedulerK3sScopedPairs(ctx, "annotations", "", true, func(processType, resourceType string, pairs map[string]string) interface{} {
+		return SchedulerK3sAnnotationsTask{
+			Global:       true,
+			ProcessType:  processType,
+			ResourceType: resourceType,
+			Annotations:  pairs,
+			State:        StateSet,
+		}
+	})
+}
+
+// init registers the SchedulerK3sAnnotationsTask with the task registry
+func init() {
+	RegisterTask(&SchedulerK3sAnnotationsTask{})
+}

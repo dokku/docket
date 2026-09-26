@@ -7,7 +7,8 @@
 
 #
 # Environment variables:
-#   VERSION  Release tag to install (defaults to the latest release).
+#   VERSION  Release to install, with or without the v prefix (defaults to the
+#            latest release).
 #   BIN_DIR  Destination directory (defaults to /usr/local/bin on Linux/macOS,
 #            $HOME/bin on Windows shells).
 #
@@ -88,8 +89,20 @@ maybe_sudo() {
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT INT TERM
 
-echo "downloading ${url}"
-curl -fsSL "$url" -o "${tmpdir}/docket${ext}"
+download() {
+  echo "downloading $1"
+  curl -fsSL "$1" -o "${tmpdir}/docket${ext}"
+}
+
+# Releases from 0.9.0 on are tagged vX.Y.Z, earlier ones X.Y.Z, so a bare
+# VERSION that is not a tag is retried with the prefix.
+if ! download "$url"; then
+  case "$VERSION" in
+  v*) exit 1 ;;
+  esac
+  url="https://github.com/${REPO}/releases/download/v${VERSION}/${asset}"
+  download "$url"
+fi
 
 if [ "$need_sudo" = "1" ]; then
   echo "elevating with sudo to write to ${BIN_DIR}"

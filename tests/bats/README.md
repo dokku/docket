@@ -1,9 +1,9 @@
 # bats tests
 
 End-to-end tests for the `docket` CLI, exercised against a real Dokku
-installation. These complement the Go unit tests under `tasks/*_test.go`
+installation. These complement the Go unit tests under `internal/tasks/*_test.go`
 (which mock subprocess) and the Go integration tests under
-`tasks/*_integration_test.go` (which exercise the task layer against a real
+`internal/tasks/*_integration_test.go` (which exercise the task layer against a real
 Dokku).
 
 ## Layout

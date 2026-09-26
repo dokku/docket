@@ -1,0 +1,353 @@
+package tasks
+
+import (
+	"context"
+	"fmt"
+	"github.com/dokku/docket/internal/subprocess"
+	"strings"
+)
+
+// DomainsTask manages the domains for a given dokku application or globally
+type DomainsTask struct {
+	// App is the name of the app
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+
+	// Global is a flag indicating if the domains should be applied globally
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the domains should be applied globally"`
+
+	// Domains is the list of domain names
+	Domains []string `required:"false" identity:"collection" yaml:"domains,omitempty" description:"List of domain names; omit for state 'clear'"`
+
+	// State is the desired state of the domains
+	State State `required:"false" yaml:"state" default:"present" options:"present,absent,set,clear" description:"Desired state of the domains"`
+}
+
+// DomainsTaskExample contains an example of a DomainsTask
+type DomainsTaskExample struct {
+	// Name is the task name holding the DomainsTask description
+	Name string `yaml:"-"`
+
+	// DomainsTask is the DomainsTask configuration
+	DomainsTask DomainsTask `yaml:"dokku_domains"`
+}
+
+// GetName returns the name of the example
+func (e DomainsTaskExample) GetName() string {
+	return e.Name
+}
+
+// Doc returns the docblock for the domains task
+func (t DomainsTask) Doc() string {
+	return "Manages the domains for a given dokku application or globally"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t DomainsTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t DomainsTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
+// examples returns the examples for the domains task
+func (t DomainsTask) examples() ([]Doc, error) {
+	return MarshalExamples([]DomainsTaskExample{
+		{
+			Name: "Add domains to an app",
+			DomainsTask: DomainsTask{
+				App:     "example-app",
+				Domains: []string{"example.com", "www.example.com"},
+			},
+		},
+		{
+			Name: "Remove domains from an app",
+			DomainsTask: DomainsTask{
+				App:     "example-app",
+				Domains: []string{"old.example.com"},
+				State:   "absent",
+			},
+		},
+		{
+			Name: "Set global domains",
+			DomainsTask: DomainsTask{
+				Global:  true,
+				Domains: []string{"global.example.com"},
+				State:   "set",
+			},
+		},
+		{
+			Name: "Clear all domains from an app",
+			DomainsTask: DomainsTask{
+				App:   "example-app",
+				State: "clear",
+			},
+		},
+	})
+}
+
+// Execute manages the domains
+func (t DomainsTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
+}
+
+// Validate checks the DomainsTask's inputs without contacting the server.
+func (t DomainsTask) Validate() error {
+	if err := validateDomainsTask(t, t.State != StateClear); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Plan reports the drift the DomainsTask would produce.
+func (t DomainsTask) Plan(ctx context.Context) PlanResult {
+	if err := t.Validate(); err != nil {
+		return planErr(err)
+	}
+	return DispatchPlan(t.State, map[State]func() PlanResult{
+		StatePresent: func() PlanResult { return planDomainsPresent(ctx, t) },
+		StateAbsent:  func() PlanResult { return planDomainsAbsent(ctx, t) },
+		StateSet:     func() PlanResult { return planDomainsSet(ctx, t) },
+		StateClear:   func() PlanResult { return planDomainsClear(ctx, t) },
+	})
+}
+
+// planDomainsPresent reports drift for the present-state domain add.
+func planDomainsPresent(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	toAdd := []string{}
+	mutations := []string{}
+	for _, d := range t.Domains {
+		if !currentDomains[d] {
+			toAdd = append(toAdd, d)
+			mutations = append(mutations, fmt.Sprintf("add %s", d))
+		}
+	}
+	if len(toAdd) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	status := PlanStatusModify
+	if len(currentDomains) == 0 {
+		status = PlanStatusCreate
+	}
+	subcommand := "domains:add"
+	appName := t.App
+	if t.Global {
+		subcommand = "domains:add-global"
+		appName = ""
+	}
+	inputs := dokkuArgsInputs(subcommand, appName, toAdd)
+	return PlanResult{
+		InSync:    false,
+		Status:    status,
+		Reason:    fmt.Sprintf("%d domain(s) to add", len(toAdd)),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply:     applyDokkuArgs(subcommand, appName, toAdd, StatePresent, StateAbsent),
+	}
+}
+
+// planDomainsAbsent reports drift for the absent-state domain remove.
+func planDomainsAbsent(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	toRemove := []string{}
+	mutations := []string{}
+	for _, d := range t.Domains {
+		if currentDomains[d] {
+			toRemove = append(toRemove, d)
+			mutations = append(mutations, fmt.Sprintf("remove %s", d))
+		}
+	}
+	if len(toRemove) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	subcommand := "domains:remove"
+	appName := t.App
+	if t.Global {
+		subcommand = "domains:remove-global"
+		appName = ""
+	}
+	inputs := dokkuArgsInputs(subcommand, appName, toRemove)
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("%d domain(s) to remove", len(toRemove)),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply:     applyDokkuArgs(subcommand, appName, toRemove, StateAbsent, StatePresent),
+	}
+}
+
+// planDomainsSet reports drift for the set-state full replacement.
+func planDomainsSet(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	desired := map[string]bool{}
+	for _, d := range t.Domains {
+		desired[d] = true
+	}
+	mutations := []string{}
+	for _, d := range sortedSetKeys(desired) {
+		if !currentDomains[d] {
+			mutations = append(mutations, fmt.Sprintf("add %s", d))
+		}
+	}
+	for _, d := range sortedSetKeys(currentDomains) {
+		if !desired[d] {
+			mutations = append(mutations, fmt.Sprintf("remove %s", d))
+		}
+	}
+	if len(mutations) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	status := PlanStatusModify
+	if len(currentDomains) == 0 {
+		status = PlanStatusCreate
+	}
+	subcommand := "domains:set"
+	appName := t.App
+	if t.Global {
+		subcommand = "domains:set-global"
+		appName = ""
+	}
+	inputs := dokkuArgsInputs(subcommand, appName, t.Domains)
+	return PlanResult{
+		InSync:    false,
+		Status:    status,
+		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply:     applyDokkuArgs(subcommand, appName, t.Domains, StateSet, StateAbsent),
+	}
+}
+
+// planDomainsClear reports drift for the clear-state operation.
+func planDomainsClear(ctx context.Context, t DomainsTask) PlanResult {
+	currentDomains, err := getDomains(ctx, t.App, t.Global)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	if len(currentDomains) == 0 {
+		return PlanResult{InSync: true, Status: PlanStatusOK}
+	}
+	domains := sortedSetKeys(currentDomains)
+	mutations := make([]string, 0, len(domains))
+	for _, d := range domains {
+		mutations = append(mutations, fmt.Sprintf("remove %s", d))
+	}
+	subcommand := "domains:clear"
+	appName := t.App
+	if t.Global {
+		subcommand = "domains:clear-global"
+		appName = ""
+	}
+	inputs := dokkuArgsInputs(subcommand, appName, nil)
+	return PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("clear %d domain(s)", len(currentDomains)),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply:     applyDokkuArgs(subcommand, appName, nil, StateClear, StatePresent),
+	}
+}
+
+// dokkuArgsInputs returns the subprocess inputs that run `dokku --quiet
+// <subcommand> [<target>] <extra...>`. An empty target is omitted, which is
+// what the domains `*-global` subcommands require: they take no positional app
+// slot, so passing the literal "--global" there would be written as a domain.
+func dokkuArgsInputs(subcommand, target string, extra []string) []subprocess.ExecCommandInput {
+	args := []string{"--quiet", subcommand}
+	if target != "" {
+		args = append(args, target)
+	}
+	args = append(args, extra...)
+	return []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
+}
+
+// applyDokkuArgs returns a closure that runs `dokku --quiet <subcommand>
+// <target> <extra...>`. It is used by domains plan paths to share the
+// boilerplate around constructing the subprocess call.
+func applyDokkuArgs(subcommand, target string, extra []string, finalState State, errState State) func(ctx context.Context) TaskOutputState {
+	inputs := dokkuArgsInputs(subcommand, target, extra)
+	return func(ctx context.Context) TaskOutputState {
+		return runExecInputs(ctx, TaskOutputState{State: errState}, finalState, inputs)
+	}
+}
+
+// validateDomainsTask validates the domains task parameters
+func validateDomainsTask(t DomainsTask, requireDomains bool) error {
+	if t.Global && t.App != "" {
+		return fmt.Errorf("'app' must not be set when 'global' is set to true")
+	}
+	if !t.Global && t.App == "" {
+		return fmt.Errorf("'app' is required when 'global' is not set to true")
+	}
+	if requireDomains && len(t.Domains) == 0 {
+		return fmt.Errorf("'domains' must not be empty for state '%s'", t.State)
+	}
+	// domains:clear takes no domains, so a list supplied alongside it would be
+	// silently discarded rather than removed.
+	if !requireDomains && len(t.Domains) > 0 {
+		return fmt.Errorf("'domains' must not be set for state '%s'", t.State)
+	}
+	return nil
+}
+
+// ExportApp reads the app's vhosts and returns a dokku_domains task that sets
+// exactly that set, or nil when the app has no custom domains.
+func (t DomainsTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	domains, err := getDomains(ctx, app, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(domains) == 0 {
+		return nil, nil
+	}
+	return []interface{}{DomainsTask{App: app, Domains: sortedSetKeys(domains), State: StateSet}}, nil
+}
+
+// getDomains fetches current domains for an app or globally
+func getDomains(ctx context.Context, app string, global bool) (map[string]bool, error) {
+	reportFlag := "--domains-app-vhosts"
+	args := []string{
+		"domains:report",
+		app,
+		reportFlag,
+	}
+	if global {
+		args = []string{
+			"domains:report",
+			"--global",
+			"--domains-global-vhosts",
+		}
+	}
+
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    args,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	domains := map[string]bool{}
+	for _, domain := range strings.Fields(result.StdoutContents()) {
+		domains[domain] = true
+	}
+	return domains, nil
+}
+
+// init registers the DomainsTask with the task registry
+func init() {
+	RegisterTask(&DomainsTask{})
+}

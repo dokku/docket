@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dokku/docket/tasks"
+	"github.com/dokku/docket/internal/tasks"
 
 	"github.com/aymanbagabas/go-udiff"
 )

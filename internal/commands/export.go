@@ -1,0 +1,473 @@
+package commands
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/dokku/docket/internal/subprocess"
+	"github.com/dokku/docket/internal/tasks"
+
+	"github.com/josegonzalez/cli-skeleton/command"
+	"github.com/posener/complete"
+	flag "github.com/spf13/pflag"
+)
+
+// varsFileMode is the mode the companion vars-file is written with. It holds
+// every config value, every field a task marks sensitive, and the credentials
+// behind them in the clear, and its only reader is the same user applying the
+// pair back through --vars-file (#489). The recipe beside it stays 0o644 like
+// every other file docket writes: it carries interpolations, not values.
+const varsFileMode = 0o600
+
+// ExportCommand reads a live Dokku server and writes a recipe describing it -
+// the inverse of apply. Sensitive values are lifted into a companion vars-file
+// that the emitted recipe references through inputs, so the pair applies with
+// `docket apply --vars-file <vars>`.
+type ExportCommand struct {
+	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdout is where a streamed recipe, diff or catalog is written. Populated
+	// from main.go; nil writes to the process's standard output. These writes
+	// bypass Ui on purpose - it is wrapped in a log formatter - so a test that
+	// asserts on them needs somewhere of its own to capture.
+	Stdout io.Writer
+
+	// Ctx is the run context, populated from main.go with the process signal
+	// context. It carries cancellation down through every task's Plan and
+	// Execute. Nil when the command was constructed directly (tests do this),
+	// in which case Run falls back to context.Background().
+	Ctx context.Context
+
+	// ChmodVarsFile overrides how the companion vars-file's mode is set. Only
+	// a test sets it, to force the failure path; nil uses os.File.Chmod.
+	ChmodVarsFile chmodFunc
+
+	output     string
+	varsOutput string
+	// formatFlag is the raw --format value; it is normalised by
+	// parseRecipeFormatFlag in Run and then governs both the recipe and
+	// the companion vars-file, overriding either output's extension.
+	formatFlag string
+	overwrite  bool
+	redact     bool
+	apps       []string
+	resources  []string
+
+	host              string
+	sudo              bool
+	acceptNewHostKeys bool
+}
+
+func (c *ExportCommand) Name() string {
+	return "export"
+}
+
+func (c *ExportCommand) Synopsis() string {
+	return "Reads a live server and writes a recipe describing it"
+}
+
+func (c *ExportCommand) Help() string {
+	return command.CommandHelp(c)
+}
+
+func (c *ExportCommand) Examples() map[string]string {
+	appName := os.Getenv("CLI_APP_NAME")
+	return map[string]string{
+		"Export the local server to tasks.yml + tasks.vars.yml": fmt.Sprintf("%s %s", appName, c.Name()),
+		"Export a remote server over SSH":                       fmt.Sprintf("%s %s --host deploy@dokku.example.com", appName, c.Name()),
+		"Stream a self-contained recipe to stdout":              fmt.Sprintf("%s %s --output -", appName, c.Name()),
+		"Stream a JSON5 recipe to stdout":                       fmt.Sprintf("%s %s --output - --format json5", appName, c.Name()),
+		"Redact secrets into a fill-in-the-blanks vars-file":    fmt.Sprintf("%s %s --redact", appName, c.Name()),
+		"Export only a single app":                              fmt.Sprintf("%s %s --app my-app", appName, c.Name()),
+		"Export one resource":                                   fmt.Sprintf("%s %s --resource 'dokku_config[app=my-app]'", appName, c.Name()),
+		"Export every app's domains":                            fmt.Sprintf("%s %s --resource dokku_domains", appName, c.Name()),
+	}
+}
+
+func (c *ExportCommand) Arguments() []command.Argument {
+	return []command.Argument{}
+}
+
+func (c *ExportCommand) AutocompleteArgs() complete.Predictor {
+	return complete.PredictNothing
+}
+
+func (c *ExportCommand) ParsedArguments(args []string) (map[string]command.Argument, error) {
+	return command.ParseArguments(args, c.Arguments())
+}
+
+func (c *ExportCommand) FlagSet() *flag.FlagSet {
+	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
+	f.StringVar(&c.output, "output", defaultRecipeOutput, "path to write the recipe to; pass - to stream a self-contained recipe to stdout")
+	f.StringVar(&c.formatFlag, "format", "", "write the recipe and vars-file as this format ("+recipeFormatList()+") instead of inferring it from the --output extension. Without an explicit --output, each format writes its own default name ("+defaultRecipeOutputFor(tasks.FormatNameJSON5)+" for json5, "+defaultRecipeOutputFor(tasks.FormatNameHCL)+" for hcl); this is also the only way to pick a format on stdout.")
+	f.StringVar(&c.varsOutput, "vars-output", "", "path to write the companion vars-file to (defaults to <output-base>.vars.<ext>; --format overrides its format)")
+	f.BoolVar(&c.overwrite, "overwrite", false, "overwrite existing output files without prompting")
+	f.BoolVar(&c.redact, "redact", false, "write placeholder values into the vars-file instead of real secrets")
+	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app (repeatable)")
+	f.StringArrayVar(&c.resources, "resource", nil, "restrict the export to the named resource address, e.g. 'dokku_config[app=my-app]' (repeatable); a bare task type exports every resource of that type")
+	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
+	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via sudo -n, remotely with --host and locally without")
+	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "trust an unknown SSH host key on first connect")
+	return f
+}
+
+func (c *ExportCommand) AutocompleteFlags() complete.Flags {
+	return command.MergeAutocompleteFlags(
+		c.Meta.AutocompleteFlags(command.FlagSetClient),
+		complete.Flags{
+			"--output":               taskFileAutocomplete(),
+			"--format":               recipeFormatAutocomplete(),
+			"--vars-output":          taskFileAutocomplete(),
+			"--overwrite":            complete.PredictNothing,
+			"--redact":               complete.PredictNothing,
+			"--app":                  complete.PredictNothing,
+			"--resource":             complete.PredictNothing,
+			"--host":                 complete.PredictNothing,
+			"--sudo":                 complete.PredictNothing,
+			"--accept-new-host-keys": complete.PredictNothing,
+		},
+	)
+}
+
+// Run reads the server, marshals the recipe (and vars-file), and writes them.
+// Exit codes:
+//
+//	0 - export written (or streamed to stdout)
+//	1 - flag parse error, a file-only flag combined with --output -, read
+//	    error, an output file exists without --overwrite (and the prompt was
+//	    declined or stdin is not interactive), or an IO error
+func (c *ExportCommand) Run(args []string) int {
+	flags := c.FlagSet()
+	flags.Usage = func() { c.Ui.Output(c.Help()) }
+	if err := flags.Parse(args); err != nil {
+		c.Ui.Error(err.Error())
+		c.Ui.Error(command.CommandErrorText(c))
+		return 1
+	}
+
+	formatOverride, err := parseRecipeFormatFlag("--format", c.formatFlag)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	// An address already names the app it belongs to, so combining the two
+	// filters can only express a contradiction or a redundancy.
+	if len(c.resources) > 0 && len(c.apps) > 0 {
+		c.Ui.Error("--resource and --app cannot be combined; a resource address already names its app")
+		return 1
+	}
+
+	// Addresses are parsed and checked against the registry here, before the
+	// SSH control master is opened, so a typo fails instantly rather than
+	// after a round trip to the server.
+	resources, err := tasks.ParseResourceSelectors(c.resources)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	// Resolve the write target up front. --format json5 with no explicit
+	// --output moves the default to tasks.json (and, through
+	// deriveVarsOutput, tasks.vars.json), and every later use of c.output
+	// - the overwrite prompt, the write, the summary, the Next steps line
+	// - has to agree on one path. flags.Changed is only meaningful after
+	// flags.Parse. Validating here also means a typo'd --format fails
+	// before an SSH control master is opened or the server is read.
+	var recipeFormat string
+	c.output, recipeFormat = resolveRecipeOutput(c.output, formatOverride, flags.Changed("output"))
+	if msg := recipeOutputFormatMismatch(c.output, formatOverride); msg != "" {
+		c.Ui.Warn(msg)
+	}
+
+	// A streamed recipe has no vars-file to place and no file on disk to
+	// replace, so both flags below would be silently dropped by the stdout
+	// branch further down (#419). Rejected here, before the SSH control
+	// master is opened and before the server is enumerated, so the failure
+	// is instant.
+	if err := stdoutInertFlagError(flags, c.output, []stdoutInertFlag{
+		{name: "vars-output", reason: "a streamed recipe inlines its values"},
+		{name: "overwrite", reason: "a streamed recipe writes no files"},
+	}); err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	// The session puts the target on the run context, so every exporter reads
+	// the same server without any of them holding a reference to it - and a
+	// second export in the same process can read a different one. It also
+	// closes the SSH connection the export opens on the way out. The masker
+	// starts empty: what it masks is only known once the read below returns.
+	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
+	masker := subprocess.NewMasker()
+	session := subprocess.NewSession(masker)
+	defer session.Close()
+	ctx := session.Context(runContext(c.Ctx), target)
+
+	toStdout := c.output == taskFileStdin
+
+	res, err := tasks.ExportRecipe(ctx, tasks.ExportOptions{
+		Apps:      c.apps,
+		Resources: resources,
+		Redact:    c.redact,
+		Inline:    toStdout,
+	})
+	// Export is the one server-reading command with no recipe to collect a
+	// sensitive set from before the run: the values it must mask are the ones
+	// its own exporters just read back. Registered here, ahead of the failure
+	// below as well as the warnings, because the global play is exported
+	// before any app is read - so a run that dies on apps:list, or on the
+	// apps:exists probe of a --resource-pinned app, can already be holding a
+	// secret (#488).
+	//
+	// What masks from here on is every diagnostic built from what the server
+	// returned: the warnings, this failure, and the marshal errors further
+	// down. What deliberately does not is the text built from the user's own
+	// arguments - the --app names and --resource addresses reported missing,
+	// and the output paths - because a name masked down to *** would hide the
+	// typo the message exists to report.
+	masker.Add(res.SensitiveValues()...)
+
+	if err != nil {
+		c.Ui.Error(fmt.Sprintf("export failed: %v", masker.String(err.Error())))
+		return 1
+	}
+	for _, w := range res.Report.Warnings {
+		c.Ui.Warn(fmt.Sprintf("warning: %s", masker.String(w)))
+	}
+
+	// A nonexistent --app must not silently produce an empty recipe (which the
+	// loader then rejects). When nothing was collected, abort without writing;
+	// otherwise the existing apps are exported and the missing names are reported
+	// with a non-zero exit at the end (#346). The names print unmasked here for
+	// the reason exitForMissingApps gives.
+	if res.PlayCount() == 0 {
+		switch {
+		case len(res.Report.MissingApps) > 0:
+			c.Ui.Error(fmt.Sprintf("error: %s not found on server; nothing to export", strings.Join(res.Report.MissingApps, ", ")))
+		case len(res.Report.MissingResources) > 0:
+			c.Ui.Error(fmt.Sprintf("error: %s not found on server; nothing to export", strings.Join(res.Report.MissingResources, ", ")))
+		default:
+			c.Ui.Error("error: nothing to export")
+		}
+		return 1
+	}
+
+	recipeBytes, err := res.MarshalRecipe(recipeFormat)
+	if err != nil {
+		c.Ui.Error(fmt.Sprintf("marshal recipe: %v", masker.String(err.Error())))
+		return 1
+	}
+
+	if toStdout {
+		if _, err := c.stdout().Write(recipeBytes); err != nil {
+			c.Ui.Error(fmt.Sprintf("write error: %v", err))
+			return 1
+		}
+		return c.exitForMissingApps(res)
+	}
+
+	varsOutput := c.varsOutput
+	if varsOutput == "" {
+		varsOutput = deriveVarsOutput(c.output)
+	}
+	// --format governs the pair: when it is given, the vars-file matches
+	// the recipe even if --vars-output names another extension. Without
+	// it the vars-file keeps following its own extension, so
+	// `--output tasks.yml --vars-output vars.json` still writes JSON.
+	varsFormat := formatOverride
+	if varsFormat == "" {
+		varsFormat = detectTaskFileFormat(varsOutput)
+	}
+	writeVars := res.HasVars()
+
+	// Overwrite check: both files are checked before either is written, so a
+	// declined prompt aborts the whole export with nothing written.
+	if !c.overwrite {
+		targets := []string{c.output}
+		if writeVars {
+			targets = append(targets, varsOutput)
+		}
+		for _, path := range targets {
+			exists, err := pathExists(c.baseDir(), path)
+			if err != nil {
+				c.Ui.Error(fmt.Sprintf("stat error: %v", err))
+				return 1
+			}
+			if !exists {
+				continue
+			}
+			ok, err := c.confirmOverwrite(path)
+			if err != nil {
+				c.Ui.Error(err.Error())
+				return 1
+			}
+			if !ok {
+				c.Ui.Output("aborted; no files written")
+				return 1
+			}
+		}
+	}
+
+	if err := os.WriteFile(inDir(c.baseDir(), c.output), recipeBytes, 0o644); err != nil {
+		c.Ui.Error(fmt.Sprintf("write error: %v", err))
+		return 1
+	}
+	if writeVars {
+		varsBytes, err := res.MarshalVars(varsFormat)
+		if err != nil {
+			c.Ui.Error(fmt.Sprintf("marshal vars: %v", masker.String(err.Error())))
+			return 1
+		}
+		if err := c.writeVarsFile(varsOutput, varsBytes); err != nil {
+			c.Ui.Error(fmt.Sprintf("write error: %v", err))
+			return 1
+		}
+		if msg := varsOutputFormatMismatch(varsOutput, varsFormat, varsBytes); msg != "" {
+			c.Ui.Warn(msg)
+		}
+	}
+
+	c.Ui.Output(fmt.Sprintf("==> Exported %s (%s)", c.output, pluralize(res.AppCount(), "app")))
+	if writeVars {
+		c.Ui.Output(fmt.Sprintf("    values written to %s", varsOutput))
+		if c.redact {
+			c.Ui.Output("    (redacted; fill in the vars-file before applying)")
+		}
+	} else if flags.Changed("vars-output") {
+		// Asking for a vars-file at a named path and getting no file is the
+		// other half of #419. Here the flag was legitimate - there was just
+		// nothing sensitive to lift - so this is a note rather than an
+		// error. The derived default stays quiet: a path the user did not
+		// choose going unwritten is not news.
+		c.Ui.Output(fmt.Sprintf("    no sensitive values to export; %s not written", varsOutput))
+	}
+	c.Ui.Output("")
+	c.Ui.Output("Next steps:")
+	// Quoted so a path with a space survives the copy-paste this line
+	// exists for.
+	if writeVars {
+		c.Ui.Output(fmt.Sprintf("  $ %s apply --tasks %s --vars-file %s", appName(), shellQuotePath(c.output), shellQuotePath(varsOutput)))
+	} else {
+		c.Ui.Output(fmt.Sprintf("  $ %s apply --tasks %s", appName(), shellQuotePath(c.output)))
+	}
+	return c.exitForMissingApps(res)
+}
+
+// exitForMissingApps reports any --app names or --resource addresses that were
+// not found on the server and returns a non-zero exit code, so a typo is
+// surfaced even though what does exist was still exported (#346).
+//
+// The names print unmasked, unlike the warnings Run masks above. They are the
+// user's own arguments echoed back rather than anything the server returned,
+// and the whole message is "you asked for a name that is not there" - which a
+// name masked down to *** would not say (#488).
+func (c *ExportCommand) exitForMissingApps(res *tasks.ExportResult) int {
+	missing := append(append([]string(nil), res.Report.MissingApps...), res.Report.MissingResources...)
+	if len(missing) == 0 {
+		return 0
+	}
+	c.Ui.Error(fmt.Sprintf("error: %s not found on server", strings.Join(missing, ", ")))
+	return 1
+}
+
+// confirmOverwrite prompts for permission to overwrite an existing file. When
+// stdin is not interactive (Ask returns an error, e.g. EOF), it returns an
+// error advising --overwrite rather than silently overwriting.
+func (c *ExportCommand) confirmOverwrite(path string) (bool, error) {
+	answer, err := c.Ui.Ask(fmt.Sprintf("%s already exists; overwrite? [y/N]", path))
+	if err != nil {
+		return false, fmt.Errorf("%s already exists; pass --overwrite to replace it", path)
+	}
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes", nil
+}
+
+// chmodFile is os.File.Chmod, indirected so the warning below can be tested:
+// no filesystem a test can portably create rejects fchmod, and a fallback that
+// tells the operator their secrets are exposed is worth more than an untested
+// one.
+//
+// It lives on the command rather than in a package variable so a test that
+// forces the failure does not have to swap process state and put it back.
+type chmodFunc func(f *os.File, mode os.FileMode) error
+
+// chmodVarsFile returns the chmod this command writes its vars-file with.
+func (c *ExportCommand) chmodVarsFile() chmodFunc {
+	if c.ChmodVarsFile != nil {
+		return c.ChmodVarsFile
+	}
+	return func(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }
+}
+
+// writeVarsFile writes the companion vars-file at varsFileMode. os.WriteFile
+// is not enough on its own: O_CREATE's mode applies only to a file the call
+// creates, so a vars-file already on disk - one an older docket wrote at
+// 0o644, or one the operator made by hand - would keep whatever mode it had,
+// and the umask can only take bits off 0o600 rather than settle it. The chmod
+// lands on the fd before the first byte is written, so the values never sit in
+// a file anyone else can open; O_TRUNC emptying it first is harmless, since an
+// empty world-readable file leaks nothing.
+//
+// A filesystem that cannot hold the bits - vfat, some network mounts - warns
+// rather than failing the export: the pair is still what was asked for, the
+// operator just has to know this half is exposed. The message names the path
+// unmasked for the reason exitForMissingApps gives.
+func (c *ExportCommand) writeVarsFile(path string, data []byte) error {
+	f, err := os.OpenFile(inDir(c.baseDir(), path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, varsFileMode)
+	if err != nil {
+		return err
+	}
+	if err := c.chmodVarsFile()(f, varsFileMode); err != nil {
+		c.Ui.Warn(fmt.Sprintf("warning: could not set mode %#o on %s: %v; it holds secrets in the clear", varsFileMode, path, err))
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// deriveVarsOutput returns the default companion vars-file path for a recipe
+// output path: <base>.vars.<ext> (e.g. tasks.yml -> tasks.vars.yml).
+func deriveVarsOutput(output string) string {
+	ext := filepath.Ext(output)
+	if ext == "" {
+		return output + ".vars"
+	}
+	return strings.TrimSuffix(output, ext) + ".vars" + ext
+}
+
+// pathExists reports whether path exists, distinguishing a genuine stat error
+// from a not-found.
+func pathExists(baseDir, path string) (bool, error) {
+	if _, err := os.Stat(inDir(baseDir, path)); err == nil {
+		return true, nil
+	} else if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
+// stdout returns the writer this command streams bytes to.
+func (c *ExportCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *ExportCommand) baseDir() string { return c.BaseDir }

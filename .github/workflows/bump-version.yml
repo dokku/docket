@@ -34,7 +34,9 @@ jobs:
         id: latest-tag
         run: |
           GIT_LATEST_TAG="$(git describe --tags "$(git rev-list --tags --max-count=1)" 2>/dev/null || echo "0.0.0")"
-          echo GIT_LATEST_TAG="$GIT_LATEST_TAG" >>"$GITHUB_OUTPUT"
+          # Releases are tagged vX.Y.Z (earlier ones were X.Y.Z); the version
+          # math works on the bare number either way.
+          echo GIT_LATEST_TAG="${GIT_LATEST_TAG#v}" >>"$GITHUB_OUTPUT"
 
       - name: Compute Next Tag
         id: next-tag
@@ -47,7 +49,9 @@ jobs:
         run: |
           git config --global user.name 'Dokku Bot'
           git config --global user.email no-reply@dokku.com
-          git tag "$GIT_NEXT_TAG"
-          git push origin "$GIT_NEXT_TAG"
+          # Go modules only resolve vX.Y.Z tags, so the sdk package can only be
+          # pinned to a release that carries the prefix.
+          git tag "v$GIT_NEXT_TAG"
+          git push origin "v$GIT_NEXT_TAG"
         env:
           GIT_NEXT_TAG: ${{ steps.next-tag.outputs.version }}

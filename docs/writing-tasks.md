@@ -30,8 +30,8 @@ separately and hands it the caller's current context.
 
 ## Adding a new task
 
-Create `tasks/${TASK_NAME}_task.go`, where the task name is `lower_underscore_case`. For a task
-named `lollipop`, `tasks/lollipop_task.go` would contain:
+Create `internal/tasks/${TASK_NAME}_task.go`, where the task name is `lower_underscore_case`. For a task
+named `lollipop`, `internal/tasks/lollipop_task.go` would contain:
 
 ```go
 package tasks
@@ -109,7 +109,7 @@ A few conventions to follow:
   `apply` and `plan` emit a one-time `warning` line above each deprecated task's result line.
   Keep the message short and name the replacement, e.g.
   `"use dokku_storage_entry instead; storage:ensure-directory has been deprecated"`.
-- Every task must also implement `Doc() string` and `Examples() ([]Doc, error)`, the optional
+- Every task must also implement `Doc() string` and `examples() ([]Doc, error)`, the optional
   `Documented` interface. They are not part of `Task`, since running a task never needs them, but
   they supply the Synopsis and Examples on the task's generated page and in
   [`docket schema`](task-catalog.md). `TestEveryTaskIsDocumented` fails the build if a task ships
@@ -211,7 +211,7 @@ identical to what `Plan()` used to return so `plan`, `apply`, and `validate` all
 ## Exporting a task
 
 A task that declares itself exportable also implements one of two methods, and is listed in the
-matching order slice in `tasks/export.go`: `ExportApp(ctx, app)` plus an entry in `appExportOrder`
+matching order slice in `internal/tasks/export.go`: `ExportApp(ctx, app)` plus an entry in `appExportOrder`
 for app-scoped state, `ExportGlobal(ctx)` plus an entry in `globalExportOrder` for the rest. Both return
 task bodies - the task's own struct, populated from the server - and the engine handles
 vars-extraction and redaction afterwards. `TestExportSupportMatchesExportWiring` fails the build for
@@ -222,7 +222,7 @@ plannable exactly as the exporter returns it.
 
 Return the task's own struct by value, never a pointer to it or another task's type. The engine drops
 any other body from the export with a warning, because the secret-lifting it applies and the
-`tasks.As` accessor Go callers read bodies with both expect the value type.
+`sdk.As` accessor Go callers read bodies with both expect the value type.
 
 When an exporter needs to say something about a particular resource - an asset it could not capture,
 a resource it read back but cannot emit as a task the loader would accept - implement the reporting
@@ -335,8 +335,8 @@ var nginxPropertyTable = PropertyTable{
   },
 }
 
-// PropertyTable returns the property schema this task manages.
-func (t NginxPropertyTask) PropertyTable() PropertyTable {
+// propertyTable returns the property schema this task manages.
+func (t NginxPropertyTask) propertyTable() PropertyTable {
   return nginxPropertyTable
 }
 
@@ -374,7 +374,7 @@ A property task addressed differently declares its own fields and goes on the
 Keep the table in sync with the plugin's `:report` output - that mapping is how `plan` and `apply`
 detect drift without mutating. Some plugins take a dynamic family of properties whose names cannot
 be enumerated, such as the `dns-provider-<ENV_VAR>` credentials letsencrypt and traefik accept.
-Those are declared in `dynamicPropertyFamilies` in `tasks/properties.go`, which is what lets
+Those are declared in `dynamicPropertyFamilies` in `internal/tasks/properties.go`, which is what lets
 validation accept a name the table has never heard of, and is published to consumers so a linter
 does not reject a legal recipe. How they plan depends on the plugin:
 
@@ -460,10 +460,10 @@ Two validation rules go with them, and every task carrying the states shares bot
 - a collection supplied under `clear` is an error rather than something to ignore, since the command
   cannot act on it and silently discarding it would read as a removal that never happened.
 
-`planPairsReplace` and `planPairsClear` in `tasks/pairs.go` implement both states for a
+`planPairsReplace` and `planPairsClear` in `internal/tasks/pairs.go` implement both states for a
 `map[string]string` collection: pass the desired map, a probe, and a builder for the one command,
 and they handle the two-directional diff, the mutation lines and the in-sync case. The list-valued
-tasks build their commands through `dokkuArgsInputs` / `applyDokkuArgs` in `tasks/domains_task.go`
+tasks build their commands through `dokkuArgsInputs` / `applyDokkuArgs` in `internal/tasks/domains_task.go`
 instead.
 
 Both states itemize the replacement they work out to in `PlanResult.Mutations`, and those lines
@@ -484,7 +484,7 @@ Sometimes the server stores entries in the collection that belong to something o
 recipe, and a whole-set command would remove them too. `dokku_config` is the case in point. The
 app's env file also holds the `<ALIAS>_URL` keys a service link wrote, `NO_VHOST` from
 `domains:disable`, and the git rev-env-var key dokku rewrites on every build. `config:import
---replace` would wipe all of them. `configKeptKeys` in `tasks/config_task.go` draws that line. `set`
+--replace` would wipe all of them. `configKeptKeys` in `internal/tasks/config_task.go` draws that line. `set`
 passes the kept keys through the one `config:import` with their current values, and `clear`
 removes only the other keys, in one `config:unset`, because `config:clear` would take the kept keys
 with it. Export leaves out the same keys, so a round trip agrees with itself. A task with an
@@ -494,29 +494,31 @@ and offer a field (config's `preserve`) for keys the task cannot recognise on it
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
-`Examples()`, `ExportSupport()`, `ProbeSupport()`, optional `Requirements()` and `PropertyTable()`
+`examples()`, `ExportSupport()`, `ProbeSupport()`, optional `Requirements()` and `propertyTable()`
 methods plus its struct field tags - they are not hand-edited. Each page carries a Synopsis (from
 `Doc()`), a Requirements section (when the task implements `Requirements()`), a Runner requirements
 section (when a field is tagged `runner_file:"true"`), Export support and Probe support sections, an
 Identity section, a Parameters table (reflected from the field tags), a Properties table (for a task
-with a `PropertyTable()`), the examples, and a shared Return Values table. After adding or changing a
+with a `propertyTable()`), the examples, and a shared Return Values table. After adding or changing a
 task, regenerate them:
 
 ```bash
-make docs
+make generate
 ```
 
 This runs `go generate generate/docs.go`, which writes one `docs/tasks/<task>.md` per registered
-task plus the `docs/tasks/README.md` index. Commit the regenerated files alongside your code -
-`TestGeneratedDocsAreCurrent` fails the build if you forget, and prints the diff.
+task plus the `docs/tasks/README.md` index, and `go generate ./sdk/`, which rewrites
+`sdk/types_gen.go` so the [public `sdk` package](embedding.md) can name the new task type. Commit
+the regenerated files alongside your code - `TestGeneratedDocsAreCurrent` and
+`TestGeneratedSDKIsCurrent` fail the build if you forget, and print the diff.
 
 The generator renders those pages from `tasks.Catalog()`, the same description
 [`docket schema`](task-catalog.md) emits, so a declaration you add shows up in both or in neither.
 
 Because the examples are published as-is, they are also tested. `TestAllTaskExamplesValidate`
-(`tasks/main_test.go`) decodes every example offline, applies the field defaults, and runs the
+(`internal/tasks/main_test.go`) decodes every example offline, applies the field defaults, and runs the
 task's `Validate()`, so a snippet that would fail `docket validate` cannot ship - it runs as part of
-`make test`. `TestIntegrationTaskExamples` (`tasks/example_integration_test.go`) then applies every
+`make test`. `TestIntegrationTaskExamples` (`internal/tasks/example_integration_test.go`) then applies every
 example against a live Dokku under `make test-integration`. Write examples that are actually
 runnable: reference real resources (a reachable image or archive, not a placeholder URL), and if a
 task needs a prerequisite the shared placeholder apps do not provide - a backing service, a deployed

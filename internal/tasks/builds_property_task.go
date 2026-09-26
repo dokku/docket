@@ -1,0 +1,113 @@
+package tasks
+
+import "context"
+
+// BuildsPropertyTask manages the builds configuration for a given dokku application
+type BuildsPropertyTask PropertyFields
+
+// BuildsPropertyTaskExample contains an example of a BuildsPropertyTask
+type BuildsPropertyTaskExample struct {
+	// Name is the task name holding the BuildsPropertyTask description
+	Name string `yaml:"-"`
+
+	// BuildsPropertyTask is the BuildsPropertyTask configuration
+	BuildsPropertyTask BuildsPropertyTask `yaml:"dokku_builds_property"`
+}
+
+// GetName returns the name of the example
+func (e BuildsPropertyTaskExample) GetName() string {
+	return e.Name
+}
+
+// Doc returns the docblock for the builds property task
+func (t BuildsPropertyTask) Doc() string {
+	return "Manages the builds configuration for a given dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t BuildsPropertyTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t BuildsPropertyTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
+// examples returns the examples for the builds property task
+func (t BuildsPropertyTask) examples() ([]Doc, error) {
+	return MarshalExamples([]BuildsPropertyTaskExample{
+		{
+			Name: "Setting the retention value for an app",
+			BuildsPropertyTask: BuildsPropertyTask{
+				App:      "node-js-app",
+				Property: "retention",
+				Value:    "50",
+			},
+		},
+		{
+			Name: "Setting the retention value globally",
+			BuildsPropertyTask: BuildsPropertyTask{
+				Global:   true,
+				Property: "retention",
+				Value:    "50",
+			},
+		},
+		{
+			Name: "Clearing the retention value for an app",
+			BuildsPropertyTask: BuildsPropertyTask{
+				App:      "node-js-app",
+				Property: "retention",
+				State:    StateAbsent,
+			},
+		},
+	})
+}
+
+// Execute sets or unsets the builds property
+func (t BuildsPropertyTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
+}
+
+// buildsPropertyTable maps builds property names to the JSON keys emitted by
+// `dokku builds:report --format json` on dokku 0.38.8+.
+var buildsPropertyTable = PropertyTable{
+	Subcommand: "builds:set",
+	Keys: map[string]PropertyKeys{
+		"retention": {PerApp: "retention", Global: "global-retention"},
+	},
+}
+
+// propertyTable returns the property schema this task manages.
+func (t BuildsPropertyTask) propertyTable() PropertyTable {
+	return buildsPropertyTable
+}
+
+// Validate checks the BuildsPropertyTask's inputs without contacting the server.
+func (t BuildsPropertyTask) Validate() error {
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+}
+
+// Plan reports the drift the BuildsPropertyTask would produce.
+func (t BuildsPropertyTask) Plan(ctx context.Context) PlanResult {
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
+}
+
+// ExportApp reconstructs the app's explicitly-set properties.
+func (t BuildsPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
+		return BuildsPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
+// ExportGlobal reconstructs the globally-set properties.
+func (t BuildsPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
+		return BuildsPropertyTask{Global: true, Property: property, Value: value}
+	})
+}
+
+// init registers the BuildsPropertyTask with the task registry
+func init() {
+	RegisterTask(&BuildsPropertyTask{})
+}

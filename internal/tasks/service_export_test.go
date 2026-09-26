@@ -1,0 +1,417 @@
+package tasks
+
+import (
+	"context"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/dokku/docket/internal/subprocess"
+)
+
+func TestListServicesParsesTypeAndName(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		// well-formed lines, plus blank/malformed ones that must be dropped
+		"--quiet plugin:trigger service-list": "redis:cache\npostgres:my-db\npostgres:analytics\n\nmalformed-line\n:bad\nbad:",
+	}))
+
+	services, err := listServices(ctx)
+	if err != nil {
+		t.Fatalf("listServices: %v", err)
+	}
+	// sorted by (type, name); malformed lines dropped
+	want := []serviceInstance{
+		{Type: "postgres", Name: "analytics"},
+		{Type: "postgres", Name: "my-db"},
+		{Type: "redis", Name: "cache"},
+	}
+	if !reflect.DeepEqual(services, want) {
+		t.Errorf("listServices = %+v, want %+v", services, want)
+	}
+}
+
+func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet plugin:trigger service-list":   "postgres:my-db\nredis:cache",
+		"--quiet postgres:info my-db --version": "postgis/postgis:13-master",
+		"--quiet redis:info cache --version":    "redis:7.2.5",
+	}))
+
+	bodies, err := ServiceCreateTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 create tasks, got %d", len(bodies))
+	}
+	got := map[string]ServiceCreateTask{}
+	for _, b := range bodies {
+		c := b.(ServiceCreateTask)
+		got[c.Name] = c
+		if c.State != StatePresent {
+			t.Errorf("expected present state, got %q", c.State)
+		}
+	}
+	if got["my-db"].Service != "postgres" || got["cache"].Service != "redis" {
+		t.Errorf("unexpected create tasks: %+v", got)
+	}
+	// The image a service is actually running is pinned, so recreating it on
+	// another server does not silently pick up that server's plugin default.
+	if got["my-db"].Image != "postgis/postgis" || got["my-db"].ImageVersion != "13-master" {
+		t.Errorf("postgres image = %q:%q, want postgis/postgis:13-master", got["my-db"].Image, got["my-db"].ImageVersion)
+	}
+	if got["cache"].Image != "redis" || got["cache"].ImageVersion != "7.2.5" {
+		t.Errorf("redis image = %q:%q, want redis:7.2.5", got["cache"].Image, got["cache"].ImageVersion)
+	}
+}
+
+// TestExportServiceCreateOmitsUnreadableImage covers a service whose container
+// is gone: dokku prints nothing for --version, and the export must leave both
+// image fields empty rather than emitting a half-formed pin.
+func TestExportServiceCreateOmitsUnreadableImage(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet plugin:trigger service-list": "redis:cache",
+	}))
+
+	bodies, err := ServiceCreateTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 create task, got %d", len(bodies))
+	}
+	c := bodies[0].(ServiceCreateTask)
+	if c.Image != "" || c.ImageVersion != "" {
+		t.Errorf("expected no image, got %q:%q", c.Image, c.ImageVersion)
+	}
+}
+
+func TestSplitImageRef(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		ref         string
+		wantImage   string
+		wantVersion string
+	}{
+		{"postgres:17.2", "postgres", "17.2"},
+		{"postgis/postgis:13-master", "postgis/postgis", "13-master"},
+		// The colon here is a registry port, not a tag.
+		{"registry.example.com:5000/postgres", "registry.example.com:5000/postgres", ""},
+		{"registry.example.com:5000/postgres:17.2", "registry.example.com:5000/postgres", "17.2"},
+		{"postgres", "postgres", ""},
+		{"", "", ""},
+		// A digest reference has no tag to find, and the colon the splitter
+		// lands on belongs to the digest. Neither half is usable, which is why
+		// the image-drift upgrade path refuses to build a reference out of one
+		// (see TestServiceCreateTaskImageDriftUpgradeRefusesADigestRef) rather
+		// than trusting this result.
+		{"postgres@sha256:abc123", "postgres@sha256", "abc123"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ref, func(t *testing.T) {
+			image, version := splitImageRef(tc.ref)
+			if image != tc.wantImage || version != tc.wantVersion {
+				t.Errorf("splitImageRef(%q) = %q, %q; want %q, %q", tc.ref, image, version, tc.wantImage, tc.wantVersion)
+			}
+		})
+	}
+}
+
+func TestServiceExposedPortListParsesHostSide(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		stdout string
+		want   []string
+	}{
+		{"single", "5432->5432", []string{"5432"}},
+		{"interface-bound", "5432->127.0.0.1:5433", []string{"127.0.0.1:5433"}},
+		{"multi", "5432->5432 6379->6380", []string{"5432", "6380"}},
+		{"not-exposed", "-", nil},
+		{"empty", "", nil},
+		{"plain-fallback", "5432", []string{"5432"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+				"--quiet postgres:info svc --exposed-ports": tc.stdout,
+			}))
+			got, err := serviceExposedPortList(ctx, "postgres", "svc")
+			if err != nil {
+				t.Fatalf("serviceExposedPortList: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("serviceExposedPortList(%q) = %v, want %v", tc.stdout, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExportServiceExposeReadsHostPorts(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet plugin:trigger service-list":         "postgres:my-db\nredis:cache",
+		"--quiet postgres:info my-db --exposed-ports": "5432->5433",
+		"--quiet redis:info cache --exposed-ports":    "-",
+	}))
+
+	bodies, err := ServiceExposeTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 expose task (redis not exposed), got %d", len(bodies))
+	}
+	e := bodies[0].(ServiceExposeTask)
+	if e.Service != "postgres" || e.Name != "my-db" {
+		t.Errorf("unexpected expose target: %+v", e)
+	}
+	if len(e.Ports) != 1 || e.Ports[0] != "5433" {
+		t.Errorf("expected host port 5433, got %v", e.Ports)
+	}
+}
+
+func TestParseBackupSchedule(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		content  string
+		service  string
+		schedule string
+		bucket   string
+		useIam   bool
+		ok       bool
+	}{
+		{"standard-iam", "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket --use-iam", "postgres", "0 3 * * *", "my-bucket", true, true},
+		{"standard-no-iam", "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket", "postgres", "0 3 * * *", "my-bucket", false, true},
+		{"named-schedule", "@daily dokku /usr/bin/dokku redis:backup cache backups", "redis", "@daily", "backups", false, true},
+		{"empty", "", "postgres", "", "", false, false},
+		{"no-marker", "0 3 * * * something else entirely here", "postgres", "", "", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			schedule, bucket, useIam, ok := parseBackupSchedule(tc.content, tc.service)
+			if ok != tc.ok || schedule != tc.schedule || bucket != tc.bucket || useIam != tc.useIam {
+				t.Errorf("parseBackupSchedule(%q, %q) = (%q, %q, %v, %v), want (%q, %q, %v, %v)",
+					tc.content, tc.service, schedule, bucket, useIam, ok, tc.schedule, tc.bucket, tc.useIam, tc.ok)
+			}
+		})
+	}
+}
+
+func TestExportServiceBackupParsesSchedule(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet plugin:trigger service-list":        "postgres:my-db\nredis:cache",
+		"--quiet postgres:backup-schedule-cat my-db": "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket --use-iam",
+		// redis has no schedule: unmapped -> empty content -> parse fails -> skipped
+	}))
+
+	bodies, err := ServiceBackupTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 backup task, got %d", len(bodies))
+	}
+	b := bodies[0].(ServiceBackupTask)
+	if b.Service != "postgres" || b.Name != "my-db" {
+		t.Errorf("unexpected backup target: %+v", b)
+	}
+	if b.Schedule != "0 3 * * *" || b.Bucket != "my-bucket" || !b.UseIam {
+		t.Errorf("unexpected schedule fields: %+v", b)
+	}
+	// Write-only secrets are never read back.
+	if b.AwsSecretAccessKey != "" || b.EncryptionPassphrase != "" || b.AwsAccessKeyID != "" {
+		t.Errorf("backup export should not include credentials: %+v", b)
+	}
+}
+
+func TestExportServiceLinkEnumeratesForApp(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache",
+		"--quiet postgres:links my-db":        "web\nworker",
+		"--quiet redis:links cache":           "worker",
+	}))
+
+	bodies, err := ServiceLinkTask{}.ExportApp(ctx, "web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 link for web, got %d", len(bodies))
+	}
+	l := bodies[0].(ServiceLinkTask)
+	if l.App != "web" || l.Service != "postgres" || l.Name != "my-db" || l.State != StatePresent {
+		t.Errorf("unexpected link task: %+v", l)
+	}
+
+	bodies, err = ServiceLinkTask{}.ExportApp(ctx, "worker")
+	if err != nil {
+		t.Fatalf("ExportApp worker: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 links for worker, got %d", len(bodies))
+	}
+}
+
+func TestExportAclServiceReadsUsers(t *testing.T) {
+	t.Parallel()
+	// acl:list-service emits one username per line on stdout in dokku-acl
+	// 2.0.0+, and on stderr in 1.5.1 and earlier.
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			t.Parallel()
+			stdout := map[string]string{
+				"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache",
+			}
+			stderr := map[string]string{}
+			acl := stdout
+			if stream == "stderr" {
+				acl = stderr
+			}
+			acl["--quiet acl:list-service postgres my-db"] = "bob\nalice"
+			acl["--quiet acl:list-service redis cache"] = ""
+			ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+				key := strings.Join(in.Args, " ")
+				return subprocess.ExecCommandResponse{Stdout: stdout[key], Stderr: stderr[key]}, nil
+			})
+
+			bodies, err := AclServiceTask{}.ExportGlobal(ctx)
+			if err != nil {
+				t.Fatalf("ExportGlobal: %v", err)
+			}
+			if len(bodies) != 1 {
+				t.Fatalf("expected 1 acl task (redis has none), got %d", len(bodies))
+			}
+			a := bodies[0].(AclServiceTask)
+			// Field inversion: Service holds the instance name, Type the datastore type.
+			if a.Service != "my-db" || a.Type != "postgres" {
+				t.Errorf("acl field inversion wrong: %+v", a)
+			}
+			// sortedSetKeys yields deterministic, sorted membership.
+			if !reflect.DeepEqual(a.Users, []string{"alice", "bob"}) {
+				t.Errorf("acl users = %v, want [alice bob]", a.Users)
+			}
+			// state:set replaces the whole list, so re-applying an export
+			// converges a service carrying an extra user rather than adding to it.
+			if a.State != StateSet {
+				t.Errorf("acl State = %q, want %q", a.State, StateSet)
+			}
+			if err := a.Validate(); err != nil {
+				t.Errorf("exported task must be valid, got: %v", err)
+			}
+			if plan := a.Plan(ctx); !plan.InSync {
+				t.Errorf("re-planning the exported task should report no drift, got status %v reason %q", plan.Status, plan.Reason)
+			}
+		})
+	}
+}
+
+func TestExportConfigExcludesLinkedServiceDSNs(t *testing.T) {
+	t.Parallel()
+	dsn := "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db"
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet apps:list": "web",
+		// DATABASE_URL is the plain link; ALT_DB_URL is the same link made with
+		// a scheme override and a querystring, which an exact match misses.
+		"--quiet config:export --format json web": `{"DATABASE_URL":"` + dsn + `","ALT_DB_URL":"postgresql://postgres:pw@dokku-postgres-my-db:5432/my_db?sslmode=disable","SECRET_KEY":"s3cr3t","NO_VHOST":"1","COMMIT_SHA":"abc123"}`,
+		"git:report web --git-rev-env-var":        "COMMIT_SHA",
+		"--quiet plugin:trigger service-list":     "postgres:my-db",
+		"--quiet postgres:links my-db":            "web",
+		"--quiet postgres:info my-db --dsn":       dsn,
+	}))
+
+	bodies, err := ConfigTask{}.ExportApp(ctx, "web")
+	if err != nil {
+		t.Fatalf("ExportApp: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 config task, got %d", len(bodies))
+	}
+	c := bodies[0].(ConfigTask)
+	if !reflect.DeepEqual(c.Config, map[string]string{"SECRET_KEY": "s3cr3t"}) {
+		t.Errorf("config = %+v, want only SECRET_KEY: link keys, NO_VHOST and the rev var are not the recipe's", c.Config)
+	}
+	if c.State != StateSet {
+		t.Errorf("state = %q, want %q so the export declares the app's entire config", c.State, StateSet)
+	}
+}
+
+func TestIsLinkedServiceValue(t *testing.T) {
+	t.Parallel()
+	dsn := "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db"
+	cases := []struct {
+		name  string
+		value string
+		dsns  map[string]bool
+		want  bool
+	}{
+		{"exact dsn", dsn, map[string]bool{dsn: true}, true},
+		{"scheme override", "postgresql://postgres:pw@dokku-postgres-my-db:5432/my_db", map[string]bool{dsn: true}, true},
+		{"querystring", dsn + "?sslmode=disable", map[string]bool{dsn: true}, true},
+		{"unrelated value", "info", map[string]bool{dsn: true}, false},
+		{"external database", "postgres://postgres:other@mydb.abc123.us-east-1.rds.amazonaws.com:5432/my_db", map[string]bool{dsn: true}, false},
+		{"another service", "postgres://postgres:pw@dokku-postgres-other:5432/other", map[string]bool{dsn: true}, false},
+		{"no linked services", dsn, map[string]bool{}, false},
+		{"empty dsn never matches", "anything", map[string]bool{"": true}, false},
+		{"scheme-only dsn never matches", "anything", map[string]bool{"postgres://": true}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isLinkedServiceValue(tc.value, tc.dsns); got != tc.want {
+				t.Errorf("isLinkedServiceValue(%q) = %v, want %v", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExportRecipeIncludesServiceTasks(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet apps:list":                           "web",
+		"--quiet config:export --format json web":     `{}`,
+		"domains:report web --domains-app-vhosts":     "",
+		"--quiet plugin:trigger service-list":         "postgres:my-db",
+		"--quiet postgres:info my-db --exposed-ports": "5432->5432",
+		"--quiet postgres:links my-db":                "web",
+		"--quiet postgres:info my-db --dsn":           "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db",
+		"--quiet postgres:info my-db --version":       "postgres:17.2",
+	}))
+
+	res, err := ExportRecipe(ctx, ExportOptions{})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	recipe, err := res.MarshalRecipe("yaml")
+	if err != nil {
+		t.Fatalf("MarshalRecipe: %v", err)
+	}
+	out := string(recipe)
+	for _, want := range []string{
+		"name: global",
+		"dokku_service_create",
+		"dokku_service_expose",
+		"dokku_service_link",
+		// The exported create carries the image the service is running.
+		"image: postgres",
+		"image_version: \"17.2\"",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recipe missing %q:\n%s", want, out)
+		}
+	}
+	// Drift policy is a recipe-authoring choice, not something a server has,
+	// so export must not put words in the operator's mouth about it. Both
+	// fields rely on `omitempty` and their zero values to stay out.
+	for _, unwanted := range []string{"image_drift", "restart_apps"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("recipe should not export %q:\n%s", unwanted, out)
+		}
+	}
+}

@@ -1,0 +1,100 @@
+package tasks
+
+import (
+	"context"
+	"strings"
+
+	"github.com/dokku/docket/internal/subprocess"
+)
+
+// proxyEnabled probes whether the proxy is enabled for an app via
+// `dokku --quiet proxy:report <app> --proxy-enabled`. Output is "true"/"false".
+func proxyEnabled(ctx context.Context, tc ToggleContext) (bool, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "proxy:report", tc.App, "--proxy-enabled"},
+	})
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(result.StdoutContents()) == "true", nil
+}
+
+// ExportApp emits a dokku_proxy_toggle task only when the proxy is disabled
+// (it is enabled by default).
+func (t ProxyToggleTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
+	enabled, err := proxyEnabled(ctx, ToggleContext{App: app})
+	if err != nil {
+		return nil, err
+	}
+	if enabled {
+		return nil, nil
+	}
+	return []interface{}{ProxyToggleTask{App: app, State: StateAbsent}}, nil
+}
+
+// ProxyToggleTask manages the proxy for a given dokku application
+type ProxyToggleTask ToggleFields
+
+// ProxyToggleTaskExample contains an example of a ProxyToggleTask
+type ProxyToggleTaskExample struct {
+	// Name is the task name holding the ProxyToggleTask description
+	Name string `yaml:"-"`
+
+	// ProxyToggleTask is the ProxyToggleTask configuration
+	ProxyToggleTask ProxyToggleTask `yaml:"dokku_proxy_toggle"`
+}
+
+// GetName returns the name of the example
+func (e ProxyToggleTaskExample) GetName() string {
+	return e.Name
+}
+
+// Doc returns the docblock for the proxy toggle task
+func (t ProxyToggleTask) Doc() string {
+	return "Enables or disables the proxy plugin for a given dokku application"
+}
+
+// ExportSupport reports how docket export handles this task.
+func (t ProxyToggleTask) ExportSupport() ExportSupport {
+	return ExportSupport{Status: ExportSupported}
+}
+
+// ProbeSupport reports whether Plan() can read this task's current state.
+func (t ProxyToggleTask) ProbeSupport() ProbeSupport {
+	return ProbeSupport{Status: ProbeSupported}
+}
+
+// examples returns the examples for the proxy toggle task
+func (t ProxyToggleTask) examples() ([]Doc, error) {
+	return MarshalExamples([]ProxyToggleTaskExample{
+		{
+			Name: "Enable the proxy for an app",
+			ProxyToggleTask: ProxyToggleTask{
+				App: "node-js-app",
+			},
+		},
+		{
+			Name: "Disable the proxy for an app",
+			ProxyToggleTask: ProxyToggleTask{
+				App:   "node-js-app",
+				State: StateAbsent,
+			},
+		},
+	})
+}
+
+// Execute enables or disables the proxy
+func (t ProxyToggleTask) Execute(ctx context.Context) TaskOutputState {
+	return ExecutePlan(ctx, t.Plan(ctx))
+}
+
+// Plan reports the drift the ProxyToggleTask would produce.
+func (t ProxyToggleTask) Plan(ctx context.Context) PlanResult {
+	return planToggle(ctx, t.State, t.App, "proxy:enable", "proxy:disable", proxyEnabled)
+}
+
+// init registers the ProxyToggleTask with the task registry
+func init() {
+	RegisterTask(&ProxyToggleTask{})
+}
