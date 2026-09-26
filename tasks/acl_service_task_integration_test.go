@@ -97,13 +97,37 @@ func TestIntegrationAclService(t *testing.T) {
 	}
 	assertACL(t, "after idempotent remove", []string{"alice"})
 
-	// re-add bob and carol, then clear with empty users
+	// re-add bob and carol, replace the whole list, then clear it
 	if err := (AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{"bob", "carol"}, State: StatePresent}).Execute(testCtx()).Error; err != nil {
 		t.Fatalf("failed to re-add users: %v", err)
 	}
 	assertACL(t, "after re-add", []string{"alice", "bob", "carol"})
 
-	clearTask := AclServiceTask{Service: serviceName, Type: serviceType, State: StateAbsent}
+	// set replaces the list: carol and bob go, dave arrives, alice stays
+	setTask := AclServiceTask{Service: serviceName, Type: serviceType, Users: []string{"alice", "dave"}, State: StateSet}
+	result = setTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to set ACL: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Errorf("expected Changed=true on first set")
+	}
+	if result.State != StateSet {
+		t.Errorf("expected state 'set', got '%s'", result.State)
+	}
+	assertACL(t, "after set", []string{"alice", "dave"})
+
+	// set again - idempotent
+	result = setTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed second set: %v", result.Error)
+	}
+	if result.Changed {
+		t.Errorf("expected Changed=false on idempotent set")
+	}
+	assertACL(t, "after idempotent set", []string{"alice", "dave"})
+
+	clearTask := AclServiceTask{Service: serviceName, Type: serviceType, State: StateClear}
 	result = clearTask.Execute(testCtx())
 	if result.Error != nil {
 		t.Fatalf("failed to clear ACL: %v", result.Error)

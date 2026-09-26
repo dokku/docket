@@ -446,7 +446,8 @@ survives every apply.
 
 Both states must route through a **single server-side whole-set command**, not a loop over the
 entries. `dokku_domains` uses `domains:set` and `domains:clear`, `dokku_ports` uses `ports:set` and
-`ports:clear`, and the scheduler-k3s map tasks use `<plugin>:set --replace` and `<plugin>:clear`.
+`ports:clear`, the scheduler-k3s map tasks use `<plugin>:set --replace` and `<plugin>:clear`, and
+the dokku-acl tasks use `acl:set-users` and `acl:set-service-users`, called with no users to clear.
 Emitting one command per entry would leave the collection carrying a mixture of the old and new sets
 when a run fails partway, which is the outcome these states exist to rule out. Where dokku has no
 whole-set command, the task does not get the states.
