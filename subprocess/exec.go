@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	execute "github.com/alexellis/go-execute/v2"
 	"github.com/mattn/go-isatty"
@@ -59,9 +60,9 @@ type ExecError struct {
 
 	// Ran is true only when the command executed to completion and
 	// Response.ExitCode is its real exit status. It is false when the
-	// command could not be started (binary not found, permission denied)
-	// or was cancelled, in which cases Response.ExitCode is not
-	// meaningful. Probe() uses this to tell a dokku-level "state absent"
+	// command could not be started (binary not found, permission denied),
+	// was cancelled, or was killed by a signal, in which cases
+	// Response.ExitCode is not meaningful. Probe() uses this to tell a dokku-level "state absent"
 	// (Ran, non-zero exit) apart from a real execution failure that must
 	// be propagated.
 	Ran bool
@@ -294,17 +295,19 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 	resolved := resolveLocalCommandString(masker, command, commandArgs)
 
 	res, err := cmd.Execute(ctx)
+	err = signalDeathErr(ctx, res.ExitCode, err, signalDeathGrace)
 	if err != nil {
 		// The command could not be run to completion: the binary was not
-		// found, was not executable, or the context was cancelled. The
-		// exit code is not meaningful, so Ran stays false and callers such
-		// as Probe surface the failure instead of reading it as absence.
+		// found, was not executable, the context was cancelled, or a signal
+		// killed it. The exit code is not meaningful, so Ran stays false and
+		// callers such as Probe surface the failure instead of reading it as
+		// absence.
 		response := ExecCommandResponse{
 			Command:   resolved,
 			Stdout:    res.Stdout,
 			Stderr:    res.Stderr,
 			ExitCode:  res.ExitCode,
-			Cancelled: res.Cancelled,
+			Cancelled: res.Cancelled || errors.Is(err, context.Canceled),
 		}
 		return response, &ExecError{Response: response, Err: err}
 	}
@@ -327,6 +330,47 @@ func defaultExecRunner(ctx context.Context, input ExecCommandInput) (ExecCommand
 		ExitCode:  res.ExitCode,
 		Cancelled: res.Cancelled,
 	}, nil
+}
+
+// errKilledBySignal is the failure reported for a child that a signal killed
+// while the run itself was not interrupted.
+var errKilledBySignal = errors.New("killed by a signal")
+
+// signalDeathGrace bounds how long signalDeathErr waits for the run context to
+// be cancelled after a child dies from a signal.
+const signalDeathGrace = time.Second
+
+// signalDeathErr returns the error to report for a finished child, turning a
+// death by signal into a failure rather than an exit status.
+//
+// A signalled child exits with no status of its own: go-execute reports it as
+// ExitCode -1 and, while the context is still live, no error at all. Read as
+// is, that looks like a command which ran and exited non-zero, and a probe
+// would take it as the server's answer. go-execute's own -1, for a context
+// already cancelled before the start, always comes with an error, so a
+// negative code with none can only be a signal.
+//
+// The usual signal is an interrupt. A terminal's Ctrl-C, or timeout(1), signals
+// the whole process group, so the child and docket receive it together, and
+// the child can die before docket's handler has cancelled the run context.
+// Waiting a moment for that cancellation lets the caller report the interrupt
+// as the cancellation it is, and lets the run's own cancellation check - the
+// one that stops the next play from starting - see it. When the context is not
+// cancelled within grace, the signal was aimed at the child alone (or came
+// from the kernel, as the OOM killer's does), and errKilledBySignal is
+// reported instead.
+func signalDeathErr(ctx context.Context, exitCode int, runErr error, grace time.Duration) error {
+	if runErr != nil || exitCode >= 0 {
+		return runErr
+	}
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return errKilledBySignal
+	}
 }
 
 // stdoutIsTerminal reports whether this process's standard output is a

@@ -221,6 +221,121 @@ func TestCallExecCommandNotFound(t *testing.T) {
 	}
 }
 
+func TestSignalDeathErr(t *testing.T) {
+	t.Parallel()
+
+	runErr := errors.New("could not start")
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name     string
+		ctx      func() context.Context
+		exitCode int
+		runErr   error
+		want     error
+	}{
+		{
+			name:     "exit status passes through",
+			ctx:      context.Background,
+			exitCode: 1,
+			want:     nil,
+		},
+		{
+			name:     "run error passes through",
+			ctx:      context.Background,
+			exitCode: -1,
+			runErr:   runErr,
+			want:     runErr,
+		},
+		{
+			name:     "signal during a cancelled run is the cancellation",
+			ctx:      func() context.Context { return cancelled },
+			exitCode: -1,
+			want:     context.Canceled,
+		},
+		{
+			name:     "signal the run never sees is a signal death",
+			ctx:      context.Background,
+			exitCode: -1,
+			want:     errKilledBySignal,
+		},
+		{
+			name: "run cancelled while waiting is the cancellation",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				time.AfterFunc(10*time.Millisecond, cancel)
+				return ctx
+			},
+			exitCode: -1,
+			want:     context.Canceled,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			grace := 50 * time.Millisecond
+			if tt.want == context.Canceled {
+				// Long enough that only the cancellation can end the wait.
+				grace = time.Minute
+			}
+			got := signalDeathErr(tt.ctx(), tt.exitCode, tt.runErr, grace)
+			if !errors.Is(got, tt.want) {
+				t.Errorf("signalDeathErr() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCallExecCommandSignalDeath(t *testing.T) {
+	t.Parallel()
+
+	// A child killed by a signal exits with no status of its own. Reading
+	// the -1 it reports as a non-zero exit would let a probe take it as the
+	// server's answer, so it must come back with Ran false.
+	input := ExecCommandInput{Command: "sh", Args: []string{"-c", "kill -KILL $$"}}
+
+	t.Run("outside an interrupt", func(t *testing.T) {
+		t.Parallel()
+		_, err := CallExecCommand(context.Background(), input)
+		var execErr *ExecError
+		if !errors.As(err, &execErr) {
+			t.Fatalf("expected *ExecError, got %T (%v)", err, err)
+		}
+		if execErr.Ran {
+			t.Error("ExecError.Ran should be false for a child killed by a signal")
+		}
+		if !errors.Is(err, errKilledBySignal) {
+			t.Errorf("error should wrap errKilledBySignal, got %v", err)
+		}
+	})
+
+	t.Run("run cancelled just after", func(t *testing.T) {
+		t.Parallel()
+		// The child dies at once and the run is cancelled a moment later,
+		// the order in which an interrupt to the process group can land.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		time.AfterFunc(50*time.Millisecond, cancel)
+
+		resp, err := CallExecCommand(ctx, input)
+		var execErr *ExecError
+		if !errors.As(err, &execErr) {
+			t.Fatalf("expected *ExecError, got %T (%v)", err, err)
+		}
+		if execErr.Ran {
+			t.Error("ExecError.Ran should be false for a child killed by a signal")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("error should wrap context.Canceled, got %v", err)
+		}
+		if !resp.Cancelled {
+			t.Error("response should be marked Cancelled")
+		}
+	})
+}
+
 // TestCallExecCommandInheritsProcessEnv locks the environment contract that
 // remains now that ExecCommandInput has no Env field: the child gets docket's
 // own environment, and nothing is layered on top. The inheritance itself is

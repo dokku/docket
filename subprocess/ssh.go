@@ -253,7 +253,9 @@ var (
 // with `PlanResult{Error: err}` and let the formatter render `[!]`. That
 // covers a transport-level failure (`*SSHError`), a command that could
 // not be executed at all (the dokku binary is missing or not
-// executable), and a cancelled probe. Distinguishing "ran and said no"
+// executable), a cancelled probe, and a `dokku` or `ssh` child killed by
+// a signal - which exits with no status of its own, so its exit code is
+// not an answer either. Distinguishing "ran and said no"
 // from "could not run" relies on `ExecError.Ran`, since binary-not-found
 // reports `ExitCode 0` and so cannot be told apart by exit code.
 //
@@ -308,8 +310,8 @@ func ProbeCode(ctx context.Context, input ExecCommandInput) (ExecCommandResponse
 			return execErr.Response, nil
 		}
 		// Anything else - the command could not be executed (binary not
-		// found, permission denied) or was cancelled - is a real failure
-		// the caller must surface, not an answer.
+		// found, permission denied), was cancelled, or was killed by a
+		// signal - is a real failure the caller must surface, not an answer.
 		return ExecCommandResponse{}, err
 	}
 	return result, nil
@@ -402,12 +404,16 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 	resolved := resolveSshCommandString(masker, input.Command, input.Args)
 
 	res, runErr := cmd.Execute(ctx)
+	// An ssh killed by a signal - usually the interrupt that is also about to
+	// cancel this run - answered nothing, so it must not reach the exit-code
+	// branches below as though the remote command had.
+	runErr = signalDeathErr(ctx, res.ExitCode, runErr, signalDeathGrace)
 	resp := ExecCommandResponse{
 		Command:   resolved,
 		Stdout:    res.Stdout,
 		Stderr:    res.Stderr,
 		ExitCode:  res.ExitCode,
-		Cancelled: res.Cancelled,
+		Cancelled: res.Cancelled || errors.Is(runErr, context.Canceled),
 	}
 
 	return classifySshResult(parsed, remote, resp, runErr)
@@ -415,14 +421,28 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 
 // classifySshResult maps an ssh ExecTask result onto the docket error
 // model. Exit 255 (and any error before the process started) is wrapped
-// as *SSHError. Any other non-zero exit returns a plain error built
-// from stderr so the existing dokku-error rendering keeps working.
+// as *SSHError, as is a negative exit code: ssh was killed by a signal, so
+// neither it nor the remote command produced a status. Any other non-zero
+// exit returns a plain error built from stderr so the existing dokku-error
+// rendering keeps working.
+//
+// CallSshCommand has already turned a signal death into runErr by the time it
+// gets here; the negative-code check keeps this function from ever marking
+// such a code as a real answer on its own.
 func classifySshResult(target sshTarget, remote []string, resp ExecCommandResponse, runErr error) (ExecCommandResponse, error) {
 	if runErr != nil {
 		return resp, &SSHError{
 			Host:    target.UserHost(),
 			Command: remote,
 			Err:     runErr,
+			Stderr:  resp.Stderr,
+		}
+	}
+	if resp.ExitCode < 0 {
+		return resp, &SSHError{
+			Host:    target.UserHost(),
+			Command: remote,
+			Err:     errKilledBySignal,
 			Stderr:  resp.Stderr,
 		}
 	}
