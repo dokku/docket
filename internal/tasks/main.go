@@ -1,0 +1,1153 @@
+package tasks
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"regexp"
+	"strings"
+
+	"github.com/dokku/docket/internal/subprocess"
+	yaml "gopkg.in/yaml.v3"
+)
+
+// UnmarshalRecipe decodes data as a Recipe using the codec keyed by
+// format. Exposed because the commands package's input-extraction path
+// (parseInputDocument) needs the same dispatch and there is no benefit
+// to duplicating it.
+//
+// The codec's ToYAML runs but its Lint deliberately does not: this path
+// feeds parseInputDocument and countTasks, which accept a duplicate-keyed
+// JSON5 recipe today. normalizeRecipeBytes is the one that lints.
+//
+// JSON5 is normalised to YAML bytes and decoded by yaml.v3 rather than fed to
+// json5.Unmarshal directly, which is what the loader and the validator already
+// do - so all three agree on how a scalar lands in a Go field. Decoding the
+// JSON5 straight would not: encoding/json refuses to put a number or a bare
+// boolean into a string field, so a JSON5 recipe writing the natural
+// `default: 8080` failed to decode at all, and since the only caller that
+// noticed was flag registration, the recipe silently lost every input flag it
+// declared - the #493 symptom reached through a second door.
+func UnmarshalRecipe(data []byte, format string) (Recipe, error) {
+	recipe := Recipe{}
+	codec := CodecFor(format)
+	converted, problem := codec.ToYAML(data)
+	if problem != nil {
+		return nil, fmt.Errorf("%s unmarshal error: %v", codec.Name(), problem.Message)
+	}
+	data = converted
+	if err := yaml.Unmarshal(data, &recipe); err != nil {
+		return nil, fmt.Errorf("unmarshal error: %v", err.Error())
+	}
+	return recipe, nil
+}
+
+// State represents the desired state of a task
+type State string
+
+// State constants
+const (
+	// StatePresent represents the present state
+	StatePresent State = "present"
+	// StateAbsent represents the absent state
+	StateAbsent State = "absent"
+	// StateDeployed represents the deployed state
+	StateDeployed State = "deployed"
+	// StateSet represents the set state
+	StateSet State = "set"
+	// StateClear represents the clear state
+	StateClear State = "clear"
+	// StateSkipped is the sentinel value the apply / plan path emits when
+	// a task's `when:` predicate is false. Both State and DesiredState are
+	// set to this so the equality check in internal/commands/apply.go does not flag
+	// a skipped task as a state mismatch.
+	StateSkipped State = "skipped"
+)
+
+// Recipe represents a docket recipe: a YAML list of plays. Each entry is
+// a play envelope carrying the play-level metadata (name, tags, when,
+// inputs) and the per-play tasks list. Single-play files are simply a
+// one-element list and require no special handling.
+type Recipe []RecipeEntry
+
+// RecipeEntry is the on-disk shape of one play. The yaml-unmarshalled
+// form; the runtime-facing Play struct (in play.go) is built from this
+// by GetPlays.
+type RecipeEntry struct {
+	// Name is the play's user-facing label. Auto-generated as
+	// "play #N" by GetPlays when omitted.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+
+	// Tags accepts either a YAML list (`tags: [a, b]`) or a scalar
+	// (`tags: a`). Decoded via decodeTags into the Play.Tags slice.
+	Tags interface{} `yaml:"tags,omitempty" json:"tags,omitempty"`
+
+	// When is the raw expr source for the play-level conditional. Empty
+	// means "always run". Compiled into the Play.whenProgram by GetPlays.
+	When string `yaml:"when,omitempty" json:"when,omitempty"`
+
+	// Inputs are the play-local input defaults. Layer above file-level
+	// defaults but below --vars-file / CLI overrides (per-play merge
+	// happens in GetPlays).
+	Inputs []Input `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+
+	// Host sends this play's tasks to a server other than the run-wide
+	// --host / DOKKU_HOST target. `[user@]host[:port]`, same spelling as the
+	// flag.
+	Host string `yaml:"host,omitempty" json:"host,omitempty"`
+
+	// Sudo and AcceptNewHostKeys override the run-wide flags of the same
+	// name for this play. Pointers so an omitted key inherits the run's
+	// setting and an explicit false declines it.
+	Sudo              *bool `yaml:"sudo,omitempty" json:"sudo,omitempty"`
+	AcceptNewHostKeys *bool `yaml:"accept_new_host_keys,omitempty" json:"accept_new_host_keys,omitempty"`
+
+	// Tasks is the raw per-play task list, decoded into envelopes by
+	// GetPlays via buildEnvelopesForEntry.
+	Tasks []map[string]interface{} `yaml:"tasks,omitempty" json:"tasks,omitempty"`
+}
+
+// Input represents an input for a task
+type Input struct {
+	// Name is the name of the input
+	Name string `yaml:"name" json:"name"`
+
+	// Default is the default value of the input
+	Default string `yaml:"default" json:"default,omitempty"`
+
+	// Description is the description of the input
+	Description string `yaml:"description" json:"description,omitempty"`
+
+	// Required is a flag indicating if the input is required
+	Required bool `yaml:"required" json:"required,omitempty"`
+
+	// Sensitive marks the input's resolved value as a secret. When true,
+	// the value is masked as `***` anywhere it would otherwise appear in
+	// user-facing output (apply --verbose echoes, plan output, error
+	// messages, and the DOKKU_TRACE debug log).
+	Sensitive bool `yaml:"sensitive" json:"sensitive,omitempty"`
+
+	// Type is the type of the input
+	Type string `yaml:"type" json:"type,omitempty"`
+
+	// value is the value of the input
+	value string
+}
+
+// TaskOutputState represents the output of a task
+type TaskOutputState struct {
+	// Changed is a flag indicating if the task was changed
+	Changed bool
+
+	// Commands records every resolved Dokku subprocess command line the
+	// task's apply path executed, in invocation order. Used by
+	// `docket apply --verbose` to echo one `→` continuation line per
+	// command. Empty for tasks that did not invoke any subprocess.
+	Commands []string
+
+	// DesiredState is the desired state of the task
+	DesiredState State
+
+	// Error is the error of the task
+	Error error
+
+	// ExitCode is the exit code of the last subprocess command the task
+	// executed. Zero when the call succeeded or no subprocess ran.
+	ExitCode int
+
+	// Message is the message of the task
+	Message string
+
+	// Meta is the meta of the task
+	Meta struct{}
+
+	// State is the state of the task
+	State State
+
+	// Stderr is the captured stderr of the last subprocess command the
+	// task executed. Empty when no subprocess ran. Tasks that issue
+	// multiple subprocess calls record only the final call's stderr;
+	// per-call output, when needed, lives on Commands.
+	Stderr string
+
+	// Stdout is the captured stdout of the last subprocess command the
+	// task executed. Empty when no subprocess ran. Same last-call-wins
+	// rule as Stderr.
+	Stdout string
+
+	// Warnings carries non-fatal probe diagnostics discovered while planning
+	// (a property task's Plan() surfaces them, and ExecutePlan copies them off
+	// the PlanResult so the apply path can drain them). The run loop routes
+	// each entry through EventEmitter.TaskWarning; the message is masked at
+	// emit time. Empty for tasks that produced no diagnostic.
+	Warnings []PlanWarning
+}
+
+// PlanWarning is a non-fatal probe diagnostic a task's Plan() surfaces for the
+// run loop to route through EventEmitter.TaskWarning. Reason is a stable
+// machine key (see the WarnReason* constants) so JSON consumers can branch on a
+// typed category; Message is human-readable detail, stored raw and masked at
+// emit time like PlanResult.Reason.
+type PlanWarning struct {
+	Reason  string
+	Message string
+}
+
+const (
+	// WarnReasonUnknownProperty marks a probe warning raised when a property's
+	// key is absent from the plugin's JSON report (a stale key map or a dokku
+	// version that does not emit it).
+	WarnReasonUnknownProperty = "unknown_property"
+	// WarnReasonProbeRejected marks a probe warning raised when an older plugin
+	// rejects `:report --format json` outright.
+	WarnReasonProbeRejected = "probe_rejected"
+	// WarnReasonProbeIndeterminate marks a probe warning raised when a probe
+	// ran, was understood, and still could not answer: the server holds the
+	// state but will not reveal enough of it to compare. dokku's
+	// registry:auth-status reports exactly that when a docker credential
+	// helper or an identity token holds the secret, or when the config it
+	// would read does not parse. The task drifts and applies rather than
+	// assuming a match, so the warning is what tells the operator why a run
+	// against that server never settles.
+	WarnReasonProbeIndeterminate = "probe_indeterminate"
+	// WarnReasonServiceImageDrift marks a warning raised when a datastore
+	// service is running an image other than the one the recipe pins, and the
+	// task is leaving it alone. Unlike the three above it is not a probe failure:
+	// the state was read successfully and the task is declining to reconcile
+	// it, because dokku's only remedy recreates the container. It also covers
+	// the case where the running image could not be read at all, so a recipe
+	// that asked for drift to be caught is never silently told everything is
+	// fine.
+	WarnReasonServiceImageDrift = "service_image_drift"
+)
+
+// WithExecResult returns a copy of s with Stdout/Stderr/ExitCode populated
+// from r. Callers use it from the success path so the returned state
+// mirrors the underlying subprocess.ExecCommandResponse without having to
+// assign each field by hand.
+func (s TaskOutputState) WithExecResult(r subprocess.ExecCommandResponse) TaskOutputState {
+	s.Stdout = r.Stdout
+	s.Stderr = r.Stderr
+	s.ExitCode = r.ExitCode
+	return s
+}
+
+// PlanStatus is the short marker that summarizes a planned change.
+type PlanStatus string
+
+const (
+	// PlanStatusOK indicates the task is in sync; no change would be made.
+	PlanStatusOK PlanStatus = "ok"
+	// PlanStatusModify indicates the task would modify existing state.
+	PlanStatusModify PlanStatus = "~"
+	// PlanStatusCreate indicates the task would create new state.
+	PlanStatusCreate PlanStatus = "+"
+	// PlanStatusDestroy indicates the task would remove existing state.
+	PlanStatusDestroy PlanStatus = "-"
+	// PlanStatusError indicates the read-state probe itself failed.
+	PlanStatusError PlanStatus = "!"
+)
+
+// PlanResult is the read-only drift report for a task.
+//
+// Plan() never mutates server state. The unexported apply closure carries
+// any state probed during planning so the apply path does not re-probe;
+// ExecutePlan is the only consumer. When InSync is true, apply is nil.
+type PlanResult struct {
+	// InSync is true when the task would not change anything.
+	InSync bool
+
+	// Status is the short marker for the drift kind.
+	Status PlanStatus
+
+	// Reason is human-readable detail (e.g. "ref drift", "2 keys to set").
+	Reason string
+
+	// Mutations optionally itemizes per-mutation drift for tasks that
+	// perform multiple operations (e.g. config setting and unsetting
+	// individual keys). One entry per atomic change.
+	Mutations []string
+
+	// Commands is the resolved dokku command line(s) that ExecutePlan
+	// would invoke if Plan reported drift, in invocation order. They are
+	// rendered against the target the planning context carried, which is the
+	// same one Execute applies under today; a plan carried across hosts would
+	// have to re-render them. Tasks populate it via
+	// subprocess.ResolveCommandString from the same
+	// ExecCommandInput values the apply closure executes, so plan and
+	// apply render byte-identical strings for the same operation.
+	//
+	// Contract: non-empty whenever Status is "+", "~", or "-" (drift);
+	// empty when InSync is true or when Status is "!" (probe error).
+	// Sensitive values are already masked because ResolveCommandString
+	// runs MaskString on the rendered form.
+	Commands []string
+
+	// DesiredState mirrors TaskOutputState.DesiredState so plan output can
+	// render the same context as apply output.
+	DesiredState State
+
+	// Error is non-nil when the read-state probe itself failed. A non-nil
+	// Error implies Status == PlanStatusError.
+	Error error
+
+	// Stdout / Stderr / ExitCode capture the underlying subprocess
+	// response that produced a probe error. Populated by probe call
+	// sites that bubble a CallExecCommand failure into a PlanResult so
+	// `failed_when` predicates referencing `result.Stderr` work in plan
+	// mode the same way they do in apply mode. Empty / zero on the
+	// in-sync, drift, and apply-only paths.
+	Stdout   string
+	Stderr   string
+	ExitCode int
+
+	// Warnings carries non-fatal probe diagnostics raised while planning (for
+	// example a property probe that found no matching report key). The run
+	// loop drains them through EventEmitter.TaskWarning; ExecutePlan copies
+	// them onto TaskOutputState so the apply path surfaces them too. Stored
+	// raw and masked at emit time, mirroring Reason. Empty when no diagnostic.
+	Warnings []PlanWarning
+
+	// apply, when non-nil, is the closure ExecutePlan invokes to mutate
+	// server state. nil when InSync. Captures any probed state needed for
+	// the mutation so the apply path does not re-probe. Unexported so
+	// formatters and JSON consumers cannot accidentally invoke it.
+	//
+	// It takes the context rather than capturing the one Plan ran under,
+	// because ExecutePlan is invoked separately and could be handed a
+	// different one; capturing would silently apply against a stale target
+	// or an already-cancelled deadline.
+	apply func(ctx context.Context) TaskOutputState
+}
+
+// planErr wraps an input-validation error in a PlanResult. Tasks return it
+// from Plan() when their Validate() (or another pure input check) fails, so
+// the error surfaces uniformly as a PlanStatusError without contacting the
+// server.
+func planErr(err error) PlanResult {
+	return PlanResult{Status: PlanStatusError, Error: err}
+}
+
+// Task represents a task. It is only what running a task needs; the synopsis
+// and examples a task documents itself with live on the optional Documented
+// interface.
+type Task interface {
+	// Plan reports the drift the task would produce against the live server,
+	// without mutating it. Plan must never call mutating dokku commands.
+	//
+	// ctx carries the per-invocation state a task needs: cancellation, and the
+	// target the dokku commands run against. Pass it to every subprocess call
+	// rather than reaching for context.Background().
+	Plan(ctx context.Context) PlanResult
+
+	// Execute executes the task. Conventionally implemented as
+	// ExecutePlan(ctx, t.Plan(ctx)) so probing happens once and the per-state
+	// mutation logic lives only in Plan().
+	Execute(ctx context.Context) TaskOutputState
+}
+
+// InputValidator is an optional interface a task implements to expose
+// input-only validation: checks that are a pure function of the task's
+// fields and require no server probing (empty-list-when-present, per-item
+// required fields, enum values, mutually-exclusive fields, and so on).
+//
+// A task's Plan() calls Validate() before it probes, so plan and apply
+// surface these errors. `docket validate` calls the same Validate() offline
+// (see validateTaskBody) so the identical conditional/semantic errors are
+// caught without contacting a server. Implementations must never call a
+// mutating or probing dokku command; that is what keeps validate offline.
+type InputValidator interface {
+	Validate() error
+}
+
+// ReservedInputNames is the set of recipe input names that collide with a
+// built-in CLI flag on apply, plan, or validate. Declaring an input with
+// one of these names used to make pflag panic with "flag redefined"
+// before flag parsing even began; the loader and validator now reject it
+// as reserved_input_name instead, and registerInputFlags skips it so no
+// command panics. The set is the union of the built-in flags across the
+// input-accepting commands, so validate flags the same names apply and
+// plan would collide with. help / v / version are intentionally absent -
+// they are handled by the CLI framework, not registered on the flag set,
+// so they work as input names. A commands-package test keeps this set in
+// sync with the real flag sets.
+var ReservedInputNames = map[string]bool{
+	"tasks":                true,
+	"tasks-format":         true,
+	"host":                 true,
+	"verbose":              true,
+	"json":                 true,
+	"no-color":             true,
+	"tags":                 true,
+	"skip-tags":            true,
+	"sudo":                 true,
+	"play":                 true,
+	"vars-file":            true,
+	"fail-fast":            true,
+	"list-tasks":           true,
+	"start-at-task":        true,
+	"accept-new-host-keys": true,
+	"detailed-exitcode":    true,
+	"strict":               true,
+	"output":               true,
+	"force":                true,
+	"plan":                 true,
+}
+
+// envelopeAllowlistKeys are the cross-cutting envelope keys the loader
+// admits alongside the single task-type key. name / tags / when / loop
+// are activated by #205; register / changed_when / failed_when /
+// ignore_errors are reserved for #210 (the loader recognises and decodes
+// them so #210 does not need to revisit the cap).
+var envelopeAllowlistKeys = []string{
+	"name",
+	"tags",
+	"when",
+	"loop",
+	"register",
+	"changed_when",
+	"failed_when",
+	"ignore_errors",
+	"block",
+	"rescue",
+	"always",
+}
+
+// envelopeAllowlistSet is envelopeAllowlistKeys as a lookup set.
+var envelopeAllowlistSet = func() map[string]bool {
+	m := make(map[string]bool, len(envelopeAllowlistKeys))
+	for _, k := range envelopeAllowlistKeys {
+		m[k] = true
+	}
+	return m
+}()
+
+// loopVarPlaceholder is the literal substitution sigil renders for `.item`
+// and `.index` during the file-level pass. Keeping `{{ .item }}` /
+// `{{ .index }}` intact through the first pass means loop expansion sees
+// the original template and can render with real values. The loader
+// rejects any task body that still contains these tokens after the
+// per-task second pass, so misuse outside a loop is reported as a parse
+// error.
+const (
+	loopItemPlaceholder  = "{{ .item }}"
+	loopIndexPlaceholder = "{{ .index }}"
+)
+
+// loopVarSentinelPattern catches `{{ ... .item ... }}` and
+// `{{ ... .index ... }}` references so they can be hidden from the
+// file-level sigil pass and restored before loop expansion runs the
+// second pass, and so they can be detected outside a loop and rejected.
+//
+// `.item` / `.index` must be a *root* path segment: the dot is preceded
+// by the `{{`, whitespace, or another non-identifier char (never by an
+// identifier char, so `{{ .foo.item }}` - field `item` on input `foo` -
+// is left alone), and `item` / `index` is followed by a non-identifier
+// char (so `{{ .items }}`, `{{ .item_name }}`, `{{ .index_url }}` - real
+// inputs that merely start with the same letters - are left alone).
+// Sub-field access (`{{ .item.app }}`) and pipelines (`{{ .item | f }}`)
+// still match, which is the motivating case: a scalar self-referencing
+// placeholder makes sigil error when traversing a field on a string, so
+// hiding the whole token sidesteps the problem. The sub-match captures
+// `item` / `index` so callers can name the offending variable.
+var loopVarSentinelPattern = regexp.MustCompile(`\{\{(?:[^}]*[^\p{L}\p{N}_.])?\.(item|index)(?:[^\p{L}\p{N}_}][^}]*)?\}\}`)
+
+// loopVarSentinelOpen / Close wrap escaped loop-var tokens during the
+// file-level sigil pass. The pair must be unique enough to never appear
+// in a real recipe; the prefix doubles as documentation when one of
+// these survives a render error report.
+const (
+	loopVarSentinelOpen  = "__DOCKET_LOOPVAR<<"
+	loopVarSentinelClose = ">>__"
+)
+
+// escapeLoopVars hides `{{ .item ... }}` / `{{ .index ... }}` tokens from
+// sigil's file-level render. Returns the escaped data and the list of
+// captured tokens in encounter order so unescapeLoopVars can restore
+// them. Strings that contain no loop-var references round-trip unchanged.
+func escapeLoopVars(data []byte) ([]byte, []string) {
+	var captured []string
+	out := loopVarSentinelPattern.ReplaceAllFunc(data, func(match []byte) []byte {
+		idx := len(captured)
+		captured = append(captured, string(match))
+		return []byte(fmt.Sprintf("%s%d%s", loopVarSentinelOpen, idx, loopVarSentinelClose))
+	})
+	return out, captured
+}
+
+// unescapeLoopVars reverses escapeLoopVars. Each sentinel
+// `__DOCKET_LOOPVAR<<N>>__` is replaced with captured[N]. Sentinels that
+// reference an out-of-range index are left untouched (defensive against
+// upstream code that mangles the sentinel).
+func unescapeLoopVars(data []byte, captured []string) []byte {
+	if len(captured) == 0 {
+		return data
+	}
+	out := data
+	for i, tok := range captured {
+		sentinel := fmt.Sprintf("%s%d%s", loopVarSentinelOpen, i, loopVarSentinelClose)
+		out = []byte(strings.ReplaceAll(string(out), sentinel, tok))
+	}
+	return out
+}
+
+// SetValue sets the value of the input
+func (i *Input) SetValue(value string) error {
+	i.value = value
+	return nil
+}
+
+// HasValue returns true if the input has a value
+func (i Input) HasValue() bool {
+	return i.value != ""
+}
+
+// GetValue returns the value of the input
+func (i Input) GetValue() string {
+	return i.value
+}
+
+// GetTasks is a back-compat shim that returns the first play's task
+// envelopes. New code should call GetPlays. The wrapper is kept because a
+// large number of unit tests (tasks/*_test.go) exercise GetTasks directly
+// against single-play recipes; those tests inspect the flat ordered map
+// without caring about the multi-play envelope.
+func GetTasks(data []byte, context map[string]interface{}) (OrderedStringEnvelopeMap, error) {
+	plays, err := GetPlays(data, context, nil)
+	if err != nil {
+		return OrderedStringEnvelopeMap{}, err
+	}
+	if len(plays) == 0 {
+		return OrderedStringEnvelopeMap{}, nil
+	}
+	return plays[0].Tasks, nil
+}
+
+// GetPlays parses data as a docket recipe and returns one Play per
+// top-level entry, each carrying its own envelope map. The executor
+// (internal/commands/apply.go, internal/commands/plan.go) walks the result in order.
+//
+// The render pipeline is:
+//
+//  1. Render the whole file with `context` (file-level inputs + vars-file
+//     + CLI overrides) for the structure pass. This catches template
+//     syntax errors at the same point GetTasks did before #208 and gives
+//     us the play count plus per-play metadata (name/tags/when/inputs).
+//  2. For each play, build a per-play context by layering the play's own
+//     `inputs:` defaults above file-level defaults, but only for keys the
+//     user has not overridden via --vars-file or CLI. The userSet map
+//     identifies user-overridden keys; pass nil to disable the layering
+//     (the GetTasks shim does this since back-compat tests do not need
+//     multi-play context).
+//  3. Re-render the whole file with the per-play context so task body
+//     templates substitute the play-local values, then walk to that
+//     play's tasks and build envelopes through the existing
+//     buildEnvelopesForEntry helper.
+//  4. Append the play's tags to every envelope (additive with per-task
+//     tags) so FilterByTags treats them uniformly.
+//
+// Per-play `when:` predicates are pre-compiled here; the executor decides
+// the evaluation context (file-level only, per the spec - the play's own
+// inputs are not visible to its own when).
+func GetPlays(data []byte, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
+	return GetPlaysWithFormat(data, DefaultCodec().Name(), context, userSet)
+}
+
+// GetPlaysWithFormat is the format-aware variant of GetPlays. format is
+// one of "yaml" / "json5"; the empty string is treated as YAML. Parsing
+// goes through the shared structural parser (internal/tasks/parse.go) that also
+// powers `docket validate`, so the loader and the validator agree on
+// structural validity by construction; the first structural problem is
+// converted into the loader's fail-fast error.
+func GetPlaysWithFormat(data []byte, format string, context map[string]interface{}, userSet map[string]bool) ([]*Play, error) {
+	// Both input checks read the raw recipe, before the render below, so they
+	// share one tolerant pass over it.
+	rawInputs := declaredInputs(data, format)
+
+	// An input name that is not a valid template variable (e.g. a hyphen)
+	// makes the render below fail with a cryptic "bad character" error;
+	// reject it up front with the clearer invalid_input_name diagnostic so
+	// plan and apply fail offline with the same message validate reports.
+	if nameProblems := checkInputNames(rawInputs); len(nameProblems) > 0 {
+		return nil, problemToError(nameProblems[0])
+	}
+
+	// An input declaring a type docket does not implement, or a default that
+	// cannot be parsed as the type it declares, is rejected here rather than
+	// silently costing the run its whole input flag surface (#493).
+	if declProblems := checkInputDeclarations(rawInputs); len(declProblems) > 0 {
+		return nil, problemToError(declProblems[0])
+	}
+
+	baseRendered, err := renderRecipeBytes(data, context, format)
+	if err != nil {
+		return nil, err
+	}
+
+	baseAST, err := parseRecipeForLoader(baseRendered, format)
+	if err != nil {
+		// A parse failure here may be an input value that broke its
+		// surrounding scalar (#371); attribute it to the input so plan/apply
+		// fail with the same clear message validate reports.
+		if diag := diagnoseUnsafeInputValue(data, format, context); diag != nil {
+			return nil, problemToError(*diag)
+		}
+		return nil, err
+	}
+
+	if len(baseAST.Plays) == 0 {
+		return nil, fmt.Errorf("parse error: no recipe found in tasks file")
+	}
+
+	plays := make([]*Play, 0, len(baseAST.Plays))
+	singleUnnamed := len(baseAST.Plays) == 1 && baseAST.Plays[0].Name == ""
+	// registerSeen enforces the documented "a register name can only be
+	// registered once" rule (docs/task-envelope.md) at load time, so apply
+	// and plan reject a reused name the same way validate does instead of
+	// silently merging results across tasks (#314). The map is recipe-wide
+	// because the registered map is shared across every play in one run.
+	registerSeen := map[string]registerHit{}
+	for i, rawPlay := range baseAST.Plays {
+		if len(rawPlay.Problems) > 0 {
+			return nil, problemToError(rawPlay.Problems[0])
+		}
+
+		meta, err := decodePlayMeta(rawPlay.Node)
+		if err != nil {
+			return nil, fmt.Errorf("play parse error: play #%d: %s", i+1, err)
+		}
+
+		play := &Play{
+			Name:              meta.Name,
+			When:              meta.When,
+			Inputs:            meta.Inputs,
+			Host:              meta.Host,
+			Sudo:              meta.Sudo,
+			AcceptNewHostKeys: meta.AcceptNewHostKeys,
+		}
+		if play.Name == "" {
+			// Single-play recipes without a name keep the legacy
+			// "tasks" header so existing recipes do not see a
+			// visual diff after #208. Multi-play recipes get
+			// numbered auto-names so each play header is distinct.
+			if singleUnnamed {
+				play.Name = "tasks"
+			} else {
+				play.Name = fmt.Sprintf("play #%d", i+1)
+			}
+		}
+
+		if meta.Tags != nil {
+			tags, err := decodeTags(meta.Tags)
+			if err != nil {
+				return nil, fmt.Errorf("play parse error: play #%d %q: %s", i+1, play.Name, err)
+			}
+			play.Tags = tags
+		}
+
+		if play.When != "" {
+			prog, err := CompilePredicate(play.When)
+			if err != nil {
+				return nil, fmt.Errorf("play parse error: play #%d %q: when compile error: %s", i+1, play.Name, err)
+			}
+			play.whenProgram = prog
+		}
+
+		playCtx := BuildPerPlayContext(context, play.Inputs, userSet)
+		perRendered, err := renderRecipeBytes(data, playCtx, format)
+		if err != nil {
+			return nil, err
+		}
+		perAST, err := parseRecipeForLoader(perRendered, format)
+		if err != nil {
+			// As above, but against the play-local context so a play-scoped
+			// input value is attributed too.
+			if diag := diagnoseUnsafeInputValue(data, format, playCtx); diag != nil {
+				return nil, problemToError(*diag)
+			}
+			return nil, err
+		}
+		if i >= len(perAST.Plays) {
+			return nil, fmt.Errorf("play parse error: play #%d %q: per-play render produced fewer plays than the structure pass", i+1, play.Name)
+		}
+		perPlay := perAST.Plays[i]
+		if len(perPlay.Problems) > 0 {
+			return nil, problemToError(perPlay.Problems[0])
+		}
+
+		// Reject a register name reused across tasks or plays before loop
+		// expansion, so the run-wide accumulator never merges results from
+		// two distinct tasks (#314). Iterations of one loop task share a
+		// name legally because the check walks task nodes, not expansions.
+		if regProblems := validateRegisterReferences(perPlay.TasksNode, perPlay.Label, registerSeen); len(regProblems) > 0 {
+			return nil, problemToError(regProblems[0])
+		}
+
+		exprCtx := buildExprContext(playCtx)
+		// Envelopes are collected before any is stored, because the
+		// generated-name dedupe needs to see the whole play - including group
+		// children, which never enter play.Tasks - before it can decide which
+		// names collide.
+		built := make([]*TaskEnvelope, 0, len(perPlay.Entries))
+		for _, entry := range perPlay.Entries {
+			envelopes, err := buildEnvelopesFromEntry(entry, "", playCtx, exprCtx)
+			if err != nil {
+				return nil, err
+			}
+			built = append(built, envelopes...)
+		}
+		dedupeGeneratedNames(built)
+
+		play.Tasks = OrderedStringEnvelopeMap{}
+		for _, env := range built {
+			if play.Tasks.GetEnvelope(env.Name) != nil {
+				// Duplicate literal names are already rejected at parse
+				// time, and generated ones are deduped above; reaching here
+				// means two loop expansions produced the same suffixed name
+				// (#307), which would otherwise silently drop the earlier
+				// iteration.
+				return nil, fmt.Errorf("task parse error: duplicate task name %q in play %q", env.Name, play.Name)
+			}
+			if len(play.Tags) > 0 {
+				env.Tags = mergePlayTags(env.Tags, play.Tags)
+			}
+			play.Tasks.Set(env.Name, env)
+		}
+
+		plays = append(plays, play)
+	}
+
+	return plays, nil
+}
+
+// parseRecipeForLoader normalizes data's surface syntax, runs the shared
+// structural parser, and fails fast on document-level problems. Play- and
+// entry-level problems are left on the AST so GetPlaysWithFormat can
+// surface them in the play order the legacy loader used.
+func parseRecipeForLoader(data []byte, format string) (*parsedRecipe, error) {
+	normalized, normalizeProblems := normalizeRecipeBytes(data, format)
+	if len(normalizeProblems) > 0 {
+		return nil, problemToError(normalizeProblems[0])
+	}
+	ast := parseRecipe(normalized)
+	if len(ast.Problems) > 0 {
+		return nil, problemToError(ast.Problems[0])
+	}
+	return ast, nil
+}
+
+// playMeta is the loader's play-metadata projection, decoded from the
+// play's mapping node. Task entries are parsed separately through the
+// shared structural parser, so this struct deliberately omits `tasks:`.
+type playMeta struct {
+	Name              string      `yaml:"name"`
+	Tags              interface{} `yaml:"tags"`
+	When              string      `yaml:"when"`
+	Inputs            []Input     `yaml:"inputs"`
+	Host              string      `yaml:"host"`
+	Sudo              *bool       `yaml:"sudo"`
+	AcceptNewHostKeys *bool       `yaml:"accept_new_host_keys"`
+}
+
+// decodePlayMeta decodes a play mapping node's metadata fields.
+func decodePlayMeta(node *yaml.Node) (playMeta, error) {
+	var meta playMeta
+	if node == nil {
+		return meta, nil
+	}
+	if err := node.Decode(&meta); err != nil {
+		return meta, err
+	}
+	return meta, nil
+}
+
+// renderRecipeBytes runs the loop-var-safe sigil render over data with the
+// given context and returns the rendered bytes. Pulled out of the legacy
+// GetTasks so GetPlays can reuse it across the structure pass and per-play
+// passes.
+func renderRecipeBytes(data []byte, context map[string]interface{}, format string) ([]byte, error) {
+	escaped, captured := escapeLoopVars(data)
+	render, err := RenderTemplateWithFormat(escaped, context, "tasks", format)
+	if err != nil {
+		return nil, fmt.Errorf("re-render error: %v", err.Error())
+	}
+	rendered, err := io.ReadAll(&render)
+	if err != nil {
+		return nil, fmt.Errorf("read error: %v", err.Error())
+	}
+	return unescapeLoopVars(rendered, captured), nil
+}
+
+// BuildPerPlayContext layers the play's `inputs:` defaults above the
+// file-level base context, but only for keys the user has not explicitly
+// overridden via --vars-file or CLI flags. The userSet map carries the
+// names of user-overridden inputs; nil disables the layering, which is
+// the GetTasks back-compat behaviour. Per-play defaults with an empty
+// Default string are skipped so they cannot accidentally shadow a real
+// file-level value with "".
+//
+// A default is layered in resolved to its declared type, matching the value the
+// base context already holds for the same input from flag registration.
+// Injecting the raw text instead made a play-local `type: bool, default: on`
+// render as `on` where the file-level half rendered `true`, and made
+// `when: 'debug == true'` compare a string to a bool (#495).
+//
+// Exported because the apply / plan executors need to build the same
+// per-play context the loader used so per-task `when:` predicates see
+// the same values as the rendered task bodies.
+func BuildPerPlayContext(base map[string]interface{}, playInputs []Input, userSet map[string]bool) map[string]interface{} {
+	out := make(map[string]interface{}, safeCap(len(base), len(playInputs)))
+	for k, v := range base {
+		out[k] = v
+	}
+	for _, in := range playInputs {
+		if in.Name == "" {
+			continue
+		}
+		if userSet[in.Name] {
+			continue
+		}
+		if in.Default == "" {
+			continue
+		}
+		out[in.Name] = inputDefaultValue(in.Type, in.Default)
+	}
+	return out
+}
+
+// mergePlayTags appends playTags onto envTags, dropping duplicates so a
+// task that declares the same tag as the enclosing play does not see it
+// twice. envTags' original order is preserved; new tags from playTags
+// land at the end.
+func mergePlayTags(envTags, playTags []string) []string {
+	if len(playTags) == 0 {
+		return envTags
+	}
+	seen := make(map[string]bool, len(envTags))
+	for _, t := range envTags {
+		seen[t] = true
+	}
+	out := append([]string(nil), envTags...)
+	for _, t := range playTags {
+		if seen[t] {
+			continue
+		}
+		out = append(out, t)
+		seen[t] = true
+	}
+	return out
+}
+
+// buildEnvelopesFromEntry converts one parsed task entry into one or more
+// runtime envelopes: it pre-compiles predicates, expands `loop:`, decodes
+// the task body via decodeTaskBytes, and recurses through group children.
+// Structural problems the shared parser collected on the entry fail fast
+// here, so the loader rejects exactly what `docket validate` flags.
+//
+// groupPath is the naming path of the enclosing group clause ("" at the top
+// level, `group #3.block` inside one) and is only consulted when an unnamed
+// group entry needs a name. Leaf entries do not use it: an unnamed leaf is
+// named after the resource it addresses, which is decided after its body
+// decodes, and any collision is settled by dedupeGeneratedNames.
+//
+// Diagnostics here quote e.Label, never the envelope name. The two are
+// different things - the label is the entry's position in the file, which is
+// known before anything decodes - and coupling them is what used to render
+// `task #1 "task #1 3F2A9C1E4B7D0A55"` into a compile error.
+func buildEnvelopesFromEntry(e *parsedTaskEntry, groupPath string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+	if len(e.Problems) > 0 {
+		return nil, problemToError(e.Problems[0])
+	}
+
+	envelope := &TaskEnvelope{
+		Name:         e.Name,
+		Tags:         e.Tags,
+		When:         e.When,
+		Register:     e.Register,
+		ChangedWhen:  e.ChangedWhen,
+		FailedWhen:   e.FailedWhen,
+		IgnoreErrors: e.IgnoreErrors,
+	}
+
+	if e.LoopNode != nil {
+		var loop interface{}
+		if err := e.LoopNode.Decode(&loop); err != nil {
+			return nil, fmt.Errorf("task parse error: %s: loop decode error: %s", e.Label, err)
+		}
+		envelope.Loop = loop
+	}
+
+	if envelope.When != "" {
+		prog, err := CompilePredicate(envelope.When)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: %s: when compile error: %s", e.Label, err)
+		}
+		envelope.whenProgram = prog
+	}
+
+	if envelope.ChangedWhen != "" {
+		prog, err := CompilePredicate(envelope.ChangedWhen)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: %s: changed_when compile error: %s", e.Label, err)
+		}
+		envelope.changedWhenProgram = prog
+	}
+
+	if envelope.FailedWhen != "" {
+		prog, err := CompilePredicate(envelope.FailedWhen)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: %s: failed_when compile error: %s", e.Label, err)
+		}
+		envelope.failedWhenProgram = prog
+	}
+
+	if e.IsGroup {
+		// A group has no body and so addresses no resource. Its generated
+		// name is its path instead, which is unique by construction: group
+		// clauses restart their child indexes at 1, so a bare `group #1`
+		// would collide across nesting levels.
+		if envelope.Name == "" {
+			envelope.Name = generatedGroupName(groupPath, e.Index)
+			envelope.NameGenerated = true
+		}
+
+		if envelope.Loop != nil {
+			expanded, err := expandLoopGroup(envelope, e.BlockNode, e.RescueNode, e.AlwaysNode, sigilContext, exprContext)
+			if err != nil {
+				return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
+			}
+			return expanded, nil
+		}
+
+		envelope.TypeName = ""
+		blockChildren, err := buildGroupClause(e.Block, "block", envelope.Name, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
+		}
+		if len(blockChildren) == 0 {
+			return nil, fmt.Errorf("task parse error: %s: block: must contain at least one child task", e.Label)
+		}
+		envelope.Block = blockChildren
+
+		rescueChildren, err := buildGroupClause(e.Rescue, "rescue", envelope.Name, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
+		}
+		envelope.Rescue = rescueChildren
+
+		alwaysChildren, err := buildGroupClause(e.Always, "always", envelope.Name, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
+		}
+		envelope.Always = alwaysChildren
+
+		return []*TaskEnvelope{envelope}, nil
+	}
+
+	envelope.TypeName = e.TypeKey
+
+	bodyBytes, err := yaml.Marshal(e.BodyNode)
+	if err != nil {
+		return nil, fmt.Errorf("task parse error: %s failed to marshal config to yaml - %s", e.Label, err)
+	}
+
+	if envelope.Loop != nil {
+		expanded, err := expandLoop(envelope, bodyBytes, e.TypeKey, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("task parse error: %s: %s", e.Label, err)
+		}
+		for _, exp := range expanded {
+			if err := rejectLoopVarsInTask(e.Label, exp.Task); err != nil {
+				return nil, err
+			}
+		}
+		return expanded, nil
+	}
+
+	task, err := decodeTaskBytes(e.TypeKey, bodyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("task parse error: %s failed to decode to %s - %s", e.Label, e.TypeKey, err)
+	}
+	envelope.Task = task
+
+	// Naming happens here, after the decode, because the name is the address
+	// of the resource the body selects.
+	if envelope.Name == "" {
+		envelope.Name = IdentityAddress(e.TypeKey, task)
+		envelope.NameGenerated = true
+	}
+
+	if err := rejectLoopVarsInTask(e.Label, task); err != nil {
+		return nil, err
+	}
+
+	return []*TaskEnvelope{envelope}, nil
+}
+
+// generatedGroupName names an unnamed group entry after its position in the
+// envelope tree: `group #3` at the top level, `group #3.block[2]` for the
+// second child of that group's block clause.
+func generatedGroupName(groupPath string, index int) string {
+	if groupPath == "" {
+		return fmt.Sprintf("group #%d", index)
+	}
+	return fmt.Sprintf("%s[%d]", groupPath, index)
+}
+
+// buildGroupClause builds the child envelopes for one already-parsed
+// block / rescue / always clause, prefixing child errors with the clause
+// name and child position the way the legacy group decoder did. parentName
+// is the enclosing group's name, which children extend when they need a
+// generated name of their own.
+func buildGroupClause(children []*parsedTaskEntry, clause, parentName string, sigilContext, exprContext map[string]interface{}) ([]*TaskEnvelope, error) {
+	out := make([]*TaskEnvelope, 0, len(children))
+	childPath := parentName + "." + clause
+	for i, child := range children {
+		childEnvelopes, err := buildEnvelopesFromEntry(child, childPath, sigilContext, exprContext)
+		if err != nil {
+			return nil, fmt.Errorf("%s[%d]: %s", clause, i, err)
+		}
+		out = append(out, childEnvelopes...)
+	}
+	return out, nil
+}
+
+// dedupeGeneratedNames makes every auto-generated name in a play unique.
+//
+// Two tasks can legitimately address one resource - `dokku_config` on an app
+// with `state: present` and another with `state: absent` - and before #427 the
+// random suffix in every generated name hid that. The first occurrence keeps
+// the bare address; later ones get ` #2`, ` #3`. Ordinals shift if a colliding
+// task is inserted ahead of them, which is the price of not putting `state:`
+// in the address; a recipe that needs a name pinned should write one.
+//
+// The two passes matter. Reserving every user-supplied name first is what
+// stops a generated name from displacing one a recipe author wrote when the
+// generated one happens to come first in the file.
+//
+// The walk recurses into block / rescue / always: group children never enter
+// play.Tasks, so nothing else would catch a collision between them, yet
+// EnvelopeContainsName resolves --start-at-task against them.
+func dedupeGeneratedNames(envs []*TaskEnvelope) {
+	var (
+		names     []string
+		generated []bool
+		ordered   []*TaskEnvelope
+	)
+	walkEnvelopes(envs, func(env *TaskEnvelope) {
+		names = append(names, env.Name)
+		generated = append(generated, env.NameGenerated)
+		ordered = append(ordered, env)
+	})
+	for i, name := range disambiguateNames(names, generated) {
+		ordered[i].Name = name
+	}
+}
+
+// disambiguateNames suffixes duplicate generated names with ` #2`, ` #3`, and
+// so on, leaving names the recipe author wrote untouched. names and generated
+// are parallel and in source order.
+//
+// Reserving every non-generated name before assigning any generated one is
+// what makes the result independent of which came first in the file.
+//
+// Shared with the validator so `validate --strict --start-at-task` resolves
+// the same names the loader will produce.
+func disambiguateNames(names []string, generated []bool) []string {
+	taken := make(map[string]bool, len(names))
+	for i, name := range names {
+		if !generated[i] {
+			taken[name] = true
+		}
+	}
+	out := make([]string, len(names))
+	for i, name := range names {
+		if !generated[i] {
+			out[i] = name
+			continue
+		}
+		candidate := name
+		for n := 2; taken[candidate]; n++ {
+			candidate = fmt.Sprintf("%s #%d", name, n)
+		}
+		out[i] = candidate
+		taken[candidate] = true
+	}
+	return out
+}
+
+// decodeTags coerces a yaml-parsed tags value into a []string. Supports
+// list-form (`tags: [foo, bar]`) and inline string-form (`tags: foo`).
+func decodeTags(value interface{}) ([]string, error) {
+	switch v := value.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		return []string{v}, nil
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for i, raw := range v {
+			s, ok := raw.(string)
+			if !ok {
+				return nil, fmt.Errorf("tags[%d] must be a string, got %T", i, raw)
+			}
+			out = append(out, s)
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("tags must be a list of strings, got %T", value)
+}
+
+// nearestEnvelopeOrTaskKey returns the envelope-allowlist or registered
+// task name with the lowest Levenshtein distance to candidate, but only
+// if that distance is at most 2.
+func nearestEnvelopeOrTaskKey(candidate string) string {
+	best := ""
+	bestDist := 3
+	for _, k := range envelopeAllowlistKeys {
+		d := levenshtein(candidate, k)
+		if d < bestDist {
+			bestDist = d
+			best = k
+		}
+	}
+	for _, k := range TaskTypes() {
+		d := levenshtein(candidate, k)
+		if d < bestDist {
+			bestDist = d
+			best = k
+		}
+	}
+	if bestDist <= 2 {
+		return best
+	}
+	return ""
+}
+
+// buildExprContext returns the file-level expr context. Today this is
+// just the inputs map; later issues add timestamp / host / play / result
+// / registered keys (#208 / #210). Keys are reserved here but not yet
+// populated.
+func buildExprContext(context map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(context))
+	for k, v := range context {
+		out[k] = v
+	}
+	return out
+}
+
+// rejectLoopVarsInTask scans every string field on task for surviving
+// `{{ .item ... }}` / `{{ .index ... }}` references (including sub-field
+// and pipelined forms) and returns an error when it finds one. Loop
+// expansions render those tokens to real values, so any survivor implies
+// the user referenced a loop variable from a non-loop task.
+func rejectLoopVarsInTask(label string, task Task) error {
+	bytes, err := yaml.Marshal(task)
+	if err != nil {
+		return nil
+	}
+	if m := loopVarSentinelPattern.FindStringSubmatch(string(bytes)); m != nil {
+		return fmt.Errorf("task parse error: %s: .%s is only available inside a loop body", label, m[1])
+	}
+	return nil
+}

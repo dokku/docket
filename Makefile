@@ -209,14 +209,18 @@ prebuild:
 docs:
 	go generate generate/docs.go
 
+.PHONY: generate
+generate: docs
+	go generate ./sdk/
+
 .PHONY: test
 test:
-	go test -v -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
+	go test -v -count=1 . ./internal/... ./sdk/ ./generate/...
 
 .PHONY: test-race
 test-race:
-	go test -race -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
+	go test -race -count=1 . ./internal/... ./sdk/ ./generate/...
 
 .PHONY: test-integration
 test-integration:
-	go test -v -count=1 -timeout 20m -run TestIntegration ./tasks/
+	go test -v -count=1 -timeout 20m -run TestIntegration ./internal/tasks/

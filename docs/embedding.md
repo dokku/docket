@@ -1,10 +1,17 @@
 # Embedding docket in Go
 
-docket's engine is a Go package, not only a CLI. This page covers the parts that are stable enough
-to build on: reading a server back as structured data, building tasks, and the per-invocation state
-every call needs.
+docket's engine is a Go package, not only a CLI. This page covers driving it from Go: reading a
+server back as structured data, building tasks, and the per-invocation state every call needs.
 
-Import path is `github.com/dokku/docket/tasks`.
+Import path is `github.com/dokku/docket/sdk`. Everything else in the module lives under `internal/`
+and cannot be imported from outside it.
+
+> [!NOTE]
+> Before the `sdk` package, the engine was imported from `github.com/dokku/docket/tasks` and
+> `github.com/dokku/docket/subprocess`. Those packages are now internal. Every symbol this page
+> documents has the same name in `sdk`, so moving over is a change of import path and package
+> qualifier: `tasks.NewTask` and `subprocess.NewSession` both become `sdk.NewTask` and
+> `sdk.NewSession`.
 
 ## The run context
 
@@ -12,16 +19,16 @@ Everything takes a `context.Context`, and that context carries the state a run n
 read from process globals, so two runs in one process can target different servers, mask different
 values, and be cancelled independently.
 
-Build that context from a `subprocess.Session`. The session installs the masker and target, and it
-owns the SSH connections made under it:
+Build that context from a `sdk.Session`. The session installs the masker and target, and it owns the
+SSH connections made under it:
 
 ```go
 // What gets masked in anything you render for a human.
-session := subprocess.NewSession(subprocess.NewMasker("s3cr3t"))
+session := sdk.NewSession(sdk.NewMasker("s3cr3t"))
 defer session.Close()
 
 // Where dokku commands go. The zero Target runs locally.
-ctx := session.Context(context.Background(), subprocess.Target{
+ctx := session.Context(context.Background(), sdk.Target{
     Host: "deploy@dokku.example.com",
     Sudo: true,
 })
@@ -31,13 +38,13 @@ Every command over SSH shares one multiplexed connection per server. The session
 server its contexts actually reached and closes those connections on `Close()`. Without it, each one
 stays open for up to a minute after the last command. A context derived from a session context
 still belongs to that session, so a single call can go to another server with
-`subprocess.ContextWithTarget(ctx, other)` and that connection is closed too.
+`sdk.ContextWithTarget(ctx, other)` and that connection is closed too.
 
 A session is safe to use from several goroutines, and one session can hand out contexts for
 different servers. Each session has its own connections, so closing one never interrupts another
 that is talking to the same server. `Close()` is idempotent. Call it once the calls made under the
 session have returned: a call still in flight loses its connection, and a call made after `Close()`
-fails with `subprocess.ErrSessionClosed`.
+fails with `sdk.ErrSessionClosed`.
 
 `NewSession(nil)` installs no masker, leaving any masker already on the parent context in place.
 
@@ -47,18 +54,18 @@ engine.
 
 ## Reading a server
 
-`tasks.ExportRecipe` enumerates the server and returns the recipe that describes it, along with the
+`sdk.ExportRecipe` enumerates the server and returns the recipe that describes it, along with the
 values it had to lift out of task bodies and any warnings it collected.
 
 ```go
-res, err := tasks.ExportRecipe(ctx, tasks.ExportOptions{Inline: true})
+res, err := sdk.ExportRecipe(ctx, sdk.ExportOptions{Inline: true})
 if err != nil {
     return err
 }
 
 for _, play := range res.Plays() {
     for _, task := range play.Tasks {
-        cfg, ok := tasks.As[tasks.ConfigTask](task)
+        cfg, ok := sdk.As[sdk.ConfigTask](task)
         if !ok {
             continue
         }
@@ -70,11 +77,12 @@ for _, play := range res.Plays() {
 `Plays()` returns the same values `MarshalRecipe` renders, so the structured view and the recipe
 file can never describe different exports. Each task body is the task's own type - `dokku_config`
 comes back as a `ConfigTask` - so there is no marshalling to YAML and parsing it straight back.
+`MarshalRecipe` takes `sdk.FormatYAML`, `sdk.FormatJSON5` or `sdk.FormatHCL`.
 
-Read a body with `tasks.As`, passing the concrete value type (`tasks.ConfigTask`). It returns
-`false` for any other task, so a loop over every task can ask for the one type it wants. A body is
-always the value form of the type registered under `task.Type`, never a pointer, so
-`tasks.As[*tasks.ConfigTask]` never matches.
+Read a body with `sdk.As`, passing the concrete value type (`sdk.ConfigTask`). It returns `false`
+for any other task, so a loop over every task can ask for the one type it wants. A body is always
+the value form of the type registered under `task.Type`, never a pointer, so
+`sdk.As[*sdk.ConfigTask]` never matches.
 
 ### Narrowing the read
 
@@ -83,7 +91,7 @@ always the value form of the type registered under `task.Type`, never a pointer,
 | Field | Effect |
 | --- | --- |
 | `Apps` | Only these apps. The leading global play is skipped unless an address asks for it. |
-| `Resources` | Only these addresses, parsed by `tasks.ParseResourceSelectors`. When every address names its app or is global, only those apps are read and the server's app list is not. |
+| `Resources` | Only these addresses, parsed by `sdk.ParseResourceSelectors`. When every address names its app or is global, only those apps are read and the server's app list is not. |
 | `Inline` | Keep sensitive values in the bodies instead of lifting them into `Vars`. |
 | `Redact` | Replace sensitive values with a placeholder. |
 
@@ -91,9 +99,12 @@ An address is `type[key=value]`, so a single global resource is readable without
 server:
 
 ```go
-sel, err := tasks.ParseResourceSelectors([]string{"dokku_plugin[name=redis]"})
-res, err := tasks.ExportRecipe(ctx, tasks.ExportOptions{Resources: sel, Inline: true})
+sel, err := sdk.ParseResourceSelectors([]string{"dokku_plugin[name=redis]"})
+res, err := sdk.ExportRecipe(ctx, sdk.ExportOptions{Resources: sel, Inline: true})
 ```
+
+`sdk.IdentityAddress` renders the address of a task you hold, and `sdk.ParseIdentityAddress` splits
+one back into its type and keys.
 
 ### Secrets
 
@@ -102,7 +113,7 @@ values needing masking are the ones its own exporters just read back. Register t
 anything, including the warnings.
 
 ```go
-masker := subprocess.NewMasker(res.SensitiveValues()...)
+masker := sdk.NewMasker(res.SensitiveValues()...)
 for _, w := range res.Report.Warnings {
     fmt.Fprintln(os.Stderr, masker.String(w))
 }
@@ -113,41 +124,56 @@ found. An export that finds nothing is not an error, so check them rather than r
 
 ## Building tasks
 
-Use `tasks.NewTask` rather than a struct literal. A literal skips the `default:` tags the loader
+Use `sdk.NewTask` rather than a struct literal. A literal skips the `default:` tags the loader
 applies, so a task with no `State` gets `""`, which is an invalid state rather than the `present`
 the field documents.
 
 ```go
-task, err := tasks.NewTask("dokku_app")
+task, err := sdk.NewTask("dokku_app")
 if err != nil {
     return err
 }
-app := task.(*tasks.AppTask)
+app := task.(*sdk.AppTask)
 app.App = "api"
 
-plan := app.Plan(ctx)      // reports drift, never mutates
-state := app.Execute(ctx)  // plans, then applies
+plan := app.Plan(ctx)                // reports drift, never mutates
+state := sdk.ExecutePlan(ctx, plan)  // applies that plan without probing again
 ```
 
-`tasks.DecodeTask` is the same thing from a YAML task body, for a caller that already holds a recipe
-fragment.
+`app.Execute(ctx)` plans and applies in one call. `sdk.DecodeTask` is the same thing as `NewTask`
+from a YAML task body, for a caller that already holds a recipe fragment.
 
 ### Listing task types
 
-`tasks.TaskTypes()` returns every registered task type, sorted. `tasks.Lookup` reports whether a
-type is registered and returns an instance of it for reading metadata:
+`sdk.TaskTypes()` returns every registered task type, sorted. `sdk.Lookup` reports whether a type is
+registered and returns an instance of it for reading metadata:
 
 ```go
-for _, typeKey := range tasks.TaskTypes() {
-    task, _ := tasks.Lookup(typeKey)
-    fmt.Println(typeKey, tasks.TaskSynopsis(task))
+for _, typeKey := range sdk.TaskTypes() {
+    task, _ := sdk.Lookup(typeKey)
+    fmt.Println(typeKey, sdk.TaskSynopsis(task))
 }
 ```
 
 Each `Lookup` call returns a new zero-value instance, so changing it affects nothing else. It has no
-defaults applied; use `tasks.NewTask` for a task to run.
+defaults applied; use `sdk.NewTask` for a task to run. `sdk.TaskDeprecation`,
+`sdk.TaskProbeSupport` and `sdk.TaskExportSupport` read the rest of a task's metadata.
 
-## What is not stable
+`sdk.Catalog()` describes every task type in one value - synopsis, deprecation, requirements,
+probe and export support, identity and fields - and is what `docket schema` emits.
+`sdk.CatalogFor` narrows it to the types you name. See [Task catalog](task-catalog.md).
 
-The engine is exported, not frozen. Task struct fields follow the recipe format and change with it.
-Treat anything not on this page as internal.
+## Stability
+
+The exported identifiers in `sdk` are stable from the release they first ship in. While docket is
+at 0.x, a change that breaks a caller only ships in a release that bumps the minor version, and the
+release notes call it out. From 1.0 on, only in a major version. Releases are tagged `vX.Y.Z`, so
+`go get github.com/dokku/docket/sdk@vX.Y.Z` pins one.
+
+The one exception is the fields of the task types (`AppTask`, `ConfigTask` and so on). They mirror
+the recipe format and change when it does: a field added, renamed or removed in a recipe is added,
+renamed or removed here in the same release.
+
+The types in `sdk` are aliases of the engine's own, so a value built through `sdk` is the value the
+engine runs. An exported method or field of one of them that takes or returns a type `sdk` does not
+name is not part of the promise. Nothing under `internal/` carries any guarantee.

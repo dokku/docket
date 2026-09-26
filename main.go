@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/dokku/docket/commands"
+	"github.com/dokku/docket/internal/commands"
 
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/mitchellh/cli"

@@ -10,7 +10,7 @@ load test_helper
 # empty mask registry - it is rendered before any recipe is parsed - so a
 # `sensitive: true` input's `default:` is masked by rewriting the flag's
 # advertised default rather than by MaskString at the print site. The Go tests
-# in commands/sensitive_default_masking_test.go call Help() directly; these
+# in internal/commands/sensitive_default_masking_test.go call Help() directly; these
 # drive the real binary through the CLI dispatcher, which prints help on stderr
 # and exits 0.
 

@@ -1,0 +1,1135 @@
+package tasks
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"sort"
+	"strings"
+
+	"github.com/dokku/docket/internal/subprocess"
+)
+
+// AppExporter is implemented by a task type that can reconstruct its recipe
+// representation for a single app from live server state. ExportApp returns
+// zero or more task bodies (each the task's own struct, populated with real
+// values); the engine wraps each under the task's type-key and applies
+// vars-extraction/redaction uniformly afterwards.
+//
+// For an app that does not exist, ExportApp must return an error or no bodies.
+// A --resource run that pins its apps does not list the server's apps first,
+// so it relies on this to tell a missing app from one that has nothing to
+// export. dokku_app is the one exception - it reads nothing and always returns
+// its body - and the engine confirms that app exists itself (see
+// exportPinnedAppPlay).
+type AppExporter interface {
+	ExportApp(ctx context.Context, app string) ([]interface{}, error)
+}
+
+// GlobalExporter is the not-app-scoped counterpart of AppExporter (global
+// certs, networks, ssh keys, ...). It is defined here so global resources can
+// be added the same way; the engine runs these into a leading global play.
+type GlobalExporter interface {
+	ExportGlobal(ctx context.Context) ([]interface{}, error)
+}
+
+// appExportReporter is an optional richer form of AppExporter: an exporter that
+// can surface a non-fatal diagnostic (for example assets it could not capture)
+// implements it so the warning reaches ExportReport.Warnings instead of a raw
+// log line. exportAppPlay passes a warn callback wired to res.Report.Warnings
+// and prefers this method when the task implements it.
+type appExportReporter interface {
+	ExportAppReport(ctx context.Context, app string, warn func(msg string)) ([]interface{}, error)
+}
+
+// globalExportReporter is the not-app-scoped counterpart of appExportReporter:
+// a global exporter that can surface a non-fatal diagnostic (for example a
+// resource it read back faithfully but cannot emit as a task the loader would
+// accept) implements it so the warning reaches ExportReport.Warnings instead of
+// a raw log line. exportGlobalPlay passes a warn callback wired to
+// res.Report.Warnings and prefers this method when the task implements it.
+//
+// Implement it alongside GlobalExporter, never instead of it: exportGlobalPlay
+// asserts GlobalExporter first, so a task carrying only the reporting form is
+// skipped entirely.
+type globalExportReporter interface {
+	ExportGlobalReport(ctx context.Context, warn func(msg string)) ([]interface{}, error)
+}
+
+// globalExportOrder is the fixed order in which not-app-scoped task types are
+// emitted into the leading global play. Adding a global resource means
+// implementing GlobalExporter on its task and adding its type-key here.
+var globalExportOrder = []string{
+	// plugins first: installing a third-party plugin is a prerequisite for the
+	// resources that follow.
+	"dokku_plugin",
+	// networks next: a foundational resource that app network attachments
+	// (dokku_network_property, emitted in the app plays) bind to.
+	"dokku_network",
+	"dokku_ssh_key",
+	// global registry credentials: a private image cannot be pulled without
+	// them, so they precede every task that deploys one. dokku_registry_auth
+	// also appears in appExportOrder, where it emits the per-app scope.
+	"dokku_registry_auth",
+	// global SSL certificate: requires the dokku-global-cert plugin, installed
+	// by the dokku_plugin tasks emitted first. dokku_certs also appears in
+	// appExportOrder, where it emits the per-app scope.
+	"dokku_certs",
+	"dokku_storage_entry",
+	"dokku_scheduler_k3s_profile",
+	// node sysctls follow the profiles: dokku scopes sysctls to a node profile
+	// as well as globally, and a profile has to exist before its sysctls can
+	// be written.
+	"dokku_scheduler_k3s_node_sysctls",
+	"dokku_scheduler_k3s_chart",
+	// scheduler-k3s annotations/labels/trigger-auth can be set globally as well
+	// as per-app; the global scope is emitted here and the per-app scope in
+	// appExportOrder.
+	"dokku_scheduler_k3s_annotations",
+	"dokku_scheduler_k3s_labels",
+	"dokku_scheduler_k3s_autoscaling_auth",
+	// property-plugin global scope: globally-set (global: true) properties of each
+	// property plugin. These also appear in appExportOrder for the per-app scope;
+	// here they emit the global scope (for example scheduler-k3s bootstrap keys
+	// like token and ingress-class). Ordered as in appExportOrder.
+	"dokku_app_json_property",
+	"dokku_apps_property",
+	"dokku_builder_property",
+	"dokku_builder_dockerfile_property",
+	"dokku_builder_herokuish_property",
+	"dokku_builder_lambda_property",
+	"dokku_builder_nixpacks_property",
+	"dokku_builder_pack_property",
+	"dokku_builder_railpack_property",
+	"dokku_buildpacks_property",
+	"dokku_builds_property",
+	"dokku_caddy_property",
+	"dokku_checks_property",
+	"dokku_cron_property",
+	"dokku_git_property",
+	"dokku_haproxy_property",
+	"dokku_letsencrypt_property",
+	"dokku_logs_property",
+	"dokku_network_property",
+	"dokku_nginx_property",
+	"dokku_openresty_property",
+	"dokku_proxy_property",
+	"dokku_ps_property",
+	"dokku_registry_property",
+	"dokku_scheduler_property",
+	"dokku_scheduler_k3s_property",
+	"dokku_traefik_property",
+	// datastore services: create must precede expose/backup/acl, which all
+	// operate on an existing service instance. The datastore plugins they rely
+	// on are installed by the dokku_plugin tasks emitted first.
+	"dokku_service_create",
+	"dokku_service_expose",
+	"dokku_service_backup",
+	"dokku_acl_service",
+}
+
+// appExportOrder is the fixed order in which app-scoped task types are emitted
+// into each app's play. dokku_app comes first; deploy sources are emitted last.
+// Adding a task to export means implementing AppExporter on it and adding its
+// type-key here.
+var appExportOrder = []string{
+	"dokku_app",
+	"dokku_app_lock",
+	"dokku_config",
+	"dokku_domains",
+	"dokku_ports",
+	"dokku_docker_options",
+	"dokku_buildpacks",
+	"dokku_storage_mount",
+	"dokku_ps_scale",
+	"dokku_resource_limit",
+	"dokku_resource_reserve",
+	"dokku_checks_toggle",
+	"dokku_proxy_toggle",
+	"dokku_domains_toggle",
+	"dokku_maintenance",
+	"dokku_maintenance_custom_page",
+	"dokku_http_auth_user",
+	"dokku_http_auth_allowed_ip",
+	"dokku_http_auth_domain",
+	// dokku_http_auth trails the rest of the http-auth family on purpose:
+	// http-auth:add-user, set-allowed-ips and set-domains each write
+	// enabled=true as a side effect, so the task that owns the enabled flag has
+	// to run last for the recipe's stated auth state to be the one that sticks.
+	"dokku_http_auth",
+	"dokku_acl_app",
+	"dokku_certs",
+	"dokku_letsencrypt",
+	// property-plugin tasks (reconstructed from <plugin>:report by exportProperties)
+	"dokku_app_json_property",
+	"dokku_apps_property",
+	"dokku_builder_property",
+	"dokku_builder_dockerfile_property",
+	"dokku_builder_herokuish_property",
+	"dokku_builder_lambda_property",
+	"dokku_builder_nixpacks_property",
+	"dokku_builder_pack_property",
+	"dokku_builder_railpack_property",
+	"dokku_buildpacks_property",
+	"dokku_builds_property",
+	"dokku_caddy_property",
+	"dokku_checks_property",
+	"dokku_cron_property",
+	"dokku_git_property",
+	"dokku_haproxy_property",
+	"dokku_letsencrypt_property",
+	"dokku_logs_property",
+	"dokku_network_property",
+	"dokku_nginx_property",
+	"dokku_openresty_property",
+	"dokku_proxy_property",
+	"dokku_ps_property",
+	"dokku_registry_property",
+	"dokku_scheduler_property",
+	"dokku_scheduler_docker_local_property",
+	"dokku_scheduler_k3s_property",
+	// scheduler-k3s annotations/labels/trigger-auth also emit a global-scope
+	// task in globalExportOrder; here they emit the per-app scope.
+	"dokku_scheduler_k3s_annotations",
+	"dokku_scheduler_k3s_labels",
+	"dokku_scheduler_k3s_autoscaling_auth",
+	"dokku_traefik_property",
+	// service links bind an already-created datastore service (from the leading
+	// global play) to the app.
+	"dokku_service_link",
+	// registry credentials before the deploy source below: a private image
+	// cannot be pulled until the app can authenticate to the registry holding
+	// it.
+	"dokku_registry_auth",
+	// deploy source last: only one of these emits per app
+	"dokku_git_sync",
+	"dokku_git_from_image",
+	"dokku_git_from_archive",
+}
+
+// ExportOptions controls an export run.
+type ExportOptions struct {
+	// Apps restricts the export to these app names; empty means every app.
+	Apps []string
+
+	// Resources restricts the export to specific resource addresses. Empty
+	// means every resource. Mutually exclusive with Apps: an address already
+	// says which app it belongs to.
+	Resources []ResourceSelector
+
+	// Redact replaces sensitive values with placeholders instead of the real
+	// values (in the vars-file for file mode, in place for stdout mode). A
+	// value whose task would not validate when blank is lifted into a required
+	// input instead of being blanked, so the emitted recipe still parses and
+	// validates - see processHttpAuthUser and processMaintenanceCustomPage.
+	Redact bool
+
+	// Inline keeps sensitive values in the task bodies instead of lifting them
+	// into a vars map. Used for stdout output, which has no companion file.
+	Inline bool
+}
+
+// ExportReport carries non-fatal diagnostics from an export run.
+type ExportReport struct {
+	Warnings []string
+
+	// MissingApps lists app names passed via --app that do not exist on the
+	// server. The export still proceeds for the apps that do exist; the command
+	// surfaces these and exits non-zero so a typo is not silently dropped (#346).
+	MissingApps []string
+
+	// MissingResources lists --resource addresses that matched nothing on the
+	// server, in the order they were given. Same contract as MissingApps: the
+	// export emits what it did find and the command exits non-zero, so an
+	// address that names a resource the server does not have is not mistaken
+	// for one that exports to nothing.
+	MissingResources []string
+}
+
+// ExportedTask is one task in an exported play: the registry type-key it is
+// emitted under, and the task's own struct populated from the server.
+//
+// Body is the task value, not a marshalled form of it - `dokku_config` comes
+// back as a ConfigTask - so a Go caller can read fields rather than parsing
+// YAML the export just produced. It is always the value form of the task type
+// registered under Type: the engine drops any body an exporter returns as a
+// pointer or as another task's type (see exportedBodyType). Read it with As.
+type ExportedTask struct {
+	Type string      `yaml:"-"`
+	Body interface{} `yaml:"-"`
+}
+
+// As returns e's body as the task type T, and false when the body is any other
+// type, so a caller reads fields without hand-writing an assertion on Body:
+//
+//	if cfg, ok := tasks.As[tasks.ConfigTask](task); ok { ... }
+//
+// Pass the value type. Bodies are never pointers, so As[*ConfigTask] is always
+// false. If an exporter ever needs to return a pointer, this and
+// exportedBodyType are the places to absorb it.
+func As[T Task](e ExportedTask) (T, bool) {
+	body, ok := e.Body.(T)
+	return body, ok
+}
+
+// MarshalYAML emits the task the way a recipe spells it: a single-key mapping
+// from type-key to body. The exported fields are what a Go caller reads; this
+// is what the recipe file gets, and having one type produce both is what keeps
+// Plays() and MarshalRecipe from drifting apart.
+func (t ExportedTask) MarshalYAML() (interface{}, error) {
+	return map[string]interface{}{t.Type: t.Body}, nil
+}
+
+// ExportedPlay is one play of an exported recipe. Name is the app it describes,
+// or "global" for the leading play of not-app-scoped resources.
+type ExportedPlay struct {
+	Name   string                   `yaml:"name"`
+	Inputs []map[string]interface{} `yaml:"inputs,omitempty"`
+	Tasks  []ExportedTask           `yaml:"tasks"`
+}
+
+// ExportResult is the outcome of ExportRecipe: the assembled recipe (as a list
+// of plays), the companion vars map (empty in inline mode), and any warnings.
+type ExportResult struct {
+	plays  []ExportedPlay
+	Vars   map[string]string
+	Report ExportReport
+
+	usedVarNames map[string]bool
+
+	// sensitive collects the literal values this run read off the server that
+	// must be masked in user-facing output, in read order. See noteSensitive.
+	sensitive []string
+
+	// filter narrows emission to the --resource addresses. nil for an
+	// unrestricted export, where every check it performs answers "keep".
+	filter *resourceFilter
+}
+
+// noteSensitive records values this export has identified as credential
+// material, for the caller to hand to the mask registry before it prints
+// anything (internal/commands/export.go does, right after ExportRecipe returns).
+//
+// Export is the one server-reading command with no recipe to collect a
+// sensitive set from ahead of the run: the values it must mask are the ones
+// its own exporters just read back. They are collected here, as each body is
+// processed, rather than read out of res.Vars once the export is over, because
+// res.Vars is not the same set (#488):
+//
+//   - Under --redact the vars map holds a placeholder, not the value. The real
+//     value was still read off the server and can still reach a warning.
+//   - In inline mode nothing is lifted into the vars map at all, yet the
+//     warnings still print to the same stream.
+//
+// Collection is unconditional across modes for that reason. It costs the
+// export nothing: the recipe and the vars-file are written straight to their
+// file or to stdout, never through the masked Ui, so registering a value here
+// masks the diagnostics beside the export and never the export itself.
+//
+// Empties, duplicates, and the trimmed/escaped spellings of each value are
+// subprocess.cleanSensitive's job at registration time, so this only appends.
+func (res *ExportResult) noteSensitive(values ...string) {
+	res.sensitive = append(res.sensitive, values...)
+}
+
+// Plays returns the exported recipe as structured values: the same plays
+// MarshalRecipe renders, with each task body still its own Go type.
+//
+// It exists because the only ways out of an export used to be MarshalRecipe
+// and MarshalVars, so a caller wanting data had to marshal to YAML and parse
+// it straight back - or call ExportApp on a task directly and reimplement the
+// ordering, warning collection and sensitive-value handling the engine already
+// does (#425).
+//
+// The slice is the result's own and must not be modified.
+func (res *ExportResult) Plays() []ExportedPlay {
+	return res.plays
+}
+
+// SensitiveValues returns the literal values this export read off the server
+// that must be masked in user-facing output. The caller registers them; the
+// slice is the result's own and must not be modified.
+func (res *ExportResult) SensitiveValues() []string {
+	return res.sensitive
+}
+
+// ExportRecipe reads the live Dokku server (via the current subprocess host)
+// and assembles a recipe describing it. It enumerates apps, runs every
+// registered AppExporter for each, lifts sensitive values into a vars map
+// (unless opts.Inline), and returns the result for the caller to marshal.
+// A --resource run whose addresses all pin an app or are global does not
+// enumerate: it reads only the pinned apps (#567).
+//
+// The result is never nil, including on error: the global play is exported
+// before any app is read, so a failure there - listing the apps, or probing
+// whether a pinned one exists - still hands back what was already collected,
+// and with it the sensitive values the caller has to register before it
+// prints the failure (#488).
+func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
+	res := &ExportResult{
+		Vars:         map[string]string{},
+		usedVarNames: map[string]bool{},
+		filter:       newResourceFilter(opts.Resources),
+	}
+	inApp, inGlobal := exportOrderSets()
+
+	// Global resources come first, in a leading "global" play. Skipped when
+	// the export is narrowed to specific apps with --app, and when every
+	// --resource address is app-scoped.
+	//
+	// An explicit global address outranks --app (#518). `--app foo` on its own
+	// means "this app, not the server", but naming `dokku_plugin[name=redis]`
+	// alongside it asks for that resource by name, and the global play is the
+	// only place it can come from - skipping it exported nothing and reported
+	// the address as missing from a server that had it.
+	if res.filter.wantsGlobalScope(inGlobal) && (len(opts.Apps) == 0 || res.filter.hasGlobalAddress(inGlobal)) {
+		if global := res.exportGlobalPlay(ctx, opts); global != nil {
+			res.plays = append(res.plays, *global)
+		}
+	}
+
+	// An address that pins `app=` narrows the run the same way --app does, so
+	// an export of one app's config does not enumerate every app on the
+	// server. A run whose addresses are all global-scoped wants no app plays
+	// at all, which is distinct from "no restriction".
+	selectedApps, restricted := res.filter.appNames(inApp)
+	if restricted {
+		if len(selectedApps) == 0 {
+			// No app-scoped address selected an app. That is a finished export
+			// rather than a failed one when the addresses were global and the
+			// global play has already answered them; only then does an
+			// unmatched address mean the server does not have it.
+			res.Report.MissingResources = res.filter.unmatchedAddresses()
+			return res, nil
+		}
+		// Every app-scoped address pins its app, so listing the server's apps
+		// would only filter that list back down to these names. The narrowed
+		// exporters read each app anyway; see exportPinnedAppPlay for how a
+		// missing one is told apart without the listing (#567).
+		for _, app := range selectedApps {
+			play, err := res.exportPinnedAppPlay(ctx, app, opts)
+			if err != nil {
+				return res, err
+			}
+			if play != nil {
+				res.plays = append(res.plays, *play)
+			}
+		}
+		res.Report.MissingResources = res.filter.unmatchedAddresses()
+		return res, nil
+	}
+
+	apps, err := listApps(ctx)
+	if err != nil {
+		return res, err
+	}
+	res.Report.MissingApps = missingApps(apps, opts.Apps)
+	apps = filterApps(apps, opts.Apps)
+	sort.Strings(apps)
+
+	for _, app := range apps {
+		play, _ := res.exportAppPlay(ctx, app, opts)
+		if play != nil {
+			res.plays = append(res.plays, *play)
+		}
+	}
+
+	res.Report.MissingResources = res.filter.unmatchedAddresses()
+
+	return res, nil
+}
+
+// exportGlobalPlay builds the leading global play by running every registered
+// GlobalExporter. Returns nil when there are no global resources.
+func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOptions) *ExportedPlay {
+	var taskList []ExportedTask
+	var inputs []map[string]interface{}
+
+	for _, typeKey := range globalExportOrder {
+		if !res.filter.wantsType(typeKey) {
+			continue
+		}
+		proto, ok := Lookup(typeKey)
+		if !ok {
+			continue
+		}
+		exporter, ok := proto.(GlobalExporter)
+		if !ok {
+			continue
+		}
+		var bodies []interface{}
+		var err error
+		if reporter, ok := proto.(globalExportReporter); ok {
+			bodies, err = reporter.ExportGlobalReport(ctx, func(msg string) {
+				res.Report.Warnings = append(res.Report.Warnings,
+					fmt.Sprintf("global: %s: %s", typeKey, msg))
+			})
+		} else {
+			bodies, err = exporter.ExportGlobal(ctx)
+		}
+		if err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("global: %s: %v", typeKey, err))
+			continue
+		}
+		exported, ins := res.appendBodies("global", typeKey, bodies, opts)
+		taskList = append(taskList, exported...)
+		inputs = append(inputs, ins...)
+	}
+
+	if len(taskList) == 0 {
+		return nil
+	}
+
+	return &ExportedPlay{Name: "global", Inputs: inputs, Tasks: taskList}
+}
+
+// exportPinnedAppPlay is exportAppPlay for an app named by a --resource
+// address, which no apps:list has confirmed exists. The exporters' own reads
+// answer that question, so apps:exists is only asked when they cannot:
+//
+//   - Nothing came back and nothing failed. The app either has none of the
+//     addressed resources or does not exist, and both leave the addresses
+//     unmatched - the same MissingResources a listed run reports.
+//   - An exporter failed. A missing app is the likely cause, so it is probed.
+//   - A dokku_app body came back. Its exporter reads nothing - the resource is
+//     the app's existence - so apps:exists is its read.
+//
+// Anything else came from a server read that succeeded against the app, and
+// the AppExporter contract says that cannot happen for a missing one.
+//
+// An app the probe finds absent is dropped as if the listing had filtered it:
+// no play, no warnings from its failed reads, and its addresses unmatched so
+// they are reported as the user typed them rather than as an app name they
+// never wrote. Only the warnings and matches need rewinding. A missing app
+// yields no body but dokku_app's, which carries no vars or sensitive values.
+func (res *ExportResult) exportPinnedAppPlay(ctx context.Context, app string, opts ExportOptions) (*ExportedPlay, error) {
+	warnings := len(res.Report.Warnings)
+	matches := res.filter.matchState()
+
+	play, failed := res.exportAppPlay(ctx, app, opts)
+	if !failed && !playHasTask[AppTask](play) {
+		return play, nil
+	}
+
+	exists, err := appExists(ctx, app)
+	if err != nil {
+		return nil, fmt.Errorf("checking app %q exists: %w", app, err)
+	}
+	if exists {
+		return play, nil
+	}
+	res.Report.Warnings = res.Report.Warnings[:warnings]
+	res.filter.restoreMatches(matches)
+	return nil, nil
+}
+
+// playHasTask reports whether play carries a body of task type T.
+func playHasTask[T Task](play *ExportedPlay) bool {
+	if play == nil {
+		return false
+	}
+	for _, task := range play.Tasks {
+		if _, ok := As[T](task); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// exportAppPlay builds one play for a single app by running each app-scoped
+// exporter in appExportOrder. Returns nil when the app yields no tasks, and
+// reports whether any exporter failed. A failure is only an exporter's own
+// error; a warning it raised or a body the engine dropped does not count,
+// since neither suggests the app is missing.
+func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts ExportOptions) (*ExportedPlay, bool) {
+	var taskList []ExportedTask
+	var inputs []map[string]interface{}
+	failed := false
+
+	for _, typeKey := range appExportOrder {
+		if !res.filter.wantsType(typeKey) {
+			continue
+		}
+		proto, ok := Lookup(typeKey)
+		if !ok {
+			continue
+		}
+		exporter, ok := proto.(AppExporter)
+		if !ok {
+			continue
+		}
+		var bodies []interface{}
+		var err error
+		if reporter, ok := proto.(appExportReporter); ok {
+			bodies, err = reporter.ExportAppReport(ctx, app, func(msg string) {
+				res.Report.Warnings = append(res.Report.Warnings,
+					fmt.Sprintf("%s: %s: %s", app, typeKey, msg))
+			})
+		} else {
+			bodies, err = exporter.ExportApp(ctx, app)
+		}
+		if err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("%s: %s: %v", app, typeKey, err))
+			failed = true
+			continue
+		}
+		exported, ins := res.appendBodies(app, typeKey, bodies, opts)
+		taskList = append(taskList, exported...)
+		inputs = append(inputs, ins...)
+	}
+
+	if len(taskList) == 0 {
+		return nil, failed
+	}
+
+	return &ExportedPlay{Name: app, Inputs: inputs, Tasks: taskList}, failed
+}
+
+// appendBodies turns one exporter's bodies into exported tasks for a play.
+// scope is the app name, or "global" for the leading play, and prefixes every
+// warning. A body that is not the registered value type for typeKey is dropped
+// before the resource filter or the secret lifters see it: processBody's switch
+// only recognises value types, so a pointer body would otherwise skip the
+// lifting its type needs and reach the recipe with its secrets inline.
+func (res *ExportResult) appendBodies(scope, typeKey string, bodies []interface{}, opts ExportOptions) ([]ExportedTask, []map[string]interface{}) {
+	var taskList []ExportedTask
+	var inputs []map[string]interface{}
+	for _, body := range bodies {
+		if err := exportedBodyType(typeKey, body); err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("%s: %s: %v", scope, typeKey, err))
+			continue
+		}
+		keep, err := res.filter.keepBody(typeKey, body)
+		if err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("%s: %s: %v", scope, typeKey, err))
+		}
+		if !keep {
+			continue
+		}
+		body, ins := res.processBody(scope, body, opts)
+		taskList = append(taskList, ExportedTask{Type: typeKey, Body: body})
+		inputs = append(inputs, ins...)
+	}
+	return taskList, inputs
+}
+
+// exportedBodyType reports an error when body is not the value form of the task
+// type registered under typeKey - a pointer to it, or another task's type. The
+// error names only the types, never the body, so it is safe to surface before
+// the body's secrets are registered for masking.
+func exportedBodyType(typeKey string, body interface{}) error {
+	want, ok := registeredType(typeKey)
+	if !ok {
+		return fmt.Errorf("no task is registered under %s", typeKey)
+	}
+	if got := reflect.TypeOf(body); got != want {
+		return fmt.Errorf("exporter returned %v, want %v", got, want)
+	}
+	return nil
+}
+
+// processBody applies vars-extraction (file mode) or redaction (inline mode) to
+// a single task body and returns the possibly-rewritten body plus any input
+// declarations the recipe should carry for lifted values.
+//
+// Whatever the body declares sensitive is noted first, before any of the
+// lifters below decide where the value goes: processSensitiveScalars blanks
+// its copy under inline + --redact, so the original body is the only place the
+// real value survives. sensitiveValuesFromTask is the same collector
+// internal/commands/apply.go runs over a parsed recipe, so export masks the set apply
+// masks for the same content - the sensitive:"true" fields plus the
+// SensitiveValues() overrides that reach the secrets living in a map or a
+// slice of structs (dokku_config, dokku_http_auth_user,
+// dokku_scheduler_k3s_autoscaling_auth). A per-property secret is not
+// expressible as a struct tag, so processPropertyValue notes that one itself.
+func (res *ExportResult) processBody(app string, body interface{}, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	res.noteSensitive(sensitiveValuesFromTask(body)...)
+	switch b := body.(type) {
+	case ConfigTask:
+		return res.processConfig(app, b, opts)
+	case HttpAuthUserTask:
+		return res.processHttpAuthUser(app, b, opts)
+	case MaintenanceCustomPageTask:
+		return res.processMaintenanceCustomPage(app, b, opts)
+	case RegistryAuthTask:
+		return res.processRegistryAuth(app, b, opts)
+	case SchedulerK3sAutoscalingAuthTask:
+		return res.processSchedulerK3sAutoscalingAuth(app, b, opts)
+	case LetsencryptPropertyTask:
+		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
+			b.Value = v
+			return b
+		})
+	case SchedulerK3sPropertyTask:
+		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
+			b.Value = v
+			return b
+		})
+	case TraefikPropertyTask:
+		return res.processPropertyValue(app, b, b.Property, b.Value, taskPropertyEntry(b, b.Property).Sensitive, opts, func(v string) interface{} {
+			b.Value = v
+			return b
+		})
+	default:
+		return res.processSensitiveScalars(app, body, opts)
+	}
+}
+
+// processPropertyValue lifts a sensitive property value (for example the
+// scheduler-k3s cluster token or a letsencrypt DNS provider credential) into a
+// required sensitive input in file mode, blanks it under inline+redact, and
+// otherwise keeps it inline (like a config value). A non-sensitive property
+// value is returned unchanged, so only secret-flagged properties are ever
+// lifted (#327), and the input is named after the property so a vars-file entry
+// says which property it fills (#451).
+func (res *ExportResult) processPropertyValue(app string, body interface{}, property, value string, sensitive bool, opts ExportOptions, rebuild func(string) interface{}) (interface{}, []map[string]interface{}) {
+	if !sensitive || value == "" {
+		return body, nil
+	}
+	// Only the letsencrypt property task is built from SensitivePropertyFields,
+	// so for scheduler-k3s (the cluster token) and traefik (the dns-provider-*
+	// credentials) no struct tag says this value is a secret - the property
+	// family's PropertyKeys.Sensitive flag does, and processBody's tag walk
+	// cannot see it. Noted here for the same reason internal/tasks/properties.go
+	// registers it at plan time (#488).
+	res.noteSensitive(value)
+	if opts.Inline {
+		if opts.Redact {
+			return rebuild(""), nil
+		}
+		return body, nil
+	}
+	name := res.uniqueVarName(app, property)
+	out := rebuild("{{ ." + name + " }}")
+	if opts.Redact {
+		res.Vars[name] = ""
+	} else {
+		res.Vars[name] = value
+	}
+	inputs := []map[string]interface{}{{
+		"name":      name,
+		"required":  true,
+		"sensitive": true,
+	}}
+	return out, inputs
+}
+
+// processSensitiveScalars lifts every non-empty string field tagged
+// `sensitive:"true"` into a required, sensitive input (e.g. a git image or
+// archive URL, which can embed credentials). Map/slice sensitive fields are
+// handled by their own cases above.
+func (res *ExportResult) processSensitiveScalars(app string, body interface{}, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	rv := reflect.ValueOf(body)
+	if rv.Kind() != reflect.Struct {
+		return body, nil
+	}
+	rt := rv.Type()
+	out := reflect.New(rt).Elem()
+	out.Set(rv)
+
+	var inputs []map[string]interface{}
+	changed := false
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		if field.Tag.Get("sensitive") != "true" || field.Type.Kind() != reflect.String {
+			continue
+		}
+		fv := out.Field(i)
+		value := fv.String()
+		if value == "" {
+			continue
+		}
+		if opts.Inline {
+			// Inline mode keeps the value in the body, so there is no input to
+			// declare; under --redact the value is blanked in place. The blank
+			// is written to the copy, so the copy must be returned (returning
+			// the original body would leak the value; see #311).
+			if opts.Redact {
+				fv.SetString("")
+				changed = true
+			}
+			continue
+		}
+		name := res.uniqueVarName(app, yamlFieldName(field))
+		fv.SetString("{{ ." + name + " }}")
+		changed = true
+		if opts.Redact {
+			res.Vars[name] = ""
+		} else {
+			res.Vars[name] = value
+		}
+		inputs = append(inputs, map[string]interface{}{
+			"name":      name,
+			"required":  true,
+			"sensitive": true,
+		})
+	}
+	if !changed {
+		return body, nil
+	}
+	return out.Interface(), inputs
+}
+
+// yamlFieldName returns the recipe key for a struct field from its yaml tag.
+func yamlFieldName(field reflect.StructField) string {
+	tag := field.Tag.Get("yaml")
+	if comma := strings.IndexByte(tag, ','); comma >= 0 {
+		tag = tag[:comma]
+	}
+	if tag == "" || tag == "-" {
+		return strings.ToLower(field.Name)
+	}
+	return tag
+}
+
+// processHttpAuthUser lifts each exported user's htpasswd hash out of the
+// recipe body. The hash is what reproduces the user without the password behind
+// it, so it is credential material and gets the same treatment a config value
+// does - except that blanking it is not an option, because an empty hash fails
+// HttpAuthUserTask.Validate() (#443).
+//
+// File mode lifts every hash into the vars-file behind a sensitive input.
+// Inline mode has no companion file, so the hash stays in the body and the
+// streamed recipe is self-contained enough to pipe straight into apply. Under
+// inline + --redact there is nowhere to put the value and nowhere to blank it
+// to, so it is lifted into a required input and the caller is told the values
+// have to be supplied at apply time (e.g. via a CLI --<name>=<value>) (#334).
+func (res *ExportResult) processHttpAuthUser(app string, b HttpAuthUserTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if len(b.Users) == 0 {
+		return b, nil
+	}
+	if opts.Inline && !opts.Redact {
+		return b, nil
+	}
+
+	var inputs []map[string]interface{}
+	users := make([]HttpAuthUser, len(b.Users))
+	copy(users, b.Users)
+	changed := false
+	for i, u := range users {
+		if u.Hash == "" {
+			continue
+		}
+		name := res.uniqueVarName(app, "http_auth_hash_"+u.Username)
+		users[i].Hash = "{{ ." + name + " }}"
+		changed = true
+		// Inline mode has no vars-file, so the value is withheld entirely
+		// rather than written anywhere.
+		if !opts.Inline {
+			if opts.Redact {
+				res.Vars[name] = ""
+			} else {
+				res.Vars[name] = u.Hash
+			}
+		}
+		inputs = append(inputs, map[string]interface{}{
+			"name":      name,
+			"required":  true,
+			"sensitive": true,
+		})
+	}
+	if !changed {
+		return b, nil
+	}
+	b.Users = users
+	if opts.Inline {
+		res.Report.Warnings = append(res.Report.Warnings,
+			fmt.Sprintf("%s: http-auth hashes are redacted from the streamed recipe; supply them as inputs before apply", app))
+	}
+	return b, inputs
+}
+
+// processMaintenanceCustomPage emits the custom page task. When ExportApp was
+// able to read the page back (via maintenance:custom-page-export) it carries real
+// Content (or a Tarball), which is public HTML, so it is emitted as-is in both
+// modes. When the content could not be read (an older plugin without the export
+// command), it is lifted into a required input in both modes so the emitted task
+// is valid instead of carrying an empty content that fails Validate() (#334).
+func (res *ExportResult) processMaintenanceCustomPage(app string, b MaintenanceCustomPageTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if b.Content != "" || b.Tarball != "" {
+		return b, nil
+	}
+	name := res.uniqueVarName(app, "maintenance_custom_page")
+	b.Content = "{{ ." + name + " }}"
+	res.Vars[name] = "" // page HTML is not readable; the user fills this in
+	if opts.Inline {
+		res.Report.Warnings = append(res.Report.Warnings,
+			fmt.Sprintf("%s: maintenance custom page is not readable; supply the content as an input before apply", app))
+	}
+	inputs := []map[string]interface{}{{
+		"name":     name,
+		"required": true,
+	}}
+	return b, inputs
+}
+
+// processRegistryAuth fills in the half of a registry login that cannot be
+// read back. ExportApp / ExportGlobal recover the server from registry:report,
+// which names every server a credential exists for and nothing about the
+// credential itself - dokku exposes no username field either, so both halves
+// are unreadable rather than just the secret.
+//
+// Both are therefore lifted into required inputs in both modes, the way an
+// unreadable maintenance page is: an empty placeholder in the vars map, a
+// template reference in the body, and the operator supplies the real values
+// before apply. Leaving them blank is not an option, because
+// RegistryAuthTask.Validate() rejects an empty username or password when the
+// state is present, so a blanked task would fail `docket validate` rather than
+// merely needing to be filled in.
+func (res *ExportResult) processRegistryAuth(app string, b RegistryAuthTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if b.Server == "" || b.State != StatePresent {
+		return b, nil
+	}
+
+	userName := res.uniqueVarName(app, "registry_username_"+b.Server)
+	passName := res.uniqueVarName(app, "registry_password_"+b.Server)
+	b.Username = "{{ ." + userName + " }}"
+	b.Password = "{{ ." + passName + " }}"
+	// the credential is not readable, so there is no value to write here in
+	// either mode; the user fills these in
+	res.Vars[userName] = ""
+	res.Vars[passName] = ""
+
+	if opts.Inline {
+		res.Report.Warnings = append(res.Report.Warnings,
+			fmt.Sprintf("%s: the registry credential for %s is not readable; supply the username and password as inputs before apply", app, b.Server))
+	}
+
+	return b, []map[string]interface{}{
+		{
+			"name":     userName,
+			"required": true,
+		},
+		{
+			"name":      passName,
+			"required":  true,
+			"sensitive": true,
+		},
+	}
+}
+
+// processConfig lifts config values into the vars map (file mode) or blanks
+// them (inline + redact), since every config value is treated as an opaque
+// secret.
+func (res *ExportResult) processConfig(app string, b ConfigTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if len(b.Config) == 0 {
+		return b, nil
+	}
+
+	keys := make([]string, 0, len(b.Config))
+	for k := range b.Config {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	newConfig := make(map[string]string, len(b.Config))
+	var inputs []map[string]interface{}
+
+	for _, k := range keys {
+		value := b.Config[k]
+		if opts.Inline {
+			if opts.Redact {
+				value = ""
+			}
+			newConfig[k] = value
+			continue
+		}
+		name := res.uniqueVarName(app, k)
+		newConfig[k] = "{{ ." + name + " }}"
+		if opts.Redact {
+			res.Vars[name] = ""
+		} else {
+			res.Vars[name] = value
+		}
+		inputs = append(inputs, map[string]interface{}{
+			"name":      name,
+			"required":  true,
+			"sensitive": true,
+		})
+	}
+
+	b.Config = newConfig
+	return b, inputs
+}
+
+// processSchedulerK3sAutoscalingAuth lifts each KEDA trigger authentication
+// metadata value into the vars map (file mode) or blanks it (inline + redact),
+// since trigger-auth metadata are credentials. This mirrors processConfig; the
+// values are keyed by trigger and metadata key so they stay unique across
+// triggers and scopes.
+func (res *ExportResult) processSchedulerK3sAutoscalingAuth(app string, b SchedulerK3sAutoscalingAuthTask, opts ExportOptions) (interface{}, []map[string]interface{}) {
+	if len(b.Metadata) == 0 {
+		return b, nil
+	}
+
+	keys := make([]string, 0, len(b.Metadata))
+	for k := range b.Metadata {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	newMetadata := make(map[string]string, len(b.Metadata))
+	var inputs []map[string]interface{}
+
+	for _, k := range keys {
+		value := b.Metadata[k]
+		if opts.Inline {
+			if opts.Redact {
+				value = ""
+			}
+			newMetadata[k] = value
+			continue
+		}
+		name := res.uniqueVarName(app, b.Trigger+"_"+k)
+		newMetadata[k] = "{{ ." + name + " }}"
+		if opts.Redact {
+			res.Vars[name] = ""
+		} else {
+			res.Vars[name] = value
+		}
+		inputs = append(inputs, map[string]interface{}{
+			"name":      name,
+			"required":  true,
+			"sensitive": true,
+		})
+	}
+
+	b.Metadata = newMetadata
+	return b, inputs
+}
+
+// uniqueVarName builds a globally-unique, identifier-safe input name for a
+// lifted (app, key) value, since the companion vars-file is one flat mapping
+// shared across every play.
+func (res *ExportResult) uniqueVarName(app, key string) string {
+	base := sanitizeIdent(app) + "_" + sanitizeIdent(key)
+	name := base
+	for i := 2; res.usedVarNames[name]; i++ {
+		name = fmt.Sprintf("%s_%d", base, i)
+	}
+	res.usedVarNames[name] = true
+	return name
+}
+
+// sortedSetKeys returns the keys of a set (map[string]bool) in sorted order, a
+// common shape for the list-returning readers the exporters reuse. The
+// collection planners format their mutation lines from it too, so a plan of an
+// unchanged server itemizes the same drift in the same order every run.
+func sortedSetKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// sanitizeIdent replaces every character that is not a letter, digit, or
+// underscore with an underscore so the result is a valid sigil identifier.
+func sanitizeIdent(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
+}
+
+// MarshalRecipe renders the assembled recipe in the codec keyed by format,
+// canonicalised by the same formatter as `docket fmt`.
+func (res *ExportResult) MarshalRecipe(format string) ([]byte, error) {
+	return CodecFor(format).Marshal(res.plays)
+}
+
+// MarshalVars renders the companion vars-file (a flat mapping of input name to
+// value) in the codec keyed by format, which the caller takes from --format or
+// from the vars-output extension.
+func (res *ExportResult) MarshalVars(format string) ([]byte, error) {
+	return CodecFor(format).MarshalVars(res.Vars)
+}
+
+// HasVars reports whether the export lifted any values into the vars map.
+func (res *ExportResult) HasVars() bool {
+	return len(res.Vars) > 0
+}
+
+// PlayCount returns the total number of plays in the result, including the
+// leading global play when one was emitted. Used to detect an empty export.
+func (res *ExportResult) PlayCount() int {
+	return len(res.plays)
+}
+
+// AppCount returns the number of app plays, excluding the leading "global" play
+// (global resources are not an app), so the export summary reports the app count
+// accurately.
+func (res *ExportResult) AppCount() int {
+	n := len(res.plays)
+	if n > 0 && res.plays[0].Name == "global" {
+		n--
+	}
+	return n
+}
+
+// listApps returns every app on the server via `dokku apps:list`.
+func listApps(ctx context.Context) ([]string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "apps:list"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var apps []string
+	for _, line := range strings.Split(result.StdoutContents(), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			apps = append(apps, line)
+		}
+	}
+	return apps, nil
+}
+
+// missingApps returns the names in want that do not appear in apps (the live
+// server list), in sorted order. Empty when want is empty or every name exists.
+func missingApps(apps, want []string) []string {
+	if len(want) == 0 {
+		return nil
+	}
+	have := map[string]bool{}
+	for _, a := range apps {
+		have[a] = true
+	}
+	var missing []string
+	for _, a := range want {
+		if !have[a] {
+			missing = append(missing, a)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// filterApps keeps only the apps named in want, or all apps when want is empty.
+func filterApps(apps, want []string) []string {
+	if len(want) == 0 {
+		return apps
+	}
+	keep := map[string]bool{}
+	for _, a := range want {
+		keep[a] = true
+	}
+	var out []string
+	for _, a := range apps {
+		if keep[a] {
+			out = append(out, a)
+		}
+	}
+	return out
+}

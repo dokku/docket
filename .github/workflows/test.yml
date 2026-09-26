@@ -24,12 +24,12 @@ jobs:
         with:
           go-version-file: go.mod
       - name: run unit tests
-        run: go test -v -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
+        run: go test -v -count=1 . ./internal/... ./sdk/ ./generate/...
       # The concurrency tests around the per-invocation target assert that two
       # runs in one process do not interfere, which only means something with
       # the detector on.
       - name: run unit tests under the race detector
-        run: go test -race -count=1 . ./commands/ ./tasks/ ./subprocess/ ./generate/
+        run: go test -race -count=1 . ./internal/... ./sdk/ ./generate/...
 
   integration-test:
     name: integration-test
@@ -70,7 +70,7 @@ jobs:
       - name: install dokku maintenance plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-maintenance.git maintenance
       - name: run integration tests (shard ${{ matrix.shard }} of 4)
-        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 20m -run TestIntegration -skip TestIntegrationTaskExamples ./tasks/
+        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 20m -run TestIntegration -skip TestIntegrationTaskExamples ./internal/tasks/
 
   task-examples-test:
     name: task-examples-test
@@ -111,7 +111,7 @@ jobs:
       - name: install dokku maintenance plugin
         run: sudo dokku plugin:install https://github.com/dokku/dokku-maintenance.git maintenance
       - name: apply documented task examples (shard ${{ matrix.shard }} of 4)
-        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 30m -run '^TestIntegrationTaskExamples$' ./tasks/
+        run: sudo DOKKU_TEST_SHARD=${{ matrix.shard }} DOKKU_TEST_SHARDS=4 go test -v -count=1 -timeout 30m -run '^TestIntegrationTaskExamples$' ./internal/tasks/
 
   scheduler-k3s-test:
     name: scheduler-k3s-test
@@ -138,9 +138,9 @@ jobs:
       - name: initialize k3s cluster
         run: sudo dokku scheduler-k3s:initialize --server-ip 127.0.0.1
       - name: run scheduler-k3s integration tests
-        run: sudo DOKKU_TEST_SCHEDULER_K3S=1 go test -v -count=1 -timeout 30m -run '^TestIntegrationSchedulerK3s' ./tasks/
+        run: sudo DOKKU_TEST_SCHEDULER_K3S=1 go test -v -count=1 -timeout 30m -run '^TestIntegrationSchedulerK3s' ./internal/tasks/
       - name: apply scheduler-k3s documented examples
-        run: sudo DOKKU_TEST_SCHEDULER_K3S=1 go test -v -count=1 -timeout 30m -run '^TestIntegrationTaskExamples/dokku_scheduler_k3s' ./tasks/
+        run: sudo DOKKU_TEST_SCHEDULER_K3S=1 go test -v -count=1 -timeout 30m -run '^TestIntegrationTaskExamples/dokku_scheduler_k3s' ./internal/tasks/
 
   letsencrypt-example-test:
     name: letsencrypt-example-test
@@ -166,7 +166,7 @@ jobs:
           LETEST_HOST_DIR=/tmp/letest-host docker compose -f /tmp/dokku-letsencrypt/tests/docker-compose.yml up -d --wait
           PLUGIN_SRC=/tmp/dokku-letsencrypt bash /tmp/dokku-letsencrypt/tests/setup-native.sh
       - name: apply the letsencrypt documented example
-        run: sudo DOKKU_TEST_LETSENCRYPT=1 go test -v -count=1 -timeout 20m -run '^TestIntegrationTaskExamples/dokku_letsencrypt$' ./tasks/
+        run: sudo DOKKU_TEST_LETSENCRYPT=1 go test -v -count=1 -timeout 20m -run '^TestIntegrationTaskExamples/dokku_letsencrypt$' ./internal/tasks/
 
   bats-test:
     name: bats-test

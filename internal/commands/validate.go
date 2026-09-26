@@ -1,0 +1,397 @@
+package commands
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"sort"
+	"strings"
+
+	"github.com/dokku/docket/internal/subprocess"
+	"github.com/dokku/docket/internal/tasks"
+
+	"github.com/josegonzalez/cli-skeleton/command"
+	"github.com/posener/complete"
+	flag "github.com/spf13/pflag"
+)
+
+// ValidateCommand performs offline schema and template checks against a
+// docket recipe without contacting a Dokku server.
+type ValidateCommand struct {
+	command.Meta
+
+	// BaseDir is the directory relative paths resolve against - the recipe
+	// probed when --tasks is absent, and any output written to a relative
+	// path. Populated from main.go; empty means the process working
+	// directory, which is what it always was.
+	//
+	// It exists so a test can point a command at a temp directory instead of
+	// chdir'ing the whole process, which no test can do while another runs
+	// beside it.
+	BaseDir string
+
+	// Stdin is where a `--tasks -` recipe is read from. Populated from
+	// main.go; nil reads the process's standard input. A test hands over its
+	// own pipe instead of swapping os.Stdin, which no two tests can do at
+	// once.
+	Stdin io.Reader
+
+	stdin *stdinRecipeSource
+
+	// Argv is the process argv this command resolves its --tasks and
+	// --tasks-format from, before pflag has parsed anything. Populated from
+	// main.go; nil falls back to os.Args, which is what a command built
+	// directly gets. It exists so a test can hand the command its own argv
+	// instead of assigning to the process global and putting it back.
+	Argv []string
+
+	// masker holds the sensitive input values this run must not echo. Set in
+	// Run before any problem is rendered; the renderers below are methods so
+	// they can reach it without a parameter of their own.
+	masker *subprocess.Masker
+
+	tasksFile string
+	// tasksDisplay is tasksFile rendered for output; "<stdin>" when the
+	// recipe was piped in.
+	tasksDisplay string
+	// tasksFormatFlag is the raw --tasks-format value; tasksFormat is
+	// the format actually used, after override / extension / sniff.
+	tasksFormatFlag string
+	tasksFormat     string
+	json            bool
+	strict          bool
+	varsFiles       []string
+	play            string
+	startAtTask     string
+	arguments       map[string]*Argument
+}
+
+func (c *ValidateCommand) Name() string {
+	return "validate"
+}
+
+func (c *ValidateCommand) Synopsis() string {
+	return "Performs offline schema and template checks on a docket task file"
+}
+
+func (c *ValidateCommand) Help() string {
+	return command.CommandHelp(c)
+}
+
+func (c *ValidateCommand) Examples() map[string]string {
+	appName := os.Getenv("CLI_APP_NAME")
+	return map[string]string{
+		"Validate the default tasks.yml":           fmt.Sprintf("%s %s", appName, c.Name()),
+		"Validate a specific YAML file":            fmt.Sprintf("%s %s --tasks path/to/task.yml", appName, c.Name()),
+		"Validate a JSON5 file":                    fmt.Sprintf("%s %s --tasks path/to/tasks.json", appName, c.Name()),
+		"Validate a recipe piped in on stdin":      fmt.Sprintf("cat tasks.yml | %s %s -", appName, c.Name()),
+		"Force the format of an odd extension":     fmt.Sprintf("%s %s --tasks recipe.txt --tasks-format json5", appName, c.Name()),
+		"Emit JSON-lines problem events":           fmt.Sprintf("%s %s --json", appName, c.Name()),
+		"Flag required inputs without an override": fmt.Sprintf("%s %s --strict", appName, c.Name()),
+	}
+}
+
+func (c *ValidateCommand) Arguments() []command.Argument {
+	return []command.Argument{}
+}
+
+func (c *ValidateCommand) AutocompleteArgs() complete.Predictor {
+	return complete.PredictNothing
+}
+
+func (c *ValidateCommand) ParsedArguments(args []string) (map[string]command.Argument, error) {
+	return command.ParseArguments(args, c.Arguments())
+}
+
+func (c *ValidateCommand) FlagSet() *flag.FlagSet {
+	f := c.Meta.FlagSet(c.Name(), command.FlagSetClient)
+	f.StringVar(&c.tasksFile, "tasks", "", "task file (YAML or JSON5) containing a task list. Pass - to read the recipe from stdin. When omitted, docket probes tasks.yml -> tasks.yaml -> tasks.json in the current directory.")
+	f.StringVar(&c.tasksFormatFlag, "tasks-format", "", "parse the recipe as this format ("+recipeFormatList()+") instead of detecting it from the file extension. Required only when the extension is absent or wrong; stdin is otherwise sniffed from its first byte.")
+	f.BoolVar(&c.json, "json", false, "emit one JSON-lines problem event per finding")
+	f.BoolVar(&c.strict, "strict", false, "additionally flag required inputs that have no default and no CLI override, and check that --play / --start-at-task references resolve to real names in the file")
+	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a file in any recipe format ("+recipeFormatList()+"; repeatable; later files override earlier; CLI --name=value flags always win). The format follows the extension, defaulting to YAML.")
+	f.StringVar(&c.play, "play", "", "(strict) verify the named play exists in the recipe (matches the play's `name:` field; auto-named plays use `play #N`)")
+	f.StringVar(&c.startAtTask, "start-at-task", "", "(strict) verify a task with this name exists in the recipe; narrowed by --play when set")
+
+	// validate is offline by contract, so its recipe read never fetches
+	// a URL - unlike apply and plan, its --tasks help has never
+	// advertised one.
+	data, format, _ := preloadRecipeForFlags(c.baseDir(), c.argv(), false, c.stdinSource())
+	if data == nil {
+		return f
+	}
+
+	// The only error registerInputFlags still returns is an unreadable or
+	// unparseable recipe, which leaves nothing to register. Run re-resolves the
+	// recipe through loadRecipe and reports that properly, with the diagnostics
+	// the raw bytes deserve, so swallowing it here costs nothing - the same
+	// contract preloadRecipeForFlags already relies on. A malformed *input* no
+	// longer reaches this line: it is registered anyway, and rejected by the
+	// loader with a positioned diagnostic (#493).
+	arguments, err := registerInputFlags(f, data, format)
+	if err != nil {
+		return f
+	}
+	c.arguments = arguments
+
+	return f
+}
+
+func (c *ValidateCommand) AutocompleteFlags() complete.Flags {
+	return command.MergeAutocompleteFlags(
+		c.Meta.AutocompleteFlags(command.FlagSetClient),
+		complete.Flags{
+			"--tasks":         taskFileAutocomplete(),
+			"--tasks-format":  recipeFormatAutocomplete(),
+			"--json":          complete.PredictNothing,
+			"--strict":        complete.PredictNothing,
+			"--vars-file":     complete.PredictFiles("*"),
+			"--play":          complete.PredictAnything,
+			"--start-at-task": complete.PredictAnything,
+		},
+	)
+}
+
+// Run loads the tasks file and reports every problem the validator finds.
+//
+// Exit codes:
+//
+//	0 - no problems found
+//	1 - file read failed, or the validator returned at least one problem
+func (c *ValidateCommand) Run(args []string) int {
+	flags := c.FlagSet()
+	flags.Usage = func() { c.Ui.Output(c.Help()) }
+	if err := flags.Parse(args); err != nil {
+		c.Ui.Error(err.Error())
+		c.Ui.Error(command.CommandErrorText(c))
+		return 1
+	}
+
+	varsFileKeys, varsWarnings, err := applyVarsFiles(c.arguments, flags, c.varsFiles)
+	if err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "vars_file_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(err.Error())
+		}
+		return 1
+	}
+	// Warned about on stderr in both modes. It is not a validate_problem: the
+	// recipe is fine, and a clean --json run has to keep writing nothing to
+	// stdout so a consumer can treat any output as failure (#489).
+	for _, w := range varsWarnings {
+		c.Ui.Warn(w)
+	}
+
+	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
+	if err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "argument_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(err.Error())
+		}
+		return 1
+	}
+
+	taskFile, err := resolveTaskFileArg(c.tasksFile, flags.Args())
+	if err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "argument_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(err.Error())
+		}
+		return 1
+	}
+
+	recipe, err := loadRecipe(c.baseDir(), taskFile, formatOverride, false, nil, "", c.stdinSource())
+	if err != nil {
+		if c.json {
+			c.emitJSONProblem(tasks.Problem{
+				Code:    "read_error",
+				Message: err.Error(),
+			})
+		} else {
+			c.Ui.Error(fmt.Sprintf("read error: %v", err))
+		}
+		return 1
+	}
+	if msg := ambiguousTaskFileWarning(recipe.Path, recipe.Ambiguous); msg != "" {
+		c.Ui.Warn(msg)
+	}
+	c.tasksFile = recipe.Path
+	c.tasksDisplay = recipe.Display
+	c.tasksFormat = recipe.Format
+	data := recipe.Data
+
+	// --strict flags a required input nothing satisfies, which is the same
+	// question apply and plan ask before they run - so it is answered by the
+	// same predicate. The old proxy, HasValue(), could not answer it: a bool /
+	// int / float flag pointer is never nil, so every non-string input counted
+	// as supplied and input_missing never fired for one (#493).
+	userSet := userSetKeys(flags, varsFileKeys, c.arguments)
+	overrides := make(map[string]bool, len(c.arguments))
+
+	var sensitiveValues []string
+	for name, argument := range c.arguments {
+		overrides[name] = argument.IsSatisfied(userSet[name])
+		// Only a value the recipe declared or the user supplied is a secret.
+		// An implicit zero would register "0" or "false" and mask every
+		// unrelated occurrence of that substring.
+		if argument.Sensitive && (argument.HasDefault || userSet[name]) {
+			if v := argument.StringValue(); v != "" {
+				sensitiveValues = append(sensitiveValues, v)
+			}
+		}
+	}
+
+	// Register the sensitive input values so a problem message that quotes an
+	// interpolated secret (e.g. a template render error) is masked. validate is
+	// offline, so only input-derived values are available to collect.
+	c.masker = subprocess.NewMasker(sensitiveValues...)
+
+	problems := tasks.Validate(data, tasks.ValidateOptions{
+		Strict:         c.strict,
+		InputOverrides: overrides,
+		PlayName:       c.play,
+		StartAtTask:    c.startAtTask,
+		Format:         c.tasksFormat,
+	})
+
+	if c.json {
+		for _, p := range problems {
+			c.emitJSONProblem(p)
+		}
+		if len(problems) > 0 {
+			return 1
+		}
+		return 0
+	}
+
+	if len(problems) == 0 {
+		c.Ui.Info(fmt.Sprintf("==> Validating %s", c.tasksDisplay))
+		c.Ui.Info("")
+		c.Ui.Info(fmt.Sprintf("[ok]      %s is valid", c.tasksDisplay))
+		return 0
+	}
+
+	c.renderHumanProblems(problems)
+	return 1
+}
+
+// emitJSONProblem prints a single JSON-lines event. The version field is
+// pinned at 1 so consumers can branch on schema changes.
+func (c *ValidateCommand) emitJSONProblem(p tasks.Problem) {
+	event := map[string]interface{}{
+		"version": 1,
+		"type":    "validate_problem",
+		"code":    p.Code,
+		"message": c.masker.String(p.Message),
+	}
+	if p.Play != "" {
+		event["play"] = c.masker.String(p.Play)
+	}
+	if p.Task != "" {
+		event["task"] = c.masker.String(p.Task)
+	}
+	if p.Line > 0 {
+		event["line"] = p.Line
+	}
+	if p.Column > 0 {
+		event["column"] = p.Column
+	}
+	if p.Hint != "" {
+		event["hint"] = c.masker.String(p.Hint)
+	}
+	b, err := json.Marshal(event)
+	if err != nil {
+		c.Ui.Error(fmt.Sprintf("json marshal error: %v", err))
+		return
+	}
+	c.Ui.Output(string(b))
+}
+
+// renderHumanProblems prints problems grouped by play, mirroring the issue's
+// example output. Play and task headers are emitted only when they change so
+// the output stays compact.
+func (c *ValidateCommand) renderHumanProblems(problems []tasks.Problem) {
+	c.Ui.Info(fmt.Sprintf("==> Validating %s", c.tasksDisplay))
+	c.Ui.Info("")
+	c.Ui.Info(fmt.Sprintf("[error]   %d problem(s):", len(problems)))
+	c.Ui.Info("")
+
+	grouped := map[string][]tasks.Problem{}
+	playOrder := []string{}
+	for _, p := range problems {
+		key := p.Play
+		if _, ok := grouped[key]; !ok {
+			playOrder = append(playOrder, key)
+		}
+		grouped[key] = append(grouped[key], p)
+	}
+	sort.SliceStable(playOrder, func(i, j int) bool {
+		return playOrder[i] < playOrder[j]
+	})
+
+	for _, play := range playOrder {
+		if play != "" {
+			c.Ui.Info(fmt.Sprintf("  %s", c.masker.String(play)))
+		}
+		for _, p := range grouped[play] {
+			c.Ui.Info(fmt.Sprintf("    ! %s", c.masker.String(formatProblem(p))))
+		}
+		c.Ui.Info("")
+	}
+}
+
+func formatProblem(p tasks.Problem) string {
+	var b strings.Builder
+	if p.Task != "" {
+		b.WriteString(p.Task)
+		if p.Line > 0 {
+			fmt.Fprintf(&b, " (line %d", p.Line)
+			if p.Column > 0 {
+				fmt.Fprintf(&b, ":%d", p.Column)
+			}
+			b.WriteString(")")
+		}
+		b.WriteString(": ")
+	} else if p.Line > 0 {
+		fmt.Fprintf(&b, "line %d", p.Line)
+		if p.Column > 0 {
+			fmt.Fprintf(&b, ":%d", p.Column)
+		}
+		b.WriteString(": ")
+	}
+	b.WriteString(p.Message)
+	if p.Hint != "" {
+		fmt.Fprintf(&b, " - %s", p.Hint)
+	}
+	return b.String()
+}
+
+// argv returns the argv this command resolves its pre-parse flags from.
+func (c *ValidateCommand) argv() []string { return commandArgv(c.Argv) }
+
+// stdinSource returns this command's memoized standard-input reader, creating
+// it on first use. One per command: the recipe is read more than once per
+// invocation (FlagSet, Run, and Help on a flag error) but standard input only
+// yields its bytes once.
+func (c *ValidateCommand) stdinSource() *stdinRecipeSource {
+	if c.stdin == nil {
+		c.stdin = newStdinRecipeSource(c.Stdin)
+	}
+	return c.stdin
+}
+
+// baseDir returns the directory this command resolves relative paths against.
+func (c *ValidateCommand) baseDir() string { return c.BaseDir }

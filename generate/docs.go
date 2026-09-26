@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dokku/docket/tasks"
+	"github.com/dokku/docket/internal/tasks"
 )
 
 // The per-task reference pages are rendered from tasks.Catalog(), the same
