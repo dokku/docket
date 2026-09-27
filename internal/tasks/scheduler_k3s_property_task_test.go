@@ -162,3 +162,41 @@ func TestSchedulerK3sPropertyTaskAcceptsChartPrefixedName(t *testing.T) {
 		t.Errorf("a near-miss name should get the generic error, got: %v", err)
 	}
 }
+
+func TestSchedulerK3sPropertyTaskCertIssuerKind(t *testing.T) {
+	cases := []struct {
+		value   string
+		wantErr bool
+	}{
+		{"Issuer", false},
+		{"ClusterIssuer", false},
+		{"issuer", true},
+		{"clusterissuer", true},
+		{"Certificate", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.value, func(t *testing.T) {
+			task := SchedulerK3sPropertyTask{App: "test-app", Property: "cert-issuer-kind", Value: tc.value, State: StatePresent}
+			err := task.Validate()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected %q to be rejected", tc.value)
+				}
+				if !strings.Contains(err.Error(), "must be one of Issuer, ClusterIssuer") {
+					t.Errorf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected %q to be accepted, got %v", tc.value, err)
+			}
+		})
+	}
+}
+
+func TestSchedulerK3sPropertyTaskCertIssuerKindAbsent(t *testing.T) {
+	task := SchedulerK3sPropertyTask{Global: true, Property: "cert-issuer-kind", State: StateAbsent}
+	if err := task.Validate(); err != nil {
+		t.Errorf("clearing cert-issuer-kind should validate, got %v", err)
+	}
+}

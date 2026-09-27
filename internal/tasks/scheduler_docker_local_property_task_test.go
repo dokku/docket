@@ -55,3 +55,27 @@ func TestSchedulerDockerLocalPropertyTaskAbsentWithValue(t *testing.T) {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
+
+func TestSchedulerDockerLocalPropertyTaskGlobalWithAppSet(t *testing.T) {
+	task := SchedulerDockerLocalPropertyTask{
+		App:      "test-app",
+		Global:   true,
+		Property: "parallel-schedule-count",
+		Value:    "4",
+		State:    StatePresent,
+	}
+	result := task.Execute(testCtx())
+	if result.Error == nil {
+		t.Fatal("expected error when both global and app are set")
+	}
+	if !strings.Contains(result.Error.Error(), "must not be set when 'global' is set to true") {
+		t.Errorf("unexpected error: %v", result.Error)
+	}
+}
+
+func TestSchedulerDockerLocalPropertyTaskGlobalValidates(t *testing.T) {
+	task := SchedulerDockerLocalPropertyTask{Global: true, Property: "init-process", Value: "true", State: StatePresent}
+	if err := task.Validate(); err != nil {
+		t.Errorf("global init-process should validate, got %v", err)
+	}
+}

@@ -35,6 +35,7 @@ func TestIntegrationLogsPropertyAll(t *testing.T) {
 	}{
 		{"app-label-alias", "com.example.app", true, true},
 		{"max-size", "5m", true, true},
+		{"vector-cron-sink", "console://?encoding[codec]=json", true, true},
 		{"vector-image", "timberio/vector:1.0.0", false, true},
 		{"vector-networks", networkName, false, true},
 		{"vector-sink", "console://?encoding[codec]=json", true, true},

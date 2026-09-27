@@ -117,6 +117,7 @@ var globalExportOrder = []string{
 	"dokku_ps_property",
 	"dokku_registry_property",
 	"dokku_scheduler_property",
+	"dokku_scheduler_docker_local_property",
 	"dokku_scheduler_k3s_property",
 	"dokku_traefik_property",
 	// datastore services: create must precede expose/backup/acl, which all

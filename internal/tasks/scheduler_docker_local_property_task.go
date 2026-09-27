@@ -3,19 +3,7 @@ package tasks
 import "context"
 
 // SchedulerDockerLocalPropertyTask manages the scheduler-docker-local configuration for a given dokku application
-type SchedulerDockerLocalPropertyTask struct {
-	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
-
-	// Property is the name of the scheduler-docker-local property to set
-	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the scheduler-docker-local property to set"`
-
-	// Value is the value to set for the scheduler-docker-local property
-	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the scheduler-docker-local property"`
-
-	// State is the desired state of the scheduler-docker-local configuration
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the scheduler-docker-local configuration"`
-}
+type SchedulerDockerLocalPropertyTask PropertyFields
 
 // SchedulerDockerLocalPropertyTaskExample contains an example of a SchedulerDockerLocalPropertyTask
 type SchedulerDockerLocalPropertyTaskExample struct {
@@ -66,6 +54,14 @@ func (t SchedulerDockerLocalPropertyTask) examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Setting the parallel schedule count globally",
+			SchedulerDockerLocalPropertyTask: SchedulerDockerLocalPropertyTask{
+				Global:   true,
+				Property: "parallel-schedule-count",
+				Value:    "4",
+			},
+		},
+		{
 			Name: "Clearing the init process for an app",
 			SchedulerDockerLocalPropertyTask: SchedulerDockerLocalPropertyTask{
 				App:      "node-js-app",
@@ -84,12 +80,11 @@ func (t SchedulerDockerLocalPropertyTask) Execute(ctx context.Context) TaskOutpu
 // schedulerDockerLocalPropertyTable maps scheduler-docker-local property
 // names to the JSON keys emitted by
 // `dokku scheduler-docker-local:report --format json` on dokku 0.38.8+.
-// The task struct has no Global field today; map entries set Global="".
 var schedulerDockerLocalPropertyTable = PropertyTable{
 	Subcommand: "scheduler-docker-local:set",
 	Keys: map[string]PropertyKeys{
-		"init-process":            {PerApp: "init-process", Global: ""},
-		"parallel-schedule-count": {PerApp: "parallel-schedule-count", Global: ""},
+		"init-process":            {PerApp: "init-process", Global: "global-init-process"},
+		"parallel-schedule-count": {PerApp: "parallel-schedule-count", Global: "global-parallel-schedule-count"},
 	},
 }
 
@@ -100,18 +95,25 @@ func (t SchedulerDockerLocalPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the SchedulerDockerLocalPropertyTask's inputs without contacting the server.
 func (t SchedulerDockerLocalPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, false, t.Property, t.Value)
+	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // Plan reports the drift the SchedulerDockerLocalPropertyTask would produce.
 func (t SchedulerDockerLocalPropertyTask) Plan(ctx context.Context) PlanResult {
-	return planProperty(ctx, t, t.State, t.App, false, t.Property, t.Value)
+	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.
 func (t SchedulerDockerLocalPropertyTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
 	return exportProperties(ctx, t, app, func(app, property, value string) interface{} {
 		return SchedulerDockerLocalPropertyTask{App: app, Property: property, Value: value}
+	})
+}
+
+// ExportGlobal reconstructs the globally-set properties.
+func (t SchedulerDockerLocalPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
+	return exportGlobalProperties(ctx, t, func(property, value string) interface{} {
+		return SchedulerDockerLocalPropertyTask{Global: true, Property: property, Value: value}
 	})
 }
 
