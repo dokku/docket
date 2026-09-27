@@ -38,7 +38,7 @@ code into it:
 
 ## Prerequisites
 
-- **Dokku >= 0.38.30.**
+- **Dokku >= 0.38.31.**
 - **dokku-letsencrypt >= 0.25.0.**
 - **dokku-http-auth >= 0.14.0**, if your recipe uses the `dokku_http_auth*` tasks.
 - **dokku-acl >= 2.0.1**, if your recipe uses the `dokku_acl_*` tasks.

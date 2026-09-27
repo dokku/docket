@@ -88,9 +88,11 @@ func (t SchedulerK3sPropertyTask) Execute(ctx context.Context) TaskOutputState {
 // scheduler-k3s:charts:set surface, so a recipe naming one is answered with
 // the task that owns it rather than with the list of names this task supports.
 //
-// cert-issuer-kind, cert-issuer-name, node-sysctls-image and
-// node-sysctls-pause-image need dokku 0.38.26+, and the per-app
+// cert-issuer-kind and cert-issuer-name need dokku 0.38.26+, and the per-app
 // letsencrypt-email-prod and letsencrypt-email-stag need 0.38.25+.
+// node-sysctls-image and node-sysctls-pause-image need 0.38.31+: before that
+// their global report key returned the built-in default when nothing was
+// stored, so an unset image read as set (dokku/dokku#9084).
 var schedulerK3sPropertyTable = PropertyTable{
 	Subcommand: "scheduler-k3s:set",
 	Rejected: []RejectedPropertyFamily{
