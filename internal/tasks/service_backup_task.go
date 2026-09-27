@@ -122,13 +122,19 @@ func (t ServiceBackupTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 }
 
 // parseBackupSchedule extracts the cron schedule, bucket, and use-iam flag from
-// the cron file `<service>:backup-schedule-cat` prints, whose single line is:
+// the crontab line `<service>:backup-schedule-cat` prints. A plugin that writes
+// its own file under /etc/cron.d prints a system crontab line, which names the
+// user the job runs as; one that schedules through dokku's own crontab (the
+// cron-entries trigger) prints a user crontab line, which does not:
 //
-//	<schedule...> dokku <bin> <type>:backup <name> <bucket> [--use-iam]
+//	<schedule...> <user> <bin> <type>:backup <name> <bucket> [--use-iam]
+//	<schedule...> <bin> <type>:backup <name> <bucket> [--use-iam] &>> <log>
 //
-// The schedule is not always five fields (`@daily` and friends are valid cron
-// expressions), so the parse anchors on the `<type>:backup` token rather than
-// fixed offsets. Returns ok=false when the line does not match this shape.
+// The parse anchors on the `<type>:backup` token, takes the word before it as
+// the dokku binary, and reads the schedule from the start of the line as either
+// one `@`-prefixed word (`@daily` and friends) or five fields. At most one word
+// - the user - may sit between the schedule and the binary. Returns ok=false
+// when the line does not match either shape.
 func parseBackupSchedule(content, service string) (schedule, bucket string, useIam, ok bool) {
 	fields := strings.Fields(content)
 	marker := fmt.Sprintf("%s:backup", service)
@@ -139,14 +145,23 @@ func parseBackupSchedule(content, service string) (schedule, bucket string, useI
 			break
 		}
 	}
-	// The `dokku <bin>` prefix must precede the marker, and `<name> <bucket>`
-	// must follow it.
+	// At least a schedule and the binary must precede the marker, and
+	// `<name> <bucket>` must follow it.
 	if idx < 2 || idx+2 >= len(fields) {
 		return "", "", false, false
 	}
-	schedule = strings.Join(fields[:idx-2], " ")
+
+	leading := fields[:idx-1]
+	width := 5
+	if strings.HasPrefix(leading[0], "@") {
+		width = 1
+	}
+	if len(leading) < width || len(leading) > width+1 {
+		return "", "", false, false
+	}
+	schedule = strings.Join(leading[:width], " ")
 	bucket = fields[idx+2]
-	if schedule == "" || bucket == "" {
+	if bucket == "" {
 		return "", "", false, false
 	}
 	if idx+3 < len(fields) && fields[idx+3] == "--use-iam" {
@@ -370,7 +385,7 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 }
 
 // serviceBackupScheduled reports whether a dokku service has a backup
-// schedule and returns the cron file contents for comparison. A
+// schedule and returns its crontab line for comparison. A
 // transport-level failure (`*subprocess.SSHError`) is propagated; a
 // dokku-level non-zero exit (no schedule configured) is treated as
 // "not scheduled."

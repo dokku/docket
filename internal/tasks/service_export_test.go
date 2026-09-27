@@ -188,6 +188,13 @@ func TestParseBackupSchedule(t *testing.T) {
 		{"standard-iam", "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket --use-iam", "postgres", "0 3 * * *", "my-bucket", true, true},
 		{"standard-no-iam", "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket", "postgres", "0 3 * * *", "my-bucket", false, true},
 		{"named-schedule", "@daily dokku /usr/bin/dokku redis:backup cache backups", "redis", "@daily", "backups", false, true},
+		{"system-crontab-other-user", "0 3 * * * deploy /usr/local/bin/dokku redis:backup cache backups", "redis", "0 3 * * *", "backups", false, true},
+		{"user-crontab-iam", "0 3 * * * dokku redis:backup cache backups --use-iam &>> /var/log/dokku/redis.log", "redis", "0 3 * * *", "backups", true, true},
+		{"user-crontab-no-iam", "0 3 * * * dokku redis:backup cache backups &>> /var/log/dokku/redis.log", "redis", "0 3 * * *", "backups", false, true},
+		{"user-crontab-named-schedule", "@daily dokku redis:backup cache backups &>> /var/log/dokku/redis.log", "redis", "@daily", "backups", false, true},
+		{"no-binary", "redis:backup cache backups", "redis", "", "", false, false},
+		{"short-schedule", "0 3 * dokku redis:backup cache backups", "redis", "", "", false, false},
+		{"extra-words-before-binary", "0 3 * * * env FOO=bar dokku redis:backup cache backups", "redis", "", "", false, false},
 		{"empty", "", "postgres", "", "", false, false},
 		{"no-marker", "0 3 * * * something else entirely here", "postgres", "", "", false, false},
 	}
@@ -413,5 +420,28 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("recipe should not export %q:\n%s", unwanted, out)
 		}
+	}
+}
+
+// TestExportServiceBackupParsesUserCrontabLine covers a datastore plugin that
+// schedules through dokku's own crontab: its backup-schedule-cat line has no
+// user column and ends in a log redirect, and the schedule must come back whole.
+func TestExportServiceBackupParsesUserCrontabLine(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet plugin:trigger service-list":     "redis:cache",
+		"--quiet redis:backup-schedule-cat cache": "0 3 * * * dokku redis:backup cache my-bucket --use-iam &>> /var/log/dokku/redis.log\n",
+	}))
+
+	bodies, err := ServiceBackupTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("expected 1 backup task, got %d", len(bodies))
+	}
+	b := bodies[0].(ServiceBackupTask)
+	if b.Schedule != "0 3 * * *" || b.Bucket != "my-bucket" || !b.UseIam {
+		t.Errorf("unexpected schedule fields: %+v", b)
 	}
 }
