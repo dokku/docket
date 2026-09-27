@@ -72,15 +72,18 @@ func (t LogsPropertyTask) Execute(ctx context.Context) TaskOutputState {
 // logsPropertyTable maps logs property names to the JSON keys emitted by
 // `dokku logs:report --format json` on dokku 0.38.8+. vector-image and
 // vector-networks are global-only. vector-cron-sink needs dokku 0.38.27+.
+//
+// Both sinks are Sensitive: a sink DSN can carry an API token or a basic-auth
+// password, which is why dokku redacts them in logs:report's plain-text output.
 var logsPropertyTable = PropertyTable{
 	Subcommand: "logs:set",
 	Keys: map[string]PropertyKeys{
 		"app-label-alias":  {PerApp: "app-label-alias", Global: "global-app-label-alias"},
 		"max-size":         {PerApp: "max-size", Global: "global-max-size"},
-		"vector-cron-sink": {PerApp: "vector-cron-sink", Global: "global-vector-cron-sink"},
+		"vector-cron-sink": {PerApp: "vector-cron-sink", Global: "global-vector-cron-sink", Sensitive: true},
 		"vector-image":     {PerApp: "", Global: "global-vector-image"},
 		"vector-networks":  {PerApp: "", Global: "global-vector-networks"},
-		"vector-sink":      {PerApp: "vector-sink", Global: "global-vector-sink"},
+		"vector-sink":      {PerApp: "vector-sink", Global: "global-vector-sink", Sensitive: true},
 	},
 }
 

@@ -494,6 +494,29 @@ var propertySampleValues = map[string]string{
 // nil for a task whose fields do not fit the shape (none today).
 func newPropertyTaskInstance(t *testing.T, prototype Task, property string, global bool) InputValidator {
 	t.Helper()
+	sample := "some-value"
+	if table, declared := TaskPropertyTable(prototype); declared {
+		if v, ok := propertySampleValues[table.Subcommand+" "+property]; ok {
+			sample = v
+		}
+	}
+
+	body := newPropertyTaskBody(t, prototype, property, sample, global)
+	if body == nil {
+		return nil
+	}
+	instance, ok := body.(InputValidator)
+	if !ok {
+		return nil
+	}
+	return instance
+}
+
+// newPropertyTaskBody builds the value form of a property task setting one
+// property to value, in the app scope ("some-app") or the global one. Returns
+// nil for a task whose fields do not fit the shape.
+func newPropertyTaskBody(t *testing.T, prototype Task, property, propertyValue string, global bool) interface{} {
+	t.Helper()
 	rt := taskStructType(prototype)
 	value := reflect.New(rt).Elem()
 
@@ -513,14 +536,7 @@ func newPropertyTaskInstance(t *testing.T, prototype Task, property string, glob
 		return false
 	}
 
-	sample := "some-value"
-	if table, declared := TaskPropertyTable(prototype); declared {
-		if v, ok := propertySampleValues[table.Subcommand+" "+property]; ok {
-			sample = v
-		}
-	}
-
-	if !set("property", property) || !set("value", sample) || !set("state", string(StatePresent)) {
+	if !set("property", property) || !set("value", propertyValue) || !set("state", string(StatePresent)) {
 		return nil
 	}
 	if global {
@@ -531,9 +547,5 @@ func newPropertyTaskInstance(t *testing.T, prototype Task, property string, glob
 		return nil
 	}
 
-	instance, ok := value.Interface().(InputValidator)
-	if !ok {
-		return nil
-	}
-	return instance
+	return value.Interface()
 }
