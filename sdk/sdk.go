@@ -64,6 +64,12 @@ func TaskExportSupport(t Task) (ExportSupport, bool) {
 	return tasks.TaskExportSupport(t)
 }
 
+// TaskMinimumVersions reports the oldest Dokku, and the plugins, t declares
+// it runs on. The bool is false when t declares nothing.
+func TaskMinimumVersions(t Task) (VersionSupport, bool) {
+	return tasks.TaskMinimumVersions(t)
+}
+
 // Catalog describes every registered task type. It is what `docket schema`
 // emits.
 func Catalog() (TaskCatalog, error) {
@@ -152,8 +158,15 @@ func ParseResourceSelectors(addresses []string) ([]ResourceSelector, error) {
 // ExportRecipe reads the server ctx targets and returns the recipe that
 // describes it. An export that finds nothing is not an error: check
 // Report.MissingApps and Report.MissingResources.
+//
+// An exporter whose task declares a floor newer than the server is skipped
+// with a warning and listed in Report.VersionErrors. Set
+// ExportOptions.IgnoreVersion to read it anyway.
 func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
-	return tasks.ExportRecipe(tasks.ContextWithVersionGate(ctx), opts)
+	if !opts.IgnoreVersion {
+		ctx = tasks.ContextWithVersionGate(ctx)
+	}
+	return tasks.ExportRecipe(ctx, opts)
 }
 
 // As returns an exported task's body as T, the value type registered under
@@ -170,6 +183,24 @@ const (
 )
 
 // Planning and applying.
+
+// ContextWithVersionGate returns a copy of ctx on which CheckMinimumVersions
+// compares a task's floor with the server. The versions it reads are cached
+// per target for as long as the context lives, so install it once per run.
+// A context that already carries a gate is returned as-is.
+func ContextWithVersionGate(ctx context.Context) context.Context {
+	return tasks.ContextWithVersionGate(ctx)
+}
+
+// CheckMinimumVersions returns a *VersionError when the server ctx targets,
+// or an installed plugin task needs, is older than the floor task declares.
+// Call it before a task's Plan or Execute. It returns nil when ctx carries no
+// gate, when task declares no floor, and when a plugin task needs is not
+// installed, which the task's own probe reports. typeKey names the task in
+// the error, such as "dokku_app".
+func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error {
+	return tasks.CheckMinimumVersions(ctx, typeKey, task)
+}
 
 // ExecutePlan applies p, the result of a task's Plan, without probing the
 // server again. A plan that is already in sync applies nothing.

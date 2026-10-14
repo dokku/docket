@@ -54,6 +54,7 @@ var roots = []reflect.Type{
 	reflect.TypeOf(tasks.ProbeSupport{}),
 	reflect.TypeOf(tasks.ExportSupport{}),
 	reflect.TypeOf(tasks.VersionSupport{}),
+	reflect.TypeOf(tasks.VersionError{}),
 	reflect.TypeOf(subprocess.Session{}),
 	reflect.TypeOf(subprocess.Target{}),
 	reflect.TypeOf(subprocess.Masker{}),

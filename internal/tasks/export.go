@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -231,6 +232,11 @@ type ExportOptions struct {
 	// Inline keeps sensitive values in the task bodies instead of lifting them
 	// into a vars map. Used for stdout output, which has no companion file.
 	Inline bool
+
+	// IgnoreVersion reads every exporter even when Dokku, or an installed
+	// plugin it needs, is older than the exporter's task declares. It
+	// overrides a version gate already on the context.
+	IgnoreVersion bool
 }
 
 // ExportReport carries non-fatal diagnostics from an export run.
@@ -248,6 +254,21 @@ type ExportReport struct {
 	// address that names a resource the server does not have is not mistaken
 	// for one that exports to nothing.
 	MissingResources []string
+
+	// VersionErrors are the exporters skipped because the server, or a
+	// plugin they need, is older than their task declares, in the order
+	// their warnings appear in Warnings. Each one is also a warning.
+	VersionErrors []*VersionError
+}
+
+// addVersionWarning records an exporter the version gate refused. A floor
+// the task declares wrongly is not a *VersionError and is only a warning.
+func (r *ExportReport) addVersionWarning(warning string, err error) {
+	r.Warnings = append(r.Warnings, warning)
+	var verr *VersionError
+	if errors.As(err, &verr) {
+		r.VersionErrors = append(r.VersionErrors, verr)
+	}
 }
 
 // ExportedTask is one task in an exported play: the registry type-key it is
@@ -370,6 +391,9 @@ func (res *ExportResult) SensitiveValues() []string {
 // and with it the sensitive values the caller has to register before it
 // prints the failure (#488).
 func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
+	if opts.IgnoreVersion {
+		ctx = withoutVersionGate(ctx)
+	}
 	res := &ExportResult{
 		Vars:         map[string]string{},
 		usedVarNames: map[string]bool{},
@@ -462,8 +486,7 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 			continue
 		}
 		if err := CheckMinimumVersions(ctx, typeKey, proto); err != nil {
-			res.Report.Warnings = append(res.Report.Warnings,
-				fmt.Sprintf("global: %s: %v", typeKey, err))
+			res.Report.addVersionWarning(fmt.Sprintf("global: %s: %v", typeKey, err), err)
 			continue
 		}
 		var bodies []interface{}
@@ -569,8 +592,7 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 			continue
 		}
 		if err := CheckMinimumVersions(ctx, typeKey, proto); err != nil {
-			res.Report.Warnings = append(res.Report.Warnings,
-				fmt.Sprintf("%s: %s: %v", app, typeKey, err))
+			res.Report.addVersionWarning(fmt.Sprintf("%s: %s: %v", app, typeKey, err), err)
 			failed = true
 			continue
 		}

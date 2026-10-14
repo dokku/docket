@@ -147,6 +147,9 @@ func TestMetadataHelpersMatchCatalog(t *testing.T) {
 		if got, _ := sdk.TaskExportSupport(task); got != schema.Export {
 			t.Errorf("%s: TaskExportSupport = %+v, catalog = %+v", schema.Type, got, schema.Export)
 		}
+		if got, _ := sdk.TaskMinimumVersions(task); got.Dokku != schema.MinimumDokkuVersion {
+			t.Errorf("%s: TaskMinimumVersions = %q, catalog = %q", schema.Type, got.Dokku, schema.MinimumDokkuVersion)
+		}
 	}
 }
 

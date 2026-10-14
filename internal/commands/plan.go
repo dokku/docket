@@ -605,7 +605,7 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 
 	var result tasks.PlanResult
 	if err := tasks.CheckMinimumVersions(pc.ctx, env.TypeName, env.Task); err != nil {
-		result = tasks.PlanResult{Status: tasks.PlanStatusError, Error: err}
+		result = tasks.PlanResult{Status: tasks.PlanStatusError, Error: ignoreVersionHint(err)}
 	} else {
 		result = env.Task.Plan(pc.ctx)
 	}

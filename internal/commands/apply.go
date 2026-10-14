@@ -770,7 +770,7 @@ func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac 
 
 	var state tasks.TaskOutputState
 	if err := tasks.CheckMinimumVersions(ac.ctx, env.TypeName, env.Task); err != nil {
-		state = tasks.TaskOutputState{Error: err}
+		state = tasks.TaskOutputState{Error: ignoreVersionHint(err)}
 	} else {
 		state = env.Task.Execute(ac.ctx)
 	}
