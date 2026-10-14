@@ -31,13 +31,24 @@ func TestListServicesParsesTypeAndName(t *testing.T) {
 	}
 }
 
+// mergeFixtures folds fakeDokku response maps into one.
+func mergeFixtures(fixtures ...map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, f := range fixtures {
+		for k, v := range f {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		"--quiet plugin:trigger service-list":   "postgres:my-db\nredis:cache",
-		"--quiet postgres:info my-db --version": "postgis/postgis:13-master",
-		"--quiet redis:info cache --version":    "redis:7.2.5",
-	}))
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(mergeFixtures(
+		map[string]string{"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache"},
+		infoFixture("postgres", "my-db", map[string]string{"version": "postgis/postgis:13-master"}),
+		infoFixture("redis", "cache", map[string]string{"version": "redis:7.2.5"}),
+	)))
 
 	bodies, err := ServiceCreateTask{}.ExportGlobal(ctx)
 	if err != nil {
@@ -68,13 +79,14 @@ func TestExportServiceCreateEnumeratesInstances(t *testing.T) {
 }
 
 // TestExportServiceCreateOmitsUnreadableImage covers a service whose container
-// is gone: dokku prints nothing for --version, and the export must leave both
+// is gone: info reports an empty version, and the export must leave both
 // image fields empty rather than emitting a half-formed pin.
 func TestExportServiceCreateOmitsUnreadableImage(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		"--quiet plugin:trigger service-list": "redis:cache",
-	}))
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(mergeFixtures(
+		map[string]string{"--quiet plugin:trigger service-list": "redis:cache"},
+		infoFixture("redis", "cache", map[string]string{"version": ""}),
+	)))
 
 	bodies, err := ServiceCreateTask{}.ExportGlobal(ctx)
 	if err != nil {
@@ -86,6 +98,57 @@ func TestExportServiceCreateOmitsUnreadableImage(t *testing.T) {
 	c := bodies[0].(ServiceCreateTask)
 	if c.Image != "" || c.ImageVersion != "" {
 		t.Errorf("expected no image, got %q:%q", c.Image, c.ImageVersion)
+	}
+}
+
+// TestExportServiceCreateReadsCreateTimeOptions pins that the options info
+// reports come back as the fields that would recreate them, with an unset
+// memory limit left out rather than exported as 0.
+func TestExportServiceCreateReadsCreateTimeOptions(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(mergeFixtures(
+		map[string]string{"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache"},
+		infoFixture("postgres", "my-db", map[string]string{
+			"version":             "postgres:17.2",
+			"config-options":      "--max-connections 200",
+			"custom-env":          "POSTGRES_INITDB_ARGS=--data-checksums;TZ=UTC",
+			"memory":              "512",
+			"shm-size":            "128m",
+			"initial-network":     "net-a",
+			"post-create-network": "net-b,net-c",
+			"post-start-network":  "net-d",
+		}),
+		infoFixture("redis", "cache", map[string]string{"version": "redis:7.2.5", "memory": "0"}),
+	)))
+
+	bodies, err := ServiceCreateTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	got := map[string]ServiceCreateTask{}
+	for _, b := range bodies {
+		c := b.(ServiceCreateTask)
+		got[c.Name] = c
+	}
+	want := ServiceCreateTask{
+		Service:           "postgres",
+		Name:              "my-db",
+		Image:             "postgres",
+		ImageVersion:      "17.2",
+		ConfigOptions:     "--max-connections 200",
+		CustomEnv:         map[string]string{"POSTGRES_INITDB_ARGS": "--data-checksums", "TZ": "UTC"},
+		Memory:            512,
+		ShmSize:           "128m",
+		InitialNetwork:    "net-a",
+		PostCreateNetwork: []string{"net-b", "net-c"},
+		PostStartNetwork:  []string{"net-d"},
+		State:             StatePresent,
+	}
+	if !reflect.DeepEqual(got["my-db"], want) {
+		t.Errorf("postgres create = %#v, want %#v", got["my-db"], want)
+	}
+	if c := got["cache"]; c.Memory != 0 || c.ConfigOptions != "" || len(c.CustomEnv) != 0 || c.PostCreateNetwork != nil {
+		t.Errorf("redis create should carry no options, got %#v", c)
 	}
 }
 
@@ -174,48 +237,22 @@ func TestExportServiceExposeReadsHostPorts(t *testing.T) {
 	}
 }
 
-func TestParseBackupSchedule(t *testing.T) {
+func TestExportServiceBackupReadsSchedule(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		name     string
-		content  string
-		service  string
-		schedule string
-		bucket   string
-		useIam   bool
-		ok       bool
-	}{
-		{"standard-iam", "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket --use-iam", "postgres", "0 3 * * *", "my-bucket", true, true},
-		{"standard-no-iam", "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket", "postgres", "0 3 * * *", "my-bucket", false, true},
-		{"named-schedule", "@daily dokku /usr/bin/dokku redis:backup cache backups", "redis", "@daily", "backups", false, true},
-		{"system-crontab-other-user", "0 3 * * * deploy /usr/local/bin/dokku redis:backup cache backups", "redis", "0 3 * * *", "backups", false, true},
-		{"user-crontab-iam", "0 3 * * * dokku redis:backup cache backups --use-iam &>> /var/log/dokku/redis.log", "redis", "0 3 * * *", "backups", true, true},
-		{"user-crontab-no-iam", "0 3 * * * dokku redis:backup cache backups &>> /var/log/dokku/redis.log", "redis", "0 3 * * *", "backups", false, true},
-		{"user-crontab-named-schedule", "@daily dokku redis:backup cache backups &>> /var/log/dokku/redis.log", "redis", "@daily", "backups", false, true},
-		{"no-binary", "redis:backup cache backups", "redis", "", "", false, false},
-		{"short-schedule", "0 3 * dokku redis:backup cache backups", "redis", "", "", false, false},
-		{"extra-words-before-binary", "0 3 * * * env FOO=bar dokku redis:backup cache backups", "redis", "", "", false, false},
-		{"empty", "", "postgres", "", "", false, false},
-		{"no-marker", "0 3 * * * something else entirely here", "postgres", "", "", false, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			schedule, bucket, useIam, ok := parseBackupSchedule(tc.content, tc.service)
-			if ok != tc.ok || schedule != tc.schedule || bucket != tc.bucket || useIam != tc.useIam {
-				t.Errorf("parseBackupSchedule(%q, %q) = (%q, %q, %v, %v), want (%q, %q, %v, %v)",
-					tc.content, tc.service, schedule, bucket, useIam, ok, tc.schedule, tc.bucket, tc.useIam, tc.ok)
-			}
-		})
-	}
-}
-
-func TestExportServiceBackupParsesSchedule(t *testing.T) {
-	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		"--quiet plugin:trigger service-list":        "postgres:my-db\nredis:cache",
-		"--quiet postgres:backup-schedule-cat my-db": "0 3 * * * dokku /usr/bin/dokku postgres:backup my-db my-bucket --use-iam",
-		// redis has no schedule: unmapped -> empty content -> parse fails -> skipped
-	}))
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(mergeFixtures(
+		map[string]string{"--quiet plugin:trigger service-list": "postgres:my-db\nredis:cache"},
+		infoFixture("postgres", "my-db", map[string]string{
+			"backup-schedule":                      "0 3 * * *",
+			"backup-bucket":                        "my-bucket",
+			"backup-use-iam":                       "true",
+			"backup-access-key-id-fingerprint":     backupFingerprint("AKIAEXAMPLE"),
+			"backup-secret-access-key-fingerprint": backupFingerprint("secret"),
+			"backup-default-region":                "us-east-1",
+			"backup-encryption-fingerprint":        backupFingerprint("passphrase"),
+		}),
+		// redis has no schedule, so it is skipped.
+		infoFixture("redis", "cache", map[string]string{"backup-schedule": "", "backup-bucket": "", "backup-use-iam": "false"}),
+	)))
 
 	bodies, err := ServiceBackupTask{}.ExportGlobal(ctx)
 	if err != nil {
@@ -224,16 +261,139 @@ func TestExportServiceBackupParsesSchedule(t *testing.T) {
 	if len(bodies) != 1 {
 		t.Fatalf("expected 1 backup task, got %d", len(bodies))
 	}
-	b := bodies[0].(ServiceBackupTask)
-	if b.Service != "postgres" || b.Name != "my-db" {
-		t.Errorf("unexpected backup target: %+v", b)
+	want := ServiceBackupTask{
+		Service:  "postgres",
+		Name:     "my-db",
+		Schedule: "0 3 * * *",
+		Bucket:   "my-bucket",
+		UseIam:   true,
+		State:    StatePresent,
 	}
-	if b.Schedule != "0 3 * * *" || b.Bucket != "my-bucket" || !b.UseIam {
-		t.Errorf("unexpected schedule fields: %+v", b)
+	// The secrets are reported only as fingerprints, and the region cannot be
+	// declared without them, so none of it is exported.
+	if got := bodies[0].(ServiceBackupTask); !reflect.DeepEqual(got, want) {
+		t.Errorf("backup task = %#v, want %#v", got, want)
 	}
-	// Write-only secrets are never read back.
-	if b.AwsSecretAccessKey != "" || b.EncryptionPassphrase != "" || b.AwsAccessKeyID != "" {
-		t.Errorf("backup export should not include credentials: %+v", b)
+}
+
+func TestExportServicePropertyReadsSetProperties(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(mergeFixtures(
+		map[string]string{"--quiet plugin:trigger service-list": "postgres:my-db"},
+		infoFixture("postgres", "my-db", map[string]string{
+			"restart-policy":   "always",
+			"expose-mode":      "direct",
+			"backup-timestamp": "false",
+			"backup-mailto":    "ops@example.com",
+			"volume-targets":   "/var/lib/postgresql/data",
+			// Defaults stand in for an unset value and are not exported.
+			"wait-timeout": "",
+			"log-driver":   "",
+			// Keys other tasks own are never exported here.
+			"shm-size":                         "128m",
+			"memory":                           "512",
+			"backup-bucket":                    "my-bucket",
+			"backup-schedule":                  "0 3 * * *",
+			"backup-access-key-id-fingerprint": backupFingerprint("AKIAEXAMPLE"),
+		}),
+	)))
+
+	bodies, err := ServicePropertyTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	got := map[string]string{}
+	for _, b := range bodies {
+		p := b.(ServicePropertyTask)
+		if p.Service != "postgres" || p.Name != "my-db" || p.State != StatePresent {
+			t.Errorf("unexpected property task: %#v", p)
+		}
+		got[p.Property] = p.Value
+	}
+	want := map[string]string{
+		"backup-timestamp": "false",
+		"backup-mailto":    "ops@example.com",
+		"restart-policy":   "always",
+		"expose-mode":      "direct",
+		"volume-targets":   "/var/lib/postgresql/data",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("exported properties = %v, want %v", got, want)
+	}
+}
+
+func TestExportServicePropertySkipsDefaults(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(mergeFixtures(
+		map[string]string{"--quiet plugin:trigger service-list": "redis:cache"},
+		infoFixture("redis", "cache", map[string]string{
+			"expose-mode":      "ambassador",
+			"backup-timestamp": "true",
+		}),
+	)))
+	bodies, err := ServicePropertyTask{}.ExportGlobal(ctx)
+	if err != nil {
+		t.Fatalf("ExportGlobal: %v", err)
+	}
+	if len(bodies) != 0 {
+		t.Errorf("expected no property tasks for default values, got %v", bodies)
+	}
+}
+
+// noBackupInfo is shaped like the info payload of a datastore that cannot be
+// backed up and takes no extra arguments or moved volumes: info still reports
+// every key, empty or at its default.
+func noBackupInfo() map[string]string {
+	return map[string]string{
+		"version":                              "example/nobackup:1.0",
+		"backup-schedule":                      "",
+		"backup-bucket":                        "",
+		"backup-use-iam":                       "false",
+		"backup-timestamp":                     "true",
+		"backup-access-key-id-fingerprint":     "",
+		"backup-secret-access-key-fingerprint": "",
+		"backup-default-region":                "",
+		"backup-signature-version":             "",
+		"backup-endpoint-url":                  "",
+		"backup-encryption-fingerprint":        "",
+		"backup-public-key-id":                 "",
+		"backup-keyserver":                     "",
+		"backup-mailto":                        "",
+		"backup-storage-class":                 "",
+		"backup-object-name":                   "",
+		"export-args":                          "",
+		"import-args":                          "",
+		"volume-targets":                       "",
+		"expose-mode":                          "",
+	}
+}
+
+// TestDatastoreWithoutBackupsConverges pins that a datastore refusing the
+// backup settings needs no special case in docket: info reports nothing
+// configured, so the exports emit nothing and the absent states are in sync.
+func TestDatastoreWithoutBackupsConverges(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(mergeFixtures(
+		map[string]string{"--quiet plugin:trigger service-list": "nobackup:svc"},
+		infoFixture("nobackup", "svc", noBackupInfo()),
+	)))
+
+	if bodies, err := (ServiceBackupTask{}).ExportGlobal(ctx); err != nil || len(bodies) != 0 {
+		t.Errorf("backup export = %v, %v; want nothing", bodies, err)
+	}
+	if bodies, err := (ServicePropertyTask{}).ExportGlobal(ctx); err != nil || len(bodies) != 0 {
+		t.Errorf("property export = %v, %v; want nothing", bodies, err)
+	}
+
+	backup := ServiceBackupTask{Service: "nobackup", Name: "svc", State: StateAbsent}
+	if plan := backup.Plan(ctx); plan.Error != nil || !plan.InSync {
+		t.Errorf("backup absent: InSync=%v err=%v, want in sync", plan.InSync, plan.Error)
+	}
+	for _, property := range []string{"backup-bucket", "backup-use-iam", "backup-timestamp", "export-args", "volume-targets"} {
+		task := ServicePropertyTask{Service: "nobackup", Name: "svc", Property: property, State: StateAbsent}
+		if plan := task.Plan(ctx); plan.Error != nil || !plan.InSync {
+			t.Errorf("property %s absent: InSync=%v err=%v, want in sync", property, plan.InSync, plan.Error)
+		}
 	}
 }
 
@@ -388,7 +548,7 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 		"--quiet postgres:info my-db --exposed-ports": "5432->5432",
 		"--quiet postgres:links my-db":                "web",
 		"--quiet postgres:info my-db --dsn":           "postgres://postgres:pw@dokku-postgres-my-db:5432/my_db",
-		"--quiet postgres:info my-db --version":       "postgres:17.2",
+		infoKey("postgres", "my-db"):                  `{"version":"postgres:17.2","restart-policy":"always"}`,
 	}))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
@@ -403,6 +563,8 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 	for _, want := range []string{
 		"name: global",
 		"dokku_service_create",
+		"dokku_service_property",
+		"property: restart-policy",
 		"dokku_service_expose",
 		"dokku_service_link",
 		// The exported create carries the image the service is running.
@@ -420,28 +582,5 @@ func TestExportRecipeIncludesServiceTasks(t *testing.T) {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("recipe should not export %q:\n%s", unwanted, out)
 		}
-	}
-}
-
-// TestExportServiceBackupParsesUserCrontabLine covers a datastore plugin that
-// schedules through dokku's own crontab: its backup-schedule-cat line has no
-// user column and ends in a log redirect, and the schedule must come back whole.
-func TestExportServiceBackupParsesUserCrontabLine(t *testing.T) {
-	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
-		"--quiet plugin:trigger service-list":     "redis:cache",
-		"--quiet redis:backup-schedule-cat cache": "0 3 * * * dokku redis:backup cache my-bucket --use-iam &>> /var/log/dokku/redis.log\n",
-	}))
-
-	bodies, err := ServiceBackupTask{}.ExportGlobal(ctx)
-	if err != nil {
-		t.Fatalf("ExportGlobal: %v", err)
-	}
-	if len(bodies) != 1 {
-		t.Fatalf("expected 1 backup task, got %d", len(bodies))
-	}
-	b := bodies[0].(ServiceBackupTask)
-	if b.Schedule != "0 3 * * *" || b.Bucket != "my-bucket" || !b.UseIam {
-		t.Errorf("unexpected schedule fields: %+v", b)
 	}
 }

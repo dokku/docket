@@ -72,7 +72,7 @@ A task marked `(never converges)` cannot read its own state, so it plans as drif
 - [dokku_service_create](dokku_service_create.md) - Creates or destroys a dokku service
 - [dokku_service_expose](dokku_service_expose.md) - Exposes or unexposes a dokku service on host ports
 - [dokku_service_link](dokku_service_link.md) - Links or unlinks a dokku service to an app
-- [dokku_service_property](dokku_service_property.md) - Manages a property for a given dokku service (never converges)
+- [dokku_service_property](dokku_service_property.md) - Manages a property for a given dokku service
 - [dokku_ssh_key](dokku_ssh_key.md) - Manages an SSH public key for git push access via dokku's ssh-keys plugin
 - [dokku_storage_ensure](dokku_storage_ensure.md) - Ensures the storage for a given dokku application (deprecated) (never converges)
 - [dokku_storage_entry](dokku_storage_entry.md) - Creates or destroys a named storage registry entry

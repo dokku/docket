@@ -12,7 +12,7 @@ import (
 // that docket cannot know the legal property names, not that the task was
 // overlooked.
 var propertyTasksWithoutTable = map[string]string{
-	"dokku_service_property": "the legal names come from whichever datastore plugin backs the service, and no plugin exposes a report that enumerates them",
+	"dokku_service_property": "the legal names come from whichever datastore plugin backs the service, and which of them a service accepts depends on its datastore; `<service>:set` validates both, so docket reads the keys back from info without publishing a fixed table",
 }
 
 // TestEveryPropertyTaskDeclaresPropertyTable asserts that every task whose type

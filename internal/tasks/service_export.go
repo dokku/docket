@@ -2,6 +2,9 @@ package tasks
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -105,43 +108,76 @@ func serviceDSN(ctx context.Context, service, name string) (string, error) {
 	return result.StdoutContents(), nil
 }
 
-// serviceImage returns the image a datastore service instance is running, split
-// into the image name and its version, read from `<service>:info <name>
-// --version`. dokku reports the container's `Config.Image` there (e.g.
-// `postgres:17.2`), which is exactly what `<service>:create`'s `--image` and
-// `--image-version` reconstruct on another server. A transport-level failure
-// (`*subprocess.SSHError`) is propagated; any other failure yields no image, as
-// does a service whose container is gone - dokku prints nothing in that case.
-func serviceImage(ctx context.Context, service, name string) (string, string, error) {
-	ref, err := serviceImageRef(ctx, service, name)
-	if err != nil {
-		return "", "", err
-	}
-	image, version := splitImageRef(ref)
-	return image, version, nil
-}
+// datastorePluginFloor names the oldest datastore plugin release whose
+// `<service>:info` reports every key the service tasks read: dokku-datastore
+// 0.7.1, which every datastore plugin bundles from 2.3.1. It is the release
+// that fingerprints each backup credential on its own, the last key the
+// tasks need.
+const datastorePluginFloor = "a datastore plugin >= 2.3.1 (dokku-datastore 0.7.1)"
 
-// serviceImageRef returns the image reference verbatim, before splitImageRef
-// has had a chance to lose anything in it. The drift probe in
-// dokku_service_create needs the raw form: splitImageRef cannot represent a
-// digest reference (`redis@sha256:...` splits on the digest's colon), and a
-// half of that split is not something the task may hand back to
-// `<service>:upgrade`. Error handling is serviceImage's: a transport-level
-// failure propagates, anything else - including a service whose container is
-// gone, where dokku prints nothing - yields the empty ref.
-func serviceImageRef(ctx context.Context, service, name string) (string, error) {
+// datastorePluginRequirement is the Requirements() entry every task reading
+// serviceInfo shares.
+const datastorePluginRequirement = "a dokku datastore service plugin >= 2.3.1 matching the service type (dokku-datastore 0.7.1, e.g. dokku-postgres, dokku-redis, dokku-mysql)"
+
+// serviceInfo reads every key a datastore service reports, from one
+// `<service>:info <name> --format json` call. The payload is a single flat
+// object of strings, keyed by the info flag without its leading dashes.
+//
+// Failure is decided by the exit code alone. Older plugins write their error
+// as a JSON object on stderr with the message elsewhere, and some print it
+// twice, so stderr is never parsed. A transport-level failure
+// (`*subprocess.SSHError`) is propagated as-is; any other non-zero exit, or a
+// payload that does not decode, names the plugin floor, since a plugin older
+// than it is the likely cause.
+//
+// The payload carries `dsn` and `exposed-dsn`, both holding the service
+// password. Callers read only the keys they compare, and neither of those ever
+// reaches a reason, a warning or a mutation.
+func serviceInfo(ctx context.Context, service, name string) (map[string]string, error) {
 	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
-		Args:    []string{"--quiet", fmt.Sprintf("%s:info", service), name, "--version"},
+		Args:    []string{"--quiet", fmt.Sprintf("%s:info", service), name, "--format", "json"},
 	})
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
-			return "", err
+			return nil, err
 		}
-		return "", nil
+		return nil, fmt.Errorf("%s:info %s --format json failed, which needs %s: %w", service, name, datastorePluginFloor, err)
 	}
-	return result.StdoutContents(), nil
+	payload := map[string]string{}
+	if err := json.Unmarshal(result.StdoutBytes(), &payload); err != nil {
+		return nil, fmt.Errorf("%s:info %s --format json did not return a report, which needs %s: %w", service, name, datastorePluginFloor, err)
+	}
+	return payload, nil
+}
+
+// backupFingerprint is the lowercase hex sha256 of the values joined by
+// newlines, with no trailing newline - the digest dokku-datastore reports for
+// a stored backup secret. One value is what `printf '%s' "$a" | sha256sum`
+// prints. Comparing a candidate's digest against the reported one says whether
+// setting it would change anything without the stored value being printed.
+func backupFingerprint(values ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(values, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+// parseCustomEnv reads the `custom-env` value info reports back into a map.
+// dokku-datastore stores one `KEY=value` pair per line and reports them
+// joined with `;`, the form `--custom-env` takes. dokku_service_create's
+// Validate refuses `;` in a value and `=` or `;` in a key, so anything docket
+// wrote splits back apart unambiguously; a pair without `=` is kept with an
+// empty value rather than dropped, so it still reads as drift.
+func parseCustomEnv(value string) map[string]string {
+	env := map[string]string{}
+	for _, pair := range strings.Split(value, ";") {
+		if pair == "" {
+			continue
+		}
+		k, v, _ := strings.Cut(pair, "=")
+		env[k] = v
+	}
+	return env
 }
 
 // splitImageRef splits a docker image reference into its name and tag. The

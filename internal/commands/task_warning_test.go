@@ -150,6 +150,40 @@ func TestApplySurfacesWarningOnInSyncTask(t *testing.T) {
 	assertImageDriftWarningPrecedesOKTask(t, jsonOut)
 }
 
+// TestPlanSurfacesOptionDriftWarning covers the create-time option twin of the
+// image drift warning. decodeLines validates every event against
+// events-v1.schema.json, so this fails if service_option_drift is missing from
+// the schema's closed `reason` enum.
+func TestPlanSurfacesOptionDriftWarning(t *testing.T) {
+	t.Parallel()
+	const message = `redis service cache has create-time options that differ from the recipe: shm_size is "64m", recipe declares "128m"`
+	stubSet(t, "a", StubFixture{
+		Changed: false,
+		Warnings: []tasks.PlanWarning{
+			{Reason: tasks.WarnReasonServiceOptionDrift, Message: message},
+		},
+	})
+	path := writeTasksFile(t, warningRecipe)
+
+	jsonOut, _, _ := runPlan(t, path, "--json")
+	found := false
+	for _, ev := range decodeLines(t, jsonOut) {
+		if ev["type"] != "warning" {
+			continue
+		}
+		found = true
+		if ev["reason"] != tasks.WarnReasonServiceOptionDrift {
+			t.Errorf("warning reason = %v, want %v", ev["reason"], tasks.WarnReasonServiceOptionDrift)
+		}
+		if msg, _ := ev["message"].(string); msg != message {
+			t.Errorf("warning message = %q, want %q", msg, message)
+		}
+	}
+	if !found {
+		t.Fatalf("no warning event in JSON stream:\n%s", jsonOut)
+	}
+}
+
 // assertImageDriftWarningPrecedesOKTask mirrors assertWarningEventPrecedesTask
 // for the in-sync case. decodeLines validates every event against
 // events-v1.schema.json, so this also fails if the new reason was not added to

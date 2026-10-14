@@ -508,18 +508,33 @@ EOF
   assert_output --partial "'image_drift' must be one of ignore, warn, error, upgrade"
 }
 
-@test "docket validate exits 1 on service_create image_drift without an image pin" {
+@test "docket validate exits 1 on service_create image_drift with nothing to compare" {
   write_tasks_file <<EOF
 ---
 - tasks:
     - dokku_service_create:
         service: redis
         name: cache
+        password: hunter2
         image_drift: upgrade
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'image_drift' requires 'image' or 'image_version'"
+  assert_output --partial "'image_drift' requires 'image', 'image_version', or a create-time option other than 'password' and 'root_password'"
+}
+
+@test "docket validate accepts service_create image_drift with only a create-time option" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_service_create:
+        service: redis
+        name: cache
+        shm_size: 128m
+        image_drift: error
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
 }
 
 @test "docket validate exits 1 on service_create image_drift upgrade without an image_version" {

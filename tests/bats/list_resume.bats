@@ -325,18 +325,15 @@ EOF
   write_tasks_file <<EOF
 ---
 - tasks:
-    - name: service property
-      dokku_service_property:
-        service: redis
-        name: cache
-        property: shm-size
-        value: 64m
+    - name: ensure storage
+      dokku_storage_ensure:
+        app: docket-test-list-1
     - name: create app
       dokku_app: { app: docket-test-list-1 }
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
   assert_success
-  assert_output --partial "service property  (never converges)"
+  assert_output --partial "ensure storage  (deprecated)  (never converges)"
   refute_output --partial "create app  (never converges)"
 }
 
@@ -358,12 +355,9 @@ EOF
   write_tasks_file <<EOF
 ---
 - tasks:
-    - name: service property
-      dokku_service_property:
-        service: redis
-        name: cache
-        property: shm-size
-        value: 64m
+    - name: ensure storage
+      dokku_storage_ensure:
+        app: docket-test-list-1
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --json
   assert_success

@@ -95,9 +95,9 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 	},
 	"dokku_letsencrypt_property": {plugins: []string{"letsencrypt"}},
 
-	// service_create's examples create four services and destroy only one,
+	// service_create's examples create five services and destroy only one,
 	// so the survivors are torn down here.
-	"dokku_service_create": {cleanupServices: []string{"postgres:my-db", "redis:my-pinned-redis", "redis:my-upgraded-redis"}},
+	"dokku_service_create": {cleanupServices: []string{"postgres:my-db", "redis:my-pinned-redis", "redis:my-upgraded-redis", "redis:my-tuned-redis"}},
 
 	// Deploy-dependent tasks.
 	"dokku_app_clone":    {deployApps: []string{"node-js-app"}, cleanupApps: []string{"node-js-app-staging"}},

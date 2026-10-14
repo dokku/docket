@@ -219,6 +219,15 @@ const (
 	// that asked for drift to be caught is never silently told everything is
 	// fine.
 	WarnReasonServiceImageDrift = "service_image_drift"
+	// WarnReasonServiceOptionDrift marks a warning raised when a datastore
+	// service holds a create-time option - config_options, custom_env,
+	// memory, shm_size or a network - other than the one the recipe declares,
+	// and the task is leaving it alone. Like WarnReasonServiceImageDrift it is
+	// not a probe failure: the value was read, and reconciling it means a
+	// rebuild the recipe did not ask for. It is a separate reason because the
+	// remedy is: an option is set in place and picked up by a stop and a
+	// start, while an image moves only with `<service>:upgrade`.
+	WarnReasonServiceOptionDrift = "service_option_drift"
 )
 
 // withExecResult returns a copy of s with Stdout/Stderr/ExitCode populated

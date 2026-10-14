@@ -6,15 +6,15 @@ Manages the S3 backup schedule, authentication, and encryption for a dokku servi
 
 ## Requirements
 
-- a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
+- a dokku datastore service plugin >= 2.3.1 matching the service type (dokku-datastore 0.7.1, e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
 ## Export support
 
-Partial - the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are write-only and must be re-supplied before the recipe can back up.
+Partial - the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are reported only as fingerprints, and the region, signature version and endpoint cannot be declared without the credentials, so all of these must be re-supplied before the recipe can back up.
 
 ## Probe support
 
-Partial - the backup schedule and bucket are probed; the AWS credentials and the encryption passphrase have no read command and are re-applied on every run when supplied.
+Supported.
 
 ## Identity
 
@@ -35,7 +35,7 @@ Keyed by `service` and `name`. Fields left empty are omitted from the address.
 | `aws_signature_version` | string | no |  |  | AWS signature version used for backup auth (requires aws_default_region) |
 | `endpoint_url` | string | no |  |  | S3-compatible endpoint url used for backup auth (requires aws_signature_version) |
 | `encryption_passphrase` | string | no |  |  | Passphrase used to encrypt future backups (sensitive) |
-| `state` | string | no | present | present, absent | Desired state of the backup configuration |
+| `state` | string | no | present | present, absent | Desired state of the backup configuration. 'absent' removes whichever of the schedule, the auth settings and the encryption passphrase the service reports as stored, without needing the secrets in the recipe, and leaves the settings dokku_service_property manages alone. On a datastore that cannot be backed up, 'absent' is always in sync and 'present' fails with the plugin's own error. |
 
 ## Examples
 

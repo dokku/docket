@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -312,9 +313,16 @@ func TestServiceCreateTaskValidate(t *testing.T) {
 			wantErr: `'image_drift' must be one of ignore, warn, error, upgrade, got "sometimes"`,
 		},
 		{
-			name:    "image drift without a pin",
+			name:    "image drift with nothing to compare",
 			task:    ServiceCreateTask{Service: "redis", Name: "cache", ImageDrift: imageDriftUpgrade},
-			wantErr: "'image_drift' requires 'image' or 'image_version'",
+			wantErr: "'image_drift' requires 'image', 'image_version', or a create-time option other than 'password' and 'root_password'",
+		},
+		{
+			// info never reports the passwords, so they give the mode
+			// nothing to compare either.
+			name:    "image drift with only a password",
+			task:    ServiceCreateTask{Service: "redis", Name: "cache", Password: "hunter2", ImageDrift: imageDriftError},
+			wantErr: "'image_drift' requires 'image', 'image_version', or a create-time option other than 'password' and 'root_password'",
 		},
 		{
 			// The running tag belongs to the image being replaced, so there is
@@ -354,6 +362,19 @@ func TestServiceCreateTaskValidate(t *testing.T) {
 				t.Errorf("Plan error = %v, want %q", plan.Error, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestServiceCreateTaskValidateAcceptsDriftOnAnOption pins that a recipe
+// declaring a create-time option but no image can still ask for its drift to
+// be caught or reconciled.
+func TestServiceCreateTaskValidateAcceptsDriftOnAnOption(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{imageDriftError, imageDriftUpgrade} {
+		task := ServiceCreateTask{Service: "redis", Name: "cache", ShmSize: "128m", ImageDrift: mode}
+		if err := task.Validate(); err != nil {
+			t.Errorf("image_drift: %s: unexpected error: %v", mode, err)
+		}
 	}
 }
 
@@ -485,9 +506,24 @@ func recordingDokku(responses map[string]string, calls *[]string) func(context.C
 // driftFixture answers the two reads the present branch makes: the service
 // exists (fakeDokku always exits 0) and reports the given image reference.
 func driftFixture(service, name, runningRef string) map[string]string {
-	return map[string]string{
-		fmt.Sprintf("--quiet %s:info %s --version", service, name): runningRef,
+	return infoFixture(service, name, map[string]string{"version": runningRef})
+}
+
+// infoFixture answers `<service>:info <name> --format json` with the given
+// payload, the one read every datastore task's probe makes.
+func infoFixture(service, name string, info map[string]string) map[string]string {
+	payload, err := json.Marshal(info)
+	if err != nil {
+		panic(err)
 	}
+	return map[string]string{
+		fmt.Sprintf("--quiet %s:info %s --format json", service, name): string(payload),
+	}
+}
+
+// infoKey is the argv fakeDokku keys the info read on.
+func infoKey(service, name string) string {
+	return fmt.Sprintf("--quiet %s:info %s --format json", service, name)
 }
 
 // driftTask is a service pinned to redis:7.2.5, the shape most drift tests want.
@@ -733,6 +769,7 @@ func TestServiceCreateTaskImageDriftUpgradeCommand(t *testing.T) {
 				ImageVersion:      "7.2.5",
 				ConfigOptions:     "--cpus 2",
 				CustomEnv:         map[string]string{"B": "two", "A": "one"},
+				Memory:            512,
 				ShmSize:           "128m",
 				InitialNetwork:    "net-a",
 				PostCreateNetwork: []string{"net-b", "net-c"},
@@ -741,19 +778,18 @@ func TestServiceCreateTaskImageDriftUpgradeCommand(t *testing.T) {
 			},
 			running: "redis:7.2.4",
 			want: "dokku --quiet redis:upgrade cache --image redis --image-version 7.2.5 " +
-				"--config-options --cpus 2 --custom-env A=one;B=two --shm-size 128m " +
+				"--config-options --cpus 2 --custom-env A=one;B=two --memory 512 --shm-size 128m " +
 				"--initial-network net-a --post-create-network net-b,net-c --post-start-network net-d",
 		},
 		{
-			// `<service>:upgrade` accepts none of these three, and the plugin
+			// `<service>:upgrade` accepts neither password, and the plugin
 			// keeps its own copies across a container rebuild.
-			name: "options the upgrade does not accept are omitted",
+			name: "the passwords are omitted",
 			task: ServiceCreateTask{
 				Service:      "redis",
 				Name:         "cache",
 				Image:        "redis",
 				ImageVersion: "7.2.5",
-				Memory:       512,
 				Password:     "hunter2",
 				RootPassword: "hunter3",
 				State:        StatePresent,
@@ -801,13 +837,18 @@ func TestServiceCreateTaskImageDriftUpgradeReportsTheEffectiveTarget(t *testing.
 	}
 }
 
-// TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets pins the one
-// destructive thing an upgrade does that nothing else in the plan would show.
-// The plugin rewrites CONFIG_OPTIONS and ENV from the flags it is given and
-// blanks them when it is given none, and docket has no read command for either,
-// so an undeclared value is lost with no flag on the argv to hint at it.
-func TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets(t *testing.T) {
+// TestServiceCreateTaskImageDriftUpgradeCarriesUndeclaredOptions pins that an
+// upgrade keeps the config options and environment the server holds when the
+// recipe does not declare them. The plugin rewrites CONFIG_OPTIONS and ENV
+// from the flags it is given and blanks them when it is given none, so leaving
+// them off the argv would silently reset them.
+func TestServiceCreateTaskImageDriftUpgradeCarriesUndeclaredOptions(t *testing.T) {
 	t.Parallel()
+	info := map[string]string{
+		"version":        "redis:7.2.4",
+		"config-options": "--cpus 4",
+		"custom-env":     "B=two;A=one",
+	}
 	cases := []struct {
 		name string
 		task ServiceCreateTask
@@ -816,36 +857,293 @@ func TestServiceCreateTaskImageDriftUpgradeNamesWhatItResets(t *testing.T) {
 		{
 			name: "neither declared",
 			task: driftTask(),
-			want: "reset config_options and custom_env, which the recipe does not declare",
+			want: "dokku --quiet redis:upgrade cache --image redis --image-version 7.2.5 --config-options --cpus 4 --custom-env A=one;B=two",
 		},
 		{
 			name: "config_options declared",
 			task: func() ServiceCreateTask { tk := driftTask(); tk.ConfigOptions = "--cpus 2"; return tk }(),
-			want: "reset custom_env, which the recipe does not declare",
+			want: "dokku --quiet redis:upgrade cache --image redis --image-version 7.2.5 --config-options --cpus 2 --custom-env A=one;B=two",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(infoFixture("redis", "cache", info)))
 			task := tc.task
 			task.ImageDrift = imageDriftUpgrade
 			plan := task.Plan(ctx)
-			if len(plan.Mutations) != 2 || plan.Mutations[1] != tc.want {
-				t.Errorf("mutations = %v, want %q as the second entry", plan.Mutations, tc.want)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if len(plan.Commands) != 1 || plan.Commands[0] != tc.want {
+				t.Errorf("commands = %v, want [%q]", plan.Commands, tc.want)
 			}
 		})
 	}
+}
 
-	t.Run("both declared", func(t *testing.T) {
-		ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
-		task := driftTask()
-		task.ImageDrift = imageDriftUpgrade
-		task.ConfigOptions = "--cpus 2"
-		task.CustomEnv = map[string]string{"A": "one"}
-		if plan := task.Plan(ctx); len(plan.Mutations) != 1 {
-			t.Errorf("nothing is reset when the recipe declares both, got %v", plan.Mutations)
+// TestServiceCreateTaskImageAndOptionDriftIsOneUpgrade pins that image drift
+// together with option drift plans a single `<service>:upgrade`, which
+// re-passes the declared options, rather than an upgrade plus a set path.
+func TestServiceCreateTaskImageAndOptionDriftIsOneUpgrade(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(infoFixture("redis", "cache", map[string]string{
+		"version":  "redis:7.2.4",
+		"shm-size": "64m",
+	})))
+
+	task := driftTask()
+	task.ShmSize = "128m"
+	task.ImageDrift = imageDriftUpgrade
+	plan := task.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	want := "dokku --quiet redis:upgrade cache --image redis --image-version 7.2.5 --shm-size 128m"
+	if len(plan.Commands) != 1 || plan.Commands[0] != want {
+		t.Errorf("commands = %v, want [%q]", plan.Commands, want)
+	}
+	if want := "image drift: redis:7.2.4 -> redis:7.2.5; create-time option drift: shm_size"; plan.Reason != want {
+		t.Errorf("reason = %q, want %q", plan.Reason, want)
+	}
+	if !slices.Contains(plan.Mutations, "apply shm_size with the upgrade") {
+		t.Errorf("mutations = %v, want the option named alongside the upgrade", plan.Mutations)
+	}
+}
+
+// optionInfo is a running service whose image matches driftTask's pin, so
+// only the create-time options can drift.
+func optionInfo(extra map[string]string) map[string]string {
+	info := map[string]string{"version": "redis:7.2.5"}
+	for k, v := range extra {
+		info[k] = v
+	}
+	return info
+}
+
+func TestServiceCreateTaskOptionDriftInSyncWhenOptionsMatch(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(infoFixture("redis", "cache", optionInfo(map[string]string{
+		"config-options":      "--cpus 2",
+		"custom-env":          "B=two;A=one",
+		"memory":              "512",
+		"shm-size":            "128m",
+		"initial-network":     "net-a",
+		"post-create-network": "net-b,net-c",
+		"post-start-network":  "net-d",
+	}))))
+
+	task := driftTask()
+	task.ConfigOptions = "--cpus 2"
+	task.CustomEnv = map[string]string{"A": "one", "B": "two"}
+	task.Memory = 512
+	task.ShmSize = "128m"
+	task.InitialNetwork = "net-a"
+	task.PostCreateNetwork = []string{"net-b", "net-c"}
+	task.PostStartNetwork = []string{"net-d"}
+	for _, mode := range []string{imageDriftWarn, imageDriftError, imageDriftUpgrade} {
+		task.ImageDrift = mode
+		plan := task.Plan(ctx)
+		if plan.Error != nil || !plan.InSync || len(plan.Warnings) != 0 {
+			t.Errorf("image_drift: %s: expected a silent in-sync plan, got InSync=%v err=%v warnings=%v",
+				mode, plan.InSync, plan.Error, plan.Warnings)
 		}
-	})
+	}
+}
+
+// TestServiceCreateTaskOptionDriftPerOption walks every comparable option
+// through the three acting modes: warn names it, error fails on it, and
+// upgrade sets it and rebuilds the container, since every create-time option
+// only takes effect on a rebuild.
+func TestServiceCreateTaskOptionDriftPerOption(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		field   string
+		key     string
+		current string
+		declare func(*ServiceCreateTask)
+		desired string
+	}{
+		{"config_options", "config-options", "--cpus 4", func(t *ServiceCreateTask) { t.ConfigOptions = "--cpus 2" }, "--cpus 2"},
+		{"custom_env", "custom-env", "A=one", func(t *ServiceCreateTask) { t.CustomEnv = map[string]string{"A": "uno"} }, "A=uno"},
+		{"memory", "memory", "0", func(t *ServiceCreateTask) { t.Memory = 512 }, "512"},
+		{"shm_size", "shm-size", "64m", func(t *ServiceCreateTask) { t.ShmSize = "128m" }, "128m"},
+		{"initial_network", "initial-network", "", func(t *ServiceCreateTask) { t.InitialNetwork = "net-a" }, "net-a"},
+		{"post_create_network", "post-create-network", "net-c", func(t *ServiceCreateTask) { t.PostCreateNetwork = []string{"net-b"} }, "net-b"},
+		{"post_start_network", "post-start-network", "net-x,net-d", func(t *ServiceCreateTask) { t.PostStartNetwork = []string{"net-d", "net-x"} }, "net-d,net-x"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			responses := infoFixture("redis", "cache", optionInfo(map[string]string{tc.key: tc.current}))
+			task := driftTask()
+			tc.declare(&task)
+
+			t.Run("warn", func(t *testing.T) {
+				ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(responses))
+				plan := task.Plan(ctx)
+				if plan.Error != nil || !plan.InSync || len(plan.Commands) != 0 {
+					t.Fatalf("expected an in-sync plan, got InSync=%v err=%v commands=%v", plan.InSync, plan.Error, plan.Commands)
+				}
+				if len(plan.Warnings) != 1 || plan.Warnings[0].Reason != WarnReasonServiceOptionDrift {
+					t.Fatalf("expected one %s warning, got %v", WarnReasonServiceOptionDrift, plan.Warnings)
+				}
+				for _, want := range []string{tc.field, "image_drift: upgrade"} {
+					if !strings.Contains(plan.Warnings[0].Message, want) {
+						t.Errorf("warning %q does not mention %q", plan.Warnings[0].Message, want)
+					}
+				}
+			})
+
+			t.Run("error", func(t *testing.T) {
+				ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(responses))
+				task := task
+				task.ImageDrift = imageDriftError
+				plan := task.Plan(ctx)
+				if plan.Error == nil || plan.Status != PlanStatusError {
+					t.Fatalf("expected a plan error, got status=%q err=%v", plan.Status, plan.Error)
+				}
+				if !strings.Contains(plan.Error.Error(), tc.field) {
+					t.Errorf("error %q does not name %s", plan.Error.Error(), tc.field)
+				}
+			})
+
+			t.Run("upgrade", func(t *testing.T) {
+				var calls []string
+				ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(responses, &calls))
+				task := task
+				task.ImageDrift = imageDriftUpgrade
+				plan := task.Plan(ctx)
+				if plan.Error != nil || plan.InSync || plan.Status != PlanStatusModify {
+					t.Fatalf("expected drift, got InSync=%v status=%q err=%v", plan.InSync, plan.Status, plan.Error)
+				}
+				want := []string{
+					fmt.Sprintf("dokku --quiet redis:set cache %s %s", tc.key, tc.desired),
+					"dokku --quiet redis:stop cache",
+					"dokku --quiet redis:start cache",
+				}
+				if !slices.Equal(plan.Commands, want) {
+					t.Errorf("commands = %v, want %v", plan.Commands, want)
+				}
+				if want := "create-time option drift: " + tc.field; plan.Reason != want {
+					t.Errorf("reason = %q, want %q", plan.Reason, want)
+				}
+				for _, call := range calls {
+					if strings.Contains(call, "redis:upgrade") {
+						t.Errorf("an option-only drift must not upgrade, but issued %q", call)
+					}
+				}
+			})
+		})
+	}
+}
+
+// TestServiceCreateTaskOptionDriftSetsEveryDriftedOption pins that several
+// drifted options are each set, and the container is rebuilt once.
+func TestServiceCreateTaskOptionDriftSetsEveryDriftedOption(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(infoFixture("redis", "cache", optionInfo(map[string]string{
+		"memory":   "256",
+		"shm-size": "64m",
+	})), &calls))
+
+	task := driftTask()
+	task.Memory = 512
+	task.ShmSize = "128m"
+	task.ImageDrift = imageDriftUpgrade
+	state := task.Execute(ctx)
+	if state.Error != nil {
+		t.Fatalf("unexpected execute error: %v", state.Error)
+	}
+	if !state.Changed {
+		t.Error("expected the set path to change the service")
+	}
+	var applied []string
+	for _, call := range calls {
+		if !strings.Contains(call, "redis:info") && !strings.Contains(call, "redis:exists") {
+			applied = append(applied, call)
+		}
+	}
+	want := []string{
+		"--quiet redis:set cache memory 512",
+		"--quiet redis:set cache shm-size 128m",
+		"--quiet redis:stop cache",
+		"--quiet redis:start cache",
+	}
+	if !slices.Equal(applied, want) {
+		t.Errorf("applied = %v, want %v", applied, want)
+	}
+}
+
+// TestServiceCreateTaskOptionDriftMasksCustomEnv pins that neither the
+// declared nor the read-back custom_env values reach a warning or a command.
+func TestServiceCreateTaskOptionDriftMasksCustomEnv(t *testing.T) {
+	t.Parallel()
+	responses := infoFixture("redis", "cache", optionInfo(map[string]string{"custom-env": "TOKEN=server-secret"}))
+	task := driftTask()
+	task.CustomEnv = map[string]string{"TOKEN": "recipe-secret"}
+
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(responses))
+	ctx = subprocess.ContextWithMasker(ctx, subprocess.NewMasker(sensitiveValuesFromTask(&task)...))
+	plan := task.Plan(ctx)
+	if len(plan.Warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", plan.Warnings)
+	}
+	msg := plan.Warnings[0].Message
+	if strings.Contains(msg, "server-secret") || strings.Contains(msg, "recipe-secret") {
+		t.Errorf("custom_env value leaked into the warning: %q", msg)
+	}
+	if !strings.Contains(msg, "custom_env differs for TOKEN") {
+		t.Errorf("warning %q should name the key that differs", msg)
+	}
+
+	task.ImageDrift = imageDriftUpgrade
+	plan = task.Plan(ctx)
+	for _, cmd := range plan.Commands {
+		if strings.Contains(cmd, "recipe-secret") {
+			t.Errorf("custom_env value leaked into a command: %q", cmd)
+		}
+	}
+	masker := subprocess.MaskerFromContext(ctx)
+	if got := masker.String("server-secret"); got == "server-secret" {
+		t.Error("the read-back custom_env value was not registered with the masker")
+	}
+}
+
+// TestServiceCreateTaskDriftNamesThePluginFloor pins that an info call that
+// fails, or answers with something other than a report, is a plan error
+// naming the plugin version the probe needs.
+func TestServiceCreateTaskDriftNamesThePluginFloor(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		runner func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error)
+	}{
+		{
+			name: "nonzero exit",
+			runner: func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+				if strings.Contains(strings.Join(in.Args, " "), ":info") {
+					return subprocess.ExecCommandResponse{ExitCode: 1, Stderr: "Invalid flag passed"}, errors.New("exit status 1")
+				}
+				return subprocess.ExecCommandResponse{}, nil
+			},
+		},
+		{
+			name:   "not a report",
+			runner: fakeDokku(map[string]string{infoKey("redis", "cache"): "redis:7.2.4"}),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := subprocess.ContextWithRunner(testCtx(), tc.runner)
+			plan := driftTask().Plan(ctx)
+			if plan.Error == nil || plan.Status != PlanStatusError {
+				t.Fatalf("expected a plan error, got status=%q err=%v", plan.Status, plan.Error)
+			}
+			if !strings.Contains(plan.Error.Error(), datastorePluginFloor) {
+				t.Errorf("error %q does not name the plugin floor", plan.Error.Error())
+			}
+		})
+	}
 }
 
 func TestServiceCreateTaskImageDriftUpgradeRestartsOnlyLinkedApps(t *testing.T) {
@@ -959,7 +1257,7 @@ func TestServiceCreateTaskImageDriftPropagatesSSHErrors(t *testing.T) {
 		name string
 		fail string
 	}{
-		{"image read", "--quiet redis:info cache --version"},
+		{"info read", "--quiet redis:info cache --format json"},
 		{"links read", "--quiet redis:links cache"},
 	}
 	for _, tc := range cases {

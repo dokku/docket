@@ -51,14 +51,29 @@ func TestTaskProbeSupportUnsupportedCarriesCaveat(t *testing.T) {
 }
 
 func TestTaskProbeSupportPartialCarriesCaveat(t *testing.T) {
-	support, ok := TaskProbeSupport(&ServiceBackupTask{})
+	support, ok := TaskProbeSupport(&ServiceCreateTask{})
 	if !ok {
-		t.Fatal("expected ServiceBackupTask to declare ProbeSupport()")
+		t.Fatal("expected ServiceCreateTask to declare ProbeSupport()")
 	}
 	if support.Status != ProbePartial {
-		t.Errorf("expected ServiceBackupTask to be %q, got %q", ProbePartial, support.Status)
+		t.Errorf("expected ServiceCreateTask to be %q, got %q", ProbePartial, support.Status)
 	}
-	if !contains(support.Caveat, "encryption passphrase") {
+	if !contains(support.Caveat, "root_password") {
 		t.Errorf("expected the caveat to name the unprobed fields, got %q", support.Caveat)
+	}
+}
+
+// TestDatastoreTasksProbeEverything pins that the datastore tasks reading
+// their state from `<service>:info` declare full probe support: every value
+// they manage is reported, the secrets as fingerprints.
+func TestDatastoreTasksProbeEverything(t *testing.T) {
+	for _, task := range []Task{&ServiceBackupTask{}, &ServicePropertyTask{}} {
+		support, ok := TaskProbeSupport(task)
+		if !ok {
+			t.Fatalf("expected %T to declare ProbeSupport()", task)
+		}
+		if support.Status != ProbeSupported || support.Caveat != "" {
+			t.Errorf("expected %T to be %q with no caveat, got %+v", task, ProbeSupported, support)
+		}
 	}
 }
