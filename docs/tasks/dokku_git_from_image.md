@@ -4,6 +4,10 @@
 
 Deploys a git repository from a docker image
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Partial - the image reference is written to the companion vars-file.

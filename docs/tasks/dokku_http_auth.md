@@ -6,6 +6,7 @@ Manages HTTP authentication for a given dokku application
 
 ## Requirements
 
+- Dokku >= 0.38.31
 - dokku-http-auth plugin >= 0.14.0
 
 ## Export support

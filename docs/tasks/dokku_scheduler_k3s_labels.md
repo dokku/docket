@@ -4,6 +4,10 @@
 
 Manages scheduler-k3s labels scoped to a (process_type, resource_type) pair for a dokku application or globally
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

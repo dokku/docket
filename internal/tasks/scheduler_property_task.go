@@ -34,6 +34,12 @@ func (t SchedulerPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `scheduler:report --format json`, which this task parses.
+func (t SchedulerPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the scheduler property task
 func (t SchedulerPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerPropertyTaskExample{

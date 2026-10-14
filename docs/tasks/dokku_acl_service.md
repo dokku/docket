@@ -6,6 +6,7 @@ Manages the dokku-acl access list for a dokku service
 
 ## Requirements
 
+- Dokku >= 0.38.31
 - dokku-acl plugin >= 2.0.1
 
 ## Export support

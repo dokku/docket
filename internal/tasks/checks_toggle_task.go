@@ -76,6 +76,13 @@ func (t ChecksToggleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `checks:report`.
+// The JSON key is stable across the 0.38.21 flag rename, so that release is not the floor.
+func (t ChecksToggleTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the checks toggle task
 func (t ChecksToggleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ChecksToggleTaskExample{

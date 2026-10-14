@@ -63,6 +63,12 @@ func (t GitSyncTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "dokku records the resolved commit as `<remote>#<sha>`, which cannot be compared against a branch or tag name, so only the remote and the persisted deploy branch are probed"}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `git:report`.
+func (t GitSyncTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the git sync task
 func (t GitSyncTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitSyncTaskExample{

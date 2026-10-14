@@ -129,6 +129,21 @@ func (t ServiceCreateTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "the service's existence is probed, along with the image it is running and every create-time option the recipe declares; password and root_password are applied only at create and cannot be read back, so they are not drift-detected"}
 }
 
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The plugin floor is the datastore release whose `<service>:info` reports
+// every key this task reads. 0.38.31 is the Dokku the integration suite runs;
+// the probe is `<service>:info`.
+func (t ServiceCreateTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			NameField: "Service",
+			Minimum:   "2.3.1",
+			Text:      datastorePluginRequirement,
+		}},
+	}
+}
+
 // ExportGlobal reconstructs every datastore service instance on the server as a
 // dokku_service_create task. Discovery is via listServices (the `service-list`
 // plugin trigger). Like dokku_storage_mount, the service's data is migrated
@@ -181,11 +196,6 @@ func splitNetworks(value string) []string {
 		}
 	}
 	return networks
-}
-
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t ServiceCreateTask) Requirements() []string {
-	return []string{datastorePluginRequirement}
 }
 
 // examples returns a list of ServiceCreateTaskExamples as yaml

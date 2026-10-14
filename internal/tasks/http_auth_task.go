@@ -54,9 +54,17 @@ func (t HttpAuthTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t HttpAuthTask) Requirements() []string {
-	return []string{"dokku-http-auth plugin >= 0.14.0"}
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The probe is `http-auth:report`. 0.38.31 is the Dokku the integration suite runs.
+func (t HttpAuthTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			Name:    "http-auth",
+			Minimum: "0.14.0",
+			Text:    "dokku-http-auth plugin >= 0.14.0",
+		}},
+	}
 }
 
 // examples returns a list of HttpAuthTaskExamples as yaml

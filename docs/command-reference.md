@@ -381,6 +381,7 @@ optimistically predicting `[+] create` for state it never actually read.
 | `--host <user@host:port>` | Plan against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
+| `--ignore-version` | Plan a task even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that task errors and the rest of its play does not run. |
 | `--output <path>` | Save the plan to a file for `docket apply --plan`. Written `0600`, and not written at all when the plan has errors. Not valid with `-` or `--list-tasks`. See [saved plans](#saved-plans). |
 | `--force` | Overwrite an existing `--output` file. |
 
@@ -516,6 +517,7 @@ recipe cannot be loaded or a `when:` fails to evaluate, and `0` otherwise.
 | `--host <user@host:port>` | Apply against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
+| `--ignore-version` | Run a task even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that task errors and the rest of its play does not run. `ignore_errors` and `failed_when` still apply to the refusal, and neither one runs the task. |
 | `--plan <path>` | Apply a plan saved by `docket plan --output`, after checking the server still matches it. Takes the recipe, inputs, filters and target from the file. See [saved plans](#saved-plans). |
 
 A multi-command task renders one continuation line per invocation under `--verbose`:
@@ -756,6 +758,7 @@ it.
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
+| `--ignore-version` | Export a task type even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that exporter is skipped with a warning and the rest of the server still exports. |
 
 The output format follows `--format` when given, otherwise the `--output` extension (`.json` /
 `.json5` writes JSON5, `.hcl` writes HCL, anything else YAML); the vars-file follows the recipe, or

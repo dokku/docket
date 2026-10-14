@@ -143,6 +143,21 @@ func (t ServicePropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The plugin floor is the datastore release whose `<service>:info` reports
+// every key this task reads. 0.38.31 is the Dokku the integration suite runs;
+// the probe is `<service>:info`.
+func (t ServicePropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			NameField: "Service",
+			Minimum:   "2.3.1",
+			Text:      datastorePluginRequirement,
+		}},
+	}
+}
+
 // ExportGlobal reconstructs the properties set on every datastore service
 // instance, one task per property in servicePropertyExportKeys that holds a
 // value other than its unset default. Discovery is via listServices; every
@@ -192,11 +207,6 @@ func (t ServicePropertyTask) SensitiveValues() []string {
 		}
 	}
 	return values
-}
-
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t ServicePropertyTask) Requirements() []string {
-	return []string{datastorePluginRequirement}
 }
 
 // examples returns a list of ServicePropertyTaskExamples as yaml

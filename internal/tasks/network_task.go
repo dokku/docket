@@ -47,6 +47,13 @@ func (t NetworkTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `network:list --format json`.
+// DokkuManaged arrived later and decodes as false when the key is absent, so it is not the floor.
+func (t NetworkTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns a list of NetworkTaskExamples as yaml
 func (t NetworkTask) examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkTaskExample{

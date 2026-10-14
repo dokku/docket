@@ -34,6 +34,12 @@ func (t HaproxyPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `haproxy:report --format json`, which this task parses.
+func (t HaproxyPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the haproxy property task
 func (t HaproxyPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HaproxyPropertyTaskExample{

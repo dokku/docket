@@ -112,6 +112,12 @@ func (t StorageEntryTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported, Caveat: "every attribute is compared against what storage:list-entries records for the entry, which is the recorded chown and mode rather than the host directory's ownership and permissions on disk; a directory chowned or chmodded out of band is not detected"}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `storage:list`.
+func (t StorageEntryTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the storage entry task
 func (t StorageEntryTask) examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEntryTaskExample{

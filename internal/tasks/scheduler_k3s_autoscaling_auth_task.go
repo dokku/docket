@@ -57,6 +57,12 @@ func (t SchedulerK3sAutoscalingAuthTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `scheduler-k3s:autoscaling-auth:report`.
+func (t SchedulerK3sAutoscalingAuthTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the scheduler-k3s autoscaling-auth task
 func (t SchedulerK3sAutoscalingAuthTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sAutoscalingAuthTaskExample{

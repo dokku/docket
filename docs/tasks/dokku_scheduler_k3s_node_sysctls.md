@@ -4,6 +4,10 @@
 
 Manages the scheduler-k3s node-level kernel sysctls for unprofiled nodes or a single node profile
 
+## Requirements
+
+- Dokku >= 0.38.30
+
 ## Export support
 
 Partial - the global scope and every node profile storing sysctls are exported; a profile whose name dokku cannot derive a node-sysctls helm release from - longer than 26 characters, or carrying uppercase - is reported as a warning and left out, since dokku refuses to write sysctls for it and emitting it would make the whole recipe fail docket validate.

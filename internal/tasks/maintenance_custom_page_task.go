@@ -66,9 +66,19 @@ func (t MaintenanceCustomPageTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "the page checksum is probed when the plugin reports it; plugin versions that do not report it make the page plan as drift on every run"}
 }
 
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t MaintenanceCustomPageTask) Requirements() []string {
-	return []string{"dokku-maintenance plugin"}
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The probe is `maintenance:report`. 0.10.2 is the plugin.toml version of the
+// maintenance release the integration suite installs; no older report shape
+// is recorded here. 0.38.31 is the Dokku that suite runs.
+func (t MaintenanceCustomPageTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			Name:    "maintenance",
+			Minimum: "0.10.2",
+			Text:    "dokku-maintenance plugin >= 0.10.2",
+		}},
+	}
 }
 
 // examples returns the examples for the maintenance custom page task

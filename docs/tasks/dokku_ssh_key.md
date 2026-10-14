@@ -4,6 +4,10 @@
 
 Manages an SSH public key for git push access via dokku's ssh-keys plugin
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

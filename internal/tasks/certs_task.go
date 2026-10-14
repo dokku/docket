@@ -72,9 +72,20 @@ func (t CertsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "a certificate is compared against the desired one by the SHA-256 fingerprint its report carries - certs:report for an app, global-cert:report --global for the global certificate - falling back to reading the PEM back with certs:show or global-cert:show when the recipe pins a certificate chain or the report carries no usable fingerprint; on the fingerprint path a server holding the pinned certificate plus an extra chain reads as in sync, since dokku digests only the first certificate it finds; the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared"}
 }
 
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t CertsTask) Requirements() []string {
-	return []string{"dokku-global-cert plugin >= 0.7.0 (required only when global: true)"}
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The Dokku floor is the fingerprint key certs:report emits from 0.38.28.
+// global-cert applies only when global is true; a non-global task does not
+// demand the plugin.
+func (t CertsTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.28",
+		Plugins: []PluginRequirement{{
+			Name:      "global-cert",
+			Minimum:   "0.7.0",
+			WhenField: "Global",
+			Text:      "dokku-global-cert plugin >= 0.7.0 (required only when global: true)",
+		}},
+	}
 }
 
 // examples returns the examples for the certs task

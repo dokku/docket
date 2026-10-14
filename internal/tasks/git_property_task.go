@@ -34,6 +34,12 @@ func (t GitPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `git:report --format json`, which this task parses.
+func (t GitPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.9"}
+}
+
 // examples returns the examples for the git property task
 func (t GitPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitPropertyTaskExample{

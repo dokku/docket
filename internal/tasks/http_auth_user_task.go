@@ -87,7 +87,7 @@ func (t HttpAuthUserTask) Doc() string {
 // Supported without a caveat because http-auth:export-users reads every user's
 // htpasswd entry back, so an exported recipe reproduces the users with no
 // operator-supplied credentials. That command is guaranteed by the floor in
-// Requirements(); the whole http-auth family already assumes it (export-users
+// MinimumVersions(); the whole http-auth family already assumes it (export-users
 // and a credential-free http-auth:enable are both 0.13.0 behaviours), so there
 // is no fallback for older plugins here.
 func (t HttpAuthUserTask) ExportSupport() ExportSupport {
@@ -99,9 +99,18 @@ func (t HttpAuthUserTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "an existing user's htpasswd hash is probed; a cleartext password is not readable, so a user that already exists converges only when update_password forces it"}
 }
 
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t HttpAuthUserTask) Requirements() []string {
-	return []string{"dokku-http-auth plugin >= 0.14.0"}
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The probe is `http-auth:export-users`. 0.38.31 is the Dokku the integration suite runs.
+// export-users and a credential-free enable are older behaviours; the floor stays 0.14.0, the release this family declares.
+func (t HttpAuthUserTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			Name:    "http-auth",
+			Minimum: "0.14.0",
+			Text:    "dokku-http-auth plugin >= 0.14.0",
+		}},
+	}
 }
 
 // SensitiveValues returns the per-user credentials so they are masked in

@@ -34,6 +34,12 @@ func (t ProxyPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `proxy:report --format json`, which this task parses.
+func (t ProxyPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the proxy property task
 func (t ProxyPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ProxyPropertyTaskExample{

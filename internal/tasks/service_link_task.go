@@ -50,6 +50,22 @@ func (t ServiceLinkTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// 2.0.0 is the datastore generation whose `<service>:linked` exit status
+// this task parses. It is not the 2.3.1 fingerprint floor the info readers
+// use; link does not read those keys. 0.38.31 is the Dokku the integration
+// suite runs.
+func (t ServiceLinkTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			NameField: "Service",
+			Minimum:   "2.0.0",
+			Text:      "a dokku datastore service plugin >= 2.0.0 matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)",
+		}},
+	}
+}
+
 // ExportApp reconstructs an app's datastore service links: it enumerates
 // services (listServices) and emits a dokku_service_link for each service the
 // app appears in (serviceLinkedApps). The link, not dokku_config, is the source
@@ -72,11 +88,6 @@ func (t ServiceLinkTask) ExportApp(ctx context.Context, app string) ([]interface
 		out = append(out, ServiceLinkTask{App: app, Service: s.Type, Name: s.Name, State: StatePresent})
 	}
 	return out, nil
-}
-
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t ServiceLinkTask) Requirements() []string {
-	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
 // examples returns a list of ServiceLinkTaskExamples as yaml

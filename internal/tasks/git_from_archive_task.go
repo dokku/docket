@@ -59,6 +59,12 @@ func (t GitFromArchiveTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "the recorded archive source is probed; the archive contents are not hashed, so a changed archive at the same url plans as in sync"}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `git:report`.
+func (t GitFromArchiveTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the git from archive task
 func (t GitFromArchiveTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromArchiveTaskExample{

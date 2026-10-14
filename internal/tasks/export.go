@@ -461,6 +461,11 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 		if !ok {
 			continue
 		}
+		if err := CheckMinimumVersions(ctx, typeKey, proto); err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("global: %s: %v", typeKey, err))
+			continue
+		}
 		var bodies []interface{}
 		var err error
 		if reporter, ok := proto.(globalExportReporter); ok {
@@ -561,6 +566,12 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 		}
 		exporter, ok := proto.(AppExporter)
 		if !ok {
+			continue
+		}
+		if err := CheckMinimumVersions(ctx, typeKey, proto); err != nil {
+			res.Report.Warnings = append(res.Report.Warnings,
+				fmt.Sprintf("%s: %s: %v", app, typeKey, err))
+			failed = true
 			continue
 		}
 		var bodies []interface{}

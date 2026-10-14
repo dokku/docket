@@ -65,6 +65,12 @@ func (t ProxyToggleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `proxy:report`.
+func (t ProxyToggleTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the proxy toggle task
 func (t ProxyToggleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ProxyToggleTaskExample{

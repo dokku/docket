@@ -6,7 +6,8 @@ Links or unlinks a dokku service to an app
 
 ## Requirements
 
-- a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
+- Dokku >= 0.38.31
+- a dokku datastore service plugin >= 2.0.0 matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
 ## Export support
 

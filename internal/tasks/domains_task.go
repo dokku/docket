@@ -51,6 +51,12 @@ func (t DomainsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `domains:report`.
+func (t DomainsTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the domains task
 func (t DomainsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]DomainsTaskExample{

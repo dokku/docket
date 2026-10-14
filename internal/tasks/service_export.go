@@ -115,7 +115,7 @@ func serviceDSN(ctx context.Context, service, name string) (string, error) {
 // tasks need.
 const datastorePluginFloor = "a datastore plugin >= 2.3.1 (dokku-datastore 0.7.1)"
 
-// datastorePluginRequirement is the Requirements() entry every task reading
+// datastorePluginRequirement is the MinimumVersions text every task reading
 // serviceInfo shares.
 const datastorePluginRequirement = "a dokku datastore service plugin >= 2.3.1 matching the service type (dokku-datastore 0.7.1, e.g. dokku-postgres, dokku-redis, dokku-mysql)"
 

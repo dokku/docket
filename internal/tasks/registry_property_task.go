@@ -34,6 +34,12 @@ func (t RegistryPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `registry:report --format json`, which this task parses.
+func (t RegistryPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the registry property task
 func (t RegistryPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryPropertyTaskExample{

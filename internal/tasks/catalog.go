@@ -119,8 +119,20 @@ type TaskSchema struct {
 	Deprecation string `json:"deprecation,omitempty"`
 
 	// Requirements are the non-core dokku plugins the task needs, in declared
-	// order. Absent when the task needs nothing beyond dokku core.
+	// order, as the prose a task page prints. Absent when the task needs
+	// nothing beyond dokku core. The Dokku floor is MinimumDokkuVersion;
+	// this array stays plugin prose only.
 	Requirements []string `json:"requirements,omitempty"`
+
+	// MinimumDokkuVersion is the oldest Dokku release the task's probe parses,
+	// as major.minor.patch. Absent when the task declares no floor.
+	MinimumDokkuVersion string `json:"minimum_dokku_version,omitempty"`
+
+	// PluginRequirements are the non-core plugins the task needs, in declared
+	// order. name is the plugin:list name when it is fixed. name_field is the
+	// recipe key whose value is that name. when is the recipe key that must
+	// be true before the requirement applies.
+	PluginRequirements []PluginRequirementSchema `json:"plugin_requirements,omitempty"`
 
 	// Export says whether `docket export` can reconstruct the task from a live
 	// server.
@@ -146,6 +158,19 @@ type TaskSchema struct {
 	// Examples are the task's documented examples, the same ones its reference
 	// page publishes.
 	Examples []ExampleSchema `json:"examples,omitempty"`
+}
+
+// PluginRequirementSchema is one non-core plugin a task needs. Name is the
+// plugin:list name when the task names a fixed plugin. NameField is the
+// recipe key whose value is that name, for a task such as the datastore
+// family whose plugin follows `service`. When is the recipe key that must be
+// true before the requirement applies. The keys are recipe keys, never Go
+// field names.
+type PluginRequirementSchema struct {
+	Name      string `json:"name,omitempty"`
+	Minimum   string `json:"minimum"`
+	When      string `json:"when,omitempty"`
+	NameField string `json:"name_field,omitempty"`
 }
 
 // IdentitySchema is what a task addresses, projected from the `identity:"key"`
@@ -450,8 +475,23 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 	}
 
 	schema.Deprecation = strings.TrimSpace(TaskDeprecation(task))
-	if doc, ok := task.(RequirementsDocer); ok {
-		schema.Requirements = doc.Requirements()
+	if support, ok := TaskMinimumVersions(task); ok {
+		schema.MinimumDokkuVersion = support.Dokku
+		for _, plugin := range support.Plugins {
+			if plugin.Text != "" {
+				schema.Requirements = append(schema.Requirements, plugin.Text)
+			}
+			item := PluginRequirementSchema{Minimum: plugin.Minimum}
+			if plugin.NameField != "" {
+				item.NameField = recipeKeyFor(task, plugin.NameField)
+			} else {
+				item.Name = plugin.Name
+			}
+			if plugin.WhenField != "" {
+				item.When = recipeKeyFor(task, plugin.WhenField)
+			}
+			schema.PluginRequirements = append(schema.PluginRequirements, item)
+		}
 	}
 	schema.Export, _ = TaskExportSupport(task)
 	schema.Probe, _ = TaskProbeSupport(task)

@@ -54,6 +54,12 @@ func (t SshKeyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `ssh-keys:list`.
+func (t SshKeyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the ssh key task
 func (t SshKeyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SshKeyTaskExample{

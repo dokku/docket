@@ -4,6 +4,10 @@
 
 Manages netrc credentials for a git host
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Not supported - netrc credentials are write-only and cannot be read back.

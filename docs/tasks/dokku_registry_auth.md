@@ -4,6 +4,10 @@
 
 Manages docker registry authentication for a dokku application or globally
 
+## Requirements
+
+- Dokku >= 0.38.29
+
 ## Export support
 
 Partial - registry:report names the servers a credential exists for, so the logins a server needs are reconstructed; the username and password behind each one are not readable and are lifted into required inputs the caller supplies before apply.

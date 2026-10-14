@@ -34,6 +34,12 @@ func (t LogsPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `logs:report --format json`. vector-cron-sink needs a newer patch; the floor is the report the rest of the table parses.
+func (t LogsPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the logs property task
 func (t LogsPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]LogsPropertyTaskExample{

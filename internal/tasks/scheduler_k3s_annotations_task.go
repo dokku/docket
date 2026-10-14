@@ -61,6 +61,12 @@ func (t SchedulerK3sAnnotationsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `scheduler-k3s:annotations:report`.
+func (t SchedulerK3sAnnotationsTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the scheduler-k3s annotations task
 func (t SchedulerK3sAnnotationsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sAnnotationsTaskExample{

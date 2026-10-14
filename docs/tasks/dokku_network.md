@@ -4,6 +4,10 @@
 
 Creates or destroys a Docker network
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

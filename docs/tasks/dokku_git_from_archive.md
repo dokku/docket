@@ -4,6 +4,10 @@
 
 Deploys a git repository from an archive URL
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

@@ -4,6 +4,10 @@
 
 Manages the git configuration for a given dokku application
 
+## Requirements
+
+- Dokku >= 0.38.9
+
 ## Export support
 
 Supported.

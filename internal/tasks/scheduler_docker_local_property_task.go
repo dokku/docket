@@ -34,6 +34,12 @@ func (t SchedulerDockerLocalPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `scheduler-docker-local:report --format json`, which this task parses.
+func (t SchedulerDockerLocalPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the scheduler-docker-local property task
 func (t SchedulerDockerLocalPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerDockerLocalPropertyTaskExample{

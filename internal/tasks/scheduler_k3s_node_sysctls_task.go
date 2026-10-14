@@ -71,6 +71,12 @@ func (t SchedulerK3sNodeSysctlsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `scheduler-k3s:node-sysctls:report --stored`.
+func (t SchedulerK3sNodeSysctlsTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.30"}
+}
+
 // examples returns the examples for the scheduler-k3s node sysctls task
 func (t SchedulerK3sNodeSysctlsTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sNodeSysctlsTaskExample{

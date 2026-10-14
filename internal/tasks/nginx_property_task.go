@@ -34,6 +34,12 @@ func (t NginxPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `nginx:report --format json`, which this task parses.
+func (t NginxPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the nginx property task
 func (t NginxPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]NginxPropertyTaskExample{

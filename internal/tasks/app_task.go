@@ -44,6 +44,12 @@ func (t AppTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `apps:exists`.
+func (t AppTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns a list of AppTaskExamples as yaml
 func (t AppTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppTaskExample{

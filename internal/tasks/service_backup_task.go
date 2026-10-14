@@ -94,6 +94,21 @@ func (t ServiceBackupTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The plugin floor is the datastore release whose `<service>:info` reports
+// every key this task reads. 0.38.31 is the Dokku the integration suite runs;
+// the probe is `<service>:info`.
+func (t ServiceBackupTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			NameField: "Service",
+			Minimum:   "2.3.1",
+			Text:      datastorePluginRequirement,
+		}},
+	}
+}
+
 // ExportGlobal reconstructs the backup schedule of every datastore service on
 // the server. Discovery is via listServices; the schedule, bucket, and use_iam
 // flag are read from `<service>:info`. The AWS credentials and encryption
@@ -127,11 +142,6 @@ func (t ServiceBackupTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 		})
 	}
 	return out, nil
-}
-
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t ServiceBackupTask) Requirements() []string {
-	return []string{datastorePluginRequirement}
 }
 
 // examples returns a list of ServiceBackupTaskExamples as yaml

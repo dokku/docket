@@ -34,6 +34,12 @@ func (t OpenrestyPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `openresty:report --format json`, which this task parses.
+func (t OpenrestyPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.9"}
+}
+
 // examples returns the examples for the openresty property task
 func (t OpenrestyPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]OpenrestyPropertyTaskExample{

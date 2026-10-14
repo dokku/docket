@@ -16,13 +16,28 @@ import (
 
 func fakeExecRunner(responses map[string]string) func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 	return func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
-		return subprocess.ExecCommandResponse{Stdout: responses[strings.Join(in.Args, " ")]}, nil
+		return fixtureResponse(responses, strings.Join(in.Args, " ")), nil
 	}
+}
+
+// fixtureResponse answers a canned command. A map that does not mention
+// `version` still answers 0.38.31, so the version gate does not refuse every
+// exporter before the fixture's own commands run. A map that sets the key,
+// including to empty, wins.
+func fixtureResponse(responses map[string]string, key string) subprocess.ExecCommandResponse {
+	if stdout, ok := responses[key]; ok {
+		return subprocess.ExecCommandResponse{Stdout: stdout}
+	}
+	if key == "version" {
+		return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}
+	}
+	return subprocess.ExecCommandResponse{}
 }
 
 func exportCommandFixture() map[string]string {
 	return map[string]string{
-		"--quiet apps:list":                       "web",
+		"version":           "0.38.31\n",
+		"--quiet apps:list": "web",
 		"--quiet config:export --format json web": `{"API_KEY":"abc123"}`,
 		"domains:report web --domains-app-vhosts": "",
 	}

@@ -37,6 +37,12 @@ func (t SchedulerK3sPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `scheduler-k3s:report --format json`. node-sysctls-image and node-sysctls-pause-image need 0.38.31; the floor is the report the rest of the table parses.
+func (t SchedulerK3sPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the scheduler-k3s property task
 func (t SchedulerK3sPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sPropertyTaskExample{

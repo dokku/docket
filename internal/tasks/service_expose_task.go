@@ -54,6 +54,22 @@ func (t ServiceExposeTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// 2.0.0 is the datastore generation whose `<service>:info --exposed-ports`
+// output this task parses. It is not the 2.3.1 fingerprint floor the info
+// readers use; expose does not read those keys. 0.38.31 is the Dokku the
+// integration suite runs.
+func (t ServiceExposeTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			NameField: "Service",
+			Minimum:   "2.0.0",
+			Text:      "a dokku datastore service plugin >= 2.0.0 matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)",
+		}},
+	}
+}
+
 // ExportGlobal reconstructs the exposed-ports state of every datastore service
 // on the server. Discovery is via listServices; the exposed host ports are read
 // from `<service>:info <name> --exposed-ports`. Services with no exposed ports
@@ -75,11 +91,6 @@ func (t ServiceExposeTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 		out = append(out, ServiceExposeTask{Service: s.Type, Name: s.Name, Ports: ports, State: StatePresent})
 	}
 	return out, nil
-}
-
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t ServiceExposeTask) Requirements() []string {
-	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
 }
 
 // examples returns a list of ServiceExposeTaskExamples as yaml

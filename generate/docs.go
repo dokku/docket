@@ -215,14 +215,18 @@ func codeOrBlank(key string) string {
 	return "`" + key + "`"
 }
 
-// requirementsSection renders the Requirements bullet list for a task that
-// declares non-core plugin dependencies. Returns "" otherwise.
-func requirementsSection(requirements []string) string {
-	if len(requirements) == 0 {
+// requirementsSection renders the Requirements bullet list. The Dokku line
+// comes from minimum_dokku_version and is first; plugin lines come from
+// requirements. Returns "" when the task declares neither.
+func requirementsSection(dokku string, requirements []string) string {
+	if dokku == "" && len(requirements) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("## Requirements\n\n")
+	if dokku != "" {
+		b.WriteString("- Dokku >= " + escapeProse(dokku) + "\n")
+	}
 	for _, r := range requirements {
 		b.WriteString("- " + escapeProse(r) + "\n")
 	}
@@ -429,7 +433,7 @@ func renderPage(schema tasks.TaskSchema) string {
 	if dep := deprecationSection(schema.Deprecation); dep != "" {
 		sections = append(sections, dep)
 	}
-	if req := requirementsSection(schema.Requirements); req != "" {
+	if req := requirementsSection(schema.MinimumDokkuVersion, schema.Requirements); req != "" {
 		sections = append(sections, strings.TrimRight(req, "\n"))
 	}
 	if rr := runnerRequirementsSection(schema.Fields); rr != "" {

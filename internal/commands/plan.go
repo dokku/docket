@@ -67,6 +67,7 @@ type PlanCommand struct {
 	varsFiles         []string
 	play              string
 	listTasks         bool
+	ignoreVersion     bool
 	output            string
 	force             bool
 	arguments         map[string]*Argument
@@ -131,6 +132,7 @@ func (c *PlanCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
 	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via `sudo -n` - remotely with --host, locally without. Covers dokku only, not docket's own reads of local files. Equivalent to DOKKU_SUDO=1.")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
+	f.BoolVar(&c.ignoreVersion, "ignore-version", false, "plan tasks even when Dokku or a required plugin is older than the task declares")
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list are planned")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a file in any recipe format ("+recipeFormatList()+"; repeatable; later files override earlier; CLI --name=value flags always win). The format follows the extension, defaulting to YAML.")
@@ -173,6 +175,7 @@ func (c *PlanCommand) AutocompleteFlags() complete.Flags {
 			"--host":                 complete.PredictAnything,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
+			"--ignore-version":       complete.PredictNothing,
 			"--tags":                 complete.PredictAnything,
 			"--skip-tags":            complete.PredictAnything,
 			"--vars-file":            complete.PredictFiles("*"),
@@ -276,6 +279,9 @@ func (c *PlanCommand) Run(args []string) int {
 	session := subprocess.NewSession(masker)
 	defer func() { _ = session.Close() }()
 	ctx := session.Context(runContext(c.Ctx), target)
+	if !c.ignoreVersion {
+		ctx = tasks.ContextWithVersionGate(ctx)
+	}
 
 	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
@@ -597,7 +603,12 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 		pc.emitter.TaskWarning(pc.play.Name, name, "deprecated", msg)
 	}
 
-	result := env.Task.Plan(pc.ctx)
+	var result tasks.PlanResult
+	if err := tasks.CheckMinimumVersions(pc.ctx, env.TypeName, env.Task); err != nil {
+		result = tasks.PlanResult{Status: tasks.PlanStatusError, Error: err}
+	} else {
+		result = env.Task.Plan(pc.ctx)
+	}
 	pc.counts.Tasks++
 
 	// Probe diagnostics raised during planning surface as informational

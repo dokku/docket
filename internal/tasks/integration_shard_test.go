@@ -101,6 +101,7 @@ var integrationTestWeights = map[string]float64{
 	"TestIntegrationStorageMountList":                       6.0,
 	"TestIntegrationTraefikPropertyAll":                     12.0,
 	"TestIntegrationValidateRunsOffline":                    1.0,
+	"TestIntegrationDeclaredVersions":                       1.0,
 }
 
 var (

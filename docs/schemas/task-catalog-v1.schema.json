@@ -38,7 +38,16 @@
         "requirements": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Non-core dokku plugins the task needs. Absent when it needs nothing beyond dokku core."
+          "description": "Plugin prose, one line per non-core plugin the task needs, in declared order. Absent when it needs nothing beyond dokku core. The Dokku floor is minimum_dokku_version; this array stays plugin prose only."
+        },
+        "minimum_dokku_version": {
+          "type": "string",
+          "description": "Oldest Dokku release this task's probe parses, as major.minor.patch. Absent when the task declares no floor. plan, apply, and export refuse the task when the server is older, unless --ignore-version is set."
+        },
+        "plugin_requirements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/plugin_requirement" },
+          "description": "Non-core plugins the task needs. name is the plugin:list name when it is fixed. name_field is the recipe key whose value is that name. when is the recipe key that must be true before the requirement applies. An installed plugin older than minimum is refused the same way an old Dokku is; a plugin that is not installed is left to the task's own probe."
         },
         "export": {
           "$ref": "#/$defs/support",
@@ -66,6 +75,29 @@
       }
     },
 
+    "plugin_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The plugin:list name, such as letsencrypt. Absent when name_field names the recipe key that carries it."
+        },
+        "minimum": {
+          "type": "string",
+          "description": "Oldest plugin release this task's probe parses, as major.minor.patch."
+        },
+        "when": {
+          "type": "string",
+          "description": "Recipe key that must be true before this requirement applies, such as global on dokku_certs."
+        },
+        "name_field": {
+          "type": "string",
+          "description": "Recipe key whose value is the plugin:list name, such as service on a datastore task."
+        }
+      }
+    },
     "support": {
       "type": "object",
       "additionalProperties": false,

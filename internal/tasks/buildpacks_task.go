@@ -52,6 +52,12 @@ func (t BuildpacksTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `buildpacks:list`.
+func (t BuildpacksTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the buildpacks task
 func (t BuildpacksTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuildpacksTaskExample{

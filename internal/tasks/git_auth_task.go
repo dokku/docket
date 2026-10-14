@@ -68,6 +68,12 @@ func (t GitAuthTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `git:auth`.
+func (t GitAuthTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the git auth task
 func (t GitAuthTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitAuthTaskExample{

@@ -16,6 +16,9 @@ load test_helper
 #          of the race, made deterministic
 #   self   kill itself only; docket is never interrupted
 #
+# `dokku version` answers 0.38.31 and exits 0. The signal happens on the next
+# command, which is the apps:exists probe these tests are about.
+#
 # The fake kills itself with SIGTERM rather than SIGINT because a shell can
 # inherit SIGINT as ignored, and a fake that shrugged off its own signal would
 # exit 0 and prove nothing. docket sees a signalled child either way.
@@ -40,6 +43,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 echo "run $*" >>"$SSH_LOG"
+if [ "$*" = "dokku version" ]; then
+  printf '0.38.31\n'
+  exit 0
+fi
 if [ "$FAKE_SSH_MODE" = "group" ]; then
   docket=$PPID
   (sleep 0.2; kill -INT "$docket") >/dev/null 2>&1 &

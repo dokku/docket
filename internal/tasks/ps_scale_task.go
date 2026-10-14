@@ -67,6 +67,12 @@ func (t PsScaleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `ps:scale`.
+func (t PsScaleTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the ps scale task
 func (t PsScaleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]PsScaleTaskExample{
