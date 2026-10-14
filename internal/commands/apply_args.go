@@ -750,6 +750,16 @@ func holdsSensitiveInput(keys []string, arguments map[string]*Argument) bool {
 	return false
 }
 
+// missingFlagError is the diagnostic apply/plan print when a required input
+// has no value. mitchellh/cli prefixes Error() with "!" and prints it as a
+// complete line, so the first letter is capitalized on purpose. ST1005 is
+// for errors that get wrapped into other sentences.
+type missingFlagError struct{ name string }
+
+func (e missingFlagError) Error() string {
+	return "Missing flag '--" + e.name + "'"
+}
+
 // buildInputContext turns the registered arguments into the sigil render
 // context and collects the sensitive values worth handing to the masker.
 //
@@ -783,7 +793,7 @@ func buildInputContext(arguments map[string]*Argument, userSet map[string]bool) 
 	for _, name := range names {
 		argument := arguments[name]
 		if argument.Required && !argument.IsSatisfied(userSet[name]) {
-			return nil, nil, fmt.Errorf("missing flag '--%s'", name)
+			return nil, nil, missingFlagError{name: name}
 		}
 		context[name] = argument.ContextValue()
 		if argument.Sensitive && (argument.HasDefault || userSet[name]) {

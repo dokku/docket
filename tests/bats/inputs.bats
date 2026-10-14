@@ -155,7 +155,7 @@ EOF
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks
   assert_failure
-  assert_output --partial "missing flag '--debug'"
+  assert_output --partial "Missing flag '--debug'"
 
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --debug=false
   assert_success
@@ -172,7 +172,7 @@ EOF
 EOF
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --app=
   assert_failure
-  assert_output --partial "missing flag '--app'"
+  assert_output --partial "Missing flag '--app'"
   refute_output --partial "<no value>"
 
   run "$(docket_bin)" apply --tasks "$TASKS_FILE" --list-tasks --app=api
