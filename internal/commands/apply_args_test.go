@@ -472,8 +472,12 @@ func TestInputHasValueEmpty(t *testing.T) {
 func TestInputSetValueOverwrite(t *testing.T) {
 	t.Parallel()
 	input := tasks.Input{}
-	input.SetValue("first")
-	input.SetValue("second")
+	if err := input.SetValue("first"); err != nil {
+		t.Fatalf("SetValue first: %v", err)
+	}
+	if err := input.SetValue("second"); err != nil {
+		t.Fatalf("SetValue second: %v", err)
+	}
 	if input.GetValue() != "second" {
 		t.Errorf("GetValue() = %q after overwrite, want %q", input.GetValue(), "second")
 	}

@@ -172,7 +172,7 @@ func (m *Masker) reflectValue(v interface{}) interface{} {
 			out[m.String(fmt.Sprint(iter.Key().Interface()))] = m.Value(iter.Value().Interface())
 		}
 		return out
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if rv.IsNil() {
 			return nil
 		}

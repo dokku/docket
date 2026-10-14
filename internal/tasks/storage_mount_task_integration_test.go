@@ -18,11 +18,7 @@ func TestIntegrationStorageMount(t *testing.T) {
 	createApp(testCtx(), appName)
 	defer destroyApp(testCtx(), appName)
 
-	// ensure storage directory exists
-	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
-		Command: "mkdir",
-		Args:    []string{"-p", hostDir},
-	})
+	mkdirHostDir(t, hostDir)
 
 	// legacy form: mount storage
 	mountTask := StorageMountTask{
@@ -151,10 +147,7 @@ func TestIntegrationStorageMountVolumeOptions(t *testing.T) {
 	createApp(testCtx(), appName)
 	defer destroyApp(testCtx(), appName)
 
-	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
-		Command: "mkdir",
-		Args:    []string{"-p", hostDir},
-	})
+	mkdirHostDir(t, hostDir)
 
 	// legacy form with SELinux Z: mount then verify idempotency
 	withOpts := StorageMountTask{
@@ -345,10 +338,7 @@ func TestIntegrationStorageMountList(t *testing.T) {
 	createApp(testCtx(), appName)
 	defer destroyApp(testCtx(), appName)
 
-	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
-		Command: "mkdir",
-		Args:    []string{"-p", hostDir},
-	})
+	mkdirHostDir(t, hostDir)
 
 	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
 	if r := entry.Execute(testCtx()); r.Error != nil {
@@ -476,10 +466,7 @@ func TestIntegrationStorageMountSingleFieldDrift(t *testing.T) {
 	createApp(testCtx(), appName)
 	defer destroyApp(testCtx(), appName)
 
-	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
-		Command: "mkdir",
-		Args:    []string{"-p", hostDir},
-	})
+	mkdirHostDir(t, hostDir)
 
 	entry := StorageEntryTask{Name: entryName, Chown: "herokuish", State: StatePresent}
 	if r := entry.Execute(testCtx()); r.Error != nil {
@@ -612,5 +599,15 @@ func TestIntegrationStorageMountSingleAbsentScope(t *testing.T) {
 		if len(attachments) != want {
 			t.Errorf("%s attachments = %+v, want %d", scope, attachments, want)
 		}
+	}
+}
+
+func mkdirHostDir(t *testing.T, hostDir string) {
+	t.Helper()
+	if _, err := subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		Command: "mkdir",
+		Args:    []string{"-p", hostDir},
+	}); err != nil {
+		t.Fatalf("mkdir %s: %v", hostDir, err)
 	}
 }

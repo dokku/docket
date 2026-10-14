@@ -130,7 +130,7 @@ func parametersSection(fields []tasks.FieldSchema) string {
 	b.WriteString("| Parameter | Type | Required | Default | Choices | Description |\n")
 	b.WriteString("| --- | --- | --- | --- | --- | --- |\n")
 	for _, field := range fields {
-		b.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&b,
 			"| `%s` | %s | %s | %s | %s | %s |\n",
 			field.Name,
 			field.Type,
@@ -138,7 +138,7 @@ func parametersSection(fields []tasks.FieldSchema) string {
 			escapeCell(field.Default),
 			escapeCell(strings.Join(field.Choices, ", ")),
 			escapeCell(paramDescription(field)),
-		))
+		)
 	}
 	return b.String()
 }
@@ -154,10 +154,10 @@ func propertiesSection(schema *tasks.PropertySchema) string {
 
 	var b strings.Builder
 	b.WriteString("## Properties\n\n")
-	b.WriteString(fmt.Sprintf(
+	fmt.Fprintf(&b,
 		"`property` accepts one of the following, applied with `dokku %s`. A property with no form in a scope is rejected there, matching dokku's own rejection.\n\n",
 		schema.Subcommand,
-	))
+	)
 	b.WriteString("| Property | Scopes | Report key (app) | Report key (global) |\n")
 	b.WriteString("| --- | --- | --- | --- |\n")
 	for _, property := range schema.Properties {
@@ -165,18 +165,18 @@ func propertiesSection(schema *tasks.PropertySchema) string {
 		if property.Sensitive {
 			name += " (sensitive)"
 		}
-		b.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&b,
 			"| %s | %s | %s | %s |\n",
 			name,
 			strings.Join(property.Scopes, ", "),
 			codeOrBlank(property.AppReportKey),
 			codeOrBlank(property.GlobalReportKey),
-		))
+		)
 	}
 
 	for _, family := range schema.Dynamic {
-		b.WriteString(fmt.Sprintf("\nNames starting with `%s` are also accepted %s. dokku validates them through `%s` rather than through its report schema, so they cannot be listed above. ",
-			family.Prefix, scopePhrase(family.Scopes), schema.Subcommand))
+		fmt.Fprintf(&b, "\nNames starting with `%s` are also accepted %s. dokku validates them through `%s` rather than through its report schema, so they cannot be listed above. ",
+			family.Prefix, scopePhrase(family.Scopes), schema.Subcommand)
 		if family.Probeable {
 			b.WriteString("The plugin reports each one it has been given, so they probe for drift like any listed property.")
 		} else {
@@ -189,8 +189,8 @@ func propertiesSection(schema *tasks.PropertySchema) string {
 	}
 
 	for _, family := range schema.Rejected {
-		b.WriteString(fmt.Sprintf("\nNames starting with `%s` are rejected here - they are managed by `%s`, since %s.\n",
-			family.Prefix, family.Replacement, family.Reason))
+		fmt.Fprintf(&b, "\nNames starting with `%s` are rejected here - they are managed by `%s`, since %s.\n",
+			family.Prefix, family.Replacement, family.Reason)
 	}
 	return b.String()
 }
@@ -242,7 +242,7 @@ func runnerRequirementsSection(fields []tasks.FieldSchema) string {
 	var b strings.Builder
 	b.WriteString("## Runner requirements\n\n")
 	for _, name := range names {
-		b.WriteString(fmt.Sprintf("- `%s` is read from the machine running docket, not the dokku server, so the file must exist there even when docket drives the server over `--host`.\n", name))
+		fmt.Fprintf(&b, "- `%s` is read from the machine running docket, not the dokku server, so the file must exist there even when docket drives the server over `--host`.\n", name)
 	}
 	return b.String()
 }
@@ -399,7 +399,7 @@ func returnValuesSection() string {
 	b.WriteString("| Key | Returned | Type | Description |\n")
 	b.WriteString("| --- | --- | --- | --- |\n")
 	for _, r := range rows {
-		b.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s |\n", r[0], r[1], r[2], r[3]))
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", r[0], r[1], r[2], r[3])
 	}
 	return b.String()
 }
@@ -472,7 +472,7 @@ func renderIndex(catalog tasks.TaskCatalog) string {
 		if schema.Probe.Status == tasks.ProbeUnsupported {
 			suffix += " (never converges)"
 		}
-		index.WriteString(fmt.Sprintf("- [%s](%s.md) - %s%s\n", schema.Type, schema.Type, escapeProse(summarize(schema.Synopsis)), suffix))
+		fmt.Fprintf(&index, "- [%s](%s.md) - %s%s\n", schema.Type, schema.Type, escapeProse(summarize(schema.Synopsis)), suffix)
 	}
 	return index.String()
 }

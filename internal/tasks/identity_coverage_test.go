@@ -8,7 +8,7 @@ import (
 // taskStructType returns the struct type behind a registered task prototype.
 func taskStructType(task Task) reflect.Type {
 	rt := reflect.TypeOf(task)
-	for rt.Kind() == reflect.Ptr {
+	for rt.Kind() == reflect.Pointer {
 		rt = rt.Elem()
 	}
 	return rt
@@ -75,7 +75,7 @@ func TestIdentityTagsAreWellFormed(t *testing.T) {
 			}
 
 			ft := field.Type
-			for ft.Kind() == reflect.Ptr {
+			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 

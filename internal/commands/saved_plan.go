@@ -339,7 +339,7 @@ func writeSavedPlan(path string, p *savedPlan, warn func(string)) error {
 		warn(fmt.Sprintf("warning: could not set mode %#o on %s: %v; it holds secrets in the clear", savedPlanMode, path, err))
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()

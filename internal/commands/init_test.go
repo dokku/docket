@@ -69,7 +69,7 @@ func TestInitRendersDefaultTemplate(t *testing.T) {
 	idxConfig := strings.Index(body, "dokku_config")
 	idxDomains := strings.Index(body, "dokku_domains")
 	idxSync := strings.Index(body, "dokku_git_sync")
-	if !(idxApp < idxConfig && idxConfig < idxDomains && idxDomains < idxSync) {
+	if idxApp >= idxConfig || idxConfig >= idxDomains || idxDomains >= idxSync {
 		t.Errorf("ordering wrong: app=%d config=%d domains=%d sync=%d", idxApp, idxConfig, idxDomains, idxSync)
 	}
 }
@@ -970,11 +970,6 @@ func newTestInitCommandUi(baseDir ...string) (*InitCommand, *cli.MockUi) {
 		c.BaseDir = baseDir[0]
 	}
 	return c, ui
-}
-
-func readAllString(r io.Reader) (string, error) {
-	b, err := io.ReadAll(r)
-	return string(b), err
 }
 
 // TestInitEveryScaffoldIsCanonicalAndValid walks the registry rather than

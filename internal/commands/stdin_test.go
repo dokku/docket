@@ -23,11 +23,11 @@ func withStdinArgs(t *testing.T, recipe string, args []string, fn func(stdin io.
 	if err != nil {
 		t.Fatalf("stdin pipe: %v", err)
 	}
-	t.Cleanup(func() { r.Close() })
+	t.Cleanup(func() { _ = r.Close() })
 
 	go func() {
 		_, _ = w.WriteString(recipe)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	fn(r, append([]string{"docket", "validate"}, args...))

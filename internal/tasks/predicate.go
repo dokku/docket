@@ -160,7 +160,7 @@ func truthy(v interface{}) bool {
 	// one has no business being true.
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if rv.IsNil() {
 			return false
 		}

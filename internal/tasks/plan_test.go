@@ -7,15 +7,14 @@ import (
 )
 
 // TestAllTasksImplementPlan asserts every registered task type satisfies the
-// Task interface (which now requires Plan()). The interface assignment is a
-// compile-time guarantee, but this test fails loudly if a future refactor
-// loosens the contract or registers a task that does not implement Plan.
+// Task interface (which now requires Plan()). The registry's map value type
+// makes that a compile-time guarantee, but this test fails loudly if a future
+// refactor loosens the contract or registers a task under an empty name.
 func TestAllTasksImplementPlan(t *testing.T) {
 	if len(TaskTypes()) == 0 {
 		t.Fatal("no tasks registered; init() side effects didn't run")
 	}
 	for name, task := range allRegisteredTasks() {
-		var _ Task = task
 		if name == "" {
 			t.Errorf("task with empty name: %T", task)
 		}

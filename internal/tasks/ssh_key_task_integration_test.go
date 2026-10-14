@@ -12,7 +12,7 @@ func TestIntegrationSshKey(t *testing.T) {
 	keyName := "docket-test-ssh-key"
 
 	removeSSHKey := func() {
-		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "ssh-keys:remove", keyName},
 		})

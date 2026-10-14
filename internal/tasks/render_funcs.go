@@ -85,7 +85,7 @@ func scalarArg(v interface{}) string {
 		return ""
 	}
 	rv := reflect.ValueOf(v)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			return ""
 		}

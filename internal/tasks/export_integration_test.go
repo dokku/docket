@@ -279,7 +279,7 @@ func TestIntegrationExportSchedulerK3sProfileLeavesOutUnappliableName(t *testing
 
 	name := "DocketTestExportBad"
 	removeProfile := func() {
-		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "scheduler-k3s:profiles:remove", name},
 		})

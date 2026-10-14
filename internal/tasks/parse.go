@@ -639,32 +639,6 @@ func unknownKeyHint(key string) string {
 	return ""
 }
 
-// allProblems flattens every problem in the parse result: document-level
-// first, then per play in source order (play problems, then each entry's
-// problems including group children, depth-first).
-func (r *parsedRecipe) allProblems() []Problem {
-	out := append([]Problem(nil), r.Problems...)
-	for _, play := range r.Plays {
-		out = append(out, play.Problems...)
-		for _, entry := range play.Entries {
-			out = append(out, entryProblems(entry)...)
-		}
-	}
-	return out
-}
-
-// entryProblems returns the entry's own problems followed by its group
-// children's, depth-first.
-func entryProblems(e *parsedTaskEntry) []Problem {
-	out := append([]Problem(nil), e.Problems...)
-	for _, group := range [][]*parsedTaskEntry{e.Block, e.Rescue, e.Always} {
-		for _, child := range group {
-			out = append(out, entryProblems(child)...)
-		}
-	}
-	return out
-}
-
 // parseTaskEntrySeq parses data (rendered YAML bytes) as a bare list of
 // task entries. Used by loop-group expansion, which re-renders a group
 // clause's YAML per iteration and needs the children parsed through the

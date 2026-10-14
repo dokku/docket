@@ -1,8 +1,8 @@
 package tasks
 
 import (
-	"github.com/dokku/docket/internal/subprocess"
 	"fmt"
+	"github.com/dokku/docket/internal/subprocess"
 	"os"
 	"strconv"
 	"strings"
@@ -89,7 +89,7 @@ func dockerLinkSupported() bool {
 	// Docker >= 29 requires DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1
 	// on the daemon. Test by creating two containers with --link and checking
 	// if the link env vars are present.
-	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+	_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"rm", "-f", "docket-link-test-target", "docket-link-test-client"},
 	})
@@ -101,10 +101,12 @@ func dockerLinkSupported() bool {
 	if err != nil {
 		return false
 	}
-	defer subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
-		Command: "docker",
-		Args:    []string{"rm", "-f", "docket-link-test-target", "docket-link-test-client"},
-	})
+	defer func() {
+		_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+			Command: "docker",
+			Args:    []string{"rm", "-f", "docket-link-test-target", "docket-link-test-client"},
+		})
+	}()
 
 	result, err = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",

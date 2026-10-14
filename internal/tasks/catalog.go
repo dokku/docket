@@ -383,12 +383,8 @@ func buildPropertySchema(table PropertyTable) PropertySchema {
 		schema.Properties = append(schema.Properties, property)
 	}
 
-	for _, family := range DynamicPropertyFamilies(table.Plugin()) {
-		schema.Dynamic = append(schema.Dynamic, family)
-	}
-	for _, family := range RejectedPropertyFamilies(table) {
-		schema.Rejected = append(schema.Rejected, family)
-	}
+	schema.Dynamic = append(schema.Dynamic, DynamicPropertyFamilies(table.Plugin())...)
+	schema.Rejected = append(schema.Rejected, RejectedPropertyFamilies(table)...)
 	return schema
 }
 
@@ -505,7 +501,7 @@ func (c TaskCatalog) Encode(w io.Writer) error {
 // registry stores pointer prototypes.
 func taskStructOf(task Task) reflect.Type {
 	rt := reflect.TypeOf(task)
-	for rt != nil && rt.Kind() == reflect.Ptr {
+	for rt != nil && rt.Kind() == reflect.Pointer {
 		rt = rt.Elem()
 	}
 	return rt
@@ -564,7 +560,7 @@ func buildFields(rt reflect.Type) []FieldSchema {
 // `phases` narrows one mount), not the set of items the task manages, so it
 // has no item identity to declare.
 func buildItem(t reflect.Type, collection bool) *ItemSchema {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -593,7 +589,7 @@ func buildItem(t reflect.Type, collection bool) *ItemSchema {
 // interface element is "any", since map[string]any accepts whatever the
 // recipe supplies.
 func elementType(t reflect.Type) string {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() == reflect.Struct {
@@ -608,7 +604,7 @@ func elementType(t reflect.Type) string {
 // structElem returns the struct type behind a collection's element type, or
 // nil when the element is not a struct.
 func structElem(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -628,7 +624,7 @@ func structElem(t reflect.Type) reflect.Type {
 // TestCatalogFieldTypesAreKnown fails on it so an exotic new field type is
 // caught at build time instead of shipping.
 func catalogFieldType(t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return catalogFieldType(t.Elem())
 	}
 	switch t.Kind() {

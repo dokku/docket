@@ -17,7 +17,7 @@ func TestIntegrationPlugin(t *testing.T) {
 	pluginCommittish := "v0.9.0"
 
 	uninstallPlugin := func() {
-		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "plugin:uninstall", pluginName},
 		})
@@ -109,7 +109,7 @@ func TestIntegrationExportPlugin(t *testing.T) {
 	pluginCommittish := "v0.9.0"
 
 	uninstallPlugin := func() {
-		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "dokku",
 			Args:    []string{"--quiet", "plugin:uninstall", pluginName},
 		})

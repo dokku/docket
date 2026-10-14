@@ -46,11 +46,7 @@ func TestValidateDoesNotImportSubprocess(t *testing.T) {
 // runtime.
 func TestIntegrationValidateRunsOffline(t *testing.T) {
 	skipIfNotInShardT(t)
-	original := os.Getenv("PATH")
-	if err := os.Setenv("PATH", ""); err != nil {
-		t.Fatalf("os.Setenv: %v", err)
-	}
-	defer os.Setenv("PATH", original)
+	t.Setenv("PATH", "")
 
 	data := []byte(`---
 - inputs:
@@ -84,11 +80,7 @@ func TestIntegrationValidateRunsOffline(t *testing.T) {
 // invalid_task_input problem without ever shelling out to `dokku`.
 func TestIntegrationValidateInputValidationRunsOffline(t *testing.T) {
 	skipIfNotInShardT(t)
-	original := os.Getenv("PATH")
-	if err := os.Setenv("PATH", ""); err != nil {
-		t.Fatalf("os.Setenv: %v", err)
-	}
-	defer os.Setenv("PATH", original)
+	t.Setenv("PATH", "")
 
 	data := []byte(`---
 - tasks:

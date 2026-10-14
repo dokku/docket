@@ -16,7 +16,7 @@ func startTestRegistry(t *testing.T) string {
 	containerName := "docket-test-registry"
 
 	// best-effort cleanup of any previous run
-	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+	_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "docker",
 		Args:    []string{"rm", "-f", containerName},
 	})
@@ -37,7 +37,7 @@ func startTestRegistry(t *testing.T) string {
 		t.Skipf("skipping integration test: failed to start registry:2 container: %v", err)
 	}
 	t.Cleanup(func() {
-		subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+		_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 			Command: "docker",
 			Args:    []string{"rm", "-f", containerName},
 		})

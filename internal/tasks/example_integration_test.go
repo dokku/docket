@@ -468,7 +468,7 @@ func setupMaintenanceCustomPageExample(t *testing.T) (func(Task) Task, func()) {
 	if err := os.WriteFile(tarballPath, tarball, 0o644); err != nil {
 		t.Fatalf("failed to write maintenance tarball: %v", err)
 	}
-	return nil, func() { os.Remove(tarballPath) }
+	return nil, func() { _ = os.Remove(tarballPath) }
 }
 
 // Pebble reaches the app over the docker bridge gateway, and challtestsrv's
@@ -519,7 +519,7 @@ func registerChalltestsrvA(t *testing.T, host, target string) {
 // clearChalltestsrvA removes a published A record; best effort during cleanup.
 func clearChalltestsrvA(host string) {
 	body := fmt.Sprintf(`{"host":"%s."}`, host)
-	subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+	_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
 		Command: "curl",
 		Args:    []string{"-sf", "-X", "POST", "-H", "Content-Type: application/json", "-d", body, challtestsrvURL + "/clear-a"},
 	})
@@ -584,7 +584,7 @@ func taskStringField(task Task, field string) string {
 // mutate it, copying a value task into a fresh addressable pointer when needed.
 func taskAsPointer(task Task) Task {
 	v := reflect.ValueOf(task)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		return task
 	}
 	p := reflect.New(v.Type())

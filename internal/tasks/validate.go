@@ -80,24 +80,6 @@ const validatePlaceholder = "__docket_validate_placeholder__"
 // future issues can reserve names without revisiting validateTaskEntry.
 var reservedEnvelopeKeys = map[string]string{}
 
-// activeEnvelopeKeys are the envelope keys the validator recognises and
-// passes through to the loader without generating an "envelope key
-// reserved" diagnostic. Keep in sync with envelopeAllowlistKeys in
-// internal/tasks/main.go.
-var activeEnvelopeKeys = map[string]bool{
-	"name":          true,
-	"tags":          true,
-	"when":          true,
-	"loop":          true,
-	"register":      true,
-	"changed_when":  true,
-	"failed_when":   true,
-	"ignore_errors": true,
-	"block":         true,
-	"rescue":        true,
-	"always":        true,
-}
-
 // groupClauseKeys is the subset of envelope keys that carry a list of
 // nested task entries for a try/catch/finally group (#211). Used by the
 // loader and validator to recognise group entries.

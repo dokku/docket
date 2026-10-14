@@ -83,7 +83,7 @@ func TestProbeSupportMatchesPlanWiring(t *testing.T) {
 		}
 
 		typ := reflect.TypeOf(task)
-		for typ.Kind() == reflect.Ptr {
+		for typ.Kind() == reflect.Pointer {
 			typ = typ.Elem()
 		}
 		key := planFuncKey(typ.Name() + ".Plan")

@@ -116,7 +116,7 @@ func sensitiveValuesFromTask(t interface{}) []string {
 // whose `sensitive:"true"` struct tag is set. Pointers and embedded structs
 // are followed; everything else is leaf-evaluated.
 func walkSensitiveTags(v reflect.Value) []string {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
 		}
@@ -140,7 +140,7 @@ func walkSensitiveTags(v reflect.Value) []string {
 		switch {
 		case fv.Kind() == reflect.Struct:
 			out = append(out, walkSensitiveTags(fv)...)
-		case fv.Kind() == reflect.Ptr && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct:
+		case fv.Kind() == reflect.Pointer && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct:
 			out = append(out, walkSensitiveTags(fv)...)
 		}
 	}
@@ -151,7 +151,7 @@ func walkSensitiveTags(v reflect.Value) []string {
 // Supports string, []string, and map[string]string. For other types, returns
 // empty (the field can't safely be string-masked).
 func sensitiveLeafValues(v reflect.Value) []string {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
 		}

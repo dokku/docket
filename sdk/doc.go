@@ -30,7 +30,7 @@
 // Session, which also owns the SSH connections made under it:
 //
 //	session := sdk.NewSession(sdk.NewMasker("s3cr3t"))
-//	defer session.Close()
+//	defer func() { _ = session.Close() }()
 //	ctx := session.Context(context.Background(), sdk.Target{Host: "dokku@dokku.example.com"})
 //
 // The zero Target runs dokku locally.

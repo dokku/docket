@@ -1,0 +1,20 @@
+---
+# Pin the golangci-lint v2.14 "standard" set so `golangci-lint run ./...`
+# does not pick up whatever defaults a newer install enables. CI installs
+# that same version.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+issues:
+  # Surface every finding. The defaults (50 per linter, 3 of the same text)
+  # hide leftover errcheck hits in tests.
+  max-issues-per-linter: 0
+  max-same-issues: 0
