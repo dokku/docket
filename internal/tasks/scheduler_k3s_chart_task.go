@@ -62,6 +62,12 @@ func (t SchedulerK3sChartTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `scheduler-k3s:chart`.
+func (t SchedulerK3sChartTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the scheduler-k3s chart task
 func (t SchedulerK3sChartTask) examples() ([]Doc, error) {
 	return MarshalExamples([]SchedulerK3sChartTaskExample{

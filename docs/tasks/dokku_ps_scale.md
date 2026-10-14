@@ -4,6 +4,10 @@
 
 Manages the process scale for a given dokku application
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

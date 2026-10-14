@@ -34,7 +34,7 @@ type ExportSupport struct {
 // support. Every registered task is expected to implement it - a coverage
 // test enforces that so no task ships without an export decision - but it is
 // modelled as an optional interface to match Documented, DeprecationDocer and
-// RequirementsDocer. The docs generator renders the result in an Export
+// VersionDocer. The docs generator renders the result in an Export
 // support section on the task's page.
 //
 // The export engine itself never reads this: emission is driven purely by

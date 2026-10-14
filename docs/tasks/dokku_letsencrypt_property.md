@@ -6,6 +6,7 @@ Manages the letsencrypt configuration for a given dokku application
 
 ## Requirements
 
+- Dokku >= 0.38.31
 - dokku-letsencrypt plugin >= 0.25.0
 
 ## Export support

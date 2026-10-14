@@ -396,6 +396,7 @@ var ReservedInputNames = map[string]bool{
 	"list-tasks":           true,
 	"start-at-task":        true,
 	"accept-new-host-keys": true,
+	"ignore-version":       true,
 	"detailed-exitcode":    true,
 	"strict":               true,
 	"output":               true,

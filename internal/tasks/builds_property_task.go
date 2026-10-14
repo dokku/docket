@@ -34,6 +34,12 @@ func (t BuildsPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `builds:report --format json`, which this task parses.
+func (t BuildsPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the builds property task
 func (t BuildsPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuildsPropertyTaskExample{

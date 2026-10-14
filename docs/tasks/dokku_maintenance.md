@@ -6,7 +6,8 @@ Enables or disables maintenance mode for a given dokku application
 
 ## Requirements
 
-- dokku-maintenance plugin
+- Dokku >= 0.38.31
+- dokku-maintenance plugin >= 0.10.2
 
 ## Export support
 

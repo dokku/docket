@@ -6,6 +6,7 @@ Creates or destroys a dokku service
 
 ## Requirements
 
+- Dokku >= 0.38.31
 - a dokku datastore service plugin >= 2.3.1 matching the service type (dokku-datastore 0.7.1, e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
 ## Export support

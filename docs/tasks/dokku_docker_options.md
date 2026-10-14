@@ -4,6 +4,10 @@
 
 Manages docker-options for a given dokku application
 
+## Requirements
+
+- Dokku >= 0.38.22
+
 ## Export support
 
 Supported.

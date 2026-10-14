@@ -29,6 +29,9 @@ setup() {
   echo "$output" |
     jq -e 'all(.tasks[]; (.probe.status | IN("supported", "partial", "unsupported")))' >/dev/null ||
     fail "a task has an unexpected probe status"
+  echo "$output" |
+    jq -e 'all(.tasks[]; (.minimum_dokku_version | type == "string" and length > 0))' >/dev/null ||
+    fail "a task is missing minimum_dokku_version"
 }
 
 @test "docket schema lists tasks sorted by type" {

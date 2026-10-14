@@ -23,13 +23,24 @@ func runApplyWithTarget(t *testing.T, path string, args ...string) (map[string][
 		func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 			host := subprocess.TargetFromContext(ctx).Host
 			seen[host] = append(seen[host], strings.Join(in.Args, " "))
-			return subprocess.ExecCommandResponse{}, nil
+			return versionedEmptyResponse(in), nil
 		})
 
 	ui := cli.NewMockUi()
 	c := &ApplyCommand{Meta: command.Meta{Ui: ui}, Argv: argv, Ctx: withStubFixtures(ctx, stubsFor(t))}
 	c.Run(append([]string{"--tasks", path}, args...))
 	return seen, ui.OutputWriter.String()
+}
+
+// versionedEmptyResponse answers `dokku version` with the release the
+// integration suite runs, and every other command with empty stdout. The
+// version gate runs before the task, so an empty version refuses dokku_app
+// before these tests can see which host it was routed to.
+func versionedEmptyResponse(in subprocess.ExecCommandInput) subprocess.ExecCommandResponse {
+	if strings.Join(in.Args, " ") == "version" {
+		return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}
+	}
+	return subprocess.ExecCommandResponse{}
 }
 
 const twoHostRecipe = `---
@@ -123,10 +134,10 @@ func TestApplyPlaySudoInheritsAndDeclines(t *testing.T) {
 
 	sudoByHost := map[string]bool{}
 	ctx := subprocess.ContextWithRunner(context.Background(),
-		func(ctx context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 			target := subprocess.TargetFromContext(ctx)
 			sudoByHost[target.Host] = target.Sudo
-			return subprocess.ExecCommandResponse{}, nil
+			return versionedEmptyResponse(in), nil
 		})
 
 	c := &ApplyCommand{Meta: command.Meta{Ui: cli.NewMockUi()}, Argv: argv, Ctx: withStubFixtures(ctx, stubsFor(t))}
@@ -151,9 +162,9 @@ func TestPlanRoutesEachPlayToItsOwnHost(t *testing.T) {
 
 	seen := map[string]bool{}
 	ctx := subprocess.ContextWithRunner(context.Background(),
-		func(ctx context.Context, _ subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 			seen[subprocess.TargetFromContext(ctx).Host] = true
-			return subprocess.ExecCommandResponse{}, nil
+			return versionedEmptyResponse(in), nil
 		})
 
 	ui := cli.NewMockUi()

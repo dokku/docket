@@ -61,6 +61,12 @@ func (t GitFromImageTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "the recorded image reference is probed; the image digest is not, so a mutable tag that moved plans as in sync"}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `git:report`.
+func (t GitFromImageTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the git from image task
 func (t GitFromImageTask) examples() ([]Doc, error) {
 	return MarshalExamples([]GitFromImageTaskExample{

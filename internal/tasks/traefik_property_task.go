@@ -38,6 +38,12 @@ func (t TraefikPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `traefik:report --format json`. The dynamic dns family needs 0.38.27; the floor is the report the rest of the table parses.
+func (t TraefikPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the traefik property task
 func (t TraefikPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]TraefikPropertyTaskExample{

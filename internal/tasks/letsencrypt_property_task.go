@@ -38,12 +38,20 @@ func (t LetsencryptPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Requirements lists the non-core dokku plugins this task depends on. The
-// version floor is the release that surfaced `dns-provider-*` properties in
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The plugin floor is the release that surfaced `dns-provider-*` properties in
 // `letsencrypt:report`; below it those properties are absent from the report
 // and a `state: absent` task would read an unset property as already gone.
-func (t LetsencryptPropertyTask) Requirements() []string {
-	return []string{"dokku-letsencrypt plugin >= 0.25.0"}
+// 0.38.31 is the Dokku the integration suite runs.
+func (t LetsencryptPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			Name:    "letsencrypt",
+			Minimum: "0.25.0",
+			Text:    "dokku-letsencrypt plugin >= 0.25.0",
+		}},
+	}
 }
 
 // examples returns the examples for the letsencrypt property task

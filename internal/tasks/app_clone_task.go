@@ -51,6 +51,12 @@ func (t AppCloneTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbePartial, Caveat: "only the target app's existence is probed; the clone source and the cloned contents are never read back"}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `apps:clone`.
+func (t AppCloneTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the app clone task
 func (t AppCloneTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppCloneTaskExample{

@@ -49,9 +49,17 @@ func (t AclAppTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t AclAppTask) Requirements() []string {
-	return []string{"dokku-acl plugin >= 2.0.1"}
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The probe is `acl:list`. 0.38.31 is the Dokku the integration suite runs.
+func (t AclAppTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			Name:    "acl",
+			Minimum: "2.0.1",
+			Text:    "dokku-acl plugin >= 2.0.1",
+		}},
+	}
 }
 
 // examples returns the examples for the acl app task

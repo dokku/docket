@@ -67,6 +67,7 @@ type ApplyCommand struct {
 	play              string
 	failFast          bool
 	listTasks         bool
+	ignoreVersion     bool
 	startAtTask       string
 	detailedExitCode  bool
 	planFile          string
@@ -132,6 +133,7 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
 	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via `sudo -n` - remotely with --host, locally without. Covers dokku only, not docket's own reads of local files. Equivalent to DOKKU_SUDO=1.")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
+	f.BoolVar(&c.ignoreVersion, "ignore-version", false, "run tasks even when Dokku or a required plugin is older than the task declares")
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list run")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
 	f.StringArrayVar(&c.varsFiles, "vars-file", nil, "load input values from a file in any recipe format ("+recipeFormatList()+"; repeatable; later files override earlier; CLI --name=value flags always win). The format follows the extension, defaulting to YAML.")
@@ -184,6 +186,7 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 			"--host":                 complete.PredictAnything,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
+			"--ignore-version":       complete.PredictNothing,
 			"--tags":                 complete.PredictAnything,
 			"--skip-tags":            complete.PredictAnything,
 			"--vars-file":            complete.PredictFiles("*"),
@@ -267,6 +270,9 @@ func (c *ApplyCommand) Run(args []string) int {
 	session := subprocess.NewSession(masker)
 	defer func() { _ = session.Close() }()
 	ctx := session.Context(runContext(c.Ctx), target)
+	if !c.ignoreVersion {
+		ctx = tasks.ContextWithVersionGate(ctx)
+	}
 
 	plays, err := tasks.GetPlaysWithFormat(src.recipe.Data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {
@@ -762,7 +768,12 @@ func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac 
 		ac.emitter.TaskWarning(ac.play.Name, name, "deprecated", msg)
 	}
 
-	state := env.Task.Execute(ac.ctx)
+	var state tasks.TaskOutputState
+	if err := tasks.CheckMinimumVersions(ac.ctx, env.TypeName, env.Task); err != nil {
+		state = tasks.TaskOutputState{Error: err}
+	} else {
+		state = env.Task.Execute(ac.ctx)
+	}
 	ac.counts.Tasks++
 
 	// Probe diagnostics raised during planning (carried out on the state by

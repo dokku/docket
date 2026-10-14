@@ -3,7 +3,7 @@ package tasks
 // Documented is the interface a task implements to describe itself: a synopsis
 // and a set of runnable examples. Neither has anything to do with running a
 // task, so it is kept out of Task and modelled as an optional interface to
-// match ExportDocer, ProbeDocer, DeprecationDocer and RequirementsDocer. Every
+// match ExportDocer, ProbeDocer, DeprecationDocer and VersionDocer. Every
 // registered task is expected to implement it - a coverage test enforces that
 // so no task ships without a synopsis or examples - and the task catalog is
 // what reads it, which in turn feeds the generated task pages and

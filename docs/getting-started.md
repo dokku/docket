@@ -38,11 +38,16 @@ code into it:
 
 ## Prerequisites
 
-- **Dokku >= 0.38.31.**
-- **dokku-letsencrypt >= 0.25.0.**
-- **dokku-http-auth >= 0.14.0**, if your recipe uses the `dokku_http_auth*` tasks.
-- **dokku-acl >= 2.0.1**, if your recipe uses the `dokku_acl_*` tasks.
-- **dokku-global-cert >= 0.7.0**, if your recipe uses `dokku_certs` with `global: true`.
+The integration suite runs against **Dokku 0.38.31**. `plan`, `apply`, and `export` enforce the floor in each task's Requirements section: a task refuses when the server, or an installed plugin it needs, is older, and `--ignore-version` runs it anyway. A plugin that is not installed yet is left to the task's own probe, so a recipe can install it and then use it.
+
+Plugins the bundled tasks declare:
+
+- **dokku-letsencrypt >= 0.25.0**, for the `dokku_letsencrypt*` tasks.
+- **dokku-http-auth >= 0.14.0**, for the `dokku_http_auth*` tasks.
+- **dokku-acl >= 2.0.1**, for the `dokku_acl_*` tasks.
+- **dokku-global-cert >= 0.7.0**, for `dokku_certs` with `global: true`.
+- **dokku-maintenance >= 0.10.2**, for the `dokku_maintenance*` tasks.
+- A datastore plugin matching the service type, for the `dokku_service_*` tasks. Tasks that read `<service>:info` need **>= 2.3.1**. Expose and link need **>= 2.0.0**.
 
 ## Installation
 

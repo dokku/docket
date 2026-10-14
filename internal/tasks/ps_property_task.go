@@ -34,6 +34,12 @@ func (t PsPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `ps:report --format json`, which this task parses.
+func (t PsPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.9"}
+}
+
 // examples returns the examples for the ps property task
 func (t PsPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]PsPropertyTaskExample{

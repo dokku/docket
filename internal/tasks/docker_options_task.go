@@ -66,6 +66,12 @@ func (t DockerOptionsTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is the structured `<phase>-list` keys `docker-options:report` emits from this release.
+func (t DockerOptionsTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.22"}
+}
+
 // ExportApp reconstructs the app's docker options as one task per individual
 // option, per (phase, process type). Options are read from the structured
 // `<phase>-list` report keys (dokku/dokku#8799), so each stored option -

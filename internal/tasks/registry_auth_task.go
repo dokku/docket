@@ -124,6 +124,12 @@ func (t RegistryAuthTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `registry:auth-status`, which this task always runs.
+func (t RegistryAuthTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.29"}
+}
+
 // examples returns the examples for the registry auth task
 func (t RegistryAuthTask) examples() ([]Doc, error) {
 	return MarshalExamples([]RegistryAuthTaskExample{

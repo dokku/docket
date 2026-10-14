@@ -92,10 +92,20 @@ A few conventions to follow:
   keys), populate `PlanResult.Mutations` with one entry per change, so `plan` can itemize the diff.
 - `DispatchPlan` and `DispatchState` set `DesiredState` on the result automatically.
 - `init()` registers the task with `RegisterTask`, which makes it usable in a recipe.
-- When a task depends on a dokku plugin that is not part of dokku core (for example `dokku-acl` or
-  `dokku-letsencrypt`), implement the optional `Requirements() []string` method. The generator
-  renders the returned entries in a Requirements section on the task's page; tasks without the
-  method simply omit the section.
+- Every task must implement `MinimumVersions() VersionSupport`. `Dokku` is the oldest release
+  whose command and output shape the current probe parses, as `major.minor.patch`. Where the
+  task's own comment names that release, use it. A property table that works on an older report,
+  with a few keys that need a newer patch, takes the report baseline and leaves those keys in the
+  existing comments. When the introducing release cannot be established from the dokku or plugin
+  changelog, use `0.38.31` (the release the integration suite installs) and name the command in a
+  comment. `Plugins` lists non-core plugins. `Name` is the `plugin:list` name (`letsencrypt`), and
+  `Text` is the requirements line the page prints (`dokku-letsencrypt plugin >= 0.25.0`); the two
+  are written out separately because they are not the same string. `NameField` is the Go field
+  whose value is the plugin:list name (datastore tasks use `Service`). `WhenField` is the Go bool
+  that must be true before the requirement applies (`dokku_certs` uses `Global`). The method
+  returns the type-level declaration, including conditional plugins. Plan, apply, and export apply
+  `WhenField` and `NameField` to the live task, and the catalog publishes the recipe keys for
+  those fields. A coverage test fails the build when a task ships without a parseable declaration.
 - When a field names a file docket itself reads on the machine it runs on (as
   `dokku_maintenance_custom_page` reads `tarball` and streams it to dokku), tag it
   `runner_file:"true"`. [`docket schema`](task-catalog.md#fields) publishes the flag and the
@@ -381,7 +391,7 @@ does not reject a legal recipe. How they plan depends on the plugin:
 - The plugin reports the family (letsencrypt on 0.25.0+ and traefik on dokku 0.38.27+ emit a row per
   set property): declare it `Probeable`, and the scope keys are synthesized so the property probes
   like any mapped one. Because the row only exists once the property has a value, an absent row reads
-  as unset. Note the minimum plugin version in `Requirements()`.
+  as unset. Note the minimum plugin version in `MinimumVersions()`.
 - The plugin does not report it: leave `Probeable` false. The property skips probing and is applied
   unconditionally, and the task is `ProbePartial` with a caveat naming the family. No family declared
   today is in this state, so `runUnprobedSet`/`runUnprobedUnset` have no live caller - they are the
@@ -494,9 +504,9 @@ and offer a field (config's `preserve`) for keys the task cannot recognise on it
 ## Regenerating the task docs
 
 The per-task pages under [`docs/tasks/`](tasks/README.md) are generated from each task's `Doc()`,
-`examples()`, `ExportSupport()`, `ProbeSupport()`, optional `Requirements()` and `propertyTable()`
+`examples()`, `ExportSupport()`, `ProbeSupport()`, `MinimumVersions()` and `propertyTable()`
 methods plus its struct field tags - they are not hand-edited. Each page carries a Synopsis (from
-`Doc()`), a Requirements section (when the task implements `Requirements()`), a Runner requirements
+`Doc()`), a Requirements section (the Dokku floor, then each plugin line), a Runner requirements
 section (when a field is tagged `runner_file:"true"`), Export support and Probe support sections, an
 Identity section, a Parameters table (reflected from the field tags), a Properties table (for a task
 with a `propertyTable()`), the examples, and a shared Return Values table. After adding or changing a

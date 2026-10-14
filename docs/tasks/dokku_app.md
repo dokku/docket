@@ -4,6 +4,10 @@
 
 Creates or destroys an app
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

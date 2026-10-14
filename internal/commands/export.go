@@ -72,6 +72,7 @@ type ExportCommand struct {
 	host              string
 	sudo              bool
 	acceptNewHostKeys bool
+	ignoreVersion     bool
 }
 
 func (c *ExportCommand) Name() string {
@@ -124,6 +125,7 @@ func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
 	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via sudo -n, remotely with --host and locally without")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "trust an unknown SSH host key on first connect")
+	f.BoolVar(&c.ignoreVersion, "ignore-version", false, "export tasks even when Dokku or a required plugin is older than the task declares")
 	return f
 }
 
@@ -141,6 +143,7 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 			"--host":                 complete.PredictNothing,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
+			"--ignore-version":       complete.PredictNothing,
 		},
 	)
 }
@@ -219,6 +222,9 @@ func (c *ExportCommand) Run(args []string) int {
 	session := subprocess.NewSession(masker)
 	defer func() { _ = session.Close() }()
 	ctx := session.Context(runContext(c.Ctx), target)
+	if !c.ignoreVersion {
+		ctx = tasks.ContextWithVersionGate(ctx)
+	}
 
 	toStdout := c.output == taskFileStdin
 

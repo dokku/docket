@@ -4,6 +4,10 @@
 
 Manages the apps plugin configuration for a given dokku application or globally
 
+## Requirements
+
+- Dokku >= 0.38.12
+
 ## Export support
 
 Supported.

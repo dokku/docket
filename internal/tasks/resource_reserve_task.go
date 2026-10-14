@@ -50,6 +50,12 @@ func (t ResourceReserveTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `resource:reserve`.
+func (t ResourceReserveTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the resource reserve task
 func (t ResourceReserveTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceReserveTaskExample{

@@ -4,6 +4,10 @@
 
 Manages the domains for a given dokku application or globally
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

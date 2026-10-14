@@ -4,6 +4,10 @@
 
 Clones an existing dokku app to a new app
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Not supported - an imperative clone operation, not reconstructable state.

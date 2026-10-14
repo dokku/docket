@@ -34,6 +34,12 @@ func (t NetworkPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `network:report --format json`, which this task parses.
+func (t NetworkPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the network property task
 func (t NetworkPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkPropertyTaskExample{

@@ -50,6 +50,12 @@ func (t ResourceLimitTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `resource:limit`.
+func (t ResourceLimitTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the resource limit task
 func (t ResourceLimitTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ResourceLimitTaskExample{

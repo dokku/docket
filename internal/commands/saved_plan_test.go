@@ -530,7 +530,7 @@ func TestApplyPlanUsesSavedTarget(t *testing.T) {
 	ctx := subprocess.ContextWithRunner(context.Background(),
 		func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 			seen[subprocess.TargetFromContext(ctx).Host]++
-			return subprocess.ExecCommandResponse{}, nil
+			return versionedEmptyResponse(in), nil
 		})
 
 	if res := runPlanSaving(t, ctx, dir, testDocketVersion, "--tasks", path, "--host", "saved@example.com", "--output", "plan.json"); res.exit != 0 {

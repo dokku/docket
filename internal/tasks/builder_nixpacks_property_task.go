@@ -34,6 +34,12 @@ func (t BuilderNixpacksPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `builder-nixpacks:report --format json`, which this task parses.
+func (t BuilderNixpacksPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the builder-nixpacks property task
 func (t BuilderNixpacksPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]BuilderNixpacksPropertyTaskExample{

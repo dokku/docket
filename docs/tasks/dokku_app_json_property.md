@@ -4,6 +4,10 @@
 
 Manages the app.json configuration for a given dokku application
 
+## Requirements
+
+- Dokku >= 0.38.8
+
 ## Export support
 
 Supported.

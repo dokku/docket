@@ -50,6 +50,12 @@ func (t StorageEnsureTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeUnsupported, Caveat: "`storage:ensure-directory` has no read command, so the task plans as drift on every run"}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `storage:ensure-directory`.
+func (t StorageEnsureTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // Deprecation marks dokku_storage_ensure as deprecated. dokku's
 // underlying storage:ensure-directory subcommand has been deprecated in
 // favor of storage:create, which docket exposes through

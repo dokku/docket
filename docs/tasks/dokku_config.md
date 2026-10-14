@@ -4,6 +4,10 @@
 
 Manages the configuration for a given dokku application
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Partial - config values are written to the companion vars-file.

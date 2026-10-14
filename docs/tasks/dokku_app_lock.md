@@ -4,6 +4,10 @@
 
 Locks or unlocks a dokku application from deployment
 
+## Requirements
+
+- Dokku >= 0.38.31
+
 ## Export support
 
 Supported.

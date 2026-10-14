@@ -20,7 +20,7 @@ func failingExecRunner(responses map[string]string, failing string, err error) f
 		if key == failing {
 			return subprocess.ExecCommandResponse{}, err
 		}
-		return subprocess.ExecCommandResponse{Stdout: responses[key]}, nil
+		return fixtureResponse(responses, key), nil
 	}
 }
 

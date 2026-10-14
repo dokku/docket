@@ -64,6 +64,13 @@ func (t PluginTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `plugin:list`.
+// committish remains how a recipe pins the plugin this task installs.
+func (t PluginTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the plugin task
 func (t PluginTask) examples() ([]Doc, error) {
 	return MarshalExamples([]PluginTaskExample{
@@ -135,7 +142,7 @@ func (t PluginTask) Plan(ctx context.Context) PlanResult {
 				Mutations: []string{fmt.Sprintf("install plugin %s", t.Name)},
 				Commands:  resolveCommands(ctx, inputs),
 				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+					return runPluginChange(ctx, StateAbsent, StatePresent, inputs)
 				},
 			}
 		},
@@ -158,7 +165,7 @@ func (t PluginTask) Plan(ctx context.Context) PlanResult {
 				Mutations: []string{fmt.Sprintf("uninstall plugin %s", t.Name)},
 				Commands:  resolveCommands(ctx, inputs),
 				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+					return runPluginChange(ctx, StatePresent, StateAbsent, inputs)
 				},
 			}
 		},
@@ -241,6 +248,18 @@ func pluginInstalled(ctx context.Context, name string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// runPluginChange installs or uninstalls a plugin, then drops the cached
+// plugin list for this target. A later task on the same host has to see the
+// plugin this one just changed; a list read before the change would still
+// say it was missing or old. A failed change leaves the cache alone.
+func runPluginChange(ctx context.Context, prior, desired State, inputs []subprocess.ExecCommandInput) TaskOutputState {
+	state := runExecInputs(ctx, TaskOutputState{State: prior}, desired, inputs)
+	if state.Error == nil {
+		InvalidatePluginVersions(ctx)
+	}
+	return state
 }
 
 // init registers the PluginTask with the task registry

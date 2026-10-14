@@ -34,6 +34,12 @@ func (t CronPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `cron:report --format json`, which this task parses.
+func (t CronPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the cron property task
 func (t CronPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]CronPropertyTaskExample{

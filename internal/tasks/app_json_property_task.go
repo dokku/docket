@@ -34,6 +34,12 @@ func (t AppJsonPropertyTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is `app-json:report --format json`, which this task parses.
+func (t AppJsonPropertyTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.8"}
+}
+
 // examples returns the examples for the app.json property task
 func (t AppJsonPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppJsonPropertyTaskExample{

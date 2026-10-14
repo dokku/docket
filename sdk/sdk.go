@@ -153,7 +153,7 @@ func ParseResourceSelectors(addresses []string) ([]ResourceSelector, error) {
 // describes it. An export that finds nothing is not an error: check
 // Report.MissingApps and Report.MissingResources.
 func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
-	return tasks.ExportRecipe(ctx, opts)
+	return tasks.ExportRecipe(tasks.ContextWithVersionGate(ctx), opts)
 }
 
 // As returns an exported task's body as T, the value type registered under

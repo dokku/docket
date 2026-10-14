@@ -60,6 +60,19 @@ One JSON object, pretty-printed, with a `version` and a `tasks` array sorted by 
 Every name in the document is a key a recipe author types. Go type names and Go field names are
 deliberately absent - the catalog describes the recipe surface, not docket's implementation.
 
+## Dokku and plugin versions
+
+`minimum_dokku_version` is the oldest Dokku release that task's probe parses, as
+`major.minor.patch`. `plugin_requirements` lists the non-core plugins it needs: `minimum`, `name`
+when the plugin:list name is fixed, and `when` or `name_field` holding the recipe key when the
+requirement is conditional or the plugin name comes from a field. `name` is absent when
+`name_field` is set. `requirements` stays the plugin prose those declarations print, one line per
+plugin, and does not repeat the Dokku floor.
+
+`plan`, `apply`, and `export` refuse a task when the live server, or an installed plugin it
+requires, is older. `--ignore-version` skips that check. Adding these keys does not bump
+`version`.
+
 There is a [JSON Schema](schemas/task-catalog-v1.schema.json) for the whole thing. Unlike the
 [JSON-lines streams](json-output.md), which validate one line at a time, this one validates the
 document as a unit.

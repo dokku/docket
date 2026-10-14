@@ -6,7 +6,8 @@ Enables or disables letsencrypt SSL certificates for a dokku application
 
 ## Requirements
 
-- dokku-letsencrypt plugin
+- Dokku >= 0.38.31
+- dokku-letsencrypt plugin >= 0.25.0
 
 ## Export support
 

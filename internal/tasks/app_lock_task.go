@@ -45,6 +45,12 @@ func (t AppLockTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `apps:locked`.
+func (t AppLockTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the app lock task
 func (t AppLockTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppLockTaskExample{

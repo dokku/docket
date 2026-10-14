@@ -52,6 +52,20 @@ func (t AclServiceTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
+// The probe is `acl:list`. 0.38.31 is the Dokku the integration suite runs.
+// `service` is the instance name, not the plugin, so the plugin name stays `acl`.
+func (t AclServiceTask) MinimumVersions() VersionSupport {
+	return VersionSupport{
+		Dokku: "0.38.31",
+		Plugins: []PluginRequirement{{
+			Name:    "acl",
+			Minimum: "2.0.1",
+			Text:    "dokku-acl plugin >= 2.0.1",
+		}},
+	}
+}
+
 // ExportGlobal reconstructs the dokku-acl access list of every datastore
 // service on the server. Discovery is via listServices; the members are read
 // from `acl:list-service <type> <name>` (reusing getAclServiceUsers). Note the
@@ -88,11 +102,6 @@ func (t AclServiceTask) ExportGlobal(ctx context.Context) ([]interface{}, error)
 		})
 	}
 	return out, nil
-}
-
-// Requirements lists the non-core dokku plugins this task depends on.
-func (t AclServiceTask) Requirements() []string {
-	return []string{"dokku-acl plugin >= 2.0.1"}
 }
 
 // examples returns the examples for the acl service task

@@ -65,6 +65,12 @@ func (t DomainsToggleTask) ProbeSupport() ProbeSupport {
 	return ProbeSupport{Status: ProbeSupported}
 }
 
+// MinimumVersions reports the oldest Dokku this task's probe parses.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `domains:report`.
+func (t DomainsToggleTask) MinimumVersions() VersionSupport {
+	return VersionSupport{Dokku: "0.38.31"}
+}
+
 // examples returns the examples for the domains toggle task
 func (t DomainsToggleTask) examples() ([]Doc, error) {
 	return MarshalExamples([]DomainsToggleTaskExample{

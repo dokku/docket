@@ -6,7 +6,8 @@ Installs or removes a custom maintenance page for a dokku application.
 
 ## Requirements
 
-- dokku-maintenance plugin
+- Dokku >= 0.38.31
+- dokku-maintenance plugin >= 0.10.2
 
 ## Runner requirements
 
