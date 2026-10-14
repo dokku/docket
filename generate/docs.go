@@ -36,8 +36,43 @@ func summarize(doc string) string {
 
 // escapeCell makes a string safe to embed in a markdown table cell.
 func escapeCell(s string) string {
-	s = strings.ReplaceAll(s, "|", "\\|")
+	s = strings.ReplaceAll(escapeProse(s), "|", "\\|")
 	return strings.ReplaceAll(s, "\n", " ")
+}
+
+// escapeProse escapes a bare `<...>` in task-supplied prose so a placeholder
+// such as `<service>:set` in a description or caveat renders as text.
+// Markdown treats a bare `<service>` as an inline HTML tag, which GitHub drops
+// from the page and which markdown-lint rejects as MD033. Only a `<` that
+// looks like a tag start (a letter, `/`, `!` or `?` after it) is rewritten to
+// `&lt;`; a bare `>` and a comparison such as `>=` are left alone, since they
+// are not HTML. Brackets inside a backtick code span are left alone too, since
+// a code span already renders them literally and an entity there would show up
+// as `&lt;`.
+func escapeProse(s string) string {
+	runes := []rune(s)
+	var b strings.Builder
+	inCode := false
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		switch {
+		case r == '`':
+			inCode = !inCode
+			b.WriteRune(r)
+		case inCode:
+			b.WriteRune(r)
+		case r == '<' && i+1 < len(runes) && isHTMLTagStart(runes[i+1]):
+			b.WriteString("&lt;")
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// isHTMLTagStart reports whether r can open an HTML tag after a `<`.
+func isHTMLTagStart(r rune) bool {
+	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '/' || r == '!' || r == '?'
 }
 
 func yesNo(b bool) string {
@@ -189,7 +224,7 @@ func requirementsSection(requirements []string) string {
 	var b strings.Builder
 	b.WriteString("## Requirements\n\n")
 	for _, r := range requirements {
-		b.WriteString("- " + r + "\n")
+		b.WriteString("- " + escapeProse(r) + "\n")
 	}
 	return b.String()
 }
@@ -248,7 +283,7 @@ func exportSupportSection(support tasks.ExportSupport) string {
 	}
 	line := label
 	if support.Caveat != "" {
-		line += " - " + support.Caveat
+		line += " - " + escapeProse(support.Caveat)
 	}
 	return "## Export support\n\n" + line + "."
 }
@@ -276,7 +311,7 @@ func probeSupportSection(support tasks.ProbeSupport) string {
 	}
 	line := label
 	if support.Caveat != "" {
-		line += " - " + support.Caveat
+		line += " - " + escapeProse(support.Caveat)
 	}
 	return "## Probe support\n\n" + line + "."
 }
@@ -340,7 +375,7 @@ func deprecationSection(message string) string {
 	if message == "" {
 		return ""
 	}
-	return "> **Deprecated:** " + message
+	return "> **Deprecated:** " + escapeProse(message)
 }
 
 // returnValuesSection is the shared Return Values table. Every task returns a
@@ -390,7 +425,7 @@ func examplesSection(examples []tasks.ExampleSchema) string {
 func renderPage(schema tasks.TaskSchema) string {
 	var sections []string
 	sections = append(sections, "# "+schema.Type)
-	sections = append(sections, "## Synopsis\n\n"+schema.Synopsis)
+	sections = append(sections, "## Synopsis\n\n"+escapeProse(schema.Synopsis))
 	if dep := deprecationSection(schema.Deprecation); dep != "" {
 		sections = append(sections, dep)
 	}
@@ -437,7 +472,7 @@ func renderIndex(catalog tasks.TaskCatalog) string {
 		if schema.Probe.Status == tasks.ProbeUnsupported {
 			suffix += " (never converges)"
 		}
-		index.WriteString(fmt.Sprintf("- [%s](%s.md) - %s%s\n", schema.Type, schema.Type, summarize(schema.Synopsis), suffix))
+		index.WriteString(fmt.Sprintf("- [%s](%s.md) - %s%s\n", schema.Type, schema.Type, escapeProse(summarize(schema.Synopsis)), suffix))
 	}
 	return index.String()
 }
