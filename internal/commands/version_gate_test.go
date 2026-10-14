@@ -107,7 +107,7 @@ func TestPlanRefusesOldPluginAndAllowsAMissingOne(t *testing.T) {
 	if exit == 0 {
 		t.Fatalf("exit = 0; stdout:\n%s\nstderr:\n%s", stdout, stderr)
 	}
-	if !strings.Contains(stdout+stderr, "dokku_letsencrypt requires letsencrypt >= 0.25.0, server has 0.1.0") {
+	if !strings.Contains(stdout+stderr, "dokku_letsencrypt requires letsencrypt >= 0.25.2, server has 0.1.0") {
 		t.Fatalf("output missing the plugin refusal:\n%s\n%s", stdout, stderr)
 	}
 	if containsArg(seen, "letsencrypt:active") {

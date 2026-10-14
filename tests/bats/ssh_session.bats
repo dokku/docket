@@ -6,8 +6,9 @@ load test_helper
 # host nor a local dokku. The fake stands in for what OpenSSH does with a
 # control socket: the first call for a ControlPath creates it, and
 # `ssh -O exit` removes it. A socket still on disk after docket exits is a
-# master docket never closed. Every remote command answers with exit 0 and no
-# output, which the dokku_app probe reads as "the app exists".
+# master docket never closed. `dokku version` answers 0.38.31 so the version
+# gate lets the task run. Every other remote command answers with exit 0 and
+# no output, which the dokku_app probe reads as "the app exists".
 
 setup() {
   docket_build
@@ -45,6 +46,9 @@ if [ "$exit_master" -eq 1 ]; then
 fi
 echo "run $host" >>"$SSH_LOG"
 touch "$socket"
+if [ "$*" = "dokku version" ]; then
+  printf '0.38.31\n'
+fi
 exit 0
 EOF
   chmod +x "$FAKE_BIN/ssh"

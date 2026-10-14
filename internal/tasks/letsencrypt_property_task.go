@@ -39,17 +39,18 @@ func (t LetsencryptPropertyTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
-// The plugin floor is the release that surfaced `dns-provider-*` properties in
-// `letsencrypt:report`; below it those properties are absent from the report
-// and a `state: absent` task would read an unset property as already gone.
-// 0.38.31 is the Dokku the integration suite runs.
+// dns-provider-* landed in the 0.25.0 git tag; below that those properties are
+// absent from letsencrypt:report and a state: absent task would read an unset
+// property as already gone. The floor is 0.25.2 because that is the first tag
+// whose plugin.toml version matches what plugin:list prints. Tag 0.25.0 still
+// reported 0.20.4. 0.38.31 is the Dokku the integration suite runs.
 func (t LetsencryptPropertyTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",
 		Plugins: []PluginRequirement{{
 			Name:    "letsencrypt",
-			Minimum: "0.25.0",
-			Text:    "dokku-letsencrypt plugin >= 0.25.0",
+			Minimum: "0.25.2",
+			Text:    "dokku-letsencrypt plugin >= 0.25.2",
 		}},
 	}
 }

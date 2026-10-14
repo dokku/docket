@@ -167,7 +167,7 @@ func TestCheckMinimumVersions(t *testing.T) {
 		t.Parallel()
 		ctx := gatedRunner(t, versionRunner("0.38.31\n", `[{"name":"letsencrypt","version":"0.1.0"}]`))
 		err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"})
-		if err == nil || !strings.Contains(err.Error(), "dokku_letsencrypt requires letsencrypt >= 0.25.0, server has 0.1.0") {
+		if err == nil || !strings.Contains(err.Error(), "dokku_letsencrypt requires letsencrypt >= 0.25.2, server has 0.1.0") {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -272,12 +272,12 @@ func TestPluginInstallInvalidatesVersionCache(t *testing.T) {
 			lists++
 			version := "0.1.0"
 			if installed {
-				version = "0.25.0"
+				version = "0.25.2"
 			}
 			return subprocess.ExecCommandResponse{Stdout: `[{"name":"letsencrypt","version":"` + version + `"}]`}, nil
 		case key == "--quiet plugin:list":
 			if installed {
-				return subprocess.ExecCommandResponse{Stdout: "letsencrypt 0.25.0 enabled\n"}, nil
+				return subprocess.ExecCommandResponse{Stdout: "letsencrypt 0.25.2 enabled\n"}, nil
 			}
 			return subprocess.ExecCommandResponse{}, nil
 		case strings.HasPrefix(key, "--quiet plugin:install"):

@@ -42,7 +42,7 @@ The integration suite runs against **Dokku 0.38.31**. `plan`, `apply`, and `expo
 
 Plugins the bundled tasks declare:
 
-- **dokku-letsencrypt >= 0.25.0**, for the `dokku_letsencrypt*` tasks.
+- **dokku-letsencrypt >= 0.25.2**, for the `dokku_letsencrypt*` tasks.
 - **dokku-http-auth >= 0.14.0**, for the `dokku_http_auth*` tasks.
 - **dokku-acl >= 2.0.1**, for the `dokku_acl_*` tasks.
 - **dokku-global-cert >= 0.7.0**, for `dokku_certs` with `global: true`.

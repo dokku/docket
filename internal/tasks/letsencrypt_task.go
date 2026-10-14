@@ -47,17 +47,17 @@ func (t LetsencryptTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
-// The probe is `letsencrypt:active`, not the property report, so this floor
-// is the letsencrypt release the integration suite installs rather than the
-// dns-provider report that `dokku_letsencrypt_property` parses. 0.38.31 is
-// the Dokku that suite runs.
+// The probe is `letsencrypt:active`, not the property report. The floor is
+// 0.25.2, the plugin:list version of the release the integration suite
+// installs. Tag 0.25.0's plugin.toml still said 0.20.4. 0.38.31 is the Dokku
+// that suite runs.
 func (t LetsencryptTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",
 		Plugins: []PluginRequirement{{
 			Name:    "letsencrypt",
-			Minimum: "0.25.0",
-			Text:    "dokku-letsencrypt plugin >= 0.25.0",
+			Minimum: "0.25.2",
+			Text:    "dokku-letsencrypt plugin >= 0.25.2",
 		}},
 	}
 }

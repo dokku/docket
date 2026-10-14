@@ -199,6 +199,12 @@ type PlanStatus = tasks.PlanStatus
 // PlanWarning is tasks.PlanWarning.
 type PlanWarning = tasks.PlanWarning
 
+// PluginRequirement is tasks.PluginRequirement.
+type PluginRequirement = tasks.PluginRequirement
+
+// PluginRequirementSchema is tasks.PluginRequirementSchema.
+type PluginRequirementSchema = tasks.PluginRequirementSchema
+
 // PluginTask is tasks.PluginTask.
 type PluginTask = tasks.PluginTask
 
@@ -330,3 +336,6 @@ type TaskSchema = tasks.TaskSchema
 
 // TraefikPropertyTask is tasks.TraefikPropertyTask.
 type TraefikPropertyTask = tasks.TraefikPropertyTask
+
+// VersionSupport is tasks.VersionSupport.
+type VersionSupport = tasks.VersionSupport

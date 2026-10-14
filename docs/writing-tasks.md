@@ -99,7 +99,7 @@ A few conventions to follow:
   existing comments. When the introducing release cannot be established from the dokku or plugin
   changelog, use `0.38.31` (the release the integration suite installs) and name the command in a
   comment. `Plugins` lists non-core plugins. `Name` is the `plugin:list` name (`letsencrypt`), and
-  `Text` is the requirements line the page prints (`dokku-letsencrypt plugin >= 0.25.0`); the two
+  `Text` is the requirements line the page prints (`dokku-letsencrypt plugin >= 0.25.2`); the two
   are written out separately because they are not the same string. `NameField` is the Go field
   whose value is the plugin:list name (datastore tasks use `Service`). `WhenField` is the Go bool
   that must be true before the requirement applies (`dokku_certs` uses `Global`). The method
