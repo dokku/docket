@@ -159,7 +159,7 @@ func TaskIdentityCollections(t Task) []IdentityCollection {
 // collectionItemIdentity classifies a collection field's element type and, for
 // a struct element, returns the yaml names of its own identity keys.
 func collectionItemIdentity(t reflect.Type) (ItemIdentity, []string) {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() == reflect.Map {
@@ -169,7 +169,7 @@ func collectionItemIdentity(t reflect.Type) (ItemIdentity, []string) {
 		return ItemIdentityValue, nil
 	}
 	elem := t.Elem()
-	for elem.Kind() == reflect.Ptr {
+	for elem.Kind() == reflect.Pointer {
 		elem = elem.Elem()
 	}
 	if elem.Kind() != reflect.Struct {
@@ -192,7 +192,7 @@ func structValue(t Task) (reflect.Value, bool) {
 		return reflect.Value{}, false
 	}
 	v := reflect.ValueOf(t)
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return reflect.Value{}, false
 		}
@@ -208,7 +208,7 @@ func structValue(t Task) (reflect.Value, bool) {
 // anything. A zero value is not present, which is what drops `global` from an
 // app-scoped address and `app` from a global-scoped one.
 func renderIdentityValue(v reflect.Value) (string, bool) {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return "", false
 		}

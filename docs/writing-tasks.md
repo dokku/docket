@@ -512,6 +512,9 @@ task plus the `docs/tasks/README.md` index, and `go generate ./sdk/`, which rewr
 the regenerated files alongside your code - `TestGeneratedDocsAreCurrent` and
 `TestGeneratedSDKIsCurrent` fail the build if you forget, and print the diff.
 
+CI also runs `make lint` (`golangci-lint` with the linters pinned in `.golangci.yml`). Run the same
+locally before sending a PR.
+
 The generator renders those pages from `tasks.Catalog()`, the same description
 [`docket schema`](task-catalog.md) emits, so a declaration you add shows up in both or in neither.
 

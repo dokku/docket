@@ -422,31 +422,14 @@ var envelopeAllowlistKeys = []string{
 	"always",
 }
 
-// envelopeAllowlistSet is envelopeAllowlistKeys as a lookup set.
-var envelopeAllowlistSet = func() map[string]bool {
-	m := make(map[string]bool, len(envelopeAllowlistKeys))
-	for _, k := range envelopeAllowlistKeys {
-		m[k] = true
-	}
-	return m
-}()
-
-// loopVarPlaceholder is the literal substitution sigil renders for `.item`
-// and `.index` during the file-level pass. Keeping `{{ .item }}` /
-// `{{ .index }}` intact through the first pass means loop expansion sees
-// the original template and can render with real values. The loader
-// rejects any task body that still contains these tokens after the
-// per-task second pass, so misuse outside a loop is reported as a parse
-// error.
-const (
-	loopItemPlaceholder  = "{{ .item }}"
-	loopIndexPlaceholder = "{{ .index }}"
-)
-
 // loopVarSentinelPattern catches `{{ ... .item ... }}` and
 // `{{ ... .index ... }}` references so they can be hidden from the
 // file-level sigil pass and restored before loop expansion runs the
 // second pass, and so they can be detected outside a loop and rejected.
+// Keeping the tokens intact through the first pass means loop expansion
+// sees the original template and can render with real values; the loader
+// rejects any task body that still contains one after the per-task second
+// pass, so misuse outside a loop is reported as a parse error.
 //
 // `.item` / `.index` must be a *root* path segment: the dot is preceded
 // by the `{{`, whitespace, or another non-identifier char (never by an

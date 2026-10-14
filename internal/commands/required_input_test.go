@@ -61,7 +61,7 @@ func TestRequiredInputIsEnforcedForEveryType(t *testing.T) {
 				if exit == 0 {
 					t.Errorf("%s: exit = 0, want non-zero for a required input with no value; stdout=%s", cmd.name, stdout)
 				}
-				if !strings.Contains(stderr, "Missing flag '--debug'") {
+				if !strings.Contains(stderr, "missing flag '--debug'") {
 					t.Errorf("%s: stderr does not name the missing input; got:\n%s", cmd.name, stderr)
 				}
 			}
@@ -117,7 +117,7 @@ func TestMissingRequiredInputIsDeterministic(t *testing.T) {
 		if exit == 0 {
 			t.Fatalf("exit = 0, want non-zero")
 		}
-		if !strings.Contains(stderr, "Missing flag '--alpha'") {
+		if !strings.Contains(stderr, "missing flag '--alpha'") {
 			t.Fatalf("run %d named a different input; got:\n%s", i, stderr)
 		}
 	}
@@ -140,7 +140,7 @@ func TestRequiredStringInputIsNotSatisfiedByAnEmptyValue(t *testing.T) {
 	if exit == 0 {
 		t.Fatalf("exit = 0, want non-zero; stdout=%s", stdout)
 	}
-	if !strings.Contains(stderr, "Missing flag '--app'") {
+	if !strings.Contains(stderr, "missing flag '--app'") {
 		t.Errorf("stderr does not name the missing input; got:\n%s", stderr)
 	}
 	if strings.Contains(stdout, "<no value>") {

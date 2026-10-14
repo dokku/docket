@@ -59,7 +59,7 @@ func loadSchema(t *testing.T, path string) *jsonschema.Schema {
 	if err != nil {
 		t.Fatalf("open %s: %v", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	doc, err := jsonschema.UnmarshalJSON(f)
 	if err != nil {

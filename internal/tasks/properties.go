@@ -595,11 +595,7 @@ func RejectedPropertyFamilies(table PropertyTable) []RejectedPropertySchema {
 	}
 	out := make([]RejectedPropertySchema, 0, len(table.Rejected))
 	for _, family := range table.Rejected {
-		out = append(out, RejectedPropertySchema{
-			Prefix:      family.Prefix,
-			Replacement: family.Replacement,
-			Reason:      family.Reason,
-		})
+		out = append(out, RejectedPropertySchema(family))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Prefix < out[j].Prefix })
 	return out
@@ -817,7 +813,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 			}
 
 			status := PlanStatusModify
-			reason := fmt.Sprintf("would set %s on %s", property, target)
+			var reason string
 			if probeErr != nil {
 				reason = fmt.Sprintf("would set %s on %s (probe failed: %v)", property, target, probeErr)
 			} else if current == "" {
@@ -861,7 +857,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 				return PlanResult{InSync: true, Status: PlanStatusOK}
 			}
 
-			reason := fmt.Sprintf("would unset %s on %s", property, target)
+			var reason string
 			if probeErr != nil {
 				reason = fmt.Sprintf("would unset %s on %s (probe failed: %v)", property, target, probeErr)
 			} else {

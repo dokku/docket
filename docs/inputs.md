@@ -177,7 +177,7 @@ docket is meant to run unattended in scripts and CI. An input declared `required
 default and no supplied value stops the run before the first task, on every type:
 
 ```text
- !     Missing flag '--deploy_token'
+ !     missing flag '--deploy_token'
 ```
 
 `docket validate --strict` flags exactly that case offline, as `input_missing`, so a recipe that

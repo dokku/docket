@@ -261,7 +261,7 @@ func renderListEnvelope(
 		case "when_error":
 			b.WriteString("[when?]   ")
 		default:
-			b.WriteString(fmt.Sprintf("[%d] ", index))
+			fmt.Fprintf(&b, "[%d] ", index)
 		}
 		decorated := display
 		if phase != "" {
@@ -281,7 +281,7 @@ func renderListEnvelope(
 			b.WriteString("  (partial probe)")
 		}
 		if len(tags) > 0 {
-			b.WriteString(fmt.Sprintf("  [tags=%s]", strings.Join(tags, ",")))
+			fmt.Fprintf(&b, "  [tags=%s]", strings.Join(tags, ","))
 		}
 		rc.ui.Output(b.String())
 	}

@@ -12,7 +12,7 @@ import (
 // connections made under it.
 func ExampleNewSession() {
 	session := sdk.NewSession(sdk.NewMasker("s3cr3t"))
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 
 	ctx := session.Context(context.Background(), sdk.Target{
 		Host: "deploy@dokku.example.com",
@@ -36,7 +36,7 @@ func ExampleNewTask() {
 // Reading a server back and picking out one task type.
 func ExampleExportRecipe() {
 	session := sdk.NewSession(nil)
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	ctx := session.Context(context.Background(), sdk.Target{Host: "dokku@dokku.example.com"})
 
 	res, err := sdk.ExportRecipe(ctx, sdk.ExportOptions{Inline: true})

@@ -217,7 +217,7 @@ func (c *ExportCommand) Run(args []string) int {
 	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
 	masker := subprocess.NewMasker()
 	session := subprocess.NewSession(masker)
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	ctx := session.Context(runContext(c.Ctx), target)
 
 	toStdout := c.output == taskFileStdin
@@ -438,7 +438,7 @@ func (c *ExportCommand) writeVarsFile(path string, data []byte) error {
 		c.Ui.Warn(fmt.Sprintf("warning: could not set mode %#o on %s: %v; it holds secrets in the clear", varsFileMode, path, err))
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()

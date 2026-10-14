@@ -73,7 +73,7 @@ func TestOrderedStringEnvelopeMapKeysPreservesOrder(t *testing.T) {
 func TestOrderedStringEnvelopeMapEmptyKeys(t *testing.T) {
 	m := OrderedStringEnvelopeMap{}
 	keys := m.Keys()
-	if keys != nil && len(keys) != 0 {
+	if len(keys) != 0 {
 		t.Errorf("expected nil or empty keys, got %v", keys)
 	}
 }

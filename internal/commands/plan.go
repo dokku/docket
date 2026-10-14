@@ -274,7 +274,7 @@ func (c *PlanCommand) Run(args []string) int {
 	// different one. It also records every SSH connection the run opens, a
 	// play's own `host:` included, and closes them all on the way out.
 	session := subprocess.NewSession(masker)
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	ctx := session.Context(runContext(c.Ctx), target)
 
 	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)

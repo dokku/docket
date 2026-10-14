@@ -51,7 +51,7 @@ func TestFormatReordersEnvelopeKeys(t *testing.T) {
 	if idxName < 0 || idxType < 0 {
 		t.Fatalf("missing expected keys:\n%s", body)
 	}
-	if !(idxName < idxType) {
+	if idxName >= idxType {
 		t.Errorf("name should sort before task-type key:\n%s", body)
 	}
 }
@@ -75,7 +75,7 @@ func TestFormatReordersPlayKeys(t *testing.T) {
 	if idxInputs < 0 || idxTasks < 0 {
 		t.Fatalf("missing expected keys:\n%s", body)
 	}
-	if !(idxInputs < idxTasks) {
+	if idxInputs >= idxTasks {
 		t.Errorf("inputs should sort before tasks:\n%s", body)
 	}
 }

@@ -245,12 +245,7 @@ func TestDynamicPropertyFamiliesArePublished(t *testing.T) {
 			continue
 		}
 		for _, family := range families {
-			want := DynamicPropertySchema{
-				Prefix:    family.Prefix,
-				Probeable: family.Probeable,
-				Sensitive: family.Sensitive,
-				Scopes:    family.Scopes,
-			}
+			want := DynamicPropertySchema(family)
 			found := false
 			for _, got := range published {
 				if reflect.DeepEqual(got, want) {

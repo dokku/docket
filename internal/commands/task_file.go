@@ -129,7 +129,7 @@ func taskFileDisplayName(path string) string {
 // shellQuotePath renders path so a printed command survives a paste into
 // a POSIX shell. A path made only of characters the shell leaves alone
 // comes back untouched; anything else is single-quoted, with an embedded
-// single quote spelled '\''.
+// single quote spelled '\”.
 //
 // The safe set is an allowlist rather than a list of metacharacters to
 // escape, the same rule as Python's shlex.quote: a character nobody
@@ -404,7 +404,6 @@ func (s *stdinRecipeSource) recipe() ([]byte, error) {
 	return s.data, s.err
 }
 
-
 // fetchTaskFileURL GETs a recipe from an http(s) URL. A transport error, a
 // non-2xx response, or a body larger than maxTaskFileBytes is reported as
 // an error naming the URL so the read-error message stays actionable.
@@ -414,7 +413,7 @@ func fetchTaskFileURL(rawURL string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", rawURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("fetch %s: unexpected status %s", rawURL, resp.Status)

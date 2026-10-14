@@ -783,7 +783,7 @@ func buildInputContext(arguments map[string]*Argument, userSet map[string]bool) 
 	for _, name := range names {
 		argument := arguments[name]
 		if argument.Required && !argument.IsSatisfied(userSet[name]) {
-			return nil, nil, fmt.Errorf("Missing flag '--%s'", name)
+			return nil, nil, fmt.Errorf("missing flag '--%s'", name)
 		}
 		context[name] = argument.ContextValue()
 		if argument.Sensitive && (argument.HasDefault || userSet[name]) {

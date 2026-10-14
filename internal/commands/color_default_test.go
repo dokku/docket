@@ -64,7 +64,9 @@ func TestNoColorEnvMatchesFatihDetection(t *testing.T) {
 			// which is the state a bare `NO_COLOR=` cannot express.
 			for _, key := range []string{"NO_COLOR", "TERM"} {
 				t.Setenv(key, "")
-				os.Unsetenv(key)
+				if err := os.Unsetenv(key); err != nil {
+					t.Fatalf("unset %s: %v", key, err)
+				}
 			}
 			for k, v := range tt.env {
 				t.Setenv(k, v)
@@ -80,7 +82,9 @@ func TestNoColorEnvMatchesFatihDetection(t *testing.T) {
 // package relies on: a writer with no file descriptor is never a terminal, so
 // captured output stays free of escapes without anyone forcing it.
 func TestNoColorDefaultRejectsNonFileWriters(t *testing.T) {
-	os.Unsetenv("NO_COLOR")
+	if err := os.Unsetenv("NO_COLOR"); err != nil {
+		t.Fatalf("unset NO_COLOR: %v", err)
+	}
 	t.Setenv("TERM", "xterm-256color")
 	if !noColorDefault(&bytes.Buffer{}) {
 		t.Error("a bytes.Buffer is not a terminal and must answer no color")

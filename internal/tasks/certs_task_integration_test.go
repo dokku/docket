@@ -25,7 +25,7 @@ func generateSelfSignedCert(t *testing.T, commonName string) (certPath, keyPath 
 	if err != nil {
 		t.Fatalf("failed to create cert dir: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatalf("failed to chmod cert dir: %v", err)
 	}

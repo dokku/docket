@@ -213,6 +213,10 @@ docs:
 generate: docs
 	go generate ./sdk/
 
+.PHONY: lint
+lint:
+	golangci-lint run ./...
+
 .PHONY: test
 test:
 	go test -v -count=1 . ./internal/... ./sdk/ ./generate/...

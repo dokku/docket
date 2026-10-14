@@ -21,10 +21,12 @@ func TestIntegrationLogsPropertyAll(t *testing.T) {
 	}); err != nil {
 		t.Logf("docker network create %s failed: %v (vector-networks subtest will be skipped)", networkName, err)
 	} else {
-		defer subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
-			Command: "docker",
-			Args:    []string{"network", "rm", networkName},
-		})
+		defer func() {
+			_, _ = subprocess.CallExecCommand(testCtx(), subprocess.ExecCommandInput{
+				Command: "docker",
+				Args:    []string{"network", "rm", networkName},
+			})
+		}()
 	}
 
 	cases := []struct {

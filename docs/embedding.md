@@ -25,7 +25,7 @@ SSH connections made under it:
 ```go
 // What gets masked in anything you render for a human.
 session := sdk.NewSession(sdk.NewMasker("s3cr3t"))
-defer session.Close()
+defer func() { _ = session.Close() }()
 
 // Where dokku commands go. The zero Target runs locally.
 ctx := session.Context(context.Background(), sdk.Target{

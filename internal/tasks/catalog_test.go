@@ -642,7 +642,7 @@ func structFieldByYAMLName(rt reflect.Type, name string) (reflect.StructField, b
 
 // sliceOrMapElem returns a collection field's element type.
 func sliceOrMapElem(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	switch t.Kind() {

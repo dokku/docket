@@ -41,7 +41,7 @@ func TestFormatJSON5ReordersPlayKeys(t *testing.T) {
 	idxName := strings.Index(string(out), "name:")
 	idxInputs := strings.Index(string(out), "inputs:")
 	idxTasks := strings.Index(string(out), "tasks:")
-	if !(idxName < idxInputs && idxInputs < idxTasks) {
+	if idxName >= idxInputs || idxInputs >= idxTasks {
 		t.Errorf("canonical key order not enforced:\n%s", out)
 	}
 }
@@ -322,7 +322,7 @@ func TestFormatJSON5RootInsideAndAfterComments(t *testing.T) {
 	idxInside := strings.Index(body, "// inside foot")
 	idxBracket := strings.LastIndex(body, "]")
 	idxAfter := strings.Index(body, "// after root")
-	if !(idxInside < idxBracket && idxBracket < idxAfter) {
+	if idxInside >= idxBracket || idxBracket >= idxAfter {
 		t.Errorf("comment positions wrong (inside=%d bracket=%d after=%d):\n%s", idxInside, idxBracket, idxAfter, body)
 	}
 	again, err := FormatJSON5(out)

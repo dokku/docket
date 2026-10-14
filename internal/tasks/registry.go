@@ -26,7 +26,7 @@ func RegisterTask(t Task) {
 
 	var name string
 	structType := reflect.TypeOf(t)
-	if structType.Kind() == reflect.Ptr {
+	if structType.Kind() == reflect.Pointer {
 		structType = structType.Elem()
 		name = "*" + structType.Name()
 	} else {
