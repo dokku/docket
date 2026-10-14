@@ -231,8 +231,9 @@ user at it directly. `docket validate` rejects a matching name with the same sen
 
 **An absent `property_schema` on a task that has a `property` field means the legal names are not
 enumerable from docket, not that there are none.** `dokku_service_property` is the case: its names
-come from whichever datastore plugin backs the service, and no plugin exposes a report that lists
-them.
+come from whichever datastore plugin backs the service, and which of them a service accepts depends
+on its datastore. `<service>:info` reports their values, so the task converges, but `<service>:set`
+is what validates a name.
 
 ## Stability
 

@@ -6,15 +6,15 @@ Manages a property for a given dokku service
 
 ## Requirements
 
-- a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
+- a dokku datastore service plugin >= 2.3.1 matching the service type (dokku-datastore 0.7.1, e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
 ## Export support
 
-Not supported - no datastore plugin exposes a machine-readable report of the properties set via `<service>:set`, so they cannot be read back (tracked upstream in dokku/dokku-datastore#98).
+Partial - every property set on a service is exported except the ones another task owns (the networks, config-options, custom-env, memory and shm-size belong to dokku_service_create; the backup schedule, bucket, IAM flag, region, signature version, endpoint and credentials to dokku_service_backup); the backup credentials are reported only as fingerprints, so they must be re-supplied.
 
 ## Probe support
 
-Not supported - the service's existence is probed but the property value is not, so the task plans as drift on every run.
+Supported.
 
 ## Identity
 
@@ -26,8 +26,8 @@ Keyed by `service`, `name`, and `property`. Fields left empty are omitted from t
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | yes |  |  | Type of service to configure (e.g. redis, postgres, mysql) |
 | `name` | string | yes |  |  | Name of the service instance |
-| `property` | string | yes |  |  | Name of the property to set |
-| `value` | string | no |  |  | Value to set the property to. Required when state is present. |
+| `property` | string | yes |  |  | Name of the property to set. Which properties a service accepts depends on its datastore - the backup settings only on one that can be backed up, for example - and &lt;service>:set refuses the rest when the task applies. |
+| `value` | string | no |  |  | Value to set the property to. Required when state is present. Masked in output for the backup credentials and custom-env. |
 | `state` | string | no | present | present, absent | Desired state of the property |
 
 ## Examples
@@ -40,6 +40,16 @@ dokku_service_property:
     name: my-db
     property: restart-policy
     value: always
+```
+
+### Publish an exposed postgres service directly rather than through an ambassador
+
+```yaml
+dokku_service_property:
+    service: postgres
+    name: my-db
+    property: expose-mode
+    value: direct
 ```
 
 ### Clear the restart-policy for a postgres service

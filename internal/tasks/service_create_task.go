@@ -21,13 +21,14 @@ import (
 // variable put in front of the local process never reaches the remote shell,
 // so the argv is the only carrier both transports share.
 //
-// They apply when the service is created. Once it exists dokku's only remedy
-// is `<service>:upgrade`, which removes and recreates the container, so the
-// task does not reach for it on its own: `image_drift` decides what happens
-// when the recipe's `image` / `image_version` pin no longer matches what the
-// service is running, and it defaults to reporting the mismatch rather than
-// acting on it. The remaining create-time options have no read command at all
-// (see ProbeSupport), so they are neither compared nor reconciled.
+// They apply when the service is created. Once it exists, every one of them is
+// read back from `<service>:info` and compared when the recipe declares it, and
+// `image_drift` decides what a mismatch means. It defaults to reporting it
+// rather than acting on it, because every remedy rebuilds the container: an
+// image is changed with `<service>:upgrade`, and any other option with
+// `<service>:set` followed by a stop and a start. password and root_password
+// are the exception - they are applied only at create and info does not report
+// them, so they are never compared.
 type ServiceCreateTask struct {
 	// Service is the type of service to create (e.g. redis, postgres, mysql)
 	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to create (e.g. redis, postgres, mysql)"`
@@ -42,25 +43,25 @@ type ServiceCreateTask struct {
 	ImageVersion string `required:"false" yaml:"image_version,omitempty" description:"Image tag to start the service with. Applied when the service is created; image_drift decides what happens when an existing service is running something else."`
 
 	// ConfigOptions are extra arguments passed to the container create command.
-	ConfigOptions string `required:"false" yaml:"config_options,omitempty" description:"Extra arguments to pass to the container create command. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it."`
+	ConfigOptions string `required:"false" yaml:"config_options,omitempty" description:"Extra arguments to pass to the container create command. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// CustomEnv is the environment the service container is started with.
-	CustomEnv map[string]string `required:"false" sensitive:"true" yaml:"custom_env,omitempty" description:"Map of environment variables to start the service with. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it."`
+	CustomEnv map[string]string `required:"false" sensitive:"true" yaml:"custom_env,omitempty" description:"Map of environment variables to start the service with. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// Memory is the container memory limit in megabytes.
-	Memory int `required:"false" yaml:"memory,omitempty" description:"Container memory limit in megabytes. Applied only when the service is created."`
+	Memory int `required:"false" yaml:"memory,omitempty" description:"Container memory limit in megabytes. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// ShmSize is the shared memory size of the service container.
-	ShmSize string `required:"false" yaml:"shm_size,omitempty" description:"Shared memory size for the service container. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it."`
+	ShmSize string `required:"false" yaml:"shm_size,omitempty" description:"Shared memory size for the service container. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// InitialNetwork is the network the service is attached to on creation.
-	InitialNetwork string `required:"false" yaml:"initial_network,omitempty" description:"Network to attach the service to initially. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it."`
+	InitialNetwork string `required:"false" yaml:"initial_network,omitempty" description:"Network to attach the service to initially. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// PostCreateNetwork are the networks attached after service creation.
-	PostCreateNetwork []string `required:"false" yaml:"post_create_network,omitempty" description:"Networks to attach the service container to after creation. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it."`
+	PostCreateNetwork []string `required:"false" yaml:"post_create_network,omitempty" description:"Networks to attach the service container to after creation. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// PostStartNetwork are the networks attached after service start.
-	PostStartNetwork []string `required:"false" yaml:"post_start_network,omitempty" description:"Networks to attach the service container to after start. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it."`
+	PostStartNetwork []string `required:"false" yaml:"post_start_network,omitempty" description:"Networks to attach the service container to after start. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// Password overrides the user-level service password.
 	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"Override the user-level service password. Applied only when the service is created."`
@@ -68,24 +69,26 @@ type ServiceCreateTask struct {
 	// RootPassword overrides the root-level service password.
 	RootPassword string `required:"false" sensitive:"true" yaml:"root_password,omitempty" description:"Override the root-level service password. Applied only when the service is created."`
 
-	// ImageDrift is what the task does when the service already exists on an
-	// image other than the one `image` / `image_version` pins. Read through
-	// imageDriftMode, never directly: the `default:` tag is only applied to a
-	// decoded recipe, so a task built in Go carries the empty string.
-	ImageDrift string `required:"false" yaml:"image_drift,omitempty" default:"warn" options:"ignore,warn,error,upgrade" description:"What to do when the service already exists on an image other than the one pinned: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. Upgrading recreates the container, which means downtime, no data migration across major versions, and it clears any config_options and custom_env the recipe does not declare."`
+	// ImageDrift is what the task does when the service already exists with an
+	// image or a create-time option other than the one the recipe declares.
+	// Read through imageDriftMode, never directly: the `default:` tag is only
+	// applied to a decoded recipe, so a task built in Go carries the empty
+	// string.
+	ImageDrift string `required:"false" yaml:"image_drift,omitempty" default:"warn" options:"ignore,warn,error,upgrade" description:"What to do when the service already exists on an image other than the one pinned, or with a create-time option other than the one declared: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. An image is reconciled with <service>:upgrade, which recreates the container with no data migration across major versions; any other option with <service>:set followed by a stop and a start. Both mean downtime. Options the recipe does not declare are left as the server has them."`
 
 	// RestartApps forces the apps linked to the service to restart after an
 	// image_drift upgrade has recreated its container.
-	RestartApps bool `required:"false" yaml:"restart_apps,omitempty" description:"Restart the apps linked to the service after an image_drift 'upgrade' recreates its container, so they reconnect to the new one. Only valid with image_drift 'upgrade', and only acted on when the service has linked apps."`
+	RestartApps bool `required:"false" yaml:"restart_apps,omitempty" description:"Restart the apps linked to the service after an image_drift 'upgrade' runs <service>:upgrade, so they reconnect to the new container. Only valid with image_drift 'upgrade', and only acted on when the image drifted and the service has linked apps: reconciling the other options with a stop and a start leaves linked apps alone."`
 
 	// State is the desired state of the service
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service"`
 }
 
 // The image_drift modes: what the task does when the service exists on an
-// image other than the one the recipe pins. `warn` is the default because
-// dokku's only remedy recreates the container, which is not something to do
-// to a datastore on the strength of a field moving in a recipe.
+// image, or with a create-time option, other than the one the recipe declares.
+// `warn` is the default because every remedy rebuilds the container, which is
+// not something to do to a datastore on the strength of a field moving in a
+// recipe.
 const (
 	imageDriftIgnore  = "ignore"
 	imageDriftWarn    = "warn"
@@ -118,20 +121,21 @@ func (t ServiceCreateTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServiceCreateTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "the service and the image it is running are exported; the remaining create-time options (config_options, custom_env, memory, shm_size, the networks, and the passwords) have no read command and must be re-supplied"}
+	return ExportSupport{Status: ExportPartial, Caveat: "the service, the image it is running and its create-time options are exported; password and root_password are applied only at create and cannot be read back, so they must be re-supplied"}
 }
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t ServiceCreateTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "the service's existence is probed, and the image it is running whenever the recipe pins one; config_options, custom_env, memory, shm_size, the networks, and the passwords have no read command and are not drift-detected"}
+	return ProbeSupport{Status: ProbePartial, Caveat: "the service's existence is probed, along with the image it is running and every create-time option the recipe declares; password and root_password are applied only at create and cannot be read back, so they are not drift-detected"}
 }
 
 // ExportGlobal reconstructs every datastore service instance on the server as a
 // dokku_service_create task. Discovery is via listServices (the `service-list`
 // plugin trigger). Like dokku_storage_mount, the service's data is migrated
-// separately - but the image it runs is exported, so a service recreated on
-// another server comes up on the same version rather than whatever that
-// server's plugin defaults to, which is what its `:import` counterpart needs.
+// separately - but the image it runs and the create-time options it was given
+// are exported, so a service recreated on another server comes up the same way
+// rather than on whatever that server's plugin defaults to, which is what its
+// `:import` counterpart needs.
 func (t ServiceCreateTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
 	services, err := listServices(ctx)
 	if err != nil {
@@ -139,24 +143,49 @@ func (t ServiceCreateTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 	}
 	var out []interface{}
 	for _, s := range services {
-		image, version, err := serviceImage(ctx, s.Type, s.Name)
+		info, err := serviceInfo(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ServiceCreateTask{
-			Service:      s.Type,
-			Name:         s.Name,
-			Image:        image,
-			ImageVersion: version,
-			State:        StatePresent,
-		})
+		image, version := splitImageRef(strings.TrimSpace(info["version"]))
+		task := ServiceCreateTask{
+			Service:           s.Type,
+			Name:              s.Name,
+			Image:             image,
+			ImageVersion:      version,
+			ConfigOptions:     strings.TrimSpace(info["config-options"]),
+			ShmSize:           strings.TrimSpace(info["shm-size"]),
+			InitialNetwork:    strings.TrimSpace(info["initial-network"]),
+			PostCreateNetwork: splitNetworks(info["post-create-network"]),
+			PostStartNetwork:  splitNetworks(info["post-start-network"]),
+			State:             StatePresent,
+		}
+		if env := parseCustomEnv(info["custom-env"]); len(env) > 0 {
+			task.CustomEnv = env
+		}
+		if memory, err := strconv.Atoi(strings.TrimSpace(info["memory"])); err == nil && memory > 0 {
+			task.Memory = memory
+		}
+		out = append(out, task)
 	}
 	return out, nil
 }
 
+// splitNetworks reads a comma-joined network list info reports back into the
+// list the recipe declares, dropping empty entries.
+func splitNetworks(value string) []string {
+	var networks []string
+	for _, network := range strings.Split(value, ",") {
+		if network = strings.TrimSpace(network); network != "" {
+			networks = append(networks, network)
+		}
+	}
+	return networks
+}
+
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t ServiceCreateTask) Requirements() []string {
-	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
+	return []string{datastorePluginRequirement}
 }
 
 // examples returns a list of ServiceCreateTaskExamples as yaml
@@ -193,6 +222,15 @@ func (t ServiceCreateTask) examples() ([]Doc, error) {
 				Image:        "redis",
 				ImageVersion: "7.2.5",
 				ImageDrift:   imageDriftUpgrade,
+			},
+		},
+		{
+			Name: "Reconcile a changed shared memory size with set, stop and start",
+			ServiceCreateTask: ServiceCreateTask{
+				Service:    "redis",
+				Name:       "my-tuned-redis",
+				ShmSize:    "128m",
+				ImageDrift: imageDriftUpgrade,
 			},
 		},
 		{
@@ -303,21 +341,201 @@ func (t ServiceCreateTask) pinsImage() bool {
 	return t.Image != "" || t.ImageVersion != ""
 }
 
+// serviceOption is one create-time option other than the image: the recipe
+// field, the key `<service>:info` reports it under and `<service>:set` takes,
+// whether the recipe declared it, and how the declared value compares with
+// the reported one.
+type serviceOption struct {
+	field    string
+	key      string
+	declared bool
+	desired  string
+	matches  func(current string) bool
+	describe func(current string) string
+}
+
+// serviceRebuildKeys are the set keys dokku-datastore only applies when the
+// container is rebuilt (its EffectRebuild properties), so reconciling one
+// needs a stop and a start before the running service reflects it. Every
+// create-time option is one today; a key missing here would be set and left
+// waiting for the next rebuild.
+var serviceRebuildKeys = map[string]bool{
+	"config-options":      true,
+	"custom-env":          true,
+	"memory":              true,
+	"shm-size":            true,
+	"initial-network":     true,
+	"post-create-network": true,
+	"post-start-network":  true,
+}
+
+// options returns every comparable create-time option in field order, the
+// order drift is reported and reconciled in.
+func (t ServiceCreateTask) options() []serviceOption {
+	plain := func(field, key, desired string) serviceOption {
+		return serviceOption{
+			field:    field,
+			key:      key,
+			declared: desired != "",
+			desired:  desired,
+			matches:  func(current string) bool { return strings.TrimSpace(current) == desired },
+			describe: func(current string) string { return describeOption(field, strings.TrimSpace(current), desired) },
+		}
+	}
+	networks := func(field, key string, desired []string) serviceOption {
+		joined := strings.Join(desired, ",")
+		return serviceOption{
+			field:    field,
+			key:      key,
+			declared: len(desired) > 0,
+			desired:  joined,
+			matches:  func(current string) bool { return strings.Join(splitNetworks(current), ",") == joined },
+			describe: func(current string) string {
+				return describeOption(field, strings.Join(splitNetworks(current), ","), joined)
+			},
+		}
+	}
+	memory := strconv.Itoa(t.Memory)
+	return []serviceOption{
+		plain("config_options", "config-options", t.ConfigOptions),
+		{
+			field:    "custom_env",
+			key:      "custom-env",
+			declared: len(t.CustomEnv) > 0,
+			desired:  formatCustomEnv(t.CustomEnv),
+			matches: func(current string) bool {
+				return len(customEnvDiff(parseCustomEnv(current), t.CustomEnv)) == 0
+			},
+			// custom_env is sensitive, so its drift names the keys that differ
+			// and never a value.
+			describe: func(current string) string {
+				return fmt.Sprintf("custom_env differs for %s", strings.Join(customEnvDiff(parseCustomEnv(current), t.CustomEnv), ", "))
+			},
+		},
+		{
+			field:    "memory",
+			key:      "memory",
+			declared: t.Memory != 0,
+			desired:  memory,
+			// An unset limit reads back as 0, and an empty value as the same.
+			matches: func(current string) bool {
+				current = strings.TrimSpace(current)
+				if current == "" {
+					current = "0"
+				}
+				return current == memory
+			},
+			describe: func(current string) string {
+				current = strings.TrimSpace(current)
+				if current == "0" {
+					current = ""
+				}
+				return describeOption("memory", current, memory)
+			},
+		},
+		plain("shm_size", "shm-size", t.ShmSize),
+		plain("initial_network", "initial-network", t.InitialNetwork),
+		networks("post_create_network", "post-create-network", t.PostCreateNetwork),
+		networks("post_start_network", "post-start-network", t.PostStartNetwork),
+	}
+}
+
+// declaresOptions reports whether the recipe declared any create-time option
+// info can report back. password and root_password do not count: info never
+// reports them.
+func (t ServiceCreateTask) declaresOptions() bool {
+	for _, opt := range t.options() {
+		if opt.declared {
+			return true
+		}
+	}
+	return false
+}
+
+// optionDrift returns the declared create-time options whose reported value
+// differs from the recipe's, in field order.
+func (t ServiceCreateTask) optionDrift(info map[string]string) []serviceOption {
+	var drift []serviceOption
+	for _, opt := range t.options() {
+		if opt.declared && !opt.matches(info[opt.key]) {
+			drift = append(drift, opt)
+		}
+	}
+	return drift
+}
+
+// describeOption renders one drifted option for a warning or an error.
+func describeOption(field, current, desired string) string {
+	if current == "" {
+		return fmt.Sprintf("%s is unset, recipe declares %q", field, desired)
+	}
+	return fmt.Sprintf("%s is %q, recipe declares %q", field, current, desired)
+}
+
+// customEnvDiff returns the sorted keys whose value differs between the
+// environment the service reports and the one the recipe declares, including
+// keys only one side has.
+func customEnvDiff(current, desired map[string]string) []string {
+	var keys []string
+	for k, v := range desired {
+		if cv, ok := current[k]; !ok || cv != v {
+			keys = append(keys, k)
+		}
+	}
+	for k := range current {
+		if _, ok := desired[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// describeOptionDrift joins the drifted options into one clause.
+func describeOptionDrift(drift []serviceOption, info map[string]string) string {
+	parts := make([]string, 0, len(drift))
+	for _, opt := range drift {
+		parts = append(parts, opt.describe(info[opt.key]))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// driftFields names the drifted options, for a reason line.
+func driftFields(drift []serviceOption) string {
+	fields := make([]string, 0, len(drift))
+	for _, opt := range drift {
+		fields = append(fields, opt.field)
+	}
+	return strings.Join(fields, ", ")
+}
+
 // upgradeFlags renders the create-time options as the flags
 // `<service>:upgrade` accepts. Everything the recipe declares is re-passed
-// rather than left off, because the plugin's service_commit_config rewrites
-// CONFIG_OPTIONS and ENV from the flags it was given and blanks them when it
-// was given none - so an upgrade that omits them is a silent reset. memory,
-// password, and root_password are absent because `:upgrade` does not accept
-// them; the plugin keeps its own copies of those and reapplies them when it
-// rebuilds the container.
-func (t ServiceCreateTask) upgradeFlags(image string) []string {
+// rather than left off, because the plugin rewrites CONFIG_OPTIONS and ENV
+// from the flags it was given and blanks them when it was given none - so an
+// upgrade that omits them is a silent reset. An option the recipe does not
+// declare is therefore carried across from what info reports, so it stays as
+// the server has it. password and root_password are absent because
+// `:upgrade` does not accept them; the plugin keeps its own copies and
+// reapplies them when it rebuilds the container.
+func (t ServiceCreateTask) upgradeFlags(image string, info map[string]string) []string {
 	args := []string{"--image", image, "--image-version", t.ImageVersion}
-	if t.ConfigOptions != "" {
-		args = append(args, "--config-options", t.ConfigOptions)
+	configOptions := t.ConfigOptions
+	if configOptions == "" {
+		configOptions = strings.TrimSpace(info["config-options"])
 	}
-	if env := formatCustomEnv(t.CustomEnv); env != "" {
+	if configOptions != "" {
+		args = append(args, "--config-options", configOptions)
+	}
+	env := formatCustomEnv(t.CustomEnv)
+	if env == "" {
+		env = formatCustomEnv(parseCustomEnv(info["custom-env"]))
+	}
+	if env != "" {
 		args = append(args, "--custom-env", env)
+	}
+	if t.Memory != 0 {
+		args = append(args, "--memory", strconv.Itoa(t.Memory))
 	}
 	if t.ShmSize != "" {
 		args = append(args, "--shm-size", t.ShmSize)
@@ -332,24 +550,6 @@ func (t ServiceCreateTask) upgradeFlags(image string) []string {
 		args = append(args, "--post-start-network", strings.Join(t.PostStartNetwork, ","))
 	}
 	return args
-}
-
-// upgradeResets names the create-time options `<service>:upgrade` will blank
-// because the recipe does not declare them and docket has no read command to
-// carry the server's values across. It is the one destructive thing an
-// upgrade does that nothing else in the plan would show: an option docket
-// never learned about renders as no flag at all, and no flag is what makes
-// the plugin write an empty value. Plan surfaces it as its own mutation line,
-// since text `docket plan` prints Mutations and never Commands.
-func (t ServiceCreateTask) upgradeResets() []string {
-	var reset []string
-	if t.ConfigOptions == "" {
-		reset = append(reset, "config_options")
-	}
-	if len(t.CustomEnv) == 0 {
-		reset = append(reset, "custom_env")
-	}
-	return reset
 }
 
 // pinnedDescription renders what the recipe asked the service to run, for the
@@ -429,9 +629,9 @@ func (t ServiceCreateTask) Validate() error {
 		return fmt.Errorf("'image_drift' must be one of %s, got %q", strings.Join(imageDriftModes, ", "), t.ImageDrift)
 	}
 	// Every mode but the default acts on a comparison, and there is nothing to
-	// compare against when the recipe has not said what the service should run.
-	if mode != imageDriftWarn && !t.pinsImage() {
-		return fmt.Errorf("'image_drift' requires 'image' or 'image_version'")
+	// compare against when the recipe has declared nothing info reports.
+	if mode != imageDriftWarn && !t.pinsImage() && !t.declaresOptions() {
+		return fmt.Errorf("'image_drift' requires 'image', 'image_version', or a create-time option other than 'password' and 'root_password'")
 	}
 	// `<service>:upgrade` needs both halves of the reference and falls back to
 	// the plugin's default for either one it is not given. docket can fill a
@@ -499,7 +699,7 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if exists {
-				if drift := planServiceImageDrift(ctx, t); drift != nil {
+				if drift := planServiceDrift(ctx, t); drift != nil {
 					return *drift
 				}
 				return PlanResult{InSync: true, Status: PlanStatusOK}
@@ -546,77 +746,111 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 	})
 }
 
-// planServiceImageDrift reports what an existing service's image means for the
-// task, or nil when it means nothing and the caller should carry on to its own
-// in-sync result. nil covers three cases: the recipe pinned no image, the
-// recipe asked for the comparison to be skipped, and the running image already
-// matches.
+// planServiceDrift reports what an existing service's image and create-time
+// options mean for the task, or nil when they mean nothing and the caller
+// should carry on to its own in-sync result. nil covers three cases: the
+// recipe declared nothing info reports, the recipe asked for the comparison to
+// be skipped, and everything it declared already matches.
+//
+// One `<service>:info` call answers every comparison. The image and the other
+// options are reported as separate warnings, since they are separate remedies:
+// an image moves only with `<service>:upgrade`, while every other option can be
+// set in place and picked up by a rebuild.
 //
 // It is a package-level func rather than a method because
 // TestProbeSupportMatchesPlanWiring walks the tasks package for plan-returning
 // methods and allows exactly one per task, Plan itself.
-func planServiceImageDrift(ctx context.Context, t ServiceCreateTask) *PlanResult {
+func planServiceDrift(ctx context.Context, t ServiceCreateTask) *PlanResult {
 	mode := t.imageDriftMode()
-	if mode == imageDriftIgnore || !t.pinsImage() {
+	if mode == imageDriftIgnore || (!t.pinsImage() && !t.declaresOptions()) {
 		return nil
 	}
 
-	ref, err := serviceImageRef(ctx, t.Service, t.Name)
+	info, err := serviceInfo(ctx, t.Service, t.Name)
 	if err != nil {
 		return &PlanResult{Status: PlanStatusError, Error: err}
 	}
+	// custom_env is sensitive, and the values the server holds are as secret
+	// as the ones the recipe declares, so they are masked before anything
+	// below can echo them.
+	registerSensitiveMapValues(ctx, parseCustomEnv(info["custom-env"]))
 
-	running := strings.TrimSpace(ref)
-	if running == "" {
-		// dokku prints nothing here when the service's container is gone, and
-		// an older plugin may not answer `--version` at all. Either way the
-		// comparison did not happen, and a recipe that asked for drift to be
-		// caught should not be told everything is fine.
-		return &PlanResult{
-			InSync: true,
-			Status: PlanStatusOK,
-			Warnings: []PlanWarning{{
+	var warnings []PlanWarning
+	running := strings.TrimSpace(info["version"])
+	image := ""
+	imageDrift := false
+	if t.pinsImage() {
+		if running == "" {
+			// info reports no version when the service's container is gone.
+			// The comparison did not happen, and a recipe that asked for drift
+			// to be caught should not be told everything is fine.
+			warnings = append(warnings, PlanWarning{
 				Reason: WarnReasonServiceImageDrift,
 				Message: fmt.Sprintf("%s service %s reports no running image, so the recipe's pin of %s was not checked",
 					t.Service, t.Name, t.pinnedDescription("")),
-			}},
+			})
+		} else {
+			var version string
+			image, version = splitImageRef(running)
+			imageDrift = (t.Image != "" && t.Image != image) || (t.ImageVersion != "" && t.ImageVersion != version)
 		}
 	}
+	options := t.optionDrift(info)
 
-	image, version := splitImageRef(running)
-	if (t.Image == "" || t.Image == image) && (t.ImageVersion == "" || t.ImageVersion == version) {
-		return nil
+	if !imageDrift && len(options) == 0 {
+		if len(warnings) == 0 {
+			return nil
+		}
+		return &PlanResult{InSync: true, Status: PlanStatusOK, Warnings: warnings}
 	}
 
 	switch mode {
 	case imageDriftError:
+		var problems []string
+		if imageDrift {
+			problems = append(problems, fmt.Sprintf("is running %s, recipe pins %s", running, t.pinnedDescription(image)))
+		}
+		if len(options) > 0 {
+			problems = append(problems, fmt.Sprintf("has create-time options that differ from the recipe: %s", describeOptionDrift(options, info)))
+		}
 		return &PlanResult{
 			Status: PlanStatusError,
-			Error: fmt.Errorf("%s service %s is running %s, recipe pins %s",
-				t.Service, t.Name, running, t.pinnedDescription(image)),
+			Error:  fmt.Errorf("%s service %s %s", t.Service, t.Name, strings.Join(problems, "; and ")),
 		}
 	case imageDriftUpgrade:
-		return planServiceImageUpgrade(ctx, t, running, image)
+		if imageDrift {
+			// `<service>:upgrade` re-passes every declared option, so the one
+			// call that moves the image reconciles the options with it.
+			return planServiceImageUpgrade(ctx, t, running, image, info, options)
+		}
+		return planServiceOptionSet(ctx, t, options, warnings)
 	}
 
-	return &PlanResult{
-		InSync: true,
-		Status: PlanStatusOK,
-		Warnings: []PlanWarning{{
+	if imageDrift {
+		warnings = append(warnings, PlanWarning{
 			Reason: WarnReasonServiceImageDrift,
-			Message: fmt.Sprintf("%s service %s is running %s, recipe pins %s; create-time options are not reconciled, set image_drift: upgrade to run %s:upgrade",
+			Message: fmt.Sprintf("%s service %s is running %s, recipe pins %s; set image_drift: upgrade to run %s:upgrade",
 				t.Service, t.Name, running, t.pinnedDescription(image), t.Service),
-		}},
+		})
 	}
+	if len(options) > 0 {
+		warnings = append(warnings, PlanWarning{
+			Reason: WarnReasonServiceOptionDrift,
+			Message: fmt.Sprintf("%s service %s has create-time options that differ from the recipe: %s; set image_drift: upgrade to reconcile them",
+				t.Service, t.Name, describeOptionDrift(options, info)),
+		})
+	}
+	return &PlanResult{InSync: true, Status: PlanStatusOK, Warnings: warnings}
 }
 
 // planServiceImageUpgrade builds the `<service>:upgrade` that reconciles the
-// pin. running is the reference the container reports and image is its name
-// half; Validate has already established that the recipe pins image_version,
-// so the only half that may need filling is the name.
+// pin, and with it every drifted option. running is the reference the
+// container reports and image is its name half; Validate has already
+// established that the recipe pins image_version, so the only half that may
+// need filling is the name.
 //
-// Package-level for the same reason as planServiceImageDrift.
-func planServiceImageUpgrade(ctx context.Context, t ServiceCreateTask, running, image string) *PlanResult {
+// Package-level for the same reason as planServiceDrift.
+func planServiceImageUpgrade(ctx context.Context, t ServiceCreateTask, running, image string, info map[string]string, options []serviceOption) *PlanResult {
 	if t.Image != "" {
 		image = t.Image
 	} else if image == "" || strings.Contains(running, "@") {
@@ -641,7 +875,7 @@ func planServiceImageUpgrade(ctx context.Context, t ServiceCreateTask, running, 
 		restartApps = len(apps) > 0
 	}
 
-	args := append([]string{"--quiet", fmt.Sprintf("%s:upgrade", t.Service), t.Name}, t.upgradeFlags(image)...)
+	args := append([]string{"--quiet", fmt.Sprintf("%s:upgrade", t.Service), t.Name}, t.upgradeFlags(image, info)...)
 	if restartApps {
 		args = append(args, "--restart-apps", "true")
 	}
@@ -651,8 +885,10 @@ func planServiceImageUpgrade(ctx context.Context, t ServiceCreateTask, running, 
 	}}
 
 	mutations := []string{fmt.Sprintf("%s:upgrade %s (image %s)", t.Service, t.Name, target)}
-	if reset := t.upgradeResets(); len(reset) > 0 {
-		mutations = append(mutations, fmt.Sprintf("reset %s, which the recipe does not declare", strings.Join(reset, " and ")))
+	reason := fmt.Sprintf("image drift: %s -> %s", running, target)
+	if len(options) > 0 {
+		mutations = append(mutations, fmt.Sprintf("apply %s with the upgrade", driftFields(options)))
+		reason = fmt.Sprintf("%s; create-time option drift: %s", reason, driftFields(options))
 	}
 	if restartApps {
 		mutations = append(mutations, "restart the linked app(s)")
@@ -661,9 +897,51 @@ func planServiceImageUpgrade(ctx context.Context, t ServiceCreateTask, running, 
 	return &PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
-		Reason:    fmt.Sprintf("image drift: %s -> %s", running, target),
+		Reason:    reason,
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
+		},
+	}
+}
+
+// planServiceOptionSet builds the `<service>:set` calls that reconcile drifted
+// create-time options when the image itself has not moved, followed by a stop
+// and a start when any of them only takes effect once the container is
+// rebuilt. The image stays where it is, so `<service>:upgrade` - which pulls
+// and recreates on an image - is not the tool for it.
+//
+// Package-level for the same reason as planServiceDrift.
+func planServiceOptionSet(ctx context.Context, t ServiceCreateTask, options []serviceOption, warnings []PlanWarning) *PlanResult {
+	var inputs []subprocess.ExecCommandInput
+	var mutations []string
+	rebuild := false
+	for _, opt := range options {
+		inputs = append(inputs, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", fmt.Sprintf("%s:set", t.Service), t.Name, opt.key, opt.desired},
+		})
+		// The value stays out of the mutation line: custom_env is sensitive,
+		// and the resolved Commands already carry the argv with it masked.
+		mutations = append(mutations, fmt.Sprintf("%s:set %s %s", t.Service, t.Name, opt.key))
+		rebuild = rebuild || serviceRebuildKeys[opt.key]
+	}
+	if rebuild {
+		inputs = append(inputs,
+			subprocess.ExecCommandInput{Command: "dokku", Args: []string{"--quiet", fmt.Sprintf("%s:stop", t.Service), t.Name}},
+			subprocess.ExecCommandInput{Command: "dokku", Args: []string{"--quiet", fmt.Sprintf("%s:start", t.Service), t.Name}},
+		)
+		mutations = append(mutations, fmt.Sprintf("stop and start %s service %s to apply", t.Service, t.Name))
+	}
+
+	return &PlanResult{
+		InSync:    false,
+		Status:    PlanStatusModify,
+		Reason:    fmt.Sprintf("create-time option drift: %s", driftFields(options)),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		Warnings:  warnings,
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
 		},

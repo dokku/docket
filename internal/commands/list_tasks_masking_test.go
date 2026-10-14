@@ -357,14 +357,11 @@ func TestListTasksDoesNotMaskStructuralDecorations(t *testing.T) {
     - name: gate
       block:
         - name: unprobeable
-          dokku_service_property:
-            service: redis
-            name: cache
-            property: shm-size
-            value: 64m
+          dokku_storage_ensure:
+            app: api
 `)
 
-	stdout, stderr, exit := runApply(t, path, "--secret_value=existence", "--list-tasks", "--json")
+	stdout, stderr, exit := runApply(t, path, "--secret_value=read", "--list-tasks", "--json")
 	if exit != 0 {
 		t.Fatalf("exit = %d, want 0; stdout=%s stderr=%s", exit, stdout, stderr)
 	}
@@ -374,7 +371,7 @@ func TestListTasksDoesNotMaskStructuralDecorations(t *testing.T) {
 			t.Errorf("masking must not touch %s; got:\n%s", want, stdout)
 		}
 	}
-	if !strings.Contains(stdout, `"probe_caveat":"the service's *** is probed`) {
+	if !strings.Contains(stdout, "has no *** command, so the task plans as drift") {
 		t.Errorf("expected the prose caveat to be masked; got:\n%s", stdout)
 	}
 

@@ -18,10 +18,10 @@ covered below.
 | Apps (`dokku_app`) | Database / service contents |
 | Config vars (`dokku_config`) | Persistent volume files |
 | Domains and ports (`dokku_domains`, `dokku_ports`) | DNS records |
-| Service structure (`dokku_service_create`, `dokku_service_expose`, `dokku_service_link`, backup schedule, `dokku_acl_service`) | letsencrypt-issued certificates |
+| Service structure (`dokku_service_create`, `dokku_service_property`, `dokku_service_expose`, `dokku_service_link`, backup schedule, `dokku_acl_service`) | letsencrypt-issued certificates |
 | Storage *mounts* (`dokku_storage_mount`) | Secret values not in the recipe |
 | HTTP basic auth, credentials included (`dokku_http_auth`, `dokku_http_auth_user`, `dokku_http_auth_allowed_ip`, `dokku_http_auth_domain`) | Host-level OS configuration |
-| Manual certs inlined via `dokku_certs` `cert_content` / `key_content` | Datastore backup credentials and `dokku_service_property` values |
+| Manual certs inlined via `dokku_certs` `cert_content` / `key_content` | Datastore backup credentials and service passwords |
 | Buildpacks, scheduler and proxy config | |
 | SSH keys (`dokku_ssh_key`) | |
 | App code (`dokku_git_sync`, `dokku_git_from_image`, `dokku_git_from_archive`) | |
@@ -71,8 +71,8 @@ a service linked to the app, ignoring the scheme - the same test `<service>:unli
 to remove, so a `DATABASE_URL` pointing at an external database is still the recipe's.
 
 Some state cannot be read back and is left out with a warning - notably write-only credentials
-(`dokku_git_auth` and datastore backup credentials), datastore service data, and service properties
-(`dokku_service_property`), which you add by hand. Registry logins sit in between: dokku reports
+(`dokku_git_auth`, datastore backup credentials, and service passwords) and datastore service data,
+which you add by hand. Registry logins sit in between: dokku reports
 which servers an app holds a credential for but nothing about the credential itself, so
 `dokku_registry_auth` tasks are emitted with the username and password as required inputs for you
 to supply at apply time. Each task's [reference page](tasks/README.md) has an Export support
@@ -122,15 +122,14 @@ code onto the new server with whichever deploy source your recipe uses:
 
 [`dokku_service_create`](tasks/dokku_service_create.md) makes an *empty* service - on the same image
 the old one was running, which export reads off the container so the new server does not silently
-pick up a different major version its plugin happens to default to. The other create-time options
-(`custom_env`, `memory`, the networks, and the passwords) cannot be read back and must be re-supplied.
-Re-supplying them matters beyond the first apply: `image_drift: upgrade` reconciles a later change to
-the image pin by recreating the container, and the plugin rebuilds `config_options` and `custom_env`
-from the recipe when it does, clearing whatever the recipe did not carry.
+pick up a different major version its plugin happens to default to. Export carries the other
+create-time options (`config_options`, `custom_env`, `memory`, `shm_size` and the networks) as well,
+and the properties set with `<service>:set` as `dokku_service_property` tasks; only the passwords
+cannot be read back and must be re-supplied.
 [`dokku_service_backup`](tasks/dokku_service_backup.md) only configures the S3 backup schedule and
 auth - there is no restore task. Export carries the schedule, bucket, and `use_iam` flag but not the
-AWS credentials or encryption passphrase (they cannot be read back), so re-add those before the
-schedule can run. Move the actual contents with Dokku's native export/import:
+AWS credentials or encryption passphrase (dokku reports them only as fingerprints), so re-add those
+before the schedule can run. Move the actual contents with Dokku's native export/import:
 
 ```bash
 # On the old server

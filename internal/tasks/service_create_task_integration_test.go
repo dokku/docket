@@ -68,7 +68,7 @@ func TestIntegrationServiceCreateAndDestroy(t *testing.T) {
 
 // TestIntegrationServiceCreatePinnedImage proves the create-time options reach
 // dokku: it pins an image and tag, then reads the running container back with
-// `<service>:info --version` - the same command docket export uses, so this
+// `<service>:info --format json` - the same call docket export uses, so this
 // covers the round trip in both directions. A second apply must stay in sync,
 // since the image fields are create-time only and must not manufacture drift.
 func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
@@ -98,10 +98,7 @@ func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
 		t.Fatalf("expected a changed, present service, got changed=%v state=%q", result.Changed, result.State)
 	}
 
-	gotImage, gotVersion, err := serviceImage(testCtx(), serviceType, serviceName)
-	if err != nil {
-		t.Fatalf("serviceImage: %v", err)
-	}
+	gotImage, gotVersion := runningImage(t, serviceType, serviceName)
 	if gotImage != image || gotVersion != imageVersion {
 		t.Errorf("service is running %q:%q, want %q:%q", gotImage, gotVersion, image, imageVersion)
 	}
@@ -109,6 +106,16 @@ func TestIntegrationServiceCreatePinnedImage(t *testing.T) {
 	if plan := task.Plan(testCtx()); !plan.InSync {
 		t.Errorf("expected the pinned service to be in sync on re-plan, got %+v", plan)
 	}
+}
+
+// runningImage reads the image a service's container reports from info.
+func runningImage(t *testing.T, service, name string) (string, string) {
+	t.Helper()
+	info, err := serviceInfo(testCtx(), service, name)
+	if err != nil {
+		t.Fatalf("serviceInfo: %v", err)
+	}
+	return splitImageRef(strings.TrimSpace(info["version"]))
 }
 
 // The image pair the drift tests move a service between. 7.2.5 is the tag
@@ -233,10 +240,7 @@ func TestIntegrationServiceCreateImageDriftUpgrades(t *testing.T) {
 		t.Fatalf("expected a changed, present service, got changed=%v state=%q", result.Changed, result.State)
 	}
 
-	image, version, err := serviceImage(testCtx(), driftService, serviceName)
-	if err != nil {
-		t.Fatalf("serviceImage: %v", err)
-	}
+	image, version := runningImage(t, driftService, serviceName)
 	if image != driftImage || version != driftNewTag {
 		t.Errorf("service is running %q:%q, want %q:%q", image, version, driftImage, driftNewTag)
 	}
@@ -246,5 +250,61 @@ func TestIntegrationServiceCreateImageDriftUpgrades(t *testing.T) {
 	}
 	if second := task.Execute(testCtx()); second.Error != nil || second.Changed {
 		t.Errorf("a second apply must be a no-op, got changed=%v err=%v", second.Changed, second.Error)
+	}
+}
+
+// TestIntegrationServiceCreateOptionDrift is the convergence test for a
+// create-time option: a changed shm_size is reported in warn mode, set and
+// picked up by a stop and a start in upgrade mode, and the service then
+// re-plans in sync without its image moving.
+func TestIntegrationServiceCreateOptionDrift(t *testing.T) {
+	skipIfNoDokkuT(t)
+	skipIfPluginMissingT(t, "redis")
+
+	serviceName := "docket-test-option-drift"
+	destroyService(testCtx(), driftService, serviceName)
+	t.Cleanup(func() { destroyService(testCtx(), driftService, serviceName) })
+
+	create := ServiceCreateTask{Service: driftService, Name: serviceName, ShmSize: "64m", State: StatePresent}
+	if result := create.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to create service: %v\n  commands: %v\n  stderr: %s", result.Error, result.Commands, result.Stderr)
+	}
+	beforeImage, beforeVersion := runningImage(t, driftService, serviceName)
+
+	task := ServiceCreateTask{Service: driftService, Name: serviceName, ShmSize: "128m", State: StatePresent}
+	plan := task.Plan(testCtx())
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if !plan.InSync || len(plan.Warnings) != 1 || plan.Warnings[0].Reason != WarnReasonServiceOptionDrift {
+		t.Fatalf("warn mode: expected an in-sync plan with one %s warning, got InSync=%v warnings=%v",
+			WarnReasonServiceOptionDrift, plan.InSync, plan.Warnings)
+	}
+
+	task.ImageDrift = imageDriftUpgrade
+	plan = task.Plan(testCtx())
+	if plan.Error != nil || plan.InSync || plan.Status != PlanStatusModify {
+		t.Fatalf("upgrade mode: expected drift, got InSync=%v status=%q err=%v", plan.InSync, plan.Status, plan.Error)
+	}
+	result := task.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to reconcile shm_size: %v\n  commands: %v\n  stderr: %s", result.Error, result.Commands, result.Stderr)
+	}
+	if !result.Changed {
+		t.Error("expected the set path to change the service")
+	}
+
+	info, err := serviceInfo(testCtx(), driftService, serviceName)
+	if err != nil {
+		t.Fatalf("serviceInfo: %v", err)
+	}
+	if got := strings.TrimSpace(info["shm-size"]); got != "128m" {
+		t.Errorf("shm-size = %q, want 128m", got)
+	}
+	if image, version := runningImage(t, driftService, serviceName); image != beforeImage || version != beforeVersion {
+		t.Errorf("the set path must not move the image: was %s:%s, now %s:%s", beforeImage, beforeVersion, image, version)
+	}
+	if plan := task.Plan(testCtx()); !plan.InSync || len(plan.Warnings) != 0 {
+		t.Errorf("the reconciled service must re-plan in sync and silent, got %+v", plan)
 	}
 }

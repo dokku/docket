@@ -626,7 +626,7 @@ running anything:
 $ docket apply --list-tasks
 ==> Play: api
 [0] dokku_app[app=api]  [tags=core]
-[1] dokku_service_property[service=redis,name=cache,property=shm-size]  (never converges)
+[1] dokku_storage_ensure[app=api]  (deprecated)  (never converges)
 [2] dokku_git_from_image[app=api]  (partial probe)
 ```
 
@@ -764,7 +764,7 @@ which is also valid YAML, so one named `.yml` still loads; an HCL one does not, 
 rather than letting the next `--vars-file` find out. Which task types export is a per-task property: each task's
 reference page carries an **Export support** section stating whether it is supported, partial (for
 example a value that is lifted into the vars-file), or not exportable (write-only credentials such
-as `dokku_git_auth`, or `dokku_service_property`, which no datastore plugin can read back).
+as `dokku_git_auth`).
 Resources that cannot be read back are reported as warnings and left out of the recipe, as is a
 resource that reads back fine but could not be applied back - a `dokku_scheduler_k3s_profile`
 whose name dokku accepted but helm cannot turn into a release name, for example. Emitting one of

@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -13,11 +12,21 @@ import (
 // datastore service: the backup schedule, the S3 authentication, and the
 // backup encryption passphrase.
 //
-// Only the schedule is idempotent: dokku can read it back via
-// <service>:backup-schedule-cat. The auth and encryption pieces have no
-// read command - not even a comparator of the kind registry:auth-status
-// gives dokku_registry_auth - so when those fields are provided they are
-// applied unconditionally and the task reports Changed=true.
+// Every piece is read back from `<service>:info --format json`
+// (dokku-datastore 0.7.1+). The schedule, bucket, IAM flag, region, signature
+// version and endpoint are reported as set; each credential and the
+// passphrase are reported only as the sha256 fingerprint of the stored value,
+// which is compared against the digest of the recipe's value, so no secret is
+// ever read back.
+//
+// state: absent removes whichever of the schedule, the auth settings and the
+// passphrase info reports as stored, without needing the secrets in the
+// recipe. The public key, keyserver, mailto, storage class, object name and
+// timestamp settings are left alone; they belong to dokku_service_property.
+//
+// Whether a datastore can be backed up at all is not checked here. On one
+// that cannot, info reports nothing configured, so state: absent is in sync,
+// and state: present plans as drift and fails with the plugin's own error.
 type ServiceBackupTask struct {
 	// Service is the type of service to back up (e.g. redis, postgres, mysql)
 	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to back up (e.g. redis, postgres, mysql)"`
@@ -53,7 +62,7 @@ type ServiceBackupTask struct {
 	EncryptionPassphrase string `required:"false" sensitive:"true" yaml:"encryption_passphrase,omitempty" description:"Passphrase used to encrypt future backups"`
 
 	// State is the desired state of the backup configuration
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the backup configuration"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the backup configuration. 'absent' removes whichever of the schedule, the auth settings and the encryption passphrase the service reports as stored, without needing the secrets in the recipe, and leaves the settings dokku_service_property manages alone. On a datastore that cannot be backed up, 'absent' is always in sync and 'present' fails with the plugin's own error."`
 }
 
 // ServiceBackupTaskExample contains an example of a ServiceBackupTask
@@ -77,20 +86,21 @@ func (t ServiceBackupTask) Doc() string {
 
 // ExportSupport reports how docket export handles this task.
 func (t ServiceBackupTask) ExportSupport() ExportSupport {
-	return ExportSupport{Status: ExportPartial, Caveat: "the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are write-only and must be re-supplied before the recipe can back up"}
+	return ExportSupport{Status: ExportPartial, Caveat: "the backup schedule, bucket, and use_iam flag are exported; the AWS credentials and encryption passphrase are reported only as fingerprints, and the region, signature version and endpoint cannot be declared without the credentials, so all of these must be re-supplied before the recipe can back up"}
 }
 
 // ProbeSupport reports whether Plan() can read this task's current state.
 func (t ServiceBackupTask) ProbeSupport() ProbeSupport {
-	return ProbeSupport{Status: ProbePartial, Caveat: "the backup schedule and bucket are probed; the AWS credentials and the encryption passphrase have no read command and are re-applied on every run when supplied"}
+	return ProbeSupport{Status: ProbeSupported}
 }
 
 // ExportGlobal reconstructs the backup schedule of every datastore service on
 // the server. Discovery is via listServices; the schedule, bucket, and use_iam
-// flag are parsed from `<service>:backup-schedule-cat <name>`. The AWS
-// credentials and encryption passphrase have no read command, so they are
-// omitted (a partial export) and must be re-supplied before the recipe backs
-// up. Services without a schedule are skipped.
+// flag are read from `<service>:info`. The AWS credentials and encryption
+// passphrase are reported only as fingerprints, so they are omitted (a
+// partial export) and must be re-supplied before the recipe backs up.
+// Services without a schedule are skipped, which covers every service of a
+// datastore that cannot be backed up.
 func (t ServiceBackupTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
 	services, err := listServices(ctx)
 	if err != nil {
@@ -98,15 +108,13 @@ func (t ServiceBackupTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 	}
 	var out []interface{}
 	for _, s := range services {
-		content, scheduled, err := serviceBackupScheduled(ctx, s.Type, s.Name)
+		info, err := serviceInfo(ctx, s.Type, s.Name)
 		if err != nil {
 			return nil, err
 		}
-		if !scheduled {
-			continue
-		}
-		schedule, bucket, useIam, ok := parseBackupSchedule(content, s.Type)
-		if !ok {
+		schedule := infoValue(info, "backup-schedule")
+		bucket := infoValue(info, "backup-bucket")
+		if schedule == "" || bucket == "" {
 			continue
 		}
 		out = append(out, ServiceBackupTask{
@@ -114,65 +122,16 @@ func (t ServiceBackupTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 			Name:     s.Name,
 			Schedule: schedule,
 			Bucket:   bucket,
-			UseIam:   useIam,
+			UseIam:   infoValue(info, "backup-use-iam") == "true",
 			State:    StatePresent,
 		})
 	}
 	return out, nil
 }
 
-// parseBackupSchedule extracts the cron schedule, bucket, and use-iam flag from
-// the crontab line `<service>:backup-schedule-cat` prints. A plugin that writes
-// its own file under /etc/cron.d prints a system crontab line, which names the
-// user the job runs as; one that schedules through dokku's own crontab (the
-// cron-entries trigger) prints a user crontab line, which does not:
-//
-//	<schedule...> <user> <bin> <type>:backup <name> <bucket> [--use-iam]
-//	<schedule...> <bin> <type>:backup <name> <bucket> [--use-iam] &>> <log>
-//
-// The parse anchors on the `<type>:backup` token, takes the word before it as
-// the dokku binary, and reads the schedule from the start of the line as either
-// one `@`-prefixed word (`@daily` and friends) or five fields. At most one word
-// - the user - may sit between the schedule and the binary. Returns ok=false
-// when the line does not match either shape.
-func parseBackupSchedule(content, service string) (schedule, bucket string, useIam, ok bool) {
-	fields := strings.Fields(content)
-	marker := fmt.Sprintf("%s:backup", service)
-	idx := -1
-	for i, f := range fields {
-		if f == marker {
-			idx = i
-			break
-		}
-	}
-	// At least a schedule and the binary must precede the marker, and
-	// `<name> <bucket>` must follow it.
-	if idx < 2 || idx+2 >= len(fields) {
-		return "", "", false, false
-	}
-
-	leading := fields[:idx-1]
-	width := 5
-	if strings.HasPrefix(leading[0], "@") {
-		width = 1
-	}
-	if len(leading) < width || len(leading) > width+1 {
-		return "", "", false, false
-	}
-	schedule = strings.Join(leading[:width], " ")
-	bucket = fields[idx+2]
-	if bucket == "" {
-		return "", "", false, false
-	}
-	if idx+3 < len(fields) && fields[idx+3] == "--use-iam" {
-		useIam = true
-	}
-	return schedule, bucket, useIam, true
-}
-
 // Requirements lists the non-core dokku plugins this task depends on.
 func (t ServiceBackupTask) Requirements() []string {
-	return []string{"a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)"}
+	return []string{datastorePluginRequirement}
 }
 
 // examples returns a list of ServiceBackupTaskExamples as yaml
@@ -256,54 +215,68 @@ func (t ServiceBackupTask) Validate() error {
 	return nil
 }
 
-// Plan reports the drift the ServiceBackupTask would produce.
+// Plan reports the drift the ServiceBackupTask would produce, comparing each
+// declared group against `<service>:info` once the service is confirmed to
+// exist.
 func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
+	target := fmt.Sprintf("%s service %s", t.Service, t.Name)
+	probe := func() (map[string]string, *PlanResult) {
+		exists, err := serviceExists(ctx, t.Service, t.Name)
+		if err != nil {
+			return nil, &PlanResult{Status: PlanStatusError, Error: err}
+		}
+		if !exists {
+			return nil, &PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+		}
+		info, err := serviceInfo(ctx, t.Service, t.Name)
+		if err != nil {
+			return nil, &PlanResult{Status: PlanStatusError, Error: err}
+		}
+		return info, nil
+	}
+
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := serviceExists(ctx, t.Service, t.Name)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if !exists {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+			info, result := probe()
+			if result != nil {
+				return *result
 			}
 
 			inputs := []subprocess.ExecCommandInput{}
 			mutations := []string{}
+			drift := []string{}
 
-			// auth and encryption have no read command, so they always run
-			// when provided. Keep secrets out of the mutation strings; the
+			// Keep secrets out of the mutation strings and the reason; the
 			// resolved Commands mask registered sensitive values.
 			if t.hasAuth() {
-				authArgs := []string{"--quiet", fmt.Sprintf("%s:backup-auth", t.Service), t.Name, t.AwsAccessKeyID, t.AwsSecretAccessKey}
-				for _, opt := range []string{t.AwsDefaultRegion, t.AwsSignatureVersion, t.EndpointURL} {
-					if opt == "" {
-						break
+				if fields := backupAuthDrift(t, info); len(fields) > 0 {
+					authArgs := []string{"--quiet", fmt.Sprintf("%s:backup-auth", t.Service), t.Name, t.AwsAccessKeyID, t.AwsSecretAccessKey}
+					for _, opt := range []string{t.AwsDefaultRegion, t.AwsSignatureVersion, t.EndpointURL} {
+						if opt == "" {
+							break
+						}
+						authArgs = append(authArgs, opt)
 					}
-					authArgs = append(authArgs, opt)
+					inputs = append(inputs, subprocess.ExecCommandInput{Command: "dokku", Args: authArgs})
+					mutations = append(mutations, fmt.Sprintf("%s:backup-auth %s (%s drift)", t.Service, t.Name, strings.Join(fields, ", ")))
+					drift = append(drift, fmt.Sprintf("auth (%s)", strings.Join(fields, ", ")))
 				}
-				inputs = append(inputs, subprocess.ExecCommandInput{Command: "dokku", Args: authArgs})
-				mutations = append(mutations, fmt.Sprintf("%s:backup-auth %s", t.Service, t.Name))
 			}
 
-			if t.EncryptionPassphrase != "" {
+			if t.EncryptionPassphrase != "" && infoValue(info, "backup-encryption-fingerprint") != backupFingerprint(t.EncryptionPassphrase) {
 				inputs = append(inputs, subprocess.ExecCommandInput{
 					Command: "dokku",
 					Args:    []string{"--quiet", fmt.Sprintf("%s:backup-set-encryption", t.Service), t.Name, t.EncryptionPassphrase},
 				})
 				mutations = append(mutations, fmt.Sprintf("%s:backup-set-encryption %s", t.Service, t.Name))
+				drift = append(drift, "encryption passphrase")
 			}
 
 			if t.Schedule != "" {
-				content, scheduled, err := serviceBackupScheduled(ctx, t.Service, t.Name)
-				if err != nil {
-					return PlanResult{Status: PlanStatusError, Error: err}
-				}
-				inSync := scheduled && strings.Contains(content, t.Schedule) && strings.Contains(content, t.Bucket)
-				if !inSync {
+				if fields := backupScheduleDrift(t, info); len(fields) > 0 {
 					schedArgs := []string{"--quiet", fmt.Sprintf("%s:backup-schedule", t.Service), t.Name, t.Schedule, t.Bucket}
 					mutation := fmt.Sprintf("%s:backup-schedule %s %s %s", t.Service, t.Name, t.Schedule, t.Bucket)
 					if t.UseIam {
@@ -312,6 +285,7 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 					}
 					inputs = append(inputs, subprocess.ExecCommandInput{Command: "dokku", Args: schedArgs})
 					mutations = append(mutations, mutation)
+					drift = append(drift, fmt.Sprintf("schedule (%s)", strings.Join(fields, ", ")))
 				}
 			}
 
@@ -321,7 +295,7 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
-				Reason:    "backup configuration not in sync",
+				Reason:    fmt.Sprintf("backup drift on %s: %s", target, strings.Join(drift, "; ")),
 				Mutations: mutations,
 				Commands:  resolveCommands(ctx, inputs),
 				apply: func(ctx context.Context) TaskOutputState {
@@ -330,41 +304,40 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 			}
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := serviceExists(ctx, t.Service, t.Name)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if !exists {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+			info, result := probe()
+			if result != nil {
+				return *result
 			}
 
 			inputs := []subprocess.ExecCommandInput{}
 			mutations := []string{}
+			present := []string{}
 
-			_, scheduled, err := serviceBackupScheduled(ctx, t.Service, t.Name)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if scheduled {
+			if infoValue(info, "backup-schedule") != "" {
 				inputs = append(inputs, subprocess.ExecCommandInput{
 					Command: "dokku",
 					Args:    []string{"--quiet", fmt.Sprintf("%s:backup-unschedule", t.Service), t.Name},
 				})
 				mutations = append(mutations, fmt.Sprintf("%s:backup-unschedule %s", t.Service, t.Name))
+				present = append(present, "schedule")
 			}
-			if t.hasAuth() {
+			// backup-deauth removes every auth setting at once, so a single
+			// stored credential or a region left behind is enough to run it.
+			if backupAuthStored(info) {
 				inputs = append(inputs, subprocess.ExecCommandInput{
 					Command: "dokku",
 					Args:    []string{"--quiet", fmt.Sprintf("%s:backup-deauth", t.Service), t.Name},
 				})
 				mutations = append(mutations, fmt.Sprintf("%s:backup-deauth %s", t.Service, t.Name))
+				present = append(present, "auth")
 			}
-			if t.EncryptionPassphrase != "" {
+			if infoValue(info, "backup-encryption-fingerprint") != "" {
 				inputs = append(inputs, subprocess.ExecCommandInput{
 					Command: "dokku",
 					Args:    []string{"--quiet", fmt.Sprintf("%s:backup-unset-encryption", t.Service), t.Name},
 				})
 				mutations = append(mutations, fmt.Sprintf("%s:backup-unset-encryption %s", t.Service, t.Name))
+				present = append(present, "encryption passphrase")
 			}
 
 			if len(inputs) == 0 {
@@ -373,7 +346,7 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 			return PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
-				Reason:    "backup configuration present",
+				Reason:    fmt.Sprintf("backup %s configured on %s", strings.Join(present, ", "), target),
 				Mutations: mutations,
 				Commands:  resolveCommands(ctx, inputs),
 				apply: func(ctx context.Context) TaskOutputState {
@@ -384,28 +357,66 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 	})
 }
 
-// serviceBackupScheduled reports whether a dokku service has a backup
-// schedule and returns its crontab line for comparison. A
-// transport-level failure (`*subprocess.SSHError`) is propagated; a
-// dokku-level non-zero exit (no schedule configured) is treated as
-// "not scheduled."
-func serviceBackupScheduled(ctx context.Context, service, name string) (string, bool, error) {
-	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args: []string{
-			"--quiet",
-			fmt.Sprintf("%s:backup-schedule-cat", service),
-			name,
-		},
-	})
-	if err != nil {
-		var sshErr *subprocess.SSHError
-		if errors.As(err, &sshErr) {
-			return "", false, err
-		}
-		return "", false, nil
+// infoValue returns the trimmed value info reports for key.
+func infoValue(info map[string]string, key string) string {
+	return strings.TrimSpace(info[key])
+}
+
+// backupAuthDrift names the auth settings info reports differently from the
+// recipe. The credentials are compared by fingerprint. An undeclared region,
+// signature version or endpoint must read back empty, since backup-auth
+// clears any setting it is not given.
+func backupAuthDrift(t ServiceBackupTask, info map[string]string) []string {
+	var fields []string
+	if infoValue(info, "backup-access-key-id-fingerprint") != backupFingerprint(t.AwsAccessKeyID) {
+		fields = append(fields, "access key id")
 	}
-	return result.StdoutContents(), true, nil
+	if infoValue(info, "backup-secret-access-key-fingerprint") != backupFingerprint(t.AwsSecretAccessKey) {
+		fields = append(fields, "secret access key")
+	}
+	for _, f := range []struct{ key, desired, label string }{
+		{"backup-default-region", t.AwsDefaultRegion, "region"},
+		{"backup-signature-version", t.AwsSignatureVersion, "signature version"},
+		{"backup-endpoint-url", t.EndpointURL, "endpoint url"},
+	} {
+		if infoValue(info, f.key) != f.desired {
+			fields = append(fields, f.label)
+		}
+	}
+	return fields
+}
+
+// backupScheduleDrift names the schedule settings info reports differently
+// from the recipe.
+func backupScheduleDrift(t ServiceBackupTask, info map[string]string) []string {
+	var fields []string
+	if infoValue(info, "backup-schedule") != t.Schedule {
+		fields = append(fields, "schedule")
+	}
+	if infoValue(info, "backup-bucket") != t.Bucket {
+		fields = append(fields, "bucket")
+	}
+	if (infoValue(info, "backup-use-iam") == "true") != t.UseIam {
+		fields = append(fields, "use_iam")
+	}
+	return fields
+}
+
+// backupAuthStored reports whether info shows any auth setting stored: either
+// credential, the region, the signature version or the endpoint.
+func backupAuthStored(info map[string]string) bool {
+	for _, key := range []string{
+		"backup-access-key-id-fingerprint",
+		"backup-secret-access-key-fingerprint",
+		"backup-default-region",
+		"backup-signature-version",
+		"backup-endpoint-url",
+	} {
+		if infoValue(info, key) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // init registers the ServiceBackupTask with the task registry

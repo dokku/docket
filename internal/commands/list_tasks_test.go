@@ -100,11 +100,8 @@ func TestApplyListTasksMarksProbeSupport(t *testing.T) {
 	path := writeTasksFile(t, `---
 - tasks:
     - name: unprobeable
-      dokku_service_property:
-        service: redis
-        name: cache
-        property: shm-size
-        value: 64m
+      dokku_storage_ensure:
+        app: api
     - name: partially probed
       dokku_git_from_image:
         app: api
@@ -117,7 +114,9 @@ func TestApplyListTasksMarksProbeSupport(t *testing.T) {
 		t.Fatalf("exit = %d, want 0; stdout=%s", exit, stdout)
 	}
 	for _, want := range []string{
-		"[0] unprobeable  (never converges)",
+		// dokku_storage_ensure is the one task left that cannot read its
+		// state, and it is deprecated as well.
+		"[0] unprobeable  (deprecated)  (never converges)",
 		"[1] partially probed  (partial probe)",
 		"[2] fully probed",
 	} {

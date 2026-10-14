@@ -120,10 +120,13 @@ var globalExportOrder = []string{
 	"dokku_scheduler_docker_local_property",
 	"dokku_scheduler_k3s_property",
 	"dokku_traefik_property",
-	// datastore services: create must precede expose/backup/acl, which all
-	// operate on an existing service instance. The datastore plugins they rely
-	// on are installed by the dokku_plugin tasks emitted first.
+	// datastore services: create must precede property/expose/backup/acl,
+	// which all operate on an existing service instance; properties precede
+	// expose so an expose-mode or expose-host is in place before the ports are
+	// published. The datastore plugins they rely on are installed by the
+	// dokku_plugin tasks emitted first.
 	"dokku_service_create",
+	"dokku_service_property",
 	"dokku_service_expose",
 	"dokku_service_backup",
 	"dokku_acl_service",

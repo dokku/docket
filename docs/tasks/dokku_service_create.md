@@ -6,15 +6,15 @@ Creates or destroys a dokku service
 
 ## Requirements
 
-- a dokku datastore service plugin matching the service type (e.g. dokku-postgres, dokku-redis, dokku-mysql)
+- a dokku datastore service plugin >= 2.3.1 matching the service type (dokku-datastore 0.7.1, e.g. dokku-postgres, dokku-redis, dokku-mysql)
 
 ## Export support
 
-Partial - the service and the image it is running are exported; the remaining create-time options (config_options, custom_env, memory, shm_size, the networks, and the passwords) have no read command and must be re-supplied.
+Partial - the service, the image it is running and its create-time options are exported; password and root_password are applied only at create and cannot be read back, so they must be re-supplied.
 
 ## Probe support
 
-Partial - the service's existence is probed, and the image it is running whenever the recipe pins one; config_options, custom_env, memory, shm_size, the networks, and the passwords have no read command and are not drift-detected.
+Partial - the service's existence is probed, along with the image it is running and every create-time option the recipe declares; password and root_password are applied only at create and cannot be read back, so they are not drift-detected.
 
 ## Identity
 
@@ -28,17 +28,17 @@ Keyed by `service` and `name`. Fields left empty are omitted from the address.
 | `name` | string | yes |  |  | Name of the service instance |
 | `image` | string | no |  |  | Image to start the service with, e.g. postgis/postgis. Applied when the service is created; image_drift decides what happens when an existing service is running something else. |
 | `image_version` | string | no |  |  | Image tag to start the service with. Applied when the service is created; image_drift decides what happens when an existing service is running something else. |
-| `config_options` | string | no |  |  | Extra arguments to pass to the container create command. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it. |
-| `custom_env` | dict | no |  |  | Map of environment variables to start the service with. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it. (sensitive) |
-| `memory` | int | no |  |  | Container memory limit in megabytes. Applied only when the service is created. |
-| `shm_size` | string | no |  |  | Shared memory size for the service container. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it. |
-| `initial_network` | string | no |  |  | Network to attach the service to initially. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it. |
-| `post_create_network` | list | no |  |  | Networks to attach the service container to after creation. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it. |
-| `post_start_network` | list | no |  |  | Networks to attach the service container to after start. Applied when the service is created, and re-applied when image_drift 'upgrade' recreates it. |
+| `config_options` | string | no |  |  | Extra arguments to pass to the container create command. Applied when the service is created; image_drift decides what happens when an existing service has a different value. |
+| `custom_env` | dict | no |  |  | Map of environment variables to start the service with. Applied when the service is created; image_drift decides what happens when an existing service has a different value. (sensitive) |
+| `memory` | int | no |  |  | Container memory limit in megabytes. Applied when the service is created; image_drift decides what happens when an existing service has a different value. |
+| `shm_size` | string | no |  |  | Shared memory size for the service container. Applied when the service is created; image_drift decides what happens when an existing service has a different value. |
+| `initial_network` | string | no |  |  | Network to attach the service to initially. Applied when the service is created; image_drift decides what happens when an existing service has a different value. |
+| `post_create_network` | list | no |  |  | Networks to attach the service container to after creation. Applied when the service is created; image_drift decides what happens when an existing service has a different value. |
+| `post_start_network` | list | no |  |  | Networks to attach the service container to after start. Applied when the service is created; image_drift decides what happens when an existing service has a different value. |
 | `password` | string | no |  |  | Override the user-level service password. Applied only when the service is created. (sensitive) |
 | `root_password` | string | no |  |  | Override the root-level service password. Applied only when the service is created. (sensitive) |
-| `image_drift` | string | no | warn | ignore, warn, error, upgrade | What to do when the service already exists on an image other than the one pinned: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. Upgrading recreates the container, which means downtime, no data migration across major versions, and it clears any config_options and custom_env the recipe does not declare. |
-| `restart_apps` | bool | no |  |  | Restart the apps linked to the service after an image_drift 'upgrade' recreates its container, so they reconnect to the new one. Only valid with image_drift 'upgrade', and only acted on when the service has linked apps. |
+| `image_drift` | string | no | warn | ignore, warn, error, upgrade | What to do when the service already exists on an image other than the one pinned, or with a create-time option other than the one declared: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. An image is reconciled with &lt;service>:upgrade, which recreates the container with no data migration across major versions; any other option with &lt;service>:set followed by a stop and a start. Both mean downtime. Options the recipe does not declare are left as the server has them. |
+| `restart_apps` | bool | no |  |  | Restart the apps linked to the service after an image_drift 'upgrade' runs &lt;service>:upgrade, so they reconnect to the new container. Only valid with image_drift 'upgrade', and only acted on when the image drifted and the service has linked apps: reconciling the other options with a stop and a start leaves linked apps alone. |
 | `state` | string | no | present | present, absent | Desired state of the service |
 
 ## Examples
@@ -77,6 +77,16 @@ dokku_service_create:
     name: my-upgraded-redis
     image: redis
     image_version: 7.2.5
+    image_drift: upgrade
+```
+
+### Reconcile a changed shared memory size with set, stop and start
+
+```yaml
+dokku_service_create:
+    service: redis
+    name: my-tuned-redis
+    shm_size: 128m
     image_drift: upgrade
 ```
 

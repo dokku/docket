@@ -84,6 +84,7 @@ ordering. The `reason` is a stable machine key so consumers can branch on the ca
 | `probe_rejected` | An older plugin rejected `:report --format json` outright, so the property task could not probe current state. |
 | `probe_indeterminate` | A probe ran and was understood but could not answer, because the server will not reveal enough of the state to compare it - a `dokku_registry_auth` credential held by a docker credential helper or stored as an identity token, for example. The task reports drift and applies rather than assuming a match. |
 | `service_image_drift` | A `dokku_service_create` task found the service running an image other than the one the recipe pins and left it alone, or could not read the running image to compare at all. See [dokku_service_create](tasks/dokku_service_create.md). |
+| `service_option_drift` | A `dokku_service_create` task found the service holding a create-time option (`config_options`, `custom_env`, `memory`, `shm_size` or a network) other than the one the recipe declares and left it alone. The message names the options that differ, never a `custom_env` value. See [dokku_service_create](tasks/dokku_service_create.md). |
 
 In every case `message` is masked, so a registered sensitive value that reaches the warning (for
 example server stderr echoed by a rejected probe) renders as `***`. `--list-tasks --json` does not
@@ -92,11 +93,12 @@ emit a separate `warning` event; instead, the `list_task` event for a deprecated
 
 `unknown_property`, `probe_rejected` and `probe_indeterminate` are probe failures: this run could
 not read the state, and another run against a different server or a newer plugin might.
-`service_image_drift` is the other kind - the state was read, and the task is reporting a
-difference it is deliberately not reconciling, because dokku's only remedy recreates the service
-container. It rides on an `ok` task, not a `~` one, so a recipe carrying that mismatch still exits
-`0` under `--detailed-exitcode`; set `image_drift: error` on the task when a run should fail on it
-instead. A task type that can *never* read its state is a third thing, declared rather than
+`service_image_drift` and `service_option_drift` are the other kind - the state was read, and the
+task is reporting a difference it is deliberately not reconciling, because dokku's remedy recreates
+the service container (`<service>:upgrade` for an image, a stop and a start for an option). They
+ride on an `ok` task, not a `~` one, so a recipe carrying that mismatch still exits `0` under
+`--detailed-exitcode`; set `image_drift: error` on the task when a run should fail on it instead,
+or `image_drift: upgrade` to reconcile it. A task type that can *never* read its state is a third thing, declared rather than
 discovered, and it is not a warning at all. The `list_task` event carries it as
 `"probe": "unsupported"` (the task reports drift on every run) or `"probe": "partial"` (only some
 of its fields are read), each with a `probe_caveat` naming what cannot be read. Both keys are

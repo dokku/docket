@@ -136,3 +136,33 @@ func TestParamDescriptionMarksRunnerFile(t *testing.T) {
 		t.Errorf("paramDescription = %q; want %q", got, want)
 	}
 }
+
+func TestEscapeProseEscapesBareAngleBrackets(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"reconciled with <service>:upgrade", "reconciled with &lt;service>:upgrade"},
+		{"and <service>:set refuses the rest", "and &lt;service>:set refuses the rest"},
+		{"recorded as `<remote>#<sha>`", "recorded as `<remote>#<sha>`"},
+		{"a <service> starts and a `dokku <service>:info` follows", "a &lt;service> starts and a `dokku <service>:info` follows"},
+		// A comparison is not an HTML tag, and escaping it would turn
+		// Requirement lines such as "dokku-acl plugin >= 2.0.1" into entities.
+		{"dokku-acl plugin >= 2.0.1", "dokku-acl plugin >= 2.0.1"},
+		{"a <!-- comment --> and a <?pi ?>", "a &lt;!-- comment --> and a &lt;?pi ?>"},
+		{"no brackets", "no brackets"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := escapeProse(tc.in); got != tc.want {
+			t.Errorf("escapeProse(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestEscapeCellEscapesBareAngleBrackets(t *testing.T) {
+	got := escapeCell("An image is reconciled with <service>:upgrade | stop")
+	want := "An image is reconciled with &lt;service>:upgrade \\| stop"
+	if got != want {
+		t.Errorf("escapeCell = %q, want %q", got, want)
+	}
+}
