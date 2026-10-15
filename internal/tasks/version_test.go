@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -130,8 +131,12 @@ func TestCheckMinimumVersions(t *testing.T) {
 		t.Parallel()
 		ctx := gatedRunner(t, versionRunner("0.38.8\n", ""))
 		err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"})
-		if err == nil || !strings.Contains(err.Error(), "dokku_app requires Dokku >= 0.38.31, server has 0.38.8 (pass --ignore-version to run it anyway)") {
+		if err == nil || err.Error() != "dokku_app requires Dokku >= 0.38.31, server has 0.38.8" {
 			t.Fatalf("error = %v", err)
+		}
+		verr := asVersionError(t, err)
+		if verr.TaskType != "dokku_app" || verr.Plugin != "" || verr.Minimum != "0.38.31" || verr.Found != "0.38.8" || verr.Err != nil {
+			t.Fatalf("version error = %#v", verr)
 		}
 	})
 
@@ -147,8 +152,11 @@ func TestCheckMinimumVersions(t *testing.T) {
 		t.Parallel()
 		ctx := gatedRunner(t, versionRunner("not-a-version\n", ""))
 		err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"})
-		if err == nil || !strings.Contains(err.Error(), "could not be parsed") {
+		if err == nil || err.Error() != `dokku_app requires Dokku >= 0.38.31, but the server version "not-a-version" could not be parsed` {
 			t.Fatalf("error = %v", err)
+		}
+		if verr := asVersionError(t, err); verr.Found != "not-a-version" || verr.Err == nil {
+			t.Fatalf("version error = %#v", verr)
 		}
 	})
 
@@ -158,8 +166,14 @@ func TestCheckMinimumVersions(t *testing.T) {
 			return subprocess.ExecCommandResponse{}, errVersionProbe
 		})
 		err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"})
-		if err == nil || !strings.Contains(err.Error(), "checking Dokku version") || !strings.Contains(err.Error(), "--ignore-version") {
+		if err == nil || !strings.Contains(err.Error(), "dokku_app: checking Dokku version: ") || strings.Contains(err.Error(), "--ignore-version") {
 			t.Fatalf("error = %v", err)
+		}
+		if !errors.Is(err, errVersionProbe) {
+			t.Fatalf("error %v should wrap the probe failure", err)
+		}
+		if verr := asVersionError(t, err); verr.Plugin != "" || verr.Found != "" {
+			t.Fatalf("version error = %#v", verr)
 		}
 	})
 
@@ -167,8 +181,12 @@ func TestCheckMinimumVersions(t *testing.T) {
 		t.Parallel()
 		ctx := gatedRunner(t, versionRunner("0.38.31\n", `[{"name":"letsencrypt","version":"0.1.0"}]`))
 		err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"})
-		if err == nil || !strings.Contains(err.Error(), "dokku_letsencrypt requires letsencrypt >= 0.25.2, server has 0.1.0") {
+		if err == nil || err.Error() != "dokku_letsencrypt requires letsencrypt >= 0.25.2, server has 0.1.0" {
 			t.Fatalf("error = %v", err)
+		}
+		verr := asVersionError(t, err)
+		if verr.TaskType != "dokku_letsencrypt" || verr.Plugin != "letsencrypt" || verr.Minimum != "0.25.2" || verr.Found != "0.1.0" || verr.Err != nil {
+			t.Fatalf("version error = %#v", verr)
 		}
 	})
 
@@ -178,6 +196,23 @@ func TestCheckMinimumVersions(t *testing.T) {
 		err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"})
 		if err == nil || !strings.Contains(err.Error(), "server has 0.1.0") {
 			t.Fatalf("error = %v", err)
+		}
+	})
+
+	t.Run("plugin list error", func(t *testing.T) {
+		t.Parallel()
+		ctx := gatedRunner(t, func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+			if strings.Join(in.Args, " ") == "version" {
+				return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}, nil
+			}
+			return subprocess.ExecCommandResponse{}, errVersionProbe
+		})
+		err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"})
+		if err == nil || !strings.Contains(err.Error(), "dokku_letsencrypt: checking plugin versions: ") || !errors.Is(err, errVersionProbe) {
+			t.Fatalf("error = %v", err)
+		}
+		if verr := asVersionError(t, err); verr.Plugin != "letsencrypt" || verr.Minimum != "0.25.2" || verr.Found != "" {
+			t.Fatalf("version error = %#v", verr)
 		}
 	})
 
@@ -193,8 +228,11 @@ func TestCheckMinimumVersions(t *testing.T) {
 		t.Parallel()
 		ctx := gatedRunner(t, versionRunner("0.38.31\n", `[{"name":"letsencrypt","version":"abc1234"}]`))
 		err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"})
-		if err == nil || !strings.Contains(err.Error(), "could not be parsed") {
+		if err == nil || err.Error() != `dokku_letsencrypt requires letsencrypt >= 0.25.2, but the installed version "abc1234" could not be parsed` {
 			t.Fatalf("error = %v", err)
+		}
+		if verr := asVersionError(t, err); verr.Plugin != "letsencrypt" || verr.Found != "abc1234" || verr.Err == nil {
+			t.Fatalf("version error = %#v", verr)
 		}
 	})
 
@@ -360,6 +398,15 @@ func TestExportRecipeWarnsOnOldDokku(t *testing.T) {
 	if !warned {
 		t.Fatalf("warnings = %#v", res.Report.Warnings)
 	}
+	var refusedConfig bool
+	for _, verr := range res.Report.VersionErrors {
+		if verr.TaskType == "dokku_config" && verr.Found == "0.38.0" {
+			refusedConfig = true
+		}
+	}
+	if !refusedConfig {
+		t.Fatalf("version errors = %#v", res.Report.VersionErrors)
+	}
 	for _, play := range res.Plays() {
 		for _, task := range play.Tasks {
 			if task.Type == "dokku_config" {
@@ -367,6 +414,55 @@ func TestExportRecipeWarnsOnOldDokku(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestExportRecipeIgnoreVersionOverridesTheGate(t *testing.T) {
+	t.Parallel()
+	responses := exportFixture()
+	responses["version"] = "0.38.0\n"
+	versionReads := 0
+	runner := fakeDokku(responses)
+	ctx := ContextWithVersionGate(subprocess.ContextWithRunner(context.Background(), func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") == "version" {
+			versionReads++
+		}
+		return runner(ctx, in)
+	}))
+	res, err := ExportRecipe(ctx, ExportOptions{Apps: []string{"app-one"}, IgnoreVersion: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Report.VersionErrors) != 0 {
+		t.Fatalf("version errors = %#v", res.Report.VersionErrors)
+	}
+	for _, warning := range res.Report.Warnings {
+		if strings.Contains(warning, "requires Dokku") {
+			t.Fatalf("IgnoreVersion should not refuse: %#v", res.Report.Warnings)
+		}
+	}
+	if versionReads != 0 {
+		t.Errorf("version reads = %d, want 0", versionReads)
+	}
+	var exported bool
+	for _, play := range res.Plays() {
+		for _, task := range play.Tasks {
+			if task.Type == "dokku_config" {
+				exported = true
+			}
+		}
+	}
+	if !exported {
+		t.Fatalf("IgnoreVersion should export dokku_config: %#v", res.Plays())
+	}
+}
+
+func asVersionError(t *testing.T, err error) *VersionError {
+	t.Helper()
+	var verr *VersionError
+	if !errors.As(err, &verr) {
+		t.Fatalf("error %v (%T) is not a *VersionError", err, err)
+	}
+	return verr
 }
 
 type floorlessTask struct{}

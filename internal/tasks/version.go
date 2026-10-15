@@ -208,12 +208,76 @@ func InvalidatePluginVersions(ctx context.Context) {
 	cache.mu.Unlock()
 }
 
+// withoutVersionGate returns a context on which CheckMinimumVersions does
+// nothing, even when ctx carries a gate. Export uses it for IgnoreVersion.
+func withoutVersionGate(ctx context.Context) context.Context {
+	if versionCacheFrom(ctx) == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, versionCacheKey{}, (*versionCache)(nil))
+}
+
+// VersionError is the error CheckMinimumVersions returns when the server, or
+// an installed plugin a task needs, is older than the task's floor, or when
+// that version could not be read or parsed. Its message names no flag: the
+// CLI adds the --ignore-version hint when it renders one.
+type VersionError struct {
+	// TaskType is the task type that was checked, such as "dokku_app".
+	TaskType string
+
+	// Plugin is the plugin:list name of the plugin that was checked, or ""
+	// when the floor is Dokku's own. When the plugin list could not be read
+	// it is the first plugin the task needed.
+	Plugin string
+
+	// Minimum is the floor the task declares.
+	Minimum string
+
+	// Found is the version the server reported, or "" when it reported
+	// nothing or could not be asked.
+	Found string
+
+	// Err is why the version could not be read or parsed. It is nil when the
+	// server is simply older than Minimum.
+	Err error
+
+	// readFailed is set when asking the server failed, as opposed to its
+	// answer not parsing.
+	readFailed bool
+}
+
+func (e *VersionError) component() string {
+	if e.Plugin == "" {
+		return "Dokku"
+	}
+	return e.Plugin
+}
+
+func (e *VersionError) Error() string {
+	switch {
+	case e.readFailed && e.Plugin == "":
+		return fmt.Sprintf("%s: checking Dokku version: %v", e.TaskType, e.Err)
+	case e.readFailed:
+		return fmt.Sprintf("%s: checking plugin versions: %v", e.TaskType, e.Err)
+	case e.Err != nil && e.Plugin == "":
+		return fmt.Sprintf("%s requires Dokku >= %s, but the server version %q could not be parsed", e.TaskType, e.Minimum, strings.TrimSpace(e.Found))
+	case e.Err != nil:
+		return fmt.Sprintf("%s requires %s >= %s, but the installed version %q could not be parsed", e.TaskType, e.Plugin, e.Minimum, strings.TrimSpace(e.Found))
+	default:
+		return fmt.Sprintf("%s requires %s >= %s, server has %s", e.TaskType, e.component(), e.Minimum, e.Found)
+	}
+}
+
+func (e *VersionError) Unwrap() error {
+	return e.Err
+}
+
 // CheckMinimumVersions reports whether the server ctx targets is older than
 // the floor task declares. A context with no version gate returns nil, as
 // does a task that declares no floor. An uninstalled plugin is not a failure:
 // the task's own probe reports that, and a recipe can install the plugin
 // earlier in the same run. An installed plugin that is older, or a version
-// that does not parse, fails the task.
+// that does not parse, fails the task with a *VersionError.
 func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error {
 	cache := versionCacheFrom(ctx)
 	if cache == nil || task == nil {
@@ -234,14 +298,14 @@ func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error 
 	entry := cache.entry(ctx)
 	raw, probeErr := entry.dokku(ctx, cache)
 	if probeErr != nil {
-		return fmt.Errorf("%s: checking Dokku version: %w (pass --ignore-version to run it anyway)", typeKey, probeErr)
+		return &VersionError{TaskType: typeKey, Minimum: need.String(), Err: probeErr, readFailed: true}
 	}
 	have, err := parseVersion(raw)
 	if err != nil {
-		return fmt.Errorf("%s requires Dokku >= %s, but the server version %q could not be parsed (pass --ignore-version to run it anyway)", typeKey, need, strings.TrimSpace(raw))
+		return &VersionError{TaskType: typeKey, Minimum: need.String(), Found: raw, Err: err}
 	}
 	if have.olderThan(need) {
-		return fmt.Errorf("%s requires Dokku >= %s, server has %s (pass --ignore-version to run it anyway)", typeKey, need, have)
+		return &VersionError{TaskType: typeKey, Minimum: need.String(), Found: have.String()}
 	}
 
 	var applicable []PluginRequirement
@@ -261,7 +325,7 @@ func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error 
 
 	plugins, pluginErr := entry.pluginList(ctx, cache)
 	if pluginErr != nil {
-		return fmt.Errorf("%s: checking plugin versions: %w (pass --ignore-version to run it anyway)", typeKey, pluginErr)
+		return &VersionError{TaskType: typeKey, Plugin: applicable[0].Name, Minimum: applicable[0].Minimum, Err: pluginErr, readFailed: true}
 	}
 	for _, plugin := range applicable {
 		reported, installed := plugins[plugin.Name]
@@ -274,10 +338,10 @@ func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error 
 		}
 		havePlugin, err := parseVersion(reported)
 		if err != nil {
-			return fmt.Errorf("%s requires %s >= %s, but the installed version %q could not be parsed (pass --ignore-version to run it anyway)", typeKey, plugin.Name, needPlugin, strings.TrimSpace(reported))
+			return &VersionError{TaskType: typeKey, Plugin: plugin.Name, Minimum: needPlugin.String(), Found: reported, Err: err}
 		}
 		if havePlugin.olderThan(needPlugin) {
-			return fmt.Errorf("%s requires %s >= %s, server has %s (pass --ignore-version to run it anyway)", typeKey, plugin.Name, needPlugin, havePlugin)
+			return &VersionError{TaskType: typeKey, Plugin: plugin.Name, Minimum: needPlugin.String(), Found: havePlugin.String()}
 		}
 	}
 	return nil

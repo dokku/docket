@@ -758,7 +758,7 @@ it.
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
-| `--ignore-version` | Export a task type even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that exporter is skipped with a warning and the rest of the server still exports. |
+| `--ignore-version` | Export a task type even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that exporter is skipped with a warning and the rest of the server still exports, and the warnings end with one line naming this flag. |
 
 The output format follows `--format` when given, otherwise the `--output` extension (`.json` /
 `.json5` writes JSON5, `.hcl` writes HCL, anything else YAML); the vars-file follows the recipe, or

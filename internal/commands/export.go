@@ -221,18 +221,18 @@ func (c *ExportCommand) Run(args []string) int {
 	masker := subprocess.NewMasker()
 	session := subprocess.NewSession(masker)
 	defer func() { _ = session.Close() }()
-	ctx := session.Context(runContext(c.Ctx), target)
-	if !c.ignoreVersion {
-		ctx = tasks.ContextWithVersionGate(ctx)
-	}
+	// IgnoreVersion, not whether the gate is installed, is what skips it, so
+	// the CLI and an sdk caller turn it off the same way.
+	ctx := tasks.ContextWithVersionGate(session.Context(runContext(c.Ctx), target))
 
 	toStdout := c.output == taskFileStdin
 
 	res, err := tasks.ExportRecipe(ctx, tasks.ExportOptions{
-		Apps:      c.apps,
-		Resources: resources,
-		Redact:    c.redact,
-		Inline:    toStdout,
+		Apps:          c.apps,
+		Resources:     resources,
+		Redact:        c.redact,
+		Inline:        toStdout,
+		IgnoreVersion: c.ignoreVersion,
 	})
 	// Export is the one server-reading command with no recipe to collect a
 	// sensitive set from before the run: the values it must mask are the ones
@@ -256,6 +256,9 @@ func (c *ExportCommand) Run(args []string) int {
 	}
 	for _, w := range res.Report.Warnings {
 		c.Ui.Warn(fmt.Sprintf("warning: %s", masker.String(w)))
+	}
+	if len(res.Report.VersionErrors) > 0 {
+		c.Ui.Warn("warning: pass --ignore-version to export the skipped task types anyway")
 	}
 
 	// A nonexistent --app must not silently produce an empty recipe (which the

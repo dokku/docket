@@ -94,6 +94,7 @@ the value form of the type registered under `task.Type`, never a pointer, so
 | `Resources` | Only these addresses, parsed by `sdk.ParseResourceSelectors`. When every address names its app or is global, only those apps are read and the server's app list is not. |
 | `Inline` | Keep sensitive values in the bodies instead of lifting them into `Vars`. |
 | `Redact` | Replace sensitive values with a placeholder. |
+| `IgnoreVersion` | Read every exporter even when Dokku, or an installed plugin it needs, is older than its task declares. The equivalent of `docket export --ignore-version`. |
 
 An address is `type[key=value]`, so a single global resource is readable without exporting the whole
 server:
@@ -121,6 +122,8 @@ for _, w := range res.Report.Warnings {
 
 `res.Report` also carries `MissingApps` and `MissingResources` - names that were asked for and not
 found. An export that finds nothing is not an error, so check them rather than relying on `err`.
+`res.Report.VersionErrors` lists the exporters skipped because the server is older than their task
+declares (see [Version floors](#version-floors)); each one is also in `Warnings`.
 
 ## Building tasks
 
@@ -143,6 +146,44 @@ state := sdk.ExecutePlan(ctx, plan)  // applies that plan without probing again
 `app.Execute(ctx)` plans and applies in one call. `sdk.DecodeTask` is the same thing as `NewTask`
 from a YAML task body, for a caller that already holds a recipe fragment.
 
+### Version floors
+
+Every task declares the oldest Dokku it runs on, and any plugins it needs, in its Requirements
+section. `docket plan` and `docket apply` refuse a task whose floor the server is behind. `Plan`,
+`Execute` and `sdk.ExecutePlan` do not check it themselves, so a caller that wants the same refusal
+installs the version gate once per run and checks each task before planning it:
+
+```go
+ctx = sdk.ContextWithVersionGate(ctx)
+
+if err := sdk.CheckMinimumVersions(ctx, "dokku_app", app); err != nil {
+    var verr *sdk.VersionError
+    if errors.As(err, &verr) {
+        // verr.TaskType, verr.Plugin, verr.Minimum and verr.Found say why.
+    }
+    return err
+}
+plan := app.Plan(ctx)
+```
+
+`CheckMinimumVersions` returns nil when the context carries no gate, so skipping the check - the
+equivalent of `--ignore-version` - is a matter of not installing the gate or not calling it. A
+plugin the task needs that is not installed at all is not a refusal: the task's own probe reports
+it, and an earlier task in the same run can install it.
+
+The gate reads `dokku version` and `dokku plugin:list` once per target - one host with or without
+sudo - and keeps the answers for as long as the context lives, so install a fresh gate for each run
+rather than keeping one across runs that could straddle a server upgrade. `dokku_plugin` drops the
+cached plugin list itself after it installs or uninstalls a plugin, so a later task in the same run
+sees the change without anything from the caller.
+
+A `VersionError` names no flag. `Plugin` is empty when the floor is Dokku's own. `Err` is set when
+the version could not be read or parsed, and is nil when the server is simply older than `Minimum`.
+
+`sdk.ExportRecipe` installs the gate itself, and skips an exporter whose floor the server is behind;
+set `ExportOptions.IgnoreVersion` to read it anyway. That option wins over a gate already on the
+context.
+
 ### Listing task types
 
 `sdk.TaskTypes()` returns every registered task type, sorted. `sdk.Lookup` reports whether a type is
@@ -157,7 +198,8 @@ for _, typeKey := range sdk.TaskTypes() {
 
 Each `Lookup` call returns a new zero-value instance, so changing it affects nothing else. It has no
 defaults applied; use `sdk.NewTask` for a task to run. `sdk.TaskDeprecation`,
-`sdk.TaskProbeSupport` and `sdk.TaskExportSupport` read the rest of a task's metadata.
+`sdk.TaskProbeSupport`, `sdk.TaskExportSupport` and `sdk.TaskMinimumVersions` read the rest of a
+task's metadata.
 
 `sdk.Catalog()` describes every task type in one value - synopsis, deprecation, requirements,
 probe and export support, identity and fields - and is what `docket schema` emits.

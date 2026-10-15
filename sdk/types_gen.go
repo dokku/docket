@@ -337,5 +337,8 @@ type TaskSchema = tasks.TaskSchema
 // TraefikPropertyTask is tasks.TraefikPropertyTask.
 type TraefikPropertyTask = tasks.TraefikPropertyTask
 
+// VersionError is tasks.VersionError.
+type VersionError = tasks.VersionError
+
 // VersionSupport is tasks.VersionSupport.
 type VersionSupport = tasks.VersionSupport

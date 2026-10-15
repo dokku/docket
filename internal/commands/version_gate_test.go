@@ -2,12 +2,14 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dokku/docket/internal/subprocess"
+	"github.com/dokku/docket/internal/tasks"
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/mitchellh/cli"
 )
@@ -131,17 +133,23 @@ func TestExportSkipsOldDokkuUnlessIgnored(t *testing.T) {
 		t.Fatalf("exit = 0, want the empty-export error; stderr:\n%s", ui.ErrorWriter.String())
 	}
 	stderr := ui.ErrorWriter.String()
-	if !strings.Contains(stderr, "web: dokku_config: dokku_config requires Dokku >= 0.38.31") {
+	if !strings.Contains(stderr, "warning: web: dokku_config: dokku_config requires Dokku >= 0.38.31, server has 0.38.0\n") {
 		t.Fatalf("stderr = %s", stderr)
+	}
+	if got := strings.Count(stderr, "pass --ignore-version"); got != 1 {
+		t.Fatalf("hint printed %d times, want once after the warnings:\n%s", got, stderr)
+	}
+	if !strings.Contains(stderr, "warning: pass --ignore-version to export the skipped task types anyway") {
+		t.Fatalf("stderr missing the hint: %s", stderr)
 	}
 
 	dir = t.TempDir()
 	recipe = filepath.Join(dir, "tasks.yml")
-	c, ui = exportWithRunner(fakeExecRunner(exportCommandFixture()), dir)
+	c, ui = exportWithRunner(fakeExecRunner(old), dir)
 	if code := c.Run([]string{"--ignore-version", "--output", recipe}); code != 0 {
 		t.Fatalf("Run exit = %d, want 0: %s", code, ui.ErrorWriter.String())
 	}
-	if strings.Contains(ui.ErrorWriter.String(), "requires Dokku") {
+	if strings.Contains(ui.ErrorWriter.String(), "requires Dokku") || strings.Contains(ui.ErrorWriter.String(), "--ignore-version") {
 		t.Fatalf("--ignore-version should not refuse: %s", ui.ErrorWriter.String())
 	}
 	body, err := os.ReadFile(recipe)
@@ -150,6 +158,24 @@ func TestExportSkipsOldDokkuUnlessIgnored(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "dokku_config") {
 		t.Fatalf("recipe:\n%s", body)
+	}
+}
+
+func TestIgnoreVersionHintOnlyNamesTheFlagForVersionErrors(t *testing.T) {
+	t.Parallel()
+	refusal := &tasks.VersionError{TaskType: "dokku_app", Minimum: "0.38.31", Found: "0.38.8"}
+	got := ignoreVersionHint(refusal)
+	if got.Error() != "dokku_app requires Dokku >= 0.38.31, server has 0.38.8 (pass --ignore-version to run it anyway)" {
+		t.Fatalf("hinted = %q", got)
+	}
+	var verr *tasks.VersionError
+	if !errors.As(got, &verr) || verr != refusal {
+		t.Fatalf("the hint should wrap the refusal: %#v", got)
+	}
+
+	other := errors.New("dokku_app declares Dokku version \"x\", which is not major.minor.patch")
+	if got := ignoreVersionHint(other); got != other {
+		t.Fatalf("a non-version error was changed: %q", got)
 	}
 }
 
