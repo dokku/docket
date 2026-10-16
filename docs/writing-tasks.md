@@ -113,10 +113,12 @@ A few conventions to follow:
   one in a state that owns the collection reads them all. Read every field the task's exporter
   reads, even one the drift check ignores, unless reading it would undo a deliberate choice of the
   probe's - such as `dokku_certs` never moving certificate material at plan time - in which case
-  name the field in `observedOmittedFields` with the reason. A probe failure the plan treats as
-  drift, rather than as an error, sets no observed state. `TestPlanObservesServerState` plans every
-  exported body against a fixture in `observed_*_test.go` and checks that it observes itself, and
-  `TestObservedFixturesCoverEveryTask` fails the build for a task with no fixture.
+  tag the field `write_only`. A probe failure the plan treats as drift, rather than as an error,
+  sets no observed state. `TestPlanObservesServerState` plans every exported body against a fixture
+  in `observed_*_test.go` and checks that it observes itself, `TestObservedFixturesCoverEveryTask`
+  fails the build for a task with no fixture, and `TestObservedReadsEveryUntaggedField` fails it
+  for a field that is not an identity key, not tagged, and set by no `Observed` across the
+  fixture - so give the fixture's server a value for every field the probe reads.
 - `init()` registers the task with `RegisterTask`, which makes it usable in a recipe.
 - Every task must implement `MinimumVersions() VersionSupport`. `Dokku` is the oldest release
   whose command and output shape the current probe parses, as `major.minor.patch`. Where the
@@ -146,7 +148,10 @@ A few conventions to follow:
   `identity:"key"` field, and a value that is unreadable only for some inputs belongs in the
   `ExportSupport()` / `ProbeSupport()` caveat instead. An exporting task with either tag needs a
   fixture in `internal/tasks/export_readback_test.go`, which fails the build otherwise and proves
-  the exporter never fills the field from the server.
+  the exporter never fills the field from the server. An exporter that does recover a `write_only`
+  field through a command the plan does not run (`dokku_certs` reads its PEM with `certs:show`)
+  names the field in `exportReadsWriteOnly` there with the reason, and says so in its
+  `ExportSupport()` caveat.
 - Tag every slice field, element structs included, `ordered:"true"` or `ordered:"false"`. Use
   `true` only when the task applies the elements in order and its Plan treats a reorder as drift
   (`dokku_buildpacks`'s `buildpacks`); use `false` when it compares them as a set or sorts them.

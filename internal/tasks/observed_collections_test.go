@@ -366,14 +366,14 @@ func observedCollectionFixtures() map[string]observedFixture {
 		},
 		"dokku_scheduler_k3s_profile": {
 			responses: map[string]string{
-				"--quiet scheduler-k3s:profiles:list --format json": `[{"name":"gpu","role":"worker","kubelet_args":["max-pods=50","node-labels=gpu=true"],"taint_scheduling":true}]`,
+				"--quiet scheduler-k3s:profiles:list --format json": `[{"name":"gpu","role":"worker","kubelet_args":["max-pods=50","node-labels=gpu=true"],"taint_scheduling":true,"allow_unknown_hosts":true}]`,
 			},
 			export: global(SchedulerK3sProfileTask{}),
 			cases: []observedCase{
 				{
 					name:   "present reads the stored definition",
 					task:   SchedulerK3sProfileTask{Name: "gpu", Role: "server", State: StatePresent},
-					want:   SchedulerK3sProfileTask{Name: "gpu", Role: "worker", KubeletArgs: []string{"max-pods=50", "node-labels=gpu=true"}, TaintScheduling: true, State: StatePresent},
+					want:   SchedulerK3sProfileTask{Name: "gpu", Role: "worker", KubeletArgs: []string{"max-pods=50", "node-labels=gpu=true"}, TaintScheduling: true, AllowUnknownHosts: true, State: StatePresent},
 					exists: true,
 				},
 				{

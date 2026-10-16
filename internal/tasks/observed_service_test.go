@@ -26,7 +26,11 @@ func observedServiceServer() map[string]string {
 			"version":                              "postgres:17.2",
 			"memory":                               "512",
 			"custom-env":                           "LANG=C;TZ=UTC",
+			"config-options":                       "--max-connections=200",
+			"shm-size":                             "256m",
+			"initial-network":                      "bridge",
 			"post-create-network":                  "backend,metrics",
+			"post-start-network":                   "frontend",
 			"backup-schedule":                      "0 3 * * *",
 			"backup-bucket":                        "my-bucket",
 			"backup-use-iam":                       "false",
@@ -49,15 +53,16 @@ func observedHttpAuthServer() map[string]string {
 	}
 }
 
-// observedStorageMountServer is app web with two mounts in the default scope -
-// a named entry and a legacy host-path bind mount - and one in the worker
-// scope whose rw option the mounts list cannot express, so export emits it as
-// a single mount.
+// observedStorageMountServer is app web with three mounts in the default
+// scope - a named entry, a legacy host-path bind mount, and an entry subpath
+// carrying a chown and a volume option - and one in the worker scope whose rw
+// option the mounts list cannot express, so export emits it as a single mount.
 func observedStorageMountServer() map[string]string {
 	return map[string]string{
 		"--quiet storage:report web --format json": storageReport(
 			reportAttachment{EntryName: "data", ContainerPath: "/app/data"},
 			reportAttachment{EntryName: "legacy-abc123", HostPath: "/var/lib/dokku/data/storage/web", ContainerPath: "/app/storage", Readonly: true, Phases: []string{"run"}},
+			reportAttachment{EntryName: "data", ContainerPath: "/app/uploads", Subpath: "uploads", VolumeChown: "herokuish", VolumeOptions: "Z"},
 			reportAttachment{EntryName: "data", ContainerPath: "/app/cache", ProcessType: "worker", VolumeOptions: "rw"},
 		),
 	}
@@ -88,7 +93,11 @@ func observedServiceFixtures() map[string]observedFixture {
 						ImageVersion:      "17.2",
 						Memory:            512,
 						CustomEnv:         map[string]string{"LANG": "C", "TZ": "UTC"},
+						ConfigOptions:     "--max-connections=200",
+						ShmSize:           "256m",
+						InitialNetwork:    "bridge",
 						PostCreateNetwork: []string{"backend", "metrics"},
+						PostStartNetwork:  []string{"frontend"},
 						State:             StatePresent,
 					},
 				},
@@ -136,13 +145,41 @@ func observedServiceFixtures() map[string]observedFixture {
 			},
 		},
 		"dokku_service_backup": {
-			responses: observedServiceServer(),
-			export:    exportGlobalFrom(ServiceBackupTask{}),
+			// cache stores IAM auth, a region, a signature version and an
+			// endpoint but no schedule, so export skips it while a read
+			// observes those settings; spare stores nothing.
+			responses: mergeFixtures(
+				observedServiceServer(),
+				infoFixture("redis", "cache", map[string]string{
+					"version":                  "redis:7.2.5",
+					"backup-use-iam":           "true",
+					"backup-default-region":    "us-east-1",
+					"backup-signature-version": "s3v4",
+					"backup-endpoint-url":      "https://s3.example.com",
+				}),
+				infoFixture("redis", "spare", map[string]string{"version": "redis:7.2.5"}),
+				map[string]string{"--quiet redis:exists spare": ""},
+			),
+			export: exportGlobalFrom(ServiceBackupTask{}),
 			cases: []observedCase{
 				{
 					name: "absent",
-					task: ServiceBackupTask{Service: "redis", Name: "cache", Schedule: "0 1 * * *", Bucket: "b", State: StatePresent},
-					want: ServiceBackupTask{Service: "redis", Name: "cache", State: StateAbsent},
+					task: ServiceBackupTask{Service: "redis", Name: "spare", Schedule: "0 1 * * *", Bucket: "b", State: StatePresent},
+					want: ServiceBackupTask{Service: "redis", Name: "spare", State: StateAbsent},
+				},
+				{
+					name: "auth settings without a schedule",
+					task: ServiceBackupTask{Service: "redis", Name: "cache", State: StateAbsent},
+					want: ServiceBackupTask{
+						Service:             "redis",
+						Name:                "cache",
+						UseIam:              true,
+						AwsDefaultRegion:    "us-east-1",
+						AwsSignatureVersion: "s3v4",
+						EndpointURL:         "https://s3.example.com",
+						State:               StatePresent,
+					},
+					exists: true,
 				},
 				{
 					name:   "present, planned absent",
@@ -261,6 +298,12 @@ func observedServiceFixtures() map[string]observedFixture {
 					name:   "a single mount reads whatever holds its path",
 					task:   StorageMountTask{App: "web", EntryName: "other", ContainerDir: "/app/storage", State: StatePresent},
 					want:   StorageMountTask{App: "web", HostDir: "/var/lib/dokku/data/storage/web", ContainerDir: "/app/storage", Phases: []string{"run"}, Readonly: true, State: StatePresent},
+					exists: true,
+				},
+				{
+					name:   "a single mount reads its subpath, chown and options",
+					task:   StorageMountTask{App: "web", EntryName: "data", ContainerDir: "/app/uploads", State: StatePresent},
+					want:   StorageMountTask{App: "web", EntryName: "data", ContainerDir: "/app/uploads", Subpath: "uploads", VolumeChown: "herokuish", VolumeOptions: "Z", State: StatePresent},
 					exists: true,
 				},
 				{

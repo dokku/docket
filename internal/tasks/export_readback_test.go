@@ -31,6 +31,7 @@ func readbackFixtures() map[string]readbackFixture {
 		return task.ExportGlobal
 	}
 	certPEM := "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+	page := "<html>down for maintenance</html>"
 	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"
 
 	return map[string]readbackFixture{
@@ -117,7 +118,26 @@ func readbackFixtures() map[string]readbackFixture {
 			}),
 			export: app(CertsTask{}),
 		},
+		"dokku_maintenance_custom_page": {
+			responses: map[string]string{
+				"maintenance:report web --format json":       `{"custom-page-sha256":"` + observedPageChecksum(page) + `"}`,
+				"--quiet maintenance:custom-page-export web": observedPageTarball(page),
+			},
+			export: app(MaintenanceCustomPageTask{}),
+		},
 	}
+}
+
+// exportReadsWriteOnly names write_only fields an exporter recovers through a
+// command a read of the resource does not run. write_only promises only that
+// PlanResult.Observed - what sdk.ReadTask returns - never carries the value,
+// so TestExportLeavesUnreadableFieldsEmpty skips these fields while
+// checkObserved still holds Observed to the tag.
+var exportReadsWriteOnly = map[string][]string{
+	// Export reads the PEM back with certs:show or global-cert:show, while a
+	// plan settles drift from the certificate's fingerprint so no certificate
+	// material leaves the server (#529, #548, #616).
+	"dokku_certs": {"CertContent", "KeyContent"},
 }
 
 // TestExportLeavesUnreadableFieldsEmpty is the runtime half of the catalog's
@@ -125,8 +145,9 @@ func readbackFixtures() map[string]readbackFixture {
 // export trusts them to say which fields carry no server value, so an exporter
 // that starts filling one in has to drop the tag too. A write_only field must
 // come back empty or as a placeholder whose vars entry is empty - a placeholder
-// backed by a real value would mean the value was read after all. An
-// apply_only field must hold its zero value or its declared default.
+// backed by a real value would mean the value was read after all - unless
+// exportReadsWriteOnly names it. An apply_only field must hold its zero value
+// or its declared default.
 func TestExportLeavesUnreadableFieldsEmpty(t *testing.T) {
 	t.Parallel()
 	for typeKey, fixture := range readbackFixtures() {
@@ -148,6 +169,9 @@ func TestExportLeavesUnreadableFieldsEmpty(t *testing.T) {
 					t.Fatalf("exported %v, want the type registered as %s", got, typeKey)
 				}
 				out, _ := res.processBody("web", body, ExportOptions{})
+				for _, name := range exportReadsWriteOnly[typeKey] {
+					out = withField(out, name)
+				}
 				n, problems := checkReadbackFields(typeKey, reflect.ValueOf(out), res.Vars)
 				checked += n
 				for _, problem := range problems {
@@ -189,6 +213,31 @@ func TestExportReadbackFixturesCoverEveryTaggedExporter(t *testing.T) {
 		}
 		if !hasReadbackTag(taskStructOf(task)) {
 			t.Errorf("readback fixture %q covers a task with no write_only or apply_only field", name)
+		}
+	}
+}
+
+// TestExportReadsWriteOnlyNamesTaggedFields keeps exportReadsWriteOnly from
+// going stale: each entry must name a registered task's write_only field, so
+// dropping the tag, or renaming the field, fails here instead of silently
+// widening the export check's blind spot.
+func TestExportReadsWriteOnlyNamesTaggedFields(t *testing.T) {
+	t.Parallel()
+	for typeKey, names := range exportReadsWriteOnly {
+		rt := registeredTypeOrNil(typeKey)
+		if rt == nil {
+			t.Errorf("exportReadsWriteOnly names %q, which is not a registered task", typeKey)
+			continue
+		}
+		for _, name := range names {
+			field, ok := rt.FieldByName(name)
+			if !ok {
+				t.Errorf("exportReadsWriteOnly names %s.%s, which does not exist", typeKey, name)
+				continue
+			}
+			if field.Tag.Get("write_only") != "true" {
+				t.Errorf("exportReadsWriteOnly names %s.%s, which is not write_only", typeKey, name)
+			}
 		}
 	}
 }
@@ -297,6 +346,7 @@ func TestCheckReadbackFieldsCatchesALeak(t *testing.T) {
 		{"apply_only off its default", HttpAuthUserTask{App: "web", UpdatePassword: &update}, nil, 1},
 		{"apply_only at a pointer default", ConfigTask{App: "web", Restart: &update}, nil, 0},
 		{"empty placeholders", RegistryAuthTask{Server: "ghcr.io", Username: "{{ .user }}", Password: "{{ .pass }}"}, map[string]string{"user": "", "pass": ""}, 0},
+		{"certificate material", CertsTask{App: "web", CertContent: "crt", KeyContent: "key"}, nil, 2},
 	}
 	for _, tc := range cases {
 		checked, problems := checkReadbackFields("task", reflect.ValueOf(tc.body), tc.vars)

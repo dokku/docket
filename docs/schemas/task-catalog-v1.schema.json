@@ -184,7 +184,7 @@
         },
         "write_only": {
           "const": true,
-          "description": "The server stores the value but never returns it, so an exported task leaves the field empty or lifts it into a required input with no value. A consumer refreshing state keeps the configured value rather than reporting drift. A probe may still verify the value by comparison. Absent on a field that is read back."
+          "description": "The server stores the value but a read of the resource never returns it: a plan's observed state leaves the field empty, and an exported task leaves it empty or lifts it into a required input with no value unless the task's export caveat names another command that reads it back. A consumer refreshing state keeps the configured value rather than reporting drift. A probe may still verify the value by comparison. Absent on a field that is read back."
         },
         "apply_only": {
           "const": true,

@@ -136,7 +136,8 @@ comes back as a `ConfigTask` - so there is no marshalling to YAML and parsing it
 
 Some fields of a body never hold the server's value. A field whose catalog entry carries
 `WriteOnly` (`dokku_service_create`'s `Password`) is stored by the server but never returned, so it
-comes back empty or as a placeholder for an input with no value. A field carrying `ApplyOnly`
+comes back empty or as a placeholder for an input with no value - except where the task's export
+caveat names a command that reads it back, as `dokku_certs` does for its PEM. A field carrying `ApplyOnly`
 (`dokku_config`'s `Restart`) is not server state, so it comes back at its zero value or default.
 A caller that refreshes its own state from an export should keep the value it was configured with
 for both, rather than treat the difference as drift. Read the flags from `sdk.FieldSchema`, element
@@ -329,7 +330,8 @@ The task you pass picks what is read, so it must be valid:
 To read every member of a collection without naming them, export the resource instead. The same goes
 for `dokku_certs`: its plans settle drift from the certificate's fingerprint so no certificate
 material leaves the server, and a read keeps to that, returning whether a certificate is installed
-but not its PEM.
+but not its PEM. That is why `CertContent` and `KeyContent` carry `WriteOnly`: a read leaves every
+field flagged `WriteOnly` or `ApplyOnly` empty, and fills every other field the server reports.
 
 The same values are on the plan itself, so a caller that plans anyway reads them with no extra probe.
 `PlanResult.Observed` holds the task as read and `PlanResult.Exists` whether it exists. They are set

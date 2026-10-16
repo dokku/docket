@@ -94,7 +94,7 @@ setup() {
     fail "a narrowed catalog drops runner_file"
 }
 
-@test "docket schema marks fields export cannot read back (#604)" {
+@test "docket schema marks fields a read cannot return (#604, #616)" {
   run "$(docket_bin)" schema
   assert_success
 
@@ -114,6 +114,18 @@ setup() {
   echo "$output" |
     jq -e '.tasks[] | select(.type == "dokku_http_auth_user") | .fields[] | select(.name == "update_password") | .apply_only == true' >/dev/null ||
     fail "dokku_http_auth_user update_password is not marked apply_only"
+
+  # A read never returns the certificate PEM, though export does (#616); the
+  # paths it is read from are apply knobs.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_certs") | all(.fields[] | select(.name == "cert_content" or .name == "key_content"); .write_only == true)' >/dev/null ||
+    fail "dokku_certs cert_content and key_content are not marked write_only"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_certs") | all(.fields[] | select(.name == "cert" or .name == "key"); .apply_only == true)' >/dev/null ||
+    fail "dokku_certs cert and key are not marked apply_only"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_maintenance_custom_page") | .fields[] | select(.name == "tarball") | .apply_only == true' >/dev/null ||
+    fail "dokku_maintenance_custom_page tarball is not marked apply_only"
 
   run "$(docket_bin)" schema --task dokku_registry_auth
   assert_success

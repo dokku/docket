@@ -330,8 +330,8 @@ type PlanResult struct {
 	// type registered for the task (AppTask, never *AppTask), with the
 	// identity keys copied from the planned task and every field the server
 	// reports filled from what was read. Fields tagged write_only or
-	// apply_only are left at their zero value or default, as export leaves
-	// them. State is the state that, declared with Observed's fields, would
+	// apply_only are left at their zero value or default, and every other
+	// field is one a read can fill. State is the state that, declared with Observed's fields, would
 	// plan in sync, so a property read as unset carries StateAbsent.
 	//
 	// A collection planned in an additive state (dokku_config's present or

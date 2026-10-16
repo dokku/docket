@@ -144,7 +144,7 @@ func TestParamDescriptionMarksReadbackFlags(t *testing.T) {
 		field tasks.FieldSchema
 		want  string
 	}{
-		{tasks.FieldSchema{Description: "Registry password", WriteOnly: true, Sensitive: true}, "Registry password (not read back from the server) (sensitive)"},
+		{tasks.FieldSchema{Description: "Registry password", WriteOnly: true, Sensitive: true}, "Registry password (not returned when reading state) (sensitive)"},
 		{tasks.FieldSchema{Description: "Restart the app", ApplyOnly: true}, "Restart the app (applied only, not read back)"},
 	}
 	for _, tc := range cases {

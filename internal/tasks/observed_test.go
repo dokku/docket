@@ -162,6 +162,55 @@ func observedCoreFixtures() map[string]observedFixture {
 	}
 }
 
+// observedPlan is one plan a fixture makes: an exported body planned back, or
+// a case. want is the task Observed must equal, and exported is set for a body.
+type observedPlan struct {
+	name     string
+	plan     PlanResult
+	want     interface{}
+	exists   bool
+	exported bool
+}
+
+// planObservedFixture plans every exported body and every case of a fixture,
+// failing t on an export or plan error.
+func planObservedFixture(t *testing.T, fixture observedFixture) []observedPlan {
+	t.Helper()
+	ctx := subprocess.ContextWithRunner(testCtx(), observedRunner(t, fixture))
+	var plans []observedPlan
+	if fixture.export != nil {
+		bodies, err := fixture.export(ctx)
+		if err != nil {
+			t.Fatalf("export: %v", err)
+		}
+		if len(bodies) == 0 {
+			t.Fatal("the fixture exported nothing, so Observed went unchecked")
+		}
+		for i, body := range bodies {
+			// A recipe gets its defaults when it is loaded, so the body is
+			// planned the way a re-read export would be.
+			task, ok := withDefaults(body).(Task)
+			if !ok {
+				t.Fatalf("body %d is %T, not a Task", i, body)
+			}
+			p := task.Plan(ctx)
+			if p.Error != nil {
+				t.Fatalf("body %d: plan error: %v", i, p.Error)
+			}
+			plans = append(plans, observedPlan{name: fmt.Sprintf("body %d", i), plan: p, want: body, exists: declaresPresent(task), exported: true})
+		}
+	}
+	for _, c := range fixture.cases {
+		p := c.task.Plan(ctx)
+		if p.Error != nil {
+			t.Errorf("%s: plan error: %v", c.name, p.Error)
+			continue
+		}
+		plans = append(plans, observedPlan{name: c.name, plan: p, want: c.want, exists: c.exists})
+	}
+	return plans
+}
+
 // TestPlanObservesServerState checks PlanResult.Observed against every
 // fixture: an exported body plans in sync and observes itself, and each case
 // observes what it states.
@@ -170,44 +219,122 @@ func TestPlanObservesServerState(t *testing.T) {
 	for typeKey, fixture := range observedFixtures() {
 		t.Run(typeKey, func(t *testing.T) {
 			t.Parallel()
-			ctx := subprocess.ContextWithRunner(testCtx(), observedRunner(t, fixture))
 			want := registeredTypeOrNil(typeKey)
-
-			if fixture.export != nil {
-				bodies, err := fixture.export(ctx)
-				if err != nil {
-					t.Fatalf("export: %v", err)
+			for _, op := range planObservedFixture(t, fixture) {
+				if op.exported && !op.plan.InSync {
+					t.Errorf("%s: exported body plans as drift: %s %v", op.name, op.plan.Reason, op.plan.Mutations)
 				}
-				if len(bodies) == 0 {
-					t.Fatal("the fixture exported nothing, so Observed went unchecked")
-				}
-				for i, body := range bodies {
-					// A recipe gets its defaults when it is loaded, so the
-					// body is planned the way a re-read export would be.
-					task, ok := withDefaults(body).(Task)
-					if !ok {
-						t.Fatalf("body %d is %T, not a Task", i, body)
-					}
-					p := task.Plan(ctx)
-					if p.Error != nil {
-						t.Fatalf("body %d: plan error: %v", i, p.Error)
-					}
-					if !p.InSync {
-						t.Errorf("body %d: exported body plans as drift: %s %v", i, p.Reason, p.Mutations)
-					}
-					checkObserved(t, fmt.Sprintf("body %d", i), typeKey, want, p, body, declaresPresent(task))
-				}
-			}
-
-			for _, c := range fixture.cases {
-				p := c.task.Plan(ctx)
-				if p.Error != nil {
-					t.Errorf("%s: plan error: %v", c.name, p.Error)
-					continue
-				}
-				checkObserved(t, c.name, typeKey, want, p, c.want, c.exists)
+				checkObserved(t, op.name, typeKey, want, op.plan, op.want, op.exists)
 			}
 		})
+	}
+}
+
+// TestObservedReadsEveryUntaggedField is the read-path half of the catalog's
+// write_only and apply_only flags (#616): a consumer refreshing state through
+// sdk.ReadTask keeps the configured value only for a tagged field, so a field
+// Observed never fills must carry one of the tags. Every field that is not an
+// identity key - those are copied from the planned task, not read - or tagged
+// must be set, away from its zero value and default, in at least one Observed
+// across the task's fixture, element fields of a list of structs included.
+func TestObservedReadsEveryUntaggedField(t *testing.T) {
+	t.Parallel()
+	for typeKey, fixture := range observedFixtures() {
+		t.Run(typeKey, func(t *testing.T) {
+			t.Parallel()
+			var observed []reflect.Value
+			for _, op := range planObservedFixture(t, fixture) {
+				if op.plan.Observed != nil {
+					observed = append(observed, reflect.ValueOf(op.plan.Observed))
+				}
+			}
+			for _, name := range unobservedFields(typeKey, registeredTypeOrNil(typeKey), observed) {
+				t.Errorf("%s is never observed: tag it write_only or apply_only, or extend the fixture so the server reports it", name)
+			}
+		})
+	}
+}
+
+// unobservedFields returns the fields of rt that are neither identity keys nor
+// tagged write_only or apply_only and that no value in values sets away from
+// its zero value or default, descending into the elements of a slice of
+// structs.
+func unobservedFields(where string, rt reflect.Type, values []reflect.Value) []string {
+	var missing []string
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		if !field.IsExported() || field.Tag.Get("yaml") == "-" {
+			continue
+		}
+		if field.Tag.Get("identity") == string(IdentityRoleKey) || field.Tag.Get("write_only") == "true" || field.Tag.Get("apply_only") == "true" {
+			continue
+		}
+		name := where + "." + yamlFieldName(field)
+		set := false
+		var elems []reflect.Value
+		for _, v := range values {
+			for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+				v = v.Elem()
+			}
+			fv := v.Field(i)
+			switch fv.Kind() {
+			case reflect.Slice, reflect.Map:
+				if fv.Len() > 0 {
+					set = true
+				}
+				if fv.Kind() == reflect.Slice {
+					for j := 0; j < fv.Len(); j++ {
+						elems = append(elems, fv.Index(j))
+					}
+				}
+			default:
+				if !isZeroOrDefault(fv, field.Tag.Get("default")) {
+					set = true
+				}
+			}
+		}
+		if !set {
+			missing = append(missing, name)
+			continue
+		}
+		if field.Type.Kind() != reflect.Slice {
+			continue
+		}
+		if elem := structElem(field.Type.Elem()); elem != nil {
+			missing = append(missing, unobservedFields(name+"[]", elem, elems)...)
+		}
+	}
+	return missing
+}
+
+// TestUnobservedFieldsCatchesAGap proves TestObservedReadsEveryUntaggedField
+// is not vacuous: a field no Observed sets away from its default is reported,
+// an element field of a list of structs included, while identity keys and
+// tagged fields are not.
+func TestUnobservedFieldsCatchesAGap(t *testing.T) {
+	t.Parallel()
+	type item struct {
+		Key  string `identity:"key" yaml:"key"`
+		Note string `yaml:"note"`
+	}
+	type task struct {
+		App    string `identity:"key" yaml:"app"`
+		Secret string `write_only:"true" yaml:"secret"`
+		Knob   bool   `apply_only:"true" yaml:"knob"`
+		Items  []item `yaml:"items"`
+		Size   string `default:"1" yaml:"size"`
+	}
+	got := unobservedFields("task", reflect.TypeOf(task{}), []reflect.Value{
+		reflect.ValueOf(task{App: "web", Items: []item{{Key: "a"}}, Size: "1"}),
+	})
+	if want := []string{"task.items[].note", "task.size"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q; want %q", got, want)
+	}
+	got = unobservedFields("task", reflect.TypeOf(task{}), []reflect.Value{
+		reflect.ValueOf(task{Items: []item{{Note: "n"}}, Size: "2"}),
+	})
+	if len(got) != 0 {
+		t.Errorf("a read setting every untagged field reported %q", got)
 	}
 }
 
@@ -246,19 +373,8 @@ func withDefaults(v interface{}) interface{} {
 	return cp.Elem().Interface()
 }
 
-// observedOmittedFields are fields a task's exporter reads back that its
-// Observed deliberately leaves empty. They are left out of the comparison and
-// must be empty on Observed.
-var observedOmittedFields = map[string][]string{
-	// The certificate and its private key: the certs probe settles drift from
-	// the fingerprint its report carries so no certificate material leaves the
-	// server at plan time (#529, #548), and a read keeps to that. Export is
-	// the way to read the PEM back.
-	"dokku_certs": {"CertContent", "KeyContent"},
-}
-
-// checkObserved compares p.Observed with want, ignoring the fields export
-// cannot read back, and checks those fields hold nothing read from the server.
+// checkObserved compares p.Observed with want, ignoring the write_only and
+// apply_only fields, and checks those fields hold nothing read from the server.
 func checkObserved(t *testing.T, name, typeKey string, rt reflect.Type, p PlanResult, want interface{}, exists bool) {
 	t.Helper()
 	if p.Observed == nil {
@@ -278,14 +394,6 @@ func checkObserved(t *testing.T, name, typeKey string, rt reflect.Type, p PlanRe
 		}
 	}
 	got, wanted := normalizeObserved(p.Observed), normalizeObserved(want)
-	for _, name := range observedOmittedFields[typeKey] {
-		field := reflect.ValueOf(&got).Elem().Elem().FieldByName(name)
-		if !field.IsZero() {
-			t.Errorf("Observed.%s is set, but the task never reads it", name)
-		}
-		got = withField(got, name)
-		wanted = withField(wanted, name)
-	}
 	if !reflect.DeepEqual(got, wanted) {
 		t.Errorf("%s: Observed mismatch\n got: %#v\nwant: %#v", name, got, wanted)
 	}
