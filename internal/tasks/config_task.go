@@ -177,6 +177,9 @@ func (t ConfigTask) SensitiveValues() []string {
 
 // Plan reports the drift the ConfigTask would produce.
 func (t ConfigTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -186,6 +189,37 @@ func (t ConfigTask) Plan(ctx context.Context) PlanResult {
 		StateSet:     func() PlanResult { return planConfigReplace(ctx, t) },
 		StateClear:   func() PlanResult { return planConfigClear(ctx, t) },
 	})
+}
+
+// observedConfig attaches the config the probe read to r. An additive state
+// (present, absent) reads the keys t declares; a state that owns the app's
+// config (set, clear) reads every key outside kept, reported as set, or as
+// clear when there are none.
+func observedConfig(r PlanResult, t ConfigTask, current map[string]string, kept map[string]bool, whole bool) PlanResult {
+	var held map[string]string
+	for k, v := range current {
+		if whole {
+			if kept[k] {
+				continue
+			}
+		} else if _, ok := t.Config[k]; !ok {
+			continue
+		}
+		if held == nil {
+			held = map[string]string{}
+		}
+		held[k] = v
+	}
+	state := StateAbsent
+	switch {
+	case whole && len(held) > 0:
+		state = StateSet
+	case whole:
+		state = StateClear
+	case len(held) > 0:
+		state = StatePresent
+	}
+	return observed(r, ConfigTask{App: t.App, Config: held, State: state}, len(held) > 0)
 }
 
 // configKeysToSet returns keys whose desired value differs from the current
@@ -223,7 +257,7 @@ func planConfigSet(ctx context.Context, t ConfigTask) PlanResult {
 	}
 	keys := configKeysToSet(currentConfig, t.Config)
 	if len(keys) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedConfig(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentConfig, nil, false)
 	}
 	mutations := make([]string, 0, len(keys))
 	status := PlanStatusModify
@@ -248,7 +282,7 @@ func planConfigSet(ctx context.Context, t ConfigTask) PlanResult {
 		args = append(args, fmt.Sprintf("%s=%s", k, base64.StdEncoding.EncodeToString([]byte(t.Config[k]))))
 	}
 	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-	return PlanResult{
+	return observedConfig(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d key(s) to set", len(keys)),
@@ -257,7 +291,7 @@ func planConfigSet(ctx context.Context, t ConfigTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}
+	}, t, currentConfig, nil, false)
 }
 
 // planConfigUnset probes current config once, computes the diff, and embeds
@@ -269,7 +303,7 @@ func planConfigUnset(ctx context.Context, t ConfigTask) PlanResult {
 	}
 	keys := configKeysToUnset(currentConfig, t.Config)
 	if len(keys) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedConfig(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentConfig, nil, false)
 	}
 	mutations := make([]string, 0, len(keys))
 	for _, k := range keys {
@@ -282,7 +316,7 @@ func planConfigUnset(ctx context.Context, t ConfigTask) PlanResult {
 	args = append(args, t.App)
 	args = append(args, keys...)
 	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-	return PlanResult{
+	return observedConfig(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d key(s) to unset", len(keys)),
@@ -291,7 +325,7 @@ func planConfigUnset(ctx context.Context, t ConfigTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
-	}
+	}, t, currentConfig, nil, false)
 }
 
 // planConfigReplace makes the declared map the app's entire config, apart from
@@ -323,7 +357,7 @@ func planConfigReplace(ctx context.Context, t ConfigTask) PlanResult {
 	sort.Strings(toUnset)
 	toSet := configKeysToSet(currentConfig, t.Config)
 	if len(toSet) == 0 && len(toUnset) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedConfig(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentConfig, kept, true)
 	}
 
 	mutations := make([]string, 0, len(toSet)+len(toUnset))
@@ -370,7 +404,7 @@ func planConfigReplace(ctx context.Context, t ConfigTask) PlanResult {
 		// the trace log, or the remote process table.
 		Stdin: bytes.NewReader(body),
 	}}
-	return PlanResult{
+	return observedConfig(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d key change(s)", len(mutations)),
@@ -379,7 +413,7 @@ func planConfigReplace(ctx context.Context, t ConfigTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StateSet, inputs)
 		},
-	}
+	}, t, currentConfig, kept, true)
 }
 
 // planConfigClear unsets every key the recipe owns in one `config:unset`.
@@ -401,7 +435,7 @@ func planConfigClear(ctx context.Context, t ConfigTask) PlanResult {
 		}
 	}
 	if len(keys) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedConfig(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentConfig, kept, true)
 	}
 	sort.Strings(keys)
 	mutations := make([]string, 0, len(keys))
@@ -415,7 +449,7 @@ func planConfigClear(ctx context.Context, t ConfigTask) PlanResult {
 	args = append(args, t.App)
 	args = append(args, keys...)
 	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-	return PlanResult{
+	return observedConfig(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d key(s)", len(keys)),
@@ -424,7 +458,7 @@ func planConfigClear(ctx context.Context, t ConfigTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateClear, inputs)
 		},
-	}
+	}, t, currentConfig, kept, true)
 }
 
 // configKeptKeys returns the keys in current that are not the recipe's to own,

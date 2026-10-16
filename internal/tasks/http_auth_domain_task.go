@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dokku/docket/internal/subprocess"
@@ -130,6 +131,9 @@ func (t HttpAuthDomainTask) Validate() error {
 
 // Plan reports the drift the HttpAuthDomainTask would produce.
 func (t HttpAuthDomainTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -156,7 +160,7 @@ func planHttpAuthDomainsPresent(ctx context.Context, t HttpAuthDomainTask) PlanR
 		}
 	}
 	if len(toAdd) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthDomains(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, false)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
@@ -169,7 +173,7 @@ func planHttpAuthDomainsPresent(ctx context.Context, t HttpAuthDomainTask) PlanR
 			Args:    []string{"--quiet", "http-auth:add-domain", t.App, d},
 		})
 	}
-	return PlanResult{
+	return observedHttpAuthDomains(t, PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d domain(s) to add", len(toAdd)),
@@ -178,7 +182,7 @@ func planHttpAuthDomainsPresent(ctx context.Context, t HttpAuthDomainTask) PlanR
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}
+	}, current, false)
 }
 
 // planHttpAuthDomainsAbsent reports drift for the absent-state domain remove.
@@ -196,7 +200,7 @@ func planHttpAuthDomainsAbsent(ctx context.Context, t HttpAuthDomainTask) PlanRe
 		}
 	}
 	if len(toRemove) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthDomains(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, false)
 	}
 	inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
 	for _, d := range toRemove {
@@ -205,7 +209,7 @@ func planHttpAuthDomainsAbsent(ctx context.Context, t HttpAuthDomainTask) PlanRe
 			Args:    []string{"--quiet", "http-auth:remove-domain", t.App, d},
 		})
 	}
-	return PlanResult{
+	return observedHttpAuthDomains(t, PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d domain(s) to remove", len(toRemove)),
@@ -214,7 +218,7 @@ func planHttpAuthDomainsAbsent(ctx context.Context, t HttpAuthDomainTask) PlanRe
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
-	}
+	}, current, false)
 }
 
 // planHttpAuthDomainsSet reports drift for the set-state full replacement.
@@ -239,21 +243,21 @@ func planHttpAuthDomainsSet(ctx context.Context, t HttpAuthDomainTask) PlanResul
 		}
 	}
 	if len(mutations) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthDomains(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, true)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
 		status = PlanStatusCreate
 	}
 	inputs := dokkuArgsInputs("http-auth:set-domains", t.App, t.Domains)
-	return PlanResult{
+	return observedHttpAuthDomains(t, PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("http-auth:set-domains", t.App, t.Domains, StateSet, StateAbsent),
-	}
+	}, current, true)
 }
 
 // planHttpAuthDomainsClear reports drift for the clear-state operation.
@@ -263,7 +267,7 @@ func planHttpAuthDomainsClear(ctx context.Context, t HttpAuthDomainTask) PlanRes
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if len(current) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthDomains(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, true)
 	}
 	domains := sortedSetKeys(current)
 	mutations := make([]string, 0, len(domains))
@@ -271,14 +275,14 @@ func planHttpAuthDomainsClear(ctx context.Context, t HttpAuthDomainTask) PlanRes
 		mutations = append(mutations, "remove "+d)
 	}
 	inputs := dokkuArgsInputs("http-auth:set-domains", t.App, nil)
-	return PlanResult{
+	return observedHttpAuthDomains(t, PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d domain(s)", len(current)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("http-auth:set-domains", t.App, nil, StateClear, StatePresent),
-	}
+	}, current, true)
 }
 
 // getHttpAuthDomains reads the current set of domains HTTP auth is restricted to
@@ -322,6 +326,46 @@ func getHttpAuthDomains(ctx context.Context, appName string) (map[string]bool, e
 		domains[d] = true
 	}
 	return domains, nil
+}
+
+// observedHttpAuthDomains attaches the auth domains the probe read to r, through
+// httpAuthObservedMembers.
+func observedHttpAuthDomains(t HttpAuthDomainTask, r PlanResult, current map[string]bool, whole bool) PlanResult {
+	held, state := httpAuthObservedMembers(current, t.Domains, whole)
+	return observed(r, HttpAuthDomainTask{App: t.App, Domains: held, State: state}, len(held) > 0)
+}
+
+// httpAuthObservedMembers returns the members of a string set the probe read
+// and the state they amount to, for the http-auth list tasks. An additive
+// plan (present, absent) reads only the members it declares, as present or
+// absent; a plan that owns the list (set, clear) reads every member, as set,
+// or as clear when there are none. The members are sorted, the order export
+// emits them in.
+func httpAuthObservedMembers(current map[string]bool, declared []string, whole bool) ([]string, State) {
+	var held []string
+	if whole {
+		if len(current) > 0 {
+			held = sortedSetKeys(current)
+		}
+	} else {
+		seen := map[string]bool{}
+		for _, m := range declared {
+			if current[m] && !seen[m] {
+				held = append(held, m)
+				seen[m] = true
+			}
+		}
+		sort.Strings(held)
+	}
+	switch {
+	case whole && len(held) > 0:
+		return held, StateSet
+	case whole:
+		return held, StateClear
+	case len(held) > 0:
+		return held, StatePresent
+	}
+	return held, StateAbsent
 }
 
 // ExportApp reconstructs the domains HTTP auth is restricted to, or nil when

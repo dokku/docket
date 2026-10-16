@@ -147,6 +147,9 @@ func (t SchedulerK3sLabelsTask) Validate() error {
 
 // Plan reports the drift the SchedulerK3sLabelsTask would produce.
 func (t SchedulerK3sLabelsTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -169,6 +172,9 @@ func (t SchedulerK3sLabelsTask) spec() schedulerK3sScopedPairsSpec {
 		ProcessType:  t.ProcessType,
 		ResourceType: t.ResourceType,
 		Pairs:        t.Labels,
+		Observe: func(pairs map[string]string, state State) Task {
+			return SchedulerK3sLabelsTask{App: t.App, Global: t.Global, ProcessType: t.ProcessType, ResourceType: t.ResourceType, Labels: pairs, State: state}
+		},
 	}
 }
 

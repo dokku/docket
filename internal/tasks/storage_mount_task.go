@@ -281,6 +281,9 @@ func (t StorageMountTask) Validate() error {
 
 // Plan reports the drift the StorageMountTask would produce.
 func (t StorageMountTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -310,7 +313,7 @@ func planStorageMountPresent(ctx context.Context, t StorageMountTask) PlanResult
 	existing := findSingleMount(attachments, t.EntryName, t.HostDir, t.ContainerDir, t.scope())
 	if existing == nil {
 		inputs := t.firstMountInputs(attachments)
-		return PlanResult{
+		return observedStorageMount(t, PlanResult{
 			InSync:    false,
 			Status:    PlanStatusCreate,
 			Reason:    "mount missing",
@@ -319,17 +322,17 @@ func planStorageMountPresent(ctx context.Context, t StorageMountTask) PlanResult
 			apply: func(ctx context.Context) TaskOutputState {
 				return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 			},
-		}
+		}, attachments)
 	}
 	drift := t.singleMountDrift(*existing)
 	if len(drift) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedStorageMount(t, PlanResult{InSync: true, Status: PlanStatusOK}, attachments)
 	}
 	// Re-mount via the named-entry CLI form so dokku upserts every mount-time
 	// field in place. The legacy CLI form would error with "Mount path already
 	// exists." (dokku/dokku#8713 kept that contract).
 	inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: t.namedMountArgs(existing.EntryName)}}
-	return PlanResult{
+	return observedStorageMount(t, PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    strings.Join(drift, "; "),
@@ -338,7 +341,7 @@ func planStorageMountPresent(ctx context.Context, t StorageMountTask) PlanResult
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
 		},
-	}
+	}, attachments)
 }
 
 // planStorageMountAbsent reports drift for the single-mount absent state.
@@ -354,7 +357,7 @@ func planStorageMountAbsent(ctx context.Context, t StorageMountTask) PlanResult 
 	scope := t.scope()
 	existing := findSingleMount(attachments, t.EntryName, t.HostDir, t.ContainerDir, scope)
 	if existing == nil {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedStorageMount(t, PlanResult{InSync: true, Status: PlanStatusOK}, attachments)
 	}
 	mutations := []string{fmt.Sprintf("unmount %s on %s", t.describeMount(), t.App)}
 
@@ -373,7 +376,7 @@ func planStorageMountAbsent(ctx context.Context, t StorageMountTask) PlanResult 
 
 	if !shared {
 		inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: t.namedUnmountArgs(existing.EntryName)}}
-		return PlanResult{
+		return observedStorageMount(t, PlanResult{
 			InSync:    false,
 			Status:    PlanStatusDestroy,
 			Reason:    "mount present",
@@ -382,11 +385,11 @@ func planStorageMountAbsent(ctx context.Context, t StorageMountTask) PlanResult 
 			apply: func(ctx context.Context) TaskOutputState {
 				return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 			},
-		}
+		}, attachments)
 	}
 	if len(remaining) == 0 {
-		return storageMountsPlan(ctx, PlanStatusDestroy, "mount present", mutations,
-			"storage:unmount", t.App, storageUnmountAllArgs(scope), StateAbsent, StatePresent)
+		return observedStorageMount(t, storageMountsPlan(ctx, PlanStatusDestroy, "mount present", mutations,
+			"storage:unmount", t.App, storageUnmountAllArgs(scope), StateAbsent, StatePresent), attachments)
 	}
 	specs := make([]string, 0, len(remaining))
 	for _, a := range remaining {
@@ -396,8 +399,8 @@ func planStorageMountAbsent(ctx context.Context, t StorageMountTask) PlanResult 
 		}
 		specs = append(specs, spec)
 	}
-	return storageMountsPlan(ctx, PlanStatusDestroy, "mount present", mutations,
-		"storage:mount", t.App, storageReplaceArgs(specs, scope), StateAbsent, StatePresent)
+	return observedStorageMount(t, storageMountsPlan(ctx, PlanStatusDestroy, "mount present", mutations,
+		"storage:mount", t.App, storageReplaceArgs(specs, scope), StateAbsent, StatePresent), attachments)
 }
 
 // asMount returns the single-mount fields as a mounts-list entry, so the
@@ -966,15 +969,15 @@ func planStorageMountsSet(ctx context.Context, t StorageMountTask) PlanResult {
 		}
 	}
 	if changes.empty() {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedStorageMounts(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, true)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
 		status = PlanStatusCreate
 	}
 	mutations := changes.mutations(t.App)
-	return storageMountsPlan(ctx, status, fmt.Sprintf("%d mount change(s)", len(mutations)), mutations,
-		"storage:mount", t.App, storageReplaceArgs(specs, t.scope()), StateSet, StateAbsent)
+	return observedStorageMounts(t, storageMountsPlan(ctx, status, fmt.Sprintf("%d mount change(s)", len(mutations)), mutations,
+		"storage:mount", t.App, storageReplaceArgs(specs, t.scope()), StateSet, StateAbsent), current, true)
 }
 
 // planStorageMountsClear reports drift for removing every mount in the scope.
@@ -984,14 +987,14 @@ func planStorageMountsClear(ctx context.Context, t StorageMountTask) PlanResult 
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if len(current) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedStorageMounts(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, true)
 	}
 	changes := newStorageMountChanges()
 	for _, a := range current {
 		changes.unmounts[a.ContainerPath] = describeAttachment(a)
 	}
-	return storageMountsPlan(ctx, PlanStatusDestroy, fmt.Sprintf("clear %d mount(s)", len(current)), changes.mutations(t.App),
-		"storage:unmount", t.App, storageUnmountAllArgs(t.scope()), StateClear, StatePresent)
+	return observedStorageMounts(t, storageMountsPlan(ctx, PlanStatusDestroy, fmt.Sprintf("clear %d mount(s)", len(current)), changes.mutations(t.App),
+		"storage:unmount", t.App, storageUnmountAllArgs(t.scope()), StateClear, StatePresent), current, true)
 }
 
 // planStorageMountsPresent reports drift for adding or updating the listed
@@ -1018,7 +1021,7 @@ func planStorageMountsPresent(ctx context.Context, t StorageMountTask) PlanResul
 		changes.diff(m, byPath[m.ContainerDir])
 	}
 	if changes.empty() {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedStorageMounts(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, false)
 	}
 
 	specs := make([]string, 0, len(current)+len(t.Mounts))
@@ -1044,8 +1047,8 @@ func planStorageMountsPresent(ctx context.Context, t StorageMountTask) PlanResul
 		status = PlanStatusCreate
 	}
 	mutations := changes.mutations(t.App)
-	return storageMountsPlan(ctx, status, fmt.Sprintf("%d mount change(s)", len(mutations)), mutations,
-		"storage:mount", t.App, storageReplaceArgs(specs, t.scope()), StatePresent, StateAbsent)
+	return observedStorageMounts(t, storageMountsPlan(ctx, status, fmt.Sprintf("%d mount change(s)", len(mutations)), mutations,
+		"storage:mount", t.App, storageReplaceArgs(specs, t.scope()), StatePresent, StateAbsent), current, false)
 }
 
 // planStorageMountsAbsent reports drift for removing the listed mounts while
@@ -1071,13 +1074,13 @@ func planStorageMountsAbsent(ctx context.Context, t StorageMountTask) PlanResult
 		remaining = append(remaining, a)
 	}
 	if changes.empty() {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedStorageMounts(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, false)
 	}
 	mutations := changes.mutations(t.App)
 	reason := fmt.Sprintf("%d mount(s) to remove", len(mutations))
 	if len(remaining) == 0 {
-		return storageMountsPlan(ctx, PlanStatusDestroy, reason, mutations,
-			"storage:unmount", t.App, storageUnmountAllArgs(t.scope()), StateAbsent, StatePresent)
+		return observedStorageMounts(t, storageMountsPlan(ctx, PlanStatusDestroy, reason, mutations,
+			"storage:unmount", t.App, storageUnmountAllArgs(t.scope()), StateAbsent, StatePresent), current, false)
 	}
 	specs := make([]string, 0, len(remaining))
 	for _, a := range remaining {
@@ -1087,8 +1090,8 @@ func planStorageMountsAbsent(ctx context.Context, t StorageMountTask) PlanResult
 		}
 		specs = append(specs, spec)
 	}
-	return storageMountsPlan(ctx, PlanStatusDestroy, reason, mutations,
-		"storage:mount", t.App, storageReplaceArgs(specs, t.scope()), StateAbsent, StatePresent)
+	return observedStorageMounts(t, storageMountsPlan(ctx, PlanStatusDestroy, reason, mutations,
+		"storage:mount", t.App, storageReplaceArgs(specs, t.scope()), StateAbsent, StatePresent), current, false)
 }
 
 // ExportApp reads the app's storage attachments via storage:report and returns
@@ -1157,27 +1160,95 @@ func exportStorageMounts(attachments []reportAttachment) ([]StorageMount, bool) 
 	mounts := make([]StorageMount, 0, len(attachments))
 	ok := true
 	for _, a := range attachments {
-		m := StorageMount{
-			ContainerDir:  a.ContainerPath,
-			Subpath:       a.Subpath,
-			Readonly:      a.Readonly,
-			VolumeChown:   a.VolumeChown,
-			VolumeOptions: a.VolumeOptions,
-		}
-		if isLegacyStorageEntry(a.EntryName) {
-			m.HostDir = a.HostPath
-		} else {
-			m.EntryName = a.EntryName
-		}
-		if !isDefaultPhases(a.Phases) {
-			m.Phases = a.Phases
-		}
+		m := storageMountFrom(a)
 		if m.validate(StateSet) != nil {
 			ok = false
 		}
 		mounts = append(mounts, m)
 	}
 	return mounts, ok
+}
+
+// storageMountFrom converts an attachment to the mounts entry that declares
+// it: host_dir for a dokku-generated legacy entry, entry_name otherwise, and
+// phases omitted when they are dokku's default pair. Export and Plan's
+// Observed share it, so the two can never read an attachment differently.
+func storageMountFrom(a reportAttachment) StorageMount {
+	m := StorageMount{
+		ContainerDir:  a.ContainerPath,
+		Subpath:       a.Subpath,
+		Readonly:      a.Readonly,
+		VolumeChown:   a.VolumeChown,
+		VolumeOptions: a.VolumeOptions,
+	}
+	if isLegacyStorageEntry(a.EntryName) {
+		m.HostDir = a.HostPath
+	} else {
+		m.EntryName = a.EntryName
+	}
+	if !isDefaultPhases(a.Phases) {
+		m.Phases = a.Phases
+	}
+	return m
+}
+
+// observedStorageMount attaches what the single-mount form's probe read to r. The
+// task is identified by its app, container_dir and process_type, and dokku
+// holds at most one attachment per container path per process type, so
+// Observed is the attachment at that path in the task's scope - whatever entry
+// or host directory it mounts - or the identity alone, absent, when the path
+// is free.
+func observedStorageMount(t StorageMountTask, r PlanResult, attachments []reportAttachment) PlanResult {
+	scope := t.scope()
+	for _, a := range attachments {
+		if a.ContainerPath != t.ContainerDir || effectiveStorageProcessType(a.ProcessType) != scope {
+			continue
+		}
+		m := storageMountFrom(a)
+		return observed(r, StorageMountTask{
+			App:           t.App,
+			EntryName:     m.EntryName,
+			HostDir:       m.HostDir,
+			ContainerDir:  t.ContainerDir,
+			Phases:        m.Phases,
+			ProcessType:   t.ProcessType,
+			Subpath:       m.Subpath,
+			Readonly:      m.Readonly,
+			VolumeChown:   m.VolumeChown,
+			VolumeOptions: m.VolumeOptions,
+			State:         StatePresent,
+		}, true)
+	}
+	return observed(r, StorageMountTask{App: t.App, ContainerDir: t.ContainerDir, ProcessType: t.ProcessType, State: StateAbsent}, false)
+}
+
+// observedStorageMounts attaches what the mounts-list form's probe read to r, from the
+// attachments of the task's scope. An additive plan (present, absent) reads
+// only the container paths it declares, as present or absent; a plan that owns
+// the scope (set, clear) reads every attachment in it, as set, or as clear
+// when there are none.
+func observedStorageMounts(t StorageMountTask, r PlanResult, current []reportAttachment, whole bool) PlanResult {
+	declared := map[string]bool{}
+	for _, m := range t.Mounts {
+		declared[m.ContainerDir] = true
+	}
+	var mounts []StorageMount
+	for _, a := range current {
+		if !whole && !declared[a.ContainerPath] {
+			continue
+		}
+		mounts = append(mounts, storageMountFrom(a))
+	}
+	state := StateAbsent
+	switch {
+	case whole && len(mounts) > 0:
+		state = StateSet
+	case whole:
+		state = StateClear
+	case len(mounts) > 0:
+		state = StatePresent
+	}
+	return observed(r, StorageMountTask{App: t.App, ProcessType: t.ProcessType, Mounts: mounts, State: state}, len(mounts) > 0)
 }
 
 // reportAttachment is one storage attachment reconstructed from

@@ -244,6 +244,9 @@ func (t HttpAuthUserTask) Validate() error {
 
 // Plan reports the drift the HttpAuthUserTask would produce.
 func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -254,6 +257,12 @@ func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
 			current, err := getHttpAuthUsers(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
+			}
+			hashes, hashesRead := readHttpAuthUserHashesForObserved(ctx, t.App)
+			// An absent task naming no users removes every one, so it owns the
+			// whole list; one naming users reads only those.
+			seen := func(r PlanResult) PlanResult {
+				return observedHttpAuthUsers(t, r, current, hashes, hashesRead, len(t.Users) == 0)
 			}
 			toRemove := []string{}
 			if len(t.Users) == 0 {
@@ -269,7 +278,7 @@ func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
 				}
 			}
 			if len(toRemove) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 			}
 			mutations := make([]string, 0, len(toRemove))
 			inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
@@ -280,7 +289,7 @@ func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
 					Args:    []string{"--quiet", "http-auth:remove-user", t.App, u},
 				})
 			}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
@@ -289,7 +298,7 @@ func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			})
 		},
 	})
 }
@@ -302,7 +311,7 @@ func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
 // converges on its own - the stored-hash comparison is evaluated first, which
 // also stops update_password from re-importing a hash that already matches.
 func planHttpAuthUsersPresent(ctx context.Context, t HttpAuthUserTask) PlanResult {
-	current, hashes, res := readHttpAuthUserState(ctx, t)
+	current, hashes, hashesRead, res := readHttpAuthUserState(ctx, t)
 	if res != nil {
 		return *res
 	}
@@ -325,7 +334,7 @@ func planHttpAuthUsersPresent(ctx context.Context, t HttpAuthUserTask) PlanResul
 		}
 	}
 	if len(toApply) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthUsers(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, hashes, hashesRead, false)
 	}
 
 	status := PlanStatusModify
@@ -333,7 +342,7 @@ func planHttpAuthUsersPresent(ctx context.Context, t HttpAuthUserTask) PlanResul
 		status = PlanStatusCreate
 	}
 	inputs := httpAuthUserUpsertInputs(t.App, toApply, false)
-	return PlanResult{
+	return observedHttpAuthUsers(t, PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d user(s) to add or update", len(toApply)),
@@ -342,7 +351,7 @@ func planHttpAuthUsersPresent(ctx context.Context, t HttpAuthUserTask) PlanResul
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}
+	}, current, hashes, hashesRead, false)
 }
 
 // planHttpAuthUsersSet reports drift for the exact-set state: after applying,
@@ -353,7 +362,7 @@ func planHttpAuthUsersPresent(ctx context.Context, t HttpAuthUserTask) PlanResul
 // cleartext password cannot be written into the htpasswd stream, so a list with
 // any password user falls back to removing the strays and upserting the rest.
 func planHttpAuthUsersSet(ctx context.Context, t HttpAuthUserTask) PlanResult {
-	current, hashes, res := readHttpAuthUserState(ctx, t)
+	current, hashes, hashesRead, res := readHttpAuthUserState(ctx, t)
 	if res != nil {
 		return *res
 	}
@@ -397,7 +406,7 @@ func planHttpAuthUsersSet(ctx context.Context, t HttpAuthUserTask) PlanResult {
 	}
 
 	if len(mutations) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthUsers(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, hashes, hashesRead, true)
 	}
 
 	var inputs []subprocess.ExecCommandInput
@@ -419,7 +428,7 @@ func planHttpAuthUsersSet(ctx context.Context, t HttpAuthUserTask) PlanResult {
 	// Modify even when the only mutations are removals, matching
 	// planHttpAuthDomainsSet and planDomainsSet: a whole-set replacement is one
 	// operation, not a destroy.
-	return PlanResult{
+	return observedHttpAuthUsers(t, PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d user change(s)", len(mutations)),
@@ -428,21 +437,22 @@ func planHttpAuthUsersSet(ctx context.Context, t HttpAuthUserTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateSet, inputs)
 		},
-	}
+	}, current, hashes, hashesRead, true)
 }
 
-// readHttpAuthUserState probes the app's current users, and their stored hashes
-// when the task expresses any user by hash. A non-nil PlanResult is the caller's
-// early return.
+// readHttpAuthUserState probes the app's current users and their stored
+// hashes. A non-nil PlanResult is the caller's early return.
 //
 // Membership keeps coming from `http-auth:report`, which every version of the
-// plugin answers, so a password-only recipe costs exactly one round trip and is
-// unaffected by the newer export-users command. The hash overlay is read only
-// when it is needed.
-func readHttpAuthUserState(ctx context.Context, t HttpAuthUserTask) (map[string]bool, map[string]string, *PlanResult) {
+// plugin answers. The hashes come from the newer `http-auth:export-users`;
+// they decide drift only for a task that expresses a user by hash, and are
+// otherwise read for PlanResult.Observed alone. hashesRead reports whether
+// they were read: when they were not, a password-only plan is unaffected and
+// carries no Observed state, since the users' hashes are unknown.
+func readHttpAuthUserState(ctx context.Context, t HttpAuthUserTask) (map[string]bool, map[string]string, bool, *PlanResult) {
 	current, err := getHttpAuthUsers(ctx, t.App)
 	if err != nil {
-		return nil, nil, &PlanResult{Status: PlanStatusError, Error: err}
+		return nil, nil, false, &PlanResult{Status: PlanStatusError, Error: err}
 	}
 
 	wantsHashes := false
@@ -452,15 +462,12 @@ func readHttpAuthUserState(ctx context.Context, t HttpAuthUserTask) (map[string]
 			break
 		}
 	}
-	if !wantsHashes {
-		return current, map[string]string{}, nil
-	}
 
 	hashes, err := getHttpAuthUserHashes(ctx, t.App)
 	if err != nil {
 		var sshErr *subprocess.SSHError
-		if errors.As(err, &sshErr) {
-			return nil, nil, &PlanResult{Status: PlanStatusError, Error: err}
+		if wantsHashes && errors.As(err, &sshErr) {
+			return nil, nil, false, &PlanResult{Status: PlanStatusError, Error: err}
 		}
 		// A dokku-level failure means the hashes could not be read, not that
 		// there are none: `plan` runs against servers where the app does not
@@ -468,10 +475,65 @@ func readHttpAuthUserState(ctx context.Context, t HttpAuthUserTask) (map[string]
 		// why getHttpAuthUsers swallows too. Every hash user then reads as
 		// drift, which is right for the fresh-app case and cannot spin
 		// silently for the too-old-plugin case, since the import-users the
-		// plan proposes is the very command that would be missing.
-		return current, map[string]string{}, nil
+		// plan proposes is the very command that would be missing. A recipe
+		// that declares no hash never needed them, so even a transport failure
+		// leaves its plan alone.
+		return current, map[string]string{}, false, nil
 	}
-	return current, hashes, nil
+	registerSensitiveMapValues(ctx, hashes)
+	return current, hashes, true, nil
+}
+
+// readHttpAuthUserHashesForObserved reads the stored hashes for
+// PlanResult.Observed on a plan whose drift does not depend on them. Any
+// failure only means Observed is left empty.
+func readHttpAuthUserHashesForObserved(ctx context.Context, app string) (map[string]string, bool) {
+	hashes, err := getHttpAuthUserHashes(ctx, app)
+	if err != nil {
+		return nil, false
+	}
+	registerSensitiveMapValues(ctx, hashes)
+	return hashes, true
+}
+
+// observedHttpAuthUsers attaches the users the probe read to r, each with the hash
+// http-auth:export-users reports for it - the form export emits, since a
+// cleartext password is never readable. An additive plan reads only the users
+// it names, as present or absent; one that owns the list (set, or absent with
+// no users) reads every user, as set, or as absent when there are none - the
+// task has no clear state, absent with no users is how it says that. Nothing
+// is attached when the hashes could not be read.
+func observedHttpAuthUsers(t HttpAuthUserTask, r PlanResult, current map[string]bool, hashes map[string]string, hashesRead, whole bool) PlanResult {
+	if !hashesRead {
+		return r
+	}
+	names := []string{}
+	if whole {
+		for name := range current {
+			names = append(names, name)
+		}
+	} else {
+		named := map[string]bool{}
+		for _, u := range t.Users {
+			if current[u.Username] && !named[u.Username] {
+				names = append(names, u.Username)
+				named[u.Username] = true
+			}
+		}
+	}
+	sort.Strings(names)
+	var users []HttpAuthUser
+	for _, name := range names {
+		users = append(users, HttpAuthUser{Username: name, Hash: hashes[name]})
+	}
+	state := StateAbsent
+	switch {
+	case whole && len(users) > 0:
+		state = StateSet
+	case len(users) > 0:
+		state = StatePresent
+	}
+	return observed(r, HttpAuthUserTask{App: t.App, Users: users, State: state}, len(users) > 0)
 }
 
 // httpAuthUserUpsertInputs renders the commands that add or update users. Hash

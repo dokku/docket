@@ -98,6 +98,9 @@ func (t AppCloneTask) Validate() error {
 
 // Plan reports the drift the AppCloneTask would produce.
 func (t AppCloneTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -107,8 +110,17 @@ func (t AppCloneTask) Plan(ctx context.Context) PlanResult {
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
+			// Only the target app's existence is read; the clone source is
+			// apply-only, so Observed carries the app alone.
+			seen := func(r PlanResult) PlanResult {
+				o := AppCloneTask{App: t.App, State: StateAbsent}
+				if exists {
+					o.State = StatePresent
+				}
+				return observed(r, o, exists)
+			}
 			if exists {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 			}
 			args := []string{"--quiet", "apps:clone"}
 			if t.SkipDeploy {
@@ -116,7 +128,7 @@ func (t AppCloneTask) Plan(ctx context.Context) PlanResult {
 			}
 			args = append(args, t.SourceApp, t.App)
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("target app %s missing", t.App),
@@ -125,7 +137,7 @@ func (t AppCloneTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			})
 		},
 	})
 }

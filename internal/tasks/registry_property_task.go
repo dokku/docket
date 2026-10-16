@@ -109,7 +109,10 @@ func (t RegistryPropertyTask) Validate() error {
 
 // Plan reports the drift the RegistryPropertyTask would produce.
 func (t RegistryPropertyTask) Plan(ctx context.Context) PlanResult {
-	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planProperty(ctx, t, func(f PropertyFields) Task { return RegistryPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.

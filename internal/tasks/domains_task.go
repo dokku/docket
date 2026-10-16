@@ -108,6 +108,9 @@ func (t DomainsTask) Validate() error {
 
 // Plan reports the drift the DomainsTask would produce.
 func (t DomainsTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -117,6 +120,33 @@ func (t DomainsTask) Plan(ctx context.Context) PlanResult {
 		StateSet:     func() PlanResult { return planDomainsSet(ctx, t) },
 		StateClear:   func() PlanResult { return planDomainsClear(ctx, t) },
 	})
+}
+
+// observedDomains attaches the domains the probe read to r. An additive state
+// (present, absent) reads the domains t names; set and clear own the whole
+// list, so they read every domain, reported as set, or as clear when there are
+// none.
+func observedDomains(r PlanResult, t DomainsTask, current map[string]bool, whole bool) PlanResult {
+	declared := map[string]bool{}
+	for _, d := range t.Domains {
+		declared[d] = true
+	}
+	var held []string
+	for _, d := range sortedSetKeys(current) {
+		if whole || declared[d] {
+			held = append(held, d)
+		}
+	}
+	state := StateAbsent
+	switch {
+	case whole && len(held) > 0:
+		state = StateSet
+	case whole:
+		state = StateClear
+	case len(held) > 0:
+		state = StatePresent
+	}
+	return observed(r, DomainsTask{App: t.App, Global: t.Global, Domains: held, State: state}, len(held) > 0)
 }
 
 // planDomainsPresent reports drift for the present-state domain add.
@@ -134,7 +164,7 @@ func planDomainsPresent(ctx context.Context, t DomainsTask) PlanResult {
 		}
 	}
 	if len(toAdd) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedDomains(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentDomains, false)
 	}
 	status := PlanStatusModify
 	if len(currentDomains) == 0 {
@@ -147,14 +177,14 @@ func planDomainsPresent(ctx context.Context, t DomainsTask) PlanResult {
 		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, toAdd)
-	return PlanResult{
+	return observedDomains(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d domain(s) to add", len(toAdd)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, toAdd, StatePresent, StateAbsent),
-	}
+	}, t, currentDomains, false)
 }
 
 // planDomainsAbsent reports drift for the absent-state domain remove.
@@ -172,7 +202,7 @@ func planDomainsAbsent(ctx context.Context, t DomainsTask) PlanResult {
 		}
 	}
 	if len(toRemove) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedDomains(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentDomains, false)
 	}
 	subcommand := "domains:remove"
 	appName := t.App
@@ -181,14 +211,14 @@ func planDomainsAbsent(ctx context.Context, t DomainsTask) PlanResult {
 		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, toRemove)
-	return PlanResult{
+	return observedDomains(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d domain(s) to remove", len(toRemove)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, toRemove, StateAbsent, StatePresent),
-	}
+	}, t, currentDomains, false)
 }
 
 // planDomainsSet reports drift for the set-state full replacement.
@@ -213,7 +243,7 @@ func planDomainsSet(ctx context.Context, t DomainsTask) PlanResult {
 		}
 	}
 	if len(mutations) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedDomains(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentDomains, true)
 	}
 	status := PlanStatusModify
 	if len(currentDomains) == 0 {
@@ -226,14 +256,14 @@ func planDomainsSet(ctx context.Context, t DomainsTask) PlanResult {
 		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, t.Domains)
-	return PlanResult{
+	return observedDomains(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d domain change(s)", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, t.Domains, StateSet, StateAbsent),
-	}
+	}, t, currentDomains, true)
 }
 
 // planDomainsClear reports drift for the clear-state operation.
@@ -243,7 +273,7 @@ func planDomainsClear(ctx context.Context, t DomainsTask) PlanResult {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if len(currentDomains) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedDomains(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentDomains, true)
 	}
 	domains := sortedSetKeys(currentDomains)
 	mutations := make([]string, 0, len(domains))
@@ -257,14 +287,14 @@ func planDomainsClear(ctx context.Context, t DomainsTask) PlanResult {
 		appName = ""
 	}
 	inputs := dokkuArgsInputs(subcommand, appName, nil)
-	return PlanResult{
+	return observedDomains(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d domain(s)", len(currentDomains)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs(subcommand, appName, nil, StateClear, StatePresent),
-	}
+	}, t, currentDomains, true)
 }
 
 // dokkuArgsInputs returns the subprocess inputs that run `dokku --quiet

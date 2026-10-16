@@ -121,6 +121,9 @@ func (t HttpAuthTask) Validate() error {
 
 // Plan reports the drift the HttpAuthTask would produce.
 func (t HttpAuthTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -131,7 +134,7 @@ func (t HttpAuthTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if enabled {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedHttpAuth(t, PlanResult{InSync: true, Status: PlanStatusOK}, enabled)
 			}
 			// The credentials are optional trailing arguments; passing them as
 			// empty strings would work but reads as a malformed command line in
@@ -144,7 +147,7 @@ func (t HttpAuthTask) Plan(ctx context.Context) PlanResult {
 				Command: "dokku",
 				Args:    args,
 			}}
-			return PlanResult{
+			return observedHttpAuth(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "http-auth disabled",
@@ -153,7 +156,7 @@ func (t HttpAuthTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, enabled)
 		},
 		StateAbsent: func() PlanResult {
 			enabled, err := httpAuthEnabled(ctx, t.App)
@@ -161,13 +164,13 @@ func (t HttpAuthTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !enabled {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedHttpAuth(t, PlanResult{InSync: true, Status: PlanStatusOK}, enabled)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "http-auth:disable", t.App},
 			}}
-			return PlanResult{
+			return observedHttpAuth(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "http-auth enabled",
@@ -176,9 +179,20 @@ func (t HttpAuthTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, enabled)
 		},
 	})
+}
+
+// observedHttpAuth attaches whether http-auth is serving to r. The username and
+// password only seed a user at enable time and are never read back, so they
+// stay empty; the users come back as dokku_http_auth_user.
+func observedHttpAuth(t HttpAuthTask, r PlanResult, enabled bool) PlanResult {
+	o := HttpAuthTask{App: t.App, State: StateAbsent}
+	if enabled {
+		o.State = StatePresent
+	}
+	return observed(r, o, enabled)
 }
 
 // httpAuthEnabled checks if HTTP authentication is enabled for an app by

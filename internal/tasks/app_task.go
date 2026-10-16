@@ -76,17 +76,30 @@ func (t AppTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the AppTask would produce.
 func (t AppTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	exists := false
+	// seen attaches the app's existence, read once by whichever branch runs.
+	seen := func(r PlanResult) PlanResult {
+		o := AppTask{App: t.App, State: StateAbsent}
+		if exists {
+			o.State = StatePresent
+		}
+		return observed(r, o, exists)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			exists, err := appExists(ctx, t.App)
+			var err error
+			exists, err = appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if exists {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 			}
 			inputs := createAppInputs(t.App)
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "app missing",
@@ -95,18 +108,19 @@ func (t AppTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			})
 		},
 		StateAbsent: func() PlanResult {
-			exists, err := appExists(ctx, t.App)
+			var err error
+			exists, err = appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !exists {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 			}
 			inputs := destroyAppInputs(t.App)
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "app present",
@@ -115,7 +129,7 @@ func (t AppTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			})
 		},
 	})
 }

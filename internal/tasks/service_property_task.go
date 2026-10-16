@@ -265,6 +265,9 @@ func (t ServicePropertyTask) Validate() error {
 // property's current value from `<service>:info` once the service is
 // confirmed to exist.
 func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -304,6 +307,30 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 		return value, true, nil, nil
 	}
 
+	// seen attaches the property as info reported it. A value equal to the
+	// property's unset default is no value, as export reads it. A fingerprinted
+	// credential is reported only as a digest, so its value is known only when
+	// the digest matches the declared one; otherwise Observed carries the
+	// property as set with no value. A property info does not report leaves
+	// Observed nil.
+	seen := func(r PlanResult, current string, ok bool) PlanResult {
+		if !ok {
+			return r
+		}
+		o := ServicePropertyTask{Service: t.Service, Name: t.Name, Property: t.Property, State: StateAbsent}
+		if current == "" || (rb.unset != "" && current == rb.unset && !rb.fingerprint) {
+			return observed(r, o, false)
+		}
+		o.State = StatePresent
+		switch {
+		case !rb.fingerprint:
+			o.Value = current
+		case servicePropertyMatches(rb, current, t.Value):
+			o.Value = t.Value
+		}
+		return observed(r, o, true)
+	}
+
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			current, ok, warnings, result := probe()
@@ -314,7 +341,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 			reason := fmt.Sprintf("would set %s on %s (not reported by info)", t.Property, target)
 			if ok {
 				if servicePropertyMatches(rb, current, t.Value) {
-					return PlanResult{InSync: true, Status: PlanStatusOK}
+					return seen(PlanResult{InSync: true, Status: PlanStatusOK}, current, ok)
 				}
 				switch {
 				case current == "" || (rb.unset != "" && current == rb.unset && !rb.fingerprint):
@@ -337,7 +364,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 				Command: "dokku",
 				Args:    []string{"--quiet", fmt.Sprintf("%s:set", t.Service), t.Name, t.Property, t.Value},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    reason,
@@ -347,7 +374,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, current, ok)
 		},
 		StateAbsent: func() PlanResult {
 			current, ok, warnings, result := probe()
@@ -357,7 +384,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 			reason := fmt.Sprintf("would unset %s on %s (not reported by info)", t.Property, target)
 			if ok {
 				if current == "" || (rb.unset != "" && current == rb.unset) {
-					return PlanResult{InSync: true, Status: PlanStatusOK}
+					return seen(PlanResult{InSync: true, Status: PlanStatusOK}, current, ok)
 				}
 				reason = fmt.Sprintf("would unset %s on %s (was %q)", t.Property, target, current)
 				if rb.sensitive {
@@ -368,7 +395,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 				Command: "dokku",
 				Args:    []string{"--quiet", fmt.Sprintf("%s:set", t.Service), t.Name, t.Property},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    reason,
@@ -378,7 +405,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, current, ok)
 		},
 	})
 }

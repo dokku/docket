@@ -667,10 +667,9 @@ func TestServiceCreateTaskImageDriftWarnsOnUnreadableImage(t *testing.T) {
 	}
 }
 
-func TestServiceCreateTaskImageDriftIgnoreSkipsTheProbe(t *testing.T) {
+func TestServiceCreateTaskImageDriftIgnoreSkipsTheComparison(t *testing.T) {
 	t.Parallel()
-	var calls []string
-	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
 
 	task := driftTask()
 	task.ImageDrift = imageDriftIgnore
@@ -678,29 +677,58 @@ func TestServiceCreateTaskImageDriftIgnoreSkipsTheProbe(t *testing.T) {
 	if !plan.InSync || len(plan.Warnings) != 0 {
 		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
 	}
-	for _, call := range calls {
-		if strings.Contains(call, "redis:info") {
-			t.Errorf("ignore mode must not read the image, but issued %q", call)
+	assertObservedImage(t, plan, "redis", "7.2.4")
+}
+
+// TestServiceCreateTaskImageDriftSkipsTheComparisonWithoutAPin pins that an
+// unpinned recipe is never told about drift: with no declared image there is
+// nothing to compare the running one against. The info report is still read,
+// so Observed carries the image the service is running.
+func TestServiceCreateTaskImageDriftSkipsTheComparisonWithoutAPin(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(driftFixture("redis", "cache", "redis:7.2.4")))
+
+	task := ServiceCreateTask{Service: "redis", Name: "cache", State: StatePresent}
+	plan := task.Plan(ctx)
+	if !plan.InSync || len(plan.Warnings) != 0 {
+		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
+	}
+	assertObservedImage(t, plan, "redis", "7.2.4")
+}
+
+// TestServiceCreateTaskUnreadableInfoLeavesObservedEmpty pins that a recipe
+// which needs nothing from the info report still plans in sync when the report
+// cannot be read - a plugin older than the floor - and reports no Observed
+// state rather than a service with no options.
+func TestServiceCreateTaskUnreadableInfoLeavesObservedEmpty(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") == "--quiet redis:info cache --format json" {
+			res := subprocess.ExecCommandResponse{ExitCode: 1, Stderr: "invalid flag"}
+			return res, &subprocess.ExecError{Response: res, Err: errors.New(res.Stderr), Ran: true}
 		}
+		return subprocess.ExecCommandResponse{}, nil
+	})
+
+	task := ServiceCreateTask{Service: "redis", Name: "cache", State: StatePresent}
+	plan := task.Plan(ctx)
+	if plan.Error != nil || !plan.InSync {
+		t.Fatalf("expected an in-sync plan, got InSync=%v error=%v", plan.InSync, plan.Error)
+	}
+	if plan.Observed != nil {
+		t.Errorf("Observed = %#v, want nil when the info report could not be read", plan.Observed)
 	}
 }
 
-// TestServiceCreateTaskImageDriftSkipsTheProbeWithoutAPin pins that an
-// unpinned recipe costs no extra round trip: with no declared image there is
-// nothing to compare the running one against.
-func TestServiceCreateTaskImageDriftSkipsTheProbeWithoutAPin(t *testing.T) {
-	t.Parallel()
-	var calls []string
-	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(driftFixture("redis", "cache", "redis:7.2.4"), &calls))
-
-	task := ServiceCreateTask{Service: "redis", Name: "cache", State: StatePresent}
-	if plan := task.Plan(ctx); !plan.InSync || len(plan.Warnings) != 0 {
-		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
+// assertObservedImage checks the image a plan's Observed service runs.
+func assertObservedImage(t *testing.T, plan PlanResult, image, version string) {
+	t.Helper()
+	got, ok := plan.Observed.(ServiceCreateTask)
+	if !ok {
+		t.Fatalf("Observed = %#v, want a ServiceCreateTask", plan.Observed)
 	}
-	for _, call := range calls {
-		if strings.Contains(call, "redis:info") {
-			t.Errorf("an unpinned task must not read the image, but issued %q", call)
-		}
+	if got.Image != image || got.ImageVersion != version || !plan.Exists {
+		t.Errorf("Observed image = %q:%q exists=%v, want %q:%q and exists", got.Image, got.ImageVersion, plan.Exists, image, version)
 	}
 }
 

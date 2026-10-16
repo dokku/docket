@@ -421,6 +421,9 @@ func validateKVFlag(name string, values map[string]string) error {
 
 // Plan reports the drift the StorageEntryTask would produce.
 func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -431,10 +434,10 @@ func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if entry != nil {
-				return planStorageEntryAttributes(ctx, t, *entry)
+				return observedStorageEntry(t, planStorageEntryAttributes(ctx, t, *entry), entry)
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: t.createArgs()}}
-			return PlanResult{
+			return observedStorageEntry(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "entry missing",
@@ -443,7 +446,7 @@ func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, entry)
 		},
 		StateAbsent: func() PlanResult {
 			entry, err := lookupStorageEntry(ctx, t.Name)
@@ -451,7 +454,7 @@ func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if entry == nil {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedStorageEntry(t, PlanResult{InSync: true, Status: PlanStatusOK}, entry)
 			}
 			// dokku refuses the flag outright on anything but a docker-local
 			// entry, where the underlying volume follows the reclaim policy
@@ -470,7 +473,7 @@ func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
 			}
 			args = append(args, t.Name)
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return observedStorageEntry(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "entry present",
@@ -479,7 +482,7 @@ func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, entry)
 		},
 	})
 }
@@ -678,22 +681,42 @@ func (t StorageEntryTask) ExportGlobal(ctx context.Context) ([]interface{}, erro
 		if e.Name == "" || strings.HasPrefix(e.Name, "legacy-") {
 			continue
 		}
-		out = append(out, StorageEntryTask{
-			Name:          e.Name,
-			Path:          e.HostPath,
-			Scheduler:     e.Scheduler,
-			Size:          e.Size,
-			AccessMode:    e.AccessMode,
-			StorageClass:  e.StorageClass,
-			Namespace:     e.Namespace,
-			Chown:         e.Chown,
-			Mode:          e.Mode,
-			ReclaimPolicy: e.ReclaimPolicy,
-			Annotations:   e.Annotations,
-			Labels:        e.Labels,
-		})
+		out = append(out, storageEntryTaskFrom(e))
 	}
 	return out, nil
+}
+
+// storageEntryTaskFrom builds the dokku_storage_entry task a registry entry
+// describes. Export and Plan's Observed share it, so the two can never read an
+// entry differently. State is left unset, which export's recipe reads as its
+// present default.
+func storageEntryTaskFrom(e storageEntry) StorageEntryTask {
+	return StorageEntryTask{
+		Name:          e.Name,
+		Path:          e.HostPath,
+		Scheduler:     e.Scheduler,
+		Size:          e.Size,
+		AccessMode:    e.AccessMode,
+		StorageClass:  e.StorageClass,
+		Namespace:     e.Namespace,
+		Chown:         e.Chown,
+		Mode:          e.Mode,
+		ReclaimPolicy: e.ReclaimPolicy,
+		Annotations:   e.Annotations,
+		Labels:        e.Labels,
+	}
+}
+
+// observedStorageEntry attaches the registry entry the probe read to r: the whole
+// entry when there is one, every attribute it records included, or the name
+// alone, absent, when there is not.
+func observedStorageEntry(t StorageEntryTask, r PlanResult, entry *storageEntry) PlanResult {
+	if entry == nil {
+		return observed(r, StorageEntryTask{Name: t.Name, State: StateAbsent}, false)
+	}
+	o := storageEntryTaskFrom(*entry)
+	o.State = StatePresent
+	return observed(r, o, true)
 }
 
 // storageEntry mirrors the JSON dokku's storage:list-entries emits.

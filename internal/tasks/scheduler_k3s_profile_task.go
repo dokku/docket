@@ -129,6 +129,9 @@ func (t SchedulerK3sProfileTask) Validate() error {
 
 // Plan reports the drift the SchedulerK3sProfileTask would produce.
 func (t SchedulerK3sProfileTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -263,6 +266,22 @@ func validateSchedulerK3sProfile(t SchedulerK3sProfileTask) error {
 	return nil
 }
 
+// observedSchedulerK3sProfile attaches the profile the probe read to r: its
+// stored definition when found, or just its name as absent.
+func observedSchedulerK3sProfile(r PlanResult, t SchedulerK3sProfileTask, current schedulerK3sProfileEntry, found bool) PlanResult {
+	if !found {
+		return observed(r, SchedulerK3sProfileTask{Name: t.Name, State: StateAbsent}, false)
+	}
+	return observed(r, SchedulerK3sProfileTask{
+		Name:              t.Name,
+		Role:              current.Role,
+		KubeletArgs:       current.KubeletArgs,
+		TaintScheduling:   current.TaintScheduling,
+		AllowUnknownHosts: current.AllowUnknownHosts,
+		State:             StatePresent,
+	}, true)
+}
+
 // planSchedulerK3sProfileSet probes for the named profile and, if its
 // captured state differs from the task's desired state, emits a single
 // `profiles:add` that carries the complete desired state. `--role` is always
@@ -279,13 +298,13 @@ func planSchedulerK3sProfileSet(ctx context.Context, t SchedulerK3sProfileTask) 
 	status := PlanStatusCreate
 	if found {
 		if profileMatches(current, t) {
-			return PlanResult{InSync: true, Status: PlanStatusOK}
+			return observedSchedulerK3sProfile(PlanResult{InSync: true, Status: PlanStatusOK}, t, current, found)
 		}
 		status = PlanStatusModify
 	}
 
 	inputs := []subprocess.ExecCommandInput{schedulerK3sProfileSetCommand(t)}
-	return PlanResult{
+	return observedSchedulerK3sProfile(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("profile %s drift", t.Name),
@@ -294,26 +313,26 @@ func planSchedulerK3sProfileSet(ctx context.Context, t SchedulerK3sProfileTask) 
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}
+	}, t, current, found)
 }
 
 // planSchedulerK3sProfileUnset probes for the named profile and removes it
 // only when present. dokku's `profiles:remove` silently succeeds when the
 // profile is missing, but skipping the call keeps Changed=false honest.
 func planSchedulerK3sProfileUnset(ctx context.Context, t SchedulerK3sProfileTask) PlanResult {
-	_, found, err := getSchedulerK3sProfile(ctx, t.Name)
+	current, found, err := getSchedulerK3sProfile(ctx, t.Name)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if !found {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedSchedulerK3sProfile(PlanResult{InSync: true, Status: PlanStatusOK}, t, current, found)
 	}
 
 	inputs := []subprocess.ExecCommandInput{{
 		Command: "dokku",
 		Args:    []string{"--quiet", "scheduler-k3s:profiles:remove", t.Name},
 	}}
-	return PlanResult{
+	return observedSchedulerK3sProfile(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("profile %s present", t.Name),
@@ -322,7 +341,7 @@ func planSchedulerK3sProfileUnset(ctx context.Context, t SchedulerK3sProfileTask
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
-	}
+	}, t, current, found)
 }
 
 // schedulerK3sProfileSetCommand builds the bulk

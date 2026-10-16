@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -325,6 +326,30 @@ type PlanResult struct {
 	// raw and masked at emit time, mirroring Reason. Empty when no diagnostic.
 	Warnings []PlanWarning
 
+	// Observed is the task as the probe found it on the server: the value
+	// type registered for the task (AppTask, never *AppTask), with the
+	// identity keys copied from the planned task and every field the server
+	// reports filled from what was read. Fields tagged write_only or
+	// apply_only are left at their zero value or default, as export leaves
+	// them. State is the state that, declared with Observed's fields, would
+	// plan in sync, so a property read as unset carries StateAbsent.
+	//
+	// A collection planned in an additive state (dokku_config's present or
+	// absent) carries only the members the planned task names; a state that
+	// owns the whole collection (set, clear) carries every member it owns.
+	//
+	// nil when Error is set, and when the probe could not read the state:
+	// a task whose ProbeSupport is unsupported, or a probe failure the plan
+	// treats as drift rather than as an error. Values are raw, like Reason;
+	// mask them before showing them.
+	Observed Task
+
+	// Exists reports whether the resource is on the server: true when
+	// Observed's State is present (or set) and, for a collection, when at
+	// least one member Observed carries is there. Meaningful only when
+	// Observed is non-nil.
+	Exists bool
+
 	// apply, when non-nil, is the closure ExecutePlan invokes to mutate
 	// server state. nil when InSync. Captures any probed state needed for
 	// the mutation so the apply path does not re-probe. Unexported so
@@ -343,6 +368,43 @@ type PlanResult struct {
 // server.
 func planErr(err error) PlanResult {
 	return PlanResult{Status: PlanStatusError, Error: err}
+}
+
+// ErrStateUnreadable is the error ReadTask returns when a plan carries no
+// Observed state: the task's probe cannot read the resource, or a probe
+// failure was treated as drift rather than as an error.
+var ErrStateUnreadable = errors.New("the task's current state cannot be read")
+
+// observed attaches the state the probe read to a plan result. It returns r
+// unchanged when r is an error, so a branch can pass every result through it.
+func observed(r PlanResult, t Task, exists bool) PlanResult {
+	if r.Error != nil {
+		return r
+	}
+	r.Observed = t
+	r.Exists = exists
+	return r
+}
+
+// ReadTask returns the task as it exists on the server and whether the
+// resource exists, from one Plan. It never applies anything. The task's State
+// picks which members a collection reads, so the task must still pass its own
+// validation. A *VersionError from the gate comes back as is.
+func ReadTask(ctx context.Context, t Task) (Task, bool, error) {
+	if t == nil {
+		return nil, false, errors.New("nil task")
+	}
+	p := t.Plan(ctx)
+	if p.Error != nil {
+		return nil, false, p.Error
+	}
+	if p.Observed == nil {
+		if p.Reason != "" {
+			return nil, false, fmt.Errorf("%w: %s", ErrStateUnreadable, p.Reason)
+		}
+		return nil, false, ErrStateUnreadable
+	}
+	return p.Observed, p.Exists, nil
 }
 
 // Task represents a task. It is only what running a task needs; the synopsis

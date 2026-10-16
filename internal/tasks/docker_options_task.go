@@ -159,8 +159,20 @@ func (t DockerOptionsTask) Validate() error {
 
 // Plan reports the drift the DockerOptionsTask would produce.
 func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
+	}
+	// seen attaches whether the option is stored in its scope; the option is
+	// the identity, so presence is all there is to read.
+	seen := func(r PlanResult, present bool) PlanResult {
+		o := DockerOptionsTask{App: t.App, Phase: t.Phase, ProcessType: t.ProcessType, Option: t.Option, State: StateAbsent}
+		if present {
+			o.State = StatePresent
+		}
+		return observed(r, o, present)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -170,13 +182,13 @@ func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
 			}
 			scope := dockerOptionsScope{Phase: t.Phase, ProcessType: t.ProcessType}
 			if optionPresent(current[scope], t.Option) {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, true)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    dockerOptionsCommandArgs("docker-options:add", t),
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("missing on %s", describeDockerOptionsScope(scope)),
@@ -185,7 +197,7 @@ func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, false)
 		},
 		StateAbsent: func() PlanResult {
 			current, err := getDockerOptions(ctx, t.App)
@@ -194,13 +206,13 @@ func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
 			}
 			scope := dockerOptionsScope{Phase: t.Phase, ProcessType: t.ProcessType}
 			if !optionPresent(current[scope], t.Option) {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, false)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    dockerOptionsCommandArgs("docker-options:remove", t),
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("present on %s", describeDockerOptionsScope(scope)),
@@ -209,7 +221,7 @@ func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, true)
 		},
 	})
 }

@@ -205,24 +205,30 @@ func (t SchedulerK3sNodeSysctlsTask) Validate() error {
 
 // Plan reports the drift the SchedulerK3sNodeSysctlsTask would produce.
 func (t SchedulerK3sNodeSysctlsTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	current := func(ctx context.Context) (map[string]string, error) {
 		return getSchedulerK3sNodeSysctls(ctx, t)
 	}
+	observe := func(sysctls map[string]string, state State) Task {
+		return SchedulerK3sNodeSysctlsTask{Global: t.Global, Profile: t.Profile, Sysctls: sysctls, State: state}
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			return planPairsSet(ctx, "sysctl", t.Sysctls, current, t.setCommand)
+			return planPairsSet(ctx, observe, "sysctl", t.Sysctls, current, t.setCommand)
 		},
 		StateAbsent: func() PlanResult {
-			return planPairsUnset(ctx, "sysctl", t.Sysctls, current, t.setCommand)
+			return planPairsUnset(ctx, observe, "sysctl", t.Sysctls, current, t.setCommand)
 		},
 		StateSet: func() PlanResult {
-			return planPairsReplace(ctx, "sysctl", t.Sysctls, current, t.replaceCommand)
+			return planPairsReplace(ctx, observe, "sysctl", t.Sysctls, current, t.replaceCommand)
 		},
 		StateClear: func() PlanResult {
-			return planPairsClear(ctx, "sysctl", current, t.clearCommand)
+			return planPairsClear(ctx, observe, "sysctl", current, t.clearCommand)
 		},
 	})
 }

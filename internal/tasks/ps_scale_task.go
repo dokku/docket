@@ -155,6 +155,9 @@ func (t PsScaleTask) Validate() error {
 
 // Plan reports the drift the PsScaleTask would produce.
 func (t PsScaleTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -162,6 +165,37 @@ func (t PsScaleTask) Plan(ctx context.Context) PlanResult {
 		StatePresent: func() PlanResult { return planPsScalePresent(ctx, t) },
 		StateSet:     func() PlanResult { return planPsScaleSet(ctx, t) },
 	})
+}
+
+// observedPsScale attaches the formation the probe read to r. The additive
+// present state reads the process types t names, a missing one at zero, which
+// is what dokku's report means by leaving it out; set owns the formation, so
+// it reads every process type scaled above zero, the same way export does.
+// The resource exists when any process it read is scaled above zero.
+func observedPsScale(r PlanResult, t PsScaleTask, existing map[string]int, whole bool) PlanResult {
+	held := map[string]int{}
+	running := false
+	if whole {
+		for proctype, qty := range existing {
+			if qty > 0 {
+				held[proctype] = qty
+			}
+		}
+	} else {
+		for proctype := range t.Scale {
+			held[proctype] = existing[proctype]
+		}
+	}
+	for _, qty := range held {
+		if qty > 0 {
+			running = true
+		}
+	}
+	state := StatePresent
+	if whole {
+		state = StateSet
+	}
+	return observed(r, PsScaleTask{App: t.App, Scale: held, State: state}, running)
 }
 
 // planPsScalePresent reports drift for the present-state additive scale. Only
@@ -194,10 +228,10 @@ func planPsScalePresent(ctx context.Context, t PsScaleTask) PlanResult {
 		}
 	}
 	if len(toScale) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedPsScale(PlanResult{InSync: true, Status: PlanStatusOK}, t, existing, false)
 	}
 	inputs := psScaleInputs(t.App, false, boolValue(t.SkipDeploy, false), toScale)
-	return PlanResult{
+	return observedPsScale(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d process scale change(s)", len(mutations)),
@@ -206,7 +240,7 @@ func planPsScalePresent(ctx context.Context, t PsScaleTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}
+	}, t, existing, false)
 }
 
 // planPsScaleSet reports drift for the set-state whole-formation replacement.
@@ -257,10 +291,10 @@ func planPsScaleSet(ctx context.Context, t PsScaleTask) PlanResult {
 		mutations = append(mutations, fmt.Sprintf("scale %s=0 (was %d, undeclared)", proctype, existing[proctype]))
 	}
 	if len(mutations) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedPsScale(PlanResult{InSync: true, Status: PlanStatusOK}, t, existing, true)
 	}
 	inputs := psScaleInputs(t.App, true, boolValue(t.SkipDeploy, false), tuples)
-	return PlanResult{
+	return observedPsScale(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d process scale change(s)", len(mutations)),
@@ -269,7 +303,7 @@ func planPsScaleSet(ctx context.Context, t PsScaleTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StateSet, inputs)
 		},
-	}
+	}, t, existing, true)
 }
 
 // psScaleInputs builds the ps:scale call a plan applies. Flags precede the app

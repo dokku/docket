@@ -135,7 +135,12 @@ func validateResourceInput(state State, resources map[string]string) error {
 	return nil
 }
 
-func planResource(ctx context.Context, state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
+// planResource plans a resource task. observe builds the calling task's own
+// type from the resources the probe read and the state they amount to. A
+// present plan without clear_before reads only the resources it declares; a
+// clear-before-set and the absent state own every resource, so they read them
+// all.
+func planResource(ctx context.Context, observe func(resources map[string]string, state State) Task, state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
 	if err := validateResourceInput(state, resources); err != nil {
 		return planErr(err)
 	}
@@ -148,13 +153,13 @@ func planResource(ctx context.Context, state State, app, processType string, res
 	}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planSetResource(ctx, subcommand, rctx) },
-		StateAbsent:  func() PlanResult { return planClearResource(ctx, subcommand, rctx) },
+		StatePresent: func() PlanResult { return planSetResource(ctx, observe, subcommand, rctx) },
+		StateAbsent:  func() PlanResult { return planClearResource(ctx, observe, subcommand, rctx) },
 	})
 }
 
 // planSetResource reports drift for a present-state resource set.
-func planSetResource(ctx context.Context, subcommand string, rctx ResourceContext) PlanResult {
+func planSetResource(ctx context.Context, observe func(map[string]string, State) Task, subcommand string, rctx ResourceContext) PlanResult {
 	currentResources, err := getResources(ctx, subcommand, rctx)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -188,18 +193,51 @@ func planSetResource(ctx context.Context, subcommand string, rctx ResourceContex
 		}
 	}
 
+	var declared map[string]string
+	if !rctx.ClearBefore {
+		declared = rctx.Resources
+	}
+	seen := func(r PlanResult) PlanResult {
+		return observedResources(r, observe, currentResources, declared)
+	}
+
 	if len(mutations) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 	}
 	inputs := resourceSetInputs(subcommand, effective)
-	return PlanResult{
+	return seen(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
 		Reason:    fmt.Sprintf("%d resource(s) to set", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyResourceSet(subcommand, effective),
+	})
+}
+
+// observedResources attaches the resources the probe read to r: the set ones
+// among declared, or every set one when declared is nil.
+func observedResources(r PlanResult, observe func(map[string]string, State) Task, current, declared map[string]string) PlanResult {
+	var held map[string]string
+	for k, v := range current {
+		if !resourceValueIsSet(v) {
+			continue
+		}
+		if declared != nil {
+			if _, ok := declared[k]; !ok {
+				continue
+			}
+		}
+		if held == nil {
+			held = map[string]string{}
+		}
+		held[k] = v
 	}
+	state := StateAbsent
+	if len(held) > 0 {
+		state = StatePresent
+	}
+	return observed(r, observe(held, state), len(held) > 0)
 }
 
 // resourceValueIsSet reports whether a resource report value represents an
@@ -224,7 +262,7 @@ func clearBeforeChanges(current, desired map[string]string) bool {
 }
 
 // planClearResource reports drift for an absent-state resource clear.
-func planClearResource(ctx context.Context, subcommand string, rctx ResourceContext) PlanResult {
+func planClearResource(ctx context.Context, observe func(map[string]string, State) Task, subcommand string, rctx ResourceContext) PlanResult {
 	currentResources, err := getResources(ctx, subcommand, rctx)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -239,17 +277,17 @@ func planClearResource(ctx context.Context, subcommand string, rctx ResourceCont
 	}
 
 	if !hasResources {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedResources(PlanResult{InSync: true, Status: PlanStatusOK}, observe, currentResources, nil)
 	}
 	inputs := []subprocess.ExecCommandInput{resourceClearInput(subcommand, rctx)}
-	return PlanResult{
+	return observedResources(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    "would clear all resources",
 		Mutations: []string{fmt.Sprintf("clear resources via %s-clear", subcommand)},
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyResourceClear(subcommand, rctx),
-	}
+	}, observe, currentResources, nil)
 }
 
 // resourceClearInput returns the subprocess input that runs the resource

@@ -114,17 +114,32 @@ func (t GitFromImageTask) Validate() error {
 
 // Plan reports the drift the GitFromImageTask would produce.
 func (t GitFromImageTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StateDeployed: func() PlanResult {
-			match, err := checkAppSourceImage(ctx, t.App, t.Image)
+			source, read, err := readAppDeploySource(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if match {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+			seen := func(r PlanResult) PlanResult {
+				if !read {
+					return r
+				}
+				if source.Source != "docker-image" {
+					return observed(r, GitFromImageTask{App: t.App, State: StateAbsent}, false)
+				}
+				// The image reference can carry registry credentials, and
+				// the server's value is not the recipe's, so mask it too.
+				subprocess.MaskerFromContext(ctx).Add(source.SourceMetadata)
+				return observed(r, GitFromImageTask{App: t.App, Image: source.SourceMetadata, State: StateDeployed}, true)
+			}
+			if read && source.Source == "docker-image" && source.SourceMetadata == t.Image {
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 			}
 			args := []string{"git:from-image"}
 			if t.BuildDir != "" {
@@ -137,7 +152,7 @@ func (t GitFromImageTask) Plan(ctx context.Context) PlanResult {
 				args = append(args, t.GitUsername, t.GitEmail)
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "image source drift",
@@ -146,26 +161,26 @@ func (t GitFromImageTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
 				},
-			}
+			})
 		},
 	})
 }
 
-// checkAppSourceImage checks if the app is already deployed from a
-// docker image. A transport-level failure (`*subprocess.SSHError`) is
-// propagated; any other error is treated as "no match" so the planner
-// proposes a re-deploy.
-func checkAppSourceImage(ctx context.Context, app, expectedImage string) (bool, error) {
+// readAppDeploySource reads an app's deploy source for the git deploy tasks'
+// probes. A transport-level failure (`*subprocess.SSHError`) is returned; any
+// other failure reports read as false, which the planners treat as "no match"
+// so they propose a re-deploy, and which leaves the plan with no observed
+// state.
+func readAppDeploySource(ctx context.Context, app string) (AppDeploySource, bool, error) {
 	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
-			return false, err
+			return AppDeploySource{}, false, err
 		}
-		return false, nil
+		return AppDeploySource{}, false, nil
 	}
-
-	return source.Source == "docker-image" && source.SourceMetadata == expectedImage, nil
+	return source, true, nil
 }
 
 // ExportApp reconstructs a docker-image deploy source from apps:report. The

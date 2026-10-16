@@ -317,33 +317,30 @@ func TestVersionCacheKeyFollowsTheConnection(t *testing.T) {
 	}
 }
 
-func TestPluginInstallInvalidatesVersionCache(t *testing.T) {
+// TestPluginChangeInvalidatesVersionCache checks a plugin change drops the
+// cached plugin list. dokku_plugin reads `plugin:list --format json` itself,
+// the same command the gate caches, so the fake answers both from one list:
+// letsencrypt starts out installed at a version too old for
+// dokku_letsencrypt, and the gate stops refusing once dokku_plugin has
+// uninstalled it - an uninstalled plugin is not a refusal - which only a fresh
+// read can see.
+func TestPluginChangeInvalidatesVersionCache(t *testing.T) {
 	t.Parallel()
-	installed := false
-	installErr := error(nil)
+	installed := true
 	lists := 0
 	ctx := gatedRunner(t, func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		key := strings.Join(in.Args, " ")
-		switch {
-		case key == "version":
+		switch key {
+		case "version":
 			return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}, nil
-		case key == "--quiet plugin:list --format json":
+		case "--quiet plugin:list --format json":
 			lists++
-			version := "0.1.0"
-			if installed {
-				version = "0.25.2"
+			if !installed {
+				return subprocess.ExecCommandResponse{Stdout: `[]`}, nil
 			}
-			return subprocess.ExecCommandResponse{Stdout: `[{"name":"letsencrypt","version":"` + version + `"}]`}, nil
-		case key == "--quiet plugin:list":
-			if installed {
-				return subprocess.ExecCommandResponse{Stdout: "letsencrypt 0.25.2 enabled\n"}, nil
-			}
-			return subprocess.ExecCommandResponse{}, nil
-		case strings.HasPrefix(key, "--quiet plugin:install"):
-			if installErr != nil {
-				return subprocess.ExecCommandResponse{}, installErr
-			}
-			installed = true
+			return subprocess.ExecCommandResponse{Stdout: `[{"name":"letsencrypt","version":"0.1.0"}]`}, nil
+		case "--quiet plugin:uninstall letsencrypt":
+			installed = false
 			return subprocess.ExecCommandResponse{}, nil
 		default:
 			return subprocess.ExecCommandResponse{}, nil
@@ -352,21 +349,21 @@ func TestPluginInstallInvalidatesVersionCache(t *testing.T) {
 
 	err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"})
 	if err == nil {
-		t.Fatal("expected the old plugin to be refused before install")
+		t.Fatal("expected the old plugin to be refused before the change")
 	}
-	state := (PluginTask{Name: "letsencrypt", URL: "https://example.com/letsencrypt.git", State: StatePresent}).Execute(ctx)
+	state := (PluginTask{Name: "letsencrypt", State: StateAbsent}).Execute(ctx)
 	if state.Error != nil {
-		t.Fatalf("install: %v", state.Error)
+		t.Fatalf("uninstall: %v", state.Error)
 	}
 	if err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"}); err != nil {
-		t.Fatalf("after install: %v", err)
+		t.Fatalf("after uninstall: %v", err)
 	}
-	if lists != 2 {
-		t.Errorf("plugin list reads = %d, want 2 (one before install, one after invalidation)", lists)
+	if lists != 3 {
+		t.Errorf("plugin list reads = %d, want 3 (the gate before the change, the plan, the gate after invalidation)", lists)
 	}
 }
 
-func TestFailedPluginInstallKeepsVersionCache(t *testing.T) {
+func TestFailedPluginChangeKeepsVersionCache(t *testing.T) {
 	t.Parallel()
 	lists := 0
 	ctx := gatedRunner(t, func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
@@ -377,9 +374,7 @@ func TestFailedPluginInstallKeepsVersionCache(t *testing.T) {
 		case "--quiet plugin:list --format json":
 			lists++
 			return subprocess.ExecCommandResponse{Stdout: `[{"name":"letsencrypt","version":"0.1.0"}]`}, nil
-		case "--quiet plugin:list":
-			return subprocess.ExecCommandResponse{}, nil
-		case "--quiet plugin:install https://example.com/letsencrypt.git letsencrypt":
+		case "--quiet plugin:uninstall letsencrypt":
 			return subprocess.ExecCommandResponse{}, errVersionProbe
 		default:
 			return subprocess.ExecCommandResponse{}, nil
@@ -389,15 +384,15 @@ func TestFailedPluginInstallKeepsVersionCache(t *testing.T) {
 	if err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"}); err == nil {
 		t.Fatal("expected the old plugin to be refused")
 	}
-	state := (PluginTask{Name: "letsencrypt", URL: "https://example.com/letsencrypt.git", State: StatePresent}).Execute(ctx)
+	state := (PluginTask{Name: "letsencrypt", State: StateAbsent}).Execute(ctx)
 	if state.Error == nil {
-		t.Fatal("expected the install to fail")
+		t.Fatal("expected the uninstall to fail")
 	}
 	if err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"}); err == nil {
 		t.Fatal("expected the cached old version to still refuse")
 	}
-	if lists != 1 {
-		t.Errorf("plugin list reads = %d, want 1 (a failed install should keep the cache)", lists)
+	if lists != 2 {
+		t.Errorf("plugin list reads = %d, want 2 (the gate once, the plan once; a failed change should keep the cache)", lists)
 	}
 }
 

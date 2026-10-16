@@ -120,8 +120,21 @@ func (t GitAuthTask) Validate() error {
 
 // Plan reports the drift the GitAuthTask would produce.
 func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
+	}
+	// seen attaches whether the host has a netrc entry. The username and
+	// password are write-only: git:auth-status compares them but never
+	// returns them, so Observed carries the host alone.
+	seen := func(r PlanResult, exists bool) PlanResult {
+		o := GitAuthTask{Host: t.Host, State: StateAbsent}
+		if exists {
+			o.State = StatePresent
+		}
+		return observed(r, o, exists)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -130,7 +143,7 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if code == gitAuthMatch {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, true)
 			}
 			if code == gitAuthInvalidArguments {
 				return gitAuthArgumentError(t.Host)
@@ -147,7 +160,7 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 				Args:    []string{"--quiet", "git:auth", t.Host, t.Username},
 				Stdin:   strings.NewReader(t.Password),
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    reason,
@@ -156,7 +169,7 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: priorState}, StatePresent, inputs)
 				},
-			}
+			}, code != gitAuthMissing)
 		},
 		StateAbsent: func() PlanResult {
 			code, err := gitAuthStatus(ctx, t.Host, "", "")
@@ -164,7 +177,7 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if code == gitAuthMatch {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, false)
 			}
 			if code == gitAuthInvalidArguments {
 				return gitAuthArgumentError(t.Host)
@@ -173,7 +186,7 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 				Command: "dokku",
 				Args:    []string{"--quiet", "git:auth", t.Host},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "netrc entry present",
@@ -182,7 +195,7 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, true)
 		},
 	})
 }

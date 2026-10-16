@@ -10,6 +10,9 @@ import (
 	"github.com/dokku/docket/internal/subprocess"
 )
 
+// observeChecksToggle is the observe closure the toggle tests plan with.
+func observeChecksToggle(f ToggleFields) Task { return ChecksToggleTask(f) }
+
 // TestPlanToggleSurfacesSSHTransportError locks the #357 fix: an SSH transport
 // failure from the probe must surface as a plan error (so an unreachable host
 // is not mistaken for drift), for both the present and absent states.
@@ -21,7 +24,7 @@ func TestPlanToggleSurfacesSSHTransportError(t *testing.T) {
 	probe := func(context.Context, ToggleContext) (bool, error) { return false, sshErr }
 
 	for _, state := range []State{StatePresent, StateAbsent} {
-		plan := planToggle(testCtx(), state, "web", "checks:enable", "checks:disable", probe)
+		plan := planToggle(testCtx(), observeChecksToggle, state, "web", "checks:enable", "checks:disable", probe)
 		if plan.Status != PlanStatusError {
 			t.Errorf("state %s: Status = %q, want %q", state, plan.Status, PlanStatusError)
 		}
@@ -48,7 +51,7 @@ func TestPlanToggleTreatsNonSSHProbeErrorAsDrift(t *testing.T) {
 		{StatePresent, "checks:enable"},
 		{StateAbsent, "checks:disable"},
 	} {
-		plan := planToggle(testCtx(), tc.state, "web", "checks:enable", "checks:disable", probe)
+		plan := planToggle(testCtx(), observeChecksToggle, tc.state, "web", "checks:enable", "checks:disable", probe)
 		if plan.Error != nil {
 			t.Errorf("state %s: non-SSH probe error should not surface as a plan error, got %v", tc.state, plan.Error)
 		}
@@ -68,7 +71,7 @@ func TestPlanToggleTreatsNonSSHProbeErrorAsDrift(t *testing.T) {
 // and the probe reports enabled means no change.
 func TestPlanTogglePresentInSyncWhenEnabled(t *testing.T) {
 	probe := func(context.Context, ToggleContext) (bool, error) { return true, nil }
-	plan := planToggle(testCtx(), StatePresent, "web", "checks:enable", "checks:disable", probe)
+	plan := planToggle(testCtx(), observeChecksToggle, StatePresent, "web", "checks:enable", "checks:disable", probe)
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Errorf("present+enabled: InSync=%v Status=%q, want InSync=true Status=%q", plan.InSync, plan.Status, PlanStatusOK)
 	}
@@ -78,7 +81,7 @@ func TestPlanTogglePresentInSyncWhenEnabled(t *testing.T) {
 // and the probe reports disabled means no change.
 func TestPlanToggleAbsentInSyncWhenDisabled(t *testing.T) {
 	probe := func(context.Context, ToggleContext) (bool, error) { return false, nil }
-	plan := planToggle(testCtx(), StateAbsent, "web", "checks:enable", "checks:disable", probe)
+	plan := planToggle(testCtx(), observeChecksToggle, StateAbsent, "web", "checks:enable", "checks:disable", probe)
 	if !plan.InSync || plan.Status != PlanStatusOK {
 		t.Errorf("absent+disabled: InSync=%v Status=%q, want InSync=true Status=%q", plan.InSync, plan.Status, PlanStatusOK)
 	}
@@ -88,7 +91,7 @@ func TestPlanToggleAbsentInSyncWhenDisabled(t *testing.T) {
 // machinery removed, a drift always targets the app and never a --global scope.
 func TestPlanTogglePresentDriftTargetsApp(t *testing.T) {
 	probe := func(context.Context, ToggleContext) (bool, error) { return false, nil }
-	plan := planToggle(testCtx(), StatePresent, "web", "checks:enable", "checks:disable", probe)
+	plan := planToggle(testCtx(), observeChecksToggle, StatePresent, "web", "checks:enable", "checks:disable", probe)
 	if plan.InSync {
 		t.Fatal("expected drift when probe reports disabled and present is desired")
 	}

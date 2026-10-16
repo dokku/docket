@@ -97,7 +97,10 @@ func (t DomainsToggleTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the DomainsToggleTask would produce.
 func (t DomainsToggleTask) Plan(ctx context.Context) PlanResult {
-	return planToggle(ctx, t.State, t.App, "domains:enable", "domains:disable", domainsEnabled)
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planToggle(ctx, func(f ToggleFields) Task { return DomainsToggleTask(f) }, t.State, t.App, "domains:enable", "domains:disable", domainsEnabled)
 }
 
 // init registers the DomainsToggleTask with the task registry

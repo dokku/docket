@@ -96,8 +96,21 @@ func (t LetsencryptTask) Validate() error {
 
 // Plan reports the drift the LetsencryptTask would produce.
 func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
+	}
+	// seen attaches whether the resource exists; its identity is all there is
+	// to read.
+	seen := func(r PlanResult, exists bool) PlanResult {
+		o := LetsencryptTask{App: t.App}
+		o.State = StateAbsent
+		if exists {
+			o.State = StatePresent
+		}
+		return observed(r, o, exists)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -106,13 +119,13 @@ func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if active {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, true)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "letsencrypt:enable", t.App},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "letsencrypt not active",
@@ -121,7 +134,7 @@ func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, false)
 		},
 		StateAbsent: func() PlanResult {
 			active, err := letsencryptActive(ctx, t.App)
@@ -129,13 +142,13 @@ func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !active {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, false)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "letsencrypt:disable", t.App},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "letsencrypt active",
@@ -144,7 +157,7 @@ func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, true)
 		},
 	})
 }

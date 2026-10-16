@@ -1,6 +1,6 @@
 // Package sdk is the supported way to drive docket's engine from Go: build and
-// run tasks, read a server back as a recipe, and describe the registered task
-// types.
+// run tasks, read a server back as a recipe or one resource at a time, and
+// describe the registered task types.
 //
 // Everything else in the module lives under internal/ and cannot be imported
 // from outside it. The recipe loader, the codecs, template rendering and the

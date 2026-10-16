@@ -77,8 +77,19 @@ func (t AppLockTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the AppLockTask would produce.
 func (t AppLockTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if t.App == "" {
 		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
+	}
+	// seen attaches whether the app is locked.
+	seen := func(r PlanResult, locked bool) PlanResult {
+		o := AppLockTask{App: t.App, State: StateAbsent}
+		if locked {
+			o.State = StatePresent
+		}
+		return observed(r, o, locked)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -87,13 +98,13 @@ func (t AppLockTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if locked {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, locked)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "apps:lock", t.App},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "app unlocked",
@@ -102,7 +113,7 @@ func (t AppLockTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, locked)
 		},
 		StateAbsent: func() PlanResult {
 			locked, err := appLocked(ctx, t.App)
@@ -110,13 +121,13 @@ func (t AppLockTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !locked {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, locked)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "apps:unlock", t.App},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "app locked",
@@ -125,7 +136,7 @@ func (t AppLockTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, locked)
 		},
 	})
 }

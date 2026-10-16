@@ -138,6 +138,9 @@ func (t ServiceExposeTask) Validate() error {
 
 // Plan reports the drift the ServiceExposeTask would produce.
 func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -158,7 +161,7 @@ func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 			// ports, so the comparison must be order-sensitive: a reorder of the
 			// same ports is a real change (issue #332).
 			if slices.Equal(current, t.Ports) {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceExpose(t, PlanResult{InSync: true, Status: PlanStatusOK}, current)
 			}
 			inputs := []subprocess.ExecCommandInput{}
 			mutations := []string{}
@@ -177,7 +180,7 @@ func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 			exposeArgs = append(exposeArgs, t.Ports...)
 			inputs = append(inputs, subprocess.ExecCommandInput{Command: "dokku", Args: exposeArgs})
 			mutations = append(mutations, fmt.Sprintf("%s:expose %s %s", t.Service, t.Name, strings.Join(t.Ports, " ")))
-			return PlanResult{
+			return observedServiceExpose(t, PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    fmt.Sprintf("%s service %s not exposed on %s", t.Service, t.Name, strings.Join(t.Ports, " ")),
@@ -186,7 +189,7 @@ func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, current)
 		},
 		StateAbsent: func() PlanResult {
 			exists, err := serviceExists(ctx, t.Service, t.Name)
@@ -201,13 +204,13 @@ func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if len(current) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceExpose(t, PlanResult{InSync: true, Status: PlanStatusOK}, current)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", fmt.Sprintf("%s:unexpose", t.Service), t.Name},
 			}}
-			return PlanResult{
+			return observedServiceExpose(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%s service %s exposed", t.Service, t.Name),
@@ -216,7 +219,7 @@ func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, current)
 		},
 	})
 }
@@ -266,4 +269,16 @@ func serviceExposedPortList(ctx context.Context, service, name string) ([]string
 // init registers the ServiceExposeTask with the task registry
 func init() {
 	RegisterTask(&ServiceExposeTask{})
+}
+
+// observedServiceExpose attaches the exposure the probe read to r. Both states own
+// the service's whole port list - absent unexposes every port - so Observed
+// carries all of it, present when any port is exposed.
+func observedServiceExpose(t ServiceExposeTask, r PlanResult, current []string) PlanResult {
+	o := ServiceExposeTask{Service: t.Service, Name: t.Name, State: StateAbsent}
+	if len(current) > 0 {
+		o.Ports = current
+		o.State = StatePresent
+	}
+	return observed(r, o, len(current) > 0)
 }

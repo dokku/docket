@@ -126,6 +126,9 @@ for _, play := range res.Plays() {
 }
 ```
 
+An export reads everything, or everything a selector names. To read the one resource a task you
+already hold describes, use `sdk.ReadTask` instead - see [Reading one resource](#reading-one-resource).
+
 `Plays()` returns the same values `MarshalRecipe` renders, so the structured view and the recipe
 file can never describe different exports. Each task body is the task's own type - `dokku_config`
 comes back as a `ConfigTask` - so there is no marshalling to YAML and parsing it straight back.
@@ -230,25 +233,26 @@ masker to the session rather than building a second one.
 ### Version floors
 
 Every task declares the oldest Dokku it runs on, and any plugins it needs, in its Requirements
-section. `docket plan` and `docket apply` refuse a task whose floor the server is behind. `Plan`,
-`Execute` and `sdk.ExecutePlan` do not check it themselves, so a caller that wants the same refusal
-installs the version gate once per run and checks each task before planning it:
+section. `docket plan` and `docket apply` refuse a task whose floor the server is behind. A caller
+gets the same refusal by installing the version gate once per run. Every task's `Plan`, and so its
+`Execute` and `sdk.ReadTask`, then checks it before probing and returns the refusal as the plan's
+error:
 
 ```go
 ctx = sdk.ContextWithVersionGate(ctx)
 
-if err := sdk.CheckMinimumVersions(ctx, "dokku_app", app); err != nil {
-    var verr *sdk.VersionError
-    if errors.As(err, &verr) {
-        // verr.TaskType, verr.Plugin, verr.Minimum and verr.Found say why.
-    }
-    return err
-}
 plan := app.Plan(ctx)
+var verr *sdk.VersionError
+if errors.As(plan.Error, &verr) {
+    // verr.TaskType, verr.Plugin, verr.Minimum and verr.Found say why.
+}
 ```
 
-`CheckMinimumVersions` returns nil when the context carries no gate, so skipping the check - the
-equivalent of `--ignore-version` - is a matter of not installing the gate or not calling it. A
+`sdk.ExecutePlan` does not check again, since it applies a plan that was already checked.
+`sdk.CheckMinimumVersions(ctx, "dokku_app", app)` returns the same `*VersionError` without
+planning, for a caller that wants to check a task first. Neither refuses anything when the context
+carries no gate, so skipping the check - the equivalent of `--ignore-version` - is a matter of not
+installing the gate. A
 plugin the task needs that is not installed at all is not a refusal: the task's own probe reports
 it, and an earlier task in the same run can install it.
 
@@ -285,6 +289,61 @@ task's metadata.
 `sdk.Catalog()` describes every task type in one value - synopsis, deprecation, requirements,
 probe and export support, identity and fields - and is what `docket schema` emits.
 `sdk.CatalogFor` narrows it to the types you name. See [Task catalog](task-catalog.md).
+
+## Reading one resource
+
+`sdk.ReadTask` returns the resource a task describes as it exists on the server, and whether it
+exists, from a single plan. Nothing is applied.
+
+```go
+ctx = sdk.ContextWithVersionGate(ctx)
+
+task, _ := sdk.NewTask("dokku_config")
+cfg := task.(*sdk.ConfigTask)
+cfg.App = "api"
+cfg.Config = map[string]string{"LOG_LEVEL": "info"}
+
+current, exists, err := sdk.ReadTask(ctx, cfg)
+if err != nil {
+    return err
+}
+observed := current.(sdk.ConfigTask) // observed.Config holds the server's LOG_LEVEL, if set
+```
+
+The returned task is the value type registered for the task (`sdk.ConfigTask`, never a pointer). Its
+identity keys come from the task you passed and every field the server reports is filled from what
+the probe read. Fields whose catalog entry carries `WriteOnly` or `ApplyOnly` are left empty or at
+their default, as an export leaves them (see [Reading a server](#reading-a-server)). `State` is the
+state that, declared with the returned fields, would plan in sync: a property that is not set
+comes back with `State: absent` and `exists` false.
+
+The task you pass picks what is read, so it must be valid:
+
+- A collection in an additive state reads only the members it names. A `dokku_config` in state
+  `present` or `absent` reads the keys in its `Config`. A state that owns the whole collection, such
+  as `set` or `clear`, reads every member it would own, and comes back as `set`, or as `clear` when
+  there are none.
+- A property task needs a `Value` in state `present`. To read one known only by its identity keys,
+  pass it with `State` absent.
+
+To read every member of a collection without naming them, export the resource instead. The same goes
+for `dokku_certs`: its plans settle drift from the certificate's fingerprint so no certificate
+material leaves the server, and a read keeps to that, returning whether a certificate is installed
+but not its PEM.
+
+The same values are on the plan itself, so a caller that plans anyway reads them with no extra probe.
+`PlanResult.Observed` holds the task as read and `PlanResult.Exists` whether it exists. They are set
+on every plan that read the server, in sync or not. `ReadTask` is `Plan` plus these errors:
+
+- the plan's own error, including the `*sdk.VersionError` when a gate on the context refuses the
+  task, so a resource the gate skipped is never reported as absent;
+- an error wrapping `sdk.ErrStateUnreadable` when the plan carries no observed state. That is a task
+  whose probe cannot read anything (`dokku_storage_ensure`), or a probe failure the plan treated as
+  drift rather than as an error.
+
+A probe registers the server values it treats as secrets with the context's masker, as it does for
+any plan, but the returned task carries them raw. Mask what you show, the same way you mask a plan's
+`Reason`.
 
 ## Testing without a server
 

@@ -80,6 +80,19 @@ func (t NetworkTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the NetworkTask would produce.
 func (t NetworkTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	// seen attaches whether the resource exists; its identity is all there is
+	// to read.
+	seen := func(r PlanResult, exists bool) PlanResult {
+		o := NetworkTask{Name: t.Name}
+		o.State = StateAbsent
+		if exists {
+			o.State = StatePresent
+		}
+		return observed(r, o, exists)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			exists, err := networkExists(ctx, t.Name)
@@ -87,13 +100,13 @@ func (t NetworkTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if exists {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, true)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "network:create", t.Name},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "network missing",
@@ -102,7 +115,7 @@ func (t NetworkTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, false)
 		},
 		StateAbsent: func() PlanResult {
 			exists, err := networkExists(ctx, t.Name)
@@ -110,13 +123,13 @@ func (t NetworkTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !exists {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, false)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "--force", "network:destroy", t.Name},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "network present",
@@ -125,7 +138,7 @@ func (t NetworkTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, true)
 		},
 	})
 }
