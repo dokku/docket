@@ -38,9 +38,8 @@ type HttpAuthUserTask struct {
 // HttpAuthUser represents a single HTTP auth user. Exactly one of Password and
 // Hash carries the credential.
 //
-// The `sensitive:"true"` tags document intent, but because the fields live in a
-// slice-of-structs the reflection walker in sensitive.go cannot reach them -
-// the task's SensitiveValues method is what actually masks these values.
+// The `sensitive:"true"` tags mask these values: the reflection walker in
+// sensitive.go descends into the task's slice of users.
 type HttpAuthUser struct {
 	// Username is the HTTP auth username
 	Username string `required:"true" identity:"key" yaml:"username" description:"HTTP auth username"`
@@ -114,10 +113,11 @@ func (t HttpAuthUserTask) MinimumVersions() VersionSupport {
 }
 
 // SensitiveValues returns the per-user credentials so they are masked in
-// user-facing output. The tag-based walker in sensitive.go does not descend
-// into slices of structs, so they are collected here. Hashes are credential
-// material too - they are what an attacker needs to reproduce the htpasswd -
-// so they are masked alongside the cleartext passwords.
+// user-facing output. The tag-based walker in sensitive.go collects the same
+// values; the method predates it reaching slices of structs and stays because
+// sdk callers can call it. Hashes are credential material too - they are what
+// an attacker needs to reproduce the htpasswd - so they are masked alongside
+// the cleartext passwords.
 func (t HttpAuthUserTask) SensitiveValues() []string {
 	out := make([]string, 0, len(t.Users))
 	for _, u := range t.Users {

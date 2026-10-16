@@ -678,11 +678,11 @@ func exportedBodyType(typeKey string, body interface{}) error {
 // its copy under inline + --redact, so the original body is the only place the
 // real value survives. sensitiveValuesFromTask is the same collector
 // internal/commands/apply.go runs over a parsed recipe, so export masks the set apply
-// masks for the same content - the sensitive:"true" fields plus the
-// SensitiveValues() overrides that reach the secrets living in a map or a
-// slice of structs (dokku_config, dokku_http_auth_user,
-// dokku_scheduler_k3s_autoscaling_auth). A per-property secret is not
-// expressible as a struct tag, so processPropertyValue notes that one itself.
+// masks for the same content - the sensitive:"true" fields, including those
+// on the items of a slice of structs (dokku_http_auth_user), the value of a
+// property its table marks Sensitive, plus the SensitiveValues() overrides
+// that reach the secrets living in a map (dokku_config,
+// dokku_scheduler_k3s_autoscaling_auth).
 func (res *ExportResult) processBody(app string, body interface{}, opts ExportOptions) (interface{}, []map[string]interface{}) {
 	res.noteSensitive(sensitiveValuesFromTask(body)...)
 	switch b := body.(type) {

@@ -486,6 +486,26 @@ EOF
   assert_output --partial '"loop_item":"***"'
 }
 
+@test "--list-tasks masks a sensitive property value" {
+  # basic-auth-password is marked sensitive in traefik's property table, not
+  # by a struct tag. The listing never plans the task, so the value is masked
+  # only if the pre-run collection reads the property table (#602).
+  write_tasks_file <<'EOF'
+---
+- tasks:
+    - name: set traefik password
+      loop: [listpropertyzzz]
+      dokku_traefik_property:
+        global: true
+        property: basic-auth-password
+        value: "{{ .item }}"
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE" --list-tasks --json
+  assert_success
+  refute_output --partial "listpropertyzzz"
+  assert_output --partial '"loop_item":"***"'
+}
+
 @test "--list-tasks masks a sensitive input in a play name and when:" {
   write_tasks_file <<'EOF'
 ---

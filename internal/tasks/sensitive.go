@@ -21,16 +21,19 @@ type SensitiveOverride interface {
 
 // CollectSensitiveValues walks every task in tasks and returns the union of
 // values that must be masked in user-facing output. A value is included when
-// either:
+// any of:
 //
-//   - it lives in a struct field carrying the `sensitive:"true"` struct tag, or
+//   - it lives in a struct field carrying the `sensitive:"true"` struct tag,
+//     including a field of an item in a slice or map of structs,
+//   - it is the value of a property task whose property is marked Sensitive
+//     in the task's property table, or
 //   - the task implements SensitiveOverride and the method returns it.
 //
 // String, []string, and map[string]string fields are supported. Nested
-// structs and pointers are walked recursively. block/rescue/always group
-// envelopes carry no task of their own, so their child envelopes are walked
-// recursively to any depth. Empty values are dropped by the subprocess masker,
-// not here.
+// structs, pointers, and the struct items of slices and maps are walked
+// recursively. block/rescue/always group envelopes carry no task of their
+// own, so their child envelopes are walked recursively to any depth. Empty
+// values are dropped by the subprocess masker, not here.
 func CollectSensitiveValues(tasks OrderedStringEnvelopeMap) []string {
 	var out []string
 	for _, name := range tasks.Keys() {
@@ -104,17 +107,78 @@ func registerSensitiveMapValues(ctx context.Context, m map[string]string) {
 // receiver - the wrong failure mode for a masking collector. Both steps below
 // work on any value.
 func sensitiveValuesFromTask(t interface{}) []string {
+	if isNilPointer(t) {
+		return nil
+	}
 	var out []string
 	if override, ok := t.(SensitiveOverride); ok {
 		out = append(out, override.SensitiveValues()...)
 	}
+	out = append(out, sensitivePropertyValues(t)...)
 	out = append(out, walkSensitiveTags(reflect.ValueOf(t))...)
 	return out
 }
 
+// TaskSensitiveValues returns the values that must be masked in anything
+// rendered for t: its `sensitive:"true"` fields, including those of nested
+// items, the value of a property its property table marks Sensitive, and
+// whatever its SensitiveValues method returns. It is the set the CLI collects
+// for t before a run. Empty values are dropped and duplicates removed; the
+// order is unspecified. It returns nil for a nil task.
+func TaskSensitiveValues(t Task) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, v := range sensitiveValuesFromTask(t) {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
+// isNilPointer reports whether t is nil or a nil pointer. The registered
+// tasks' methods have value receivers, so calling one through a nil pointer
+// panics.
+func isNilPointer(t interface{}) bool {
+	if t == nil {
+		return true
+	}
+	v := reflect.ValueOf(t)
+	return v.Kind() == reflect.Pointer && v.IsNil()
+}
+
+// sensitivePropertyValues returns a property task's value when its property
+// table marks that property Sensitive. Whether the value is a secret depends
+// on which property it is, so no struct tag can say it; planProperty registers
+// the same value with the masker at plan time, which is too late for anything
+// rendered before Plan runs. Every property task is a conversion of
+// PropertyFields or SensitivePropertyFields, so the fields are read by name.
+func sensitivePropertyValues(t interface{}) []string {
+	task, ok := t.(PropertyTableDocer)
+	if !ok || isNilPointer(t) {
+		return nil
+	}
+	v := reflect.Indirect(reflect.ValueOf(t))
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+	property := v.FieldByName("Property")
+	value := v.FieldByName("Value")
+	if property.Kind() != reflect.String || value.Kind() != reflect.String || value.String() == "" {
+		return nil
+	}
+	if !taskPropertyEntry(task, property.String()).Sensitive {
+		return nil
+	}
+	return []string{value.String()}
+}
+
 // walkSensitiveTags recursively walks v and returns the value of any field
-// whose `sensitive:"true"` struct tag is set. Pointers and embedded structs
-// are followed; everything else is leaf-evaluated.
+// whose `sensitive:"true"` struct tag is set. Pointers, embedded structs, and
+// the struct items of slices, arrays and maps are followed; everything else
+// is leaf-evaluated.
 func walkSensitiveTags(v reflect.Value) []string {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
@@ -142,7 +206,41 @@ func walkSensitiveTags(v reflect.Value) []string {
 			out = append(out, walkSensitiveTags(fv)...)
 		case fv.Kind() == reflect.Pointer && !fv.IsNil() && fv.Elem().Kind() == reflect.Struct:
 			out = append(out, walkSensitiveTags(fv)...)
+		case isStructCollection(fv.Type()):
+			out = append(out, walkSensitiveItems(fv)...)
 		}
+	}
+	return out
+}
+
+// isStructCollection reports whether t is a slice, array or map whose items
+// are structs or struct pointers, such as dokku_http_auth_user's users.
+func isStructCollection(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map:
+	default:
+		return false
+	}
+	elem := t.Elem()
+	if elem.Kind() == reflect.Pointer {
+		elem = elem.Elem()
+	}
+	return elem.Kind() == reflect.Struct
+}
+
+// walkSensitiveItems walks each item of a struct collection, so a tagged
+// field on an item is collected like one on the task itself.
+func walkSensitiveItems(v reflect.Value) []string {
+	var out []string
+	if v.Kind() == reflect.Map {
+		iter := v.MapRange()
+		for iter.Next() {
+			out = append(out, walkSensitiveTags(iter.Value())...)
+		}
+		return out
+	}
+	for i := 0; i < v.Len(); i++ {
+		out = append(out, walkSensitiveTags(v.Index(i))...)
 	}
 	return out
 }

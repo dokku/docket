@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"reflect"
 	"sort"
 	"testing"
 )
@@ -132,6 +133,97 @@ func TestSensitiveValuesOverrideMergesWithTags(t *testing.T) {
 	got := sensitiveValuesFromTask(o)
 	if !sortedEqual(got, []string{"tagged", "viaOverride", "alsoOverride"}) {
 		t.Errorf("got %v, want all three values", got)
+	}
+}
+
+type sensitiveItem struct {
+	Name   string
+	Secret string `sensitive:"true"`
+}
+
+type itemCollectionsTask struct {
+	Items    []sensitiveItem
+	Pointers []*sensitiveItem
+	ByName   map[string]sensitiveItem
+	Fixed    [1]sensitiveItem
+}
+
+func (i *itemCollectionsTask) Plan(ctx context.Context) PlanResult         { return PlanResult{} }
+func (i *itemCollectionsTask) Execute(ctx context.Context) TaskOutputState { return TaskOutputState{} }
+
+func TestSensitiveValuesFromStructCollections(t *testing.T) {
+	task := &itemCollectionsTask{
+		Items:    []sensitiveItem{{Name: "a", Secret: "slice"}, {Name: "b"}},
+		Pointers: []*sensitiveItem{nil, {Name: "c", Secret: "pointer"}},
+		ByName:   map[string]sensitiveItem{"d": {Name: "d", Secret: "map"}},
+		Fixed:    [1]sensitiveItem{{Name: "e", Secret: "array"}},
+	}
+	got := sensitiveValuesFromTask(task)
+	if !sortedEqual(got, []string{"slice", "pointer", "map", "array"}) {
+		t.Errorf("got %v, want the secret of every item", got)
+	}
+}
+
+func TestHttpAuthUserItemTagsAreCollected(t *testing.T) {
+	// A struct carrying the users without HttpAuthUserTask's SensitiveValues
+	// method, so only the tags on HttpAuthUser can surface them.
+	type usersOnly struct {
+		Users []HttpAuthUser
+	}
+	got := walkSensitiveTags(reflect.ValueOf(usersOnly{Users: []HttpAuthUser{
+		{Username: "admin", Password: "pw"},
+		{Username: "ops", Hash: "hash"},
+	}}))
+	if !sortedEqual(got, []string{"pw", "hash"}) {
+		t.Errorf("got %v, want [pw hash]", got)
+	}
+}
+
+func TestSensitivePropertyValues(t *testing.T) {
+	cases := []struct {
+		name string
+		task interface{}
+		want []string
+	}{
+		{"mapped sensitive", TraefikPropertyTask{Global: true, Property: "basic-auth-password", Value: "pw"}, []string{"pw"}},
+		{"mapped sensitive pointer", &TraefikPropertyTask{Global: true, Property: "basic-auth-password", Value: "pw"}, []string{"pw"}},
+		{"dynamic sensitive", TraefikPropertyTask{Global: true, Property: "dns-provider-CF_API_TOKEN", Value: "token"}, []string{"token"}},
+		{"other plugin", SchedulerK3sPropertyTask{Global: true, Property: "token", Value: "k3s"}, []string{"k3s"}},
+		{"benign", TraefikPropertyTask{Global: true, Property: "api-enabled", Value: "true"}, nil},
+		{"empty value", TraefikPropertyTask{Global: true, Property: "basic-auth-password"}, nil},
+		{"nil pointer", (*TraefikPropertyTask)(nil), nil},
+		{"not a property task", AppTask{App: "api"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sensitiveValuesFromTask(tc.task); !sortedEqual(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTaskSensitiveValuesDedupesAndDropsEmpties(t *testing.T) {
+	// The tags and HttpAuthUserTask's SensitiveValues method both reach the
+	// users' credentials; each value comes back once.
+	task := &HttpAuthUserTask{App: "api", Users: []HttpAuthUser{
+		{Username: "admin", Password: "pw"},
+		{Username: "ops", Password: "pw"},
+	}}
+	if got := TaskSensitiveValues(task); !sortedEqual(got, []string{"pw"}) {
+		t.Errorf("got %v, want [pw]", got)
+	}
+
+	withEmpty := &overrideTask{Map: map[string]string{"k": ""}}
+	if got := TaskSensitiveValues(withEmpty); got != nil {
+		t.Errorf("got %v, want nil", got)
+	}
+
+	if got := TaskSensitiveValues(nil); got != nil {
+		t.Errorf("nil task: got %v, want nil", got)
+	}
+	if got := TaskSensitiveValues((*HttpAuthUserTask)(nil)); got != nil {
+		t.Errorf("nil pointer task: got %v, want nil", got)
 	}
 }
 
