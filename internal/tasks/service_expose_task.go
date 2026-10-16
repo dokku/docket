@@ -19,7 +19,7 @@ type ServiceExposeTask struct {
 	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Ports are the host ports to expose the service on. Required when state is present.
-	Ports []string `required:"false" identity:"collection" yaml:"ports,omitempty" description:"Host ports to expose the service on. Required when state is present."`
+	Ports []string `required:"false" identity:"collection" ordered:"true" yaml:"ports,omitempty" description:"Host ports to expose the service on. Required when state is present."`
 
 	// State is the desired state of the service exposure
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service exposure"`

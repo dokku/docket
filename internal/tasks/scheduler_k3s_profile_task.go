@@ -31,7 +31,7 @@ type SchedulerK3sProfileTask struct {
 	// `--kubelet-arg`. Drift detection compares this as a multiset; the
 	// emitted command preserves the user-declared order so the on-disk JSON
 	// tracks the YAML when an apply actually runs.
-	KubeletArgs []string `required:"false" yaml:"kubelet_args,omitempty" description:"List of key=value kubelet arguments to forward to k3s."`
+	KubeletArgs []string `required:"false" ordered:"false" yaml:"kubelet_args,omitempty" description:"List of key=value kubelet arguments to forward to k3s."`
 
 	// TaintScheduling toggles the `--taint-scheduling` flag on
 	// `scheduler-k3s:profiles:add`. Absent or false is "explicitly cleared".

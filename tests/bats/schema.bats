@@ -122,6 +122,41 @@ setup() {
     fail "a narrowed catalog drops write_only"
 }
 
+@test "docket schema declares whether a list is ordered (#605)" {
+  run "$(docket_bin)" schema
+  assert_success
+
+  # Buildpacks apply in order and exposed ports map positionally, so a reorder
+  # is drift; domains, allowed IPs and ACL users are sets.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_buildpacks") | .fields[] | select(.name == "buildpacks") | .ordered == true' >/dev/null ||
+    fail "dokku_buildpacks buildpacks is not ordered"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_service_expose") | .fields[] | select(.name == "ports") | .ordered == true' >/dev/null ||
+    fail "dokku_service_expose ports is not ordered"
+  echo "$output" |
+    jq -e '[.tasks[] | select(.type == "dokku_domains" or .type == "dokku_http_auth_allowed_ip" or .type == "dokku_acl_app") | .fields[] | select(.type == "list")] | length == 3 and all(.ordered == false)' >/dev/null ||
+    fail "a set-like list is not marked ordered: false"
+
+  # Every list, element fields included, says one way or the other, and no
+  # other type carries the key.
+  echo "$output" |
+    jq -e '[.. | objects | select(has("name") and has("type") and has("required")) | select(.type == "list")] | length > 0 and all(.ordered | type == "boolean")' >/dev/null ||
+    fail "a list field does not declare ordered"
+  echo "$output" |
+    jq -e '[.. | objects | select(has("name") and has("type") and has("required")) | select(.type != "list")] | all(has("ordered") | not)' >/dev/null ||
+    fail "a non-list field declares ordered"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_storage_mount") | .fields[] | select(.name == "mounts") | .item.fields[] | select(.name == "phases") | .ordered == false' >/dev/null ||
+    fail "dokku_storage_mount mounts[].phases is not marked ordered: false"
+
+  run "$(docket_bin)" schema --task dokku_buildpacks
+  assert_success
+  echo "$output" |
+    jq -e '.tasks[0].fields[] | select(.name == "buildpacks") | .ordered == true' >/dev/null ||
+    fail "a narrowed catalog drops ordered"
+}
+
 @test "docket schema publishes the whole shape of a property task (#454)" {
   run "$(docket_bin)" schema
   assert_success

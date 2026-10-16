@@ -19,7 +19,7 @@ type HttpAuthAllowedIpTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// AllowedIps is the list of IP addresses to allow or remove
-	AllowedIps []string `required:"false" identity:"collection" yaml:"allowed_ips,omitempty" description:"List of IP addresses to allow or remove; omit for state 'clear'"`
+	AllowedIps []string `required:"false" identity:"collection" ordered:"false" yaml:"allowed_ips,omitempty" description:"List of IP addresses to allow or remove; omit for state 'clear'"`
 
 	// State is the desired state of the allowed IP entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the allowed IP entries"`

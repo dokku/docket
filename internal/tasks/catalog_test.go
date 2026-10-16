@@ -371,6 +371,86 @@ func TestCatalogFieldReadbackFlagsAreConsistent(t *testing.T) {
 	}
 }
 
+// TestCatalogOrderedMatchesTags makes every list field decide whether its
+// order is significant: the tag must be present and exactly "true" or "false"
+// on a list, element structs included, and absent on anything else. The
+// catalog then carries the same answer, so a consumer choosing a list or a set
+// type never meets a list that does not say (#605).
+func TestCatalogOrderedMatchesTags(t *testing.T) {
+	var check func(where string, rt reflect.Type, fields []FieldSchema)
+	check = func(where string, rt reflect.Type, fields []FieldSchema) {
+		for _, field := range fields {
+			at := where + "." + field.Name
+			structField, ok := structFieldByYAMLName(rt, field.Name)
+			if !ok {
+				t.Errorf("%s has no struct field", at)
+				continue
+			}
+			tag, tagged := structField.Tag.Lookup("ordered")
+			if field.Type != TypeList {
+				if tagged {
+					t.Errorf("%s is a %s and must not carry an ordered tag", at, field.Type)
+				}
+				if field.Ordered != nil {
+					t.Errorf("%s is a %s and must not publish ordered", at, field.Type)
+				}
+			} else {
+				if tag != "true" && tag != "false" {
+					t.Errorf("%s is a list and must be tagged ordered:\"true\" or ordered:\"false\" (got %q)", at, tag)
+				}
+				switch {
+				case field.Ordered == nil:
+					t.Errorf("%s is a list and does not publish ordered", at)
+				case *field.Ordered != (tag == "true"):
+					t.Errorf("%s ordered = %v; tag says %q", at, *field.Ordered, tag)
+				}
+			}
+			if field.Item != nil && field.Item.Type == TypeObject {
+				check(at+"[]", structElem(sliceOrMapElem(structField.Type)), field.Item.Fields)
+			}
+		}
+	}
+
+	catalog := wholeCatalog(t)
+	for _, schema := range catalog.Tasks {
+		check(schema.Type, taskStructType(lookupTask(schema.Type)), schema.Fields)
+	}
+
+	// The lists where a reorder is drift, and a spread of the ones where it is
+	// not: plain collections, keyed structured entries, an element struct's
+	// own list, and kubelet_args, which ignores order but counts duplicates.
+	for _, tc := range []struct {
+		typeKey string
+		path    []string
+		want    bool
+	}{
+		{"dokku_buildpacks", []string{"buildpacks"}, true},
+		{"dokku_service_expose", []string{"ports"}, true},
+		{"dokku_service_create", []string{"post_create_network"}, true},
+		{"dokku_service_create", []string{"post_start_network"}, true},
+		{"dokku_domains", []string{"domains"}, false},
+		{"dokku_http_auth_allowed_ip", []string{"allowed_ips"}, false},
+		{"dokku_acl_app", []string{"users"}, false},
+		{"dokku_http_auth_user", []string{"users"}, false},
+		{"dokku_ports", []string{"port_mappings"}, false},
+		{"dokku_storage_mount", []string{"mounts", "phases"}, false},
+		{"dokku_scheduler_k3s_profile", []string{"kubelet_args"}, false},
+	} {
+		fields := schemaFor(t, catalog, tc.typeKey).Fields
+		field := fieldFor(t, fields, tc.path[0])
+		for _, name := range tc.path[1:] {
+			if field.Item == nil {
+				t.Fatalf("%s.%s has no item schema", tc.typeKey, field.Name)
+			}
+			field = fieldFor(t, field.Item.Fields, name)
+		}
+		where := tc.typeKey + "." + strings.Join(tc.path, "[].")
+		if field.Ordered == nil || *field.Ordered != tc.want {
+			t.Errorf("%s ordered = %v; want %v", where, field.Ordered, tc.want)
+		}
+	}
+}
+
 // TestCatalogIdentityMatchesTaskIdentity checks the catalog against the same
 // helpers the loader and the export filter read. The "every key is a field"
 // half also guards the two yaml-name helpers staying in agreement: a key hidden

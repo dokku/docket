@@ -82,7 +82,7 @@ A few conventions to follow:
 - The struct holds the fields the task needs. The only required field is `State`, the desired state;
   everything else is specific to the task.
 - Give every field a `description:"..."` tag. The docs generator reads it (along with `required`,
-  `default`, `options`, `sensitive`, `runner_file`, `write_only`, and `apply_only`) to build the
+  `default`, `options`, `sensitive`, `runner_file`, `write_only`, `apply_only`, and `ordered`) to build the
   task's Parameters table, so a field without one renders an empty description cell. Those same tags are what
   [`docket schema`](task-catalog.md) publishes, so a missing description is a hole in the
   machine-readable catalog as well as in the docs. Add `,omitempty` to the `yaml` tag of optional
@@ -121,6 +121,12 @@ A few conventions to follow:
   `ExportSupport()` / `ProbeSupport()` caveat instead. An exporting task with either tag needs a
   fixture in `internal/tasks/export_readback_test.go`, which fails the build otherwise and proves
   the exporter never fills the field from the server.
+- Tag every slice field, element structs included, `ordered:"true"` or `ordered:"false"`. Use
+  `true` only when the task applies the elements in order and its Plan treats a reorder as drift
+  (`dokku_buildpacks`'s `buildpacks`); use `false` when it compares them as a set or sorts them.
+  [`docket schema`](task-catalog.md#fields) publishes the answer so a consumer can choose a list or
+  a set type, the generator marks an ordered field on the task's page, and a list field without
+  the tag fails the build.
 - When a task type is deprecated (typically because the underlying dokku subcommand was deprecated
   or a richer replacement task exists), implement the optional `Deprecation() string` method.
   The generator renders the returned message in a Deprecated admonition on the task's page and

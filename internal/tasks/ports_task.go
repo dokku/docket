@@ -15,7 +15,7 @@ type PortsTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// PortMappings are the port mappings to set
-	PortMappings []PortMapping `required:"false" identity:"collection" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port"`
+	PortMappings []PortMapping `required:"false" identity:"collection" ordered:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port"`
 
 	// State is the desired state of the ports
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ports"`

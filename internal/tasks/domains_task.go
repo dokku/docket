@@ -16,7 +16,7 @@ type DomainsTask struct {
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the domains should be applied globally"`
 
 	// Domains is the list of domain names
-	Domains []string `required:"false" identity:"collection" yaml:"domains,omitempty" description:"List of domain names; omit for state 'clear'"`
+	Domains []string `required:"false" identity:"collection" ordered:"false" yaml:"domains,omitempty" description:"List of domain names; omit for state 'clear'"`
 
 	// State is the desired state of the domains
 	State State `required:"false" yaml:"state" default:"present" options:"present,absent,set,clear" description:"Desired state of the domains"`

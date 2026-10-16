@@ -19,7 +19,7 @@ type HttpAuthUserTask struct {
 	// Users is the list of HTTP auth users to add or remove. The docs generator
 	// lists an item's field names but cannot express that password and hash are
 	// alternatives, nor that both are secret, so this description carries it.
-	Users []HttpAuthUser `required:"false" identity:"collection" yaml:"users" description:"List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive"`
+	Users []HttpAuthUser `required:"false" identity:"collection" ordered:"false" yaml:"users" description:"List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive"`
 
 	// UpdatePassword re-issues http-auth:add-user for users that already exist
 	// so their password converges. Cleartext passwords are not exposed in the

@@ -110,6 +110,9 @@ func paramDescription(field tasks.FieldSchema) string {
 		}
 		desc = strings.TrimSpace(desc + " Each item has: " + strings.Join(items, ", ") + ".")
 	}
+	if field.Ordered != nil && *field.Ordered {
+		desc = strings.TrimSpace(desc + " (order is significant)")
+	}
 	if field.RunnerFile {
 		desc = strings.TrimSpace(desc + " (read from the machine running docket)")
 	}
