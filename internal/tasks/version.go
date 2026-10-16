@@ -118,23 +118,40 @@ func parseVersion(raw string) (parsedVersion, error) {
 // the map the run installed, and two hosts do not share a version.
 type versionCacheKey struct{}
 
-// versionCache holds one Dokku version and one plugin list per target. Tasks
-// in a run are sequential, and the mutex is what keeps a test that checks two
-// hosts, or an invalidate during apply, from racing the read.
+// versionCache holds one Dokku version and one plugin list per target. A
+// session-owned cache serves concurrent calls - an embedder planning several
+// resources at once - so the mutex guards every entry, and a read in flight is
+// shared rather than repeated.
 type versionCache struct {
 	mu       sync.Mutex
 	byTarget map[string]*targetVersions
 }
 
+func newVersionCache() *versionCache {
+	return &versionCache{byTarget: map[string]*targetVersions{}}
+}
+
 // targetVersions is what one server (one host, one sudo bit) has reported.
 type targetVersions struct {
-	dokkuLoaded bool
-	dokkuRaw    string
-	dokkuErr    error
+	dokku   versionRead[string]
+	plugins versionRead[map[string]string]
+}
 
-	pluginsLoaded bool
-	plugins       map[string]string
-	pluginsErr    error
+// versionRead is one cached answer from a server. Only a successful read is
+// kept: a failed one - a dropped connection, a cancelled call - is returned to
+// the caller that made it, and the next caller asks again, so a cache that
+// lives as long as a session is never poisoned by one bad call. All fields are
+// guarded by versionCache.mu.
+type versionRead[T any] struct {
+	loaded bool
+	value  T
+
+	// wait is closed when the read in flight finishes; nil when none is.
+	wait chan struct{}
+
+	// generation is bumped by an invalidation, so a read that started before
+	// it does not store an answer from before the change.
+	generation uint64
 }
 
 // ContextWithVersionGate returns a context on which plan, apply, and export
@@ -150,9 +167,16 @@ func ContextWithVersionGate(ctx context.Context) context.Context {
 	if versionCacheFrom(ctx) != nil {
 		return ctx
 	}
-	return context.WithValue(ctx, versionCacheKey{}, &versionCache{
-		byTarget: map[string]*targetVersions{},
-	})
+	return context.WithValue(ctx, versionCacheKey{}, newVersionCache())
+}
+
+// SessionVersionGate is a session option that installs one version gate on
+// every context the session hands out, so they share one cache per target for
+// as long as the session lives, however many calls - each with its own
+// context and cancellation - it serves. Each session built with it gets its
+// own cache. The session's gate replaces one already on the parent context.
+func SessionVersionGate() subprocess.SessionOption {
+	return subprocess.WithSessionValue(versionCacheKey{}, func() any { return newVersionCache() })
 }
 
 func versionCacheFrom(ctx context.Context) *versionCache {
@@ -208,9 +232,9 @@ func InvalidatePluginVersions(ctx context.Context) {
 	}
 	entry := cache.entry(ctx)
 	cache.mu.Lock()
-	entry.pluginsLoaded = false
-	entry.plugins = nil
-	entry.pluginsErr = nil
+	entry.plugins.loaded = false
+	entry.plugins.value = nil
+	entry.plugins.generation++
 	cache.mu.Unlock()
 }
 
@@ -318,7 +342,7 @@ func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error 
 	}
 
 	entry := cache.entry(ctx)
-	raw, probeErr := entry.dokku(ctx, cache)
+	raw, probeErr := entry.readDokku(ctx, cache)
 	if probeErr != nil {
 		return &VersionError{TaskType: typeKey, Minimum: need.String(), Err: probeErr, readFailed: true}
 	}
@@ -345,7 +369,7 @@ func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error 
 		return nil
 	}
 
-	plugins, pluginErr := entry.pluginList(ctx, cache)
+	plugins, pluginErr := entry.readPlugins(ctx, cache)
 	if pluginErr != nil {
 		return &VersionError{TaskType: typeKey, Plugin: applicable[0].Name, Minimum: applicable[0].Minimum, Err: pluginErr, readFailed: true}
 	}
@@ -374,60 +398,72 @@ func pluginWithName(plugin PluginRequirement, name string) PluginRequirement {
 	return plugin
 }
 
-func (e *targetVersions) dokku(ctx context.Context, cache *versionCache) (string, error) {
-	cache.mu.Lock()
-	if e.dokkuLoaded {
-		raw, err := e.dokkuRaw, e.dokkuErr
-		cache.mu.Unlock()
-		return raw, err
-	}
-	cache.mu.Unlock()
-
-	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    []string{"version"},
+func (e *targetVersions) readDokku(ctx context.Context, cache *versionCache) (string, error) {
+	return loadVersion(ctx, cache, &e.dokku, func() (string, error) {
+		result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"version"},
+		})
+		if err != nil {
+			return "", err
+		}
+		return result.StdoutContents(), nil
 	})
-	raw := ""
-	if err == nil {
-		raw = result.StdoutContents()
-	}
-
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	if !e.dokkuLoaded {
-		e.dokkuLoaded = true
-		e.dokkuRaw = raw
-		e.dokkuErr = err
-	}
-	return e.dokkuRaw, e.dokkuErr
 }
 
-func (e *targetVersions) pluginList(ctx context.Context, cache *versionCache) (map[string]string, error) {
+func (e *targetVersions) readPlugins(ctx context.Context, cache *versionCache) (map[string]string, error) {
+	return loadVersion(ctx, cache, &e.plugins, func() (map[string]string, error) {
+		result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", "plugin:list", "--format", "json"},
+		})
+		if err != nil {
+			return nil, err
+		}
+		return parsePluginList(result.StdoutContents()), nil
+	})
+}
+
+// loadVersion returns r's cached answer, or reads it. One caller reads at a
+// time: the others wait for it and use its answer, or, when it failed, take
+// their own turn. A waiter whose ctx ends stops waiting with ctx's error.
+func loadVersion[T any](ctx context.Context, cache *versionCache, r *versionRead[T], read func() (T, error)) (T, error) {
+	var zero T
 	cache.mu.Lock()
-	if e.pluginsLoaded {
-		plugins, err := e.plugins, e.pluginsErr
+	for !r.loaded && r.wait != nil {
+		wait := r.wait
 		cache.mu.Unlock()
-		return plugins, err
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return zero, ctx.Err()
+		}
+		cache.mu.Lock()
 	}
+	if r.loaded {
+		value := r.value
+		cache.mu.Unlock()
+		return value, nil
+	}
+	wait := make(chan struct{})
+	r.wait = wait
+	generation := r.generation
 	cache.mu.Unlock()
 
-	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
-	})
-	var plugins map[string]string
-	if err == nil {
-		plugins = parsePluginList(result.StdoutContents())
-	}
+	value, err := read()
 
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
-	if !e.pluginsLoaded {
-		e.pluginsLoaded = true
-		e.plugins = plugins
-		e.pluginsErr = err
+	r.wait = nil
+	close(wait)
+	if err != nil {
+		return zero, err
 	}
-	return e.plugins, e.pluginsErr
+	if r.generation == generation {
+		r.loaded = true
+		r.value = value
+	}
+	return value, nil
 }
 
 // parsePluginList reads `plugin:list --format json` when the body is a JSON

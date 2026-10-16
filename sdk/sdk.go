@@ -187,9 +187,23 @@ const (
 // ContextWithVersionGate returns a copy of ctx on which CheckMinimumVersions
 // compares a task's floor with the server. The versions it reads are cached
 // per target for as long as the context lives, so install it once per run.
-// A context that already carries a gate is returned as-is.
+// A context that already carries a gate is returned as-is. A caller that gets
+// a new context for every call it serves gives the gate to its session with
+// WithVersionGate instead.
 func ContextWithVersionGate(ctx context.Context) context.Context {
 	return tasks.ContextWithVersionGate(ctx)
+}
+
+// WithVersionGate is a NewSession option that installs the version gate on
+// every context the session hands out. They share one cache per target for as
+// long as the session lives, so `dokku version` and `plugin:list` are read
+// once per server per session rather than once per call, while each context
+// keeps the cancellation of the parent it was built from. Only a successful
+// read is cached; a failed one is retried by the next call. Each session gets
+// its own cache, and the session's gate replaces one already on the parent
+// context.
+func WithVersionGate() SessionOption {
+	return tasks.SessionVersionGate()
 }
 
 // CheckMinimumVersions returns a *VersionError when the server ctx targets,
@@ -261,10 +275,11 @@ const (
 
 // Sessions, targets and masking.
 
-// NewSession returns a session whose contexts carry masker. A nil masker
-// leaves any masker already on the parent context in place.
-func NewSession(masker *Masker) *Session {
-	return subprocess.NewSession(masker)
+// NewSession returns a session whose contexts carry masker and whatever opts,
+// such as WithVersionGate, install. A nil masker leaves any masker already on
+// the parent context in place.
+func NewSession(masker *Masker, opts ...SessionOption) *Session {
+	return subprocess.NewSession(masker, opts...)
 }
 
 // ErrSessionClosed is the error a call made under a closed session fails

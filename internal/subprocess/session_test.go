@@ -79,6 +79,65 @@ func TestSessionContextCarriesTargetAndMasker(t *testing.T) {
 	}
 }
 
+// sessionValueKey is a context key for the WithSessionValue tests.
+type sessionValueKey struct{}
+
+// TestSessionValueIsSharedAcrossContexts is what WithSessionValue is for: every
+// context one session hands out, whatever its parent, carries the one value
+// the option built, so per-run state outlives each call's own context.
+func TestSessionValueIsSharedAcrossContexts(t *testing.T) {
+	t.Parallel()
+
+	built := 0
+	s := NewSession(nil, WithSessionValue(sessionValueKey{}, func() any {
+		built++
+		return &built
+	}))
+	first, cancel := context.WithCancel(context.Background())
+	cancel()
+	a := s.Context(first, Target{})
+	b := s.Context(context.Background(), Target{Host: "deploy@two"})
+
+	if built != 1 {
+		t.Errorf("the value was built %d times, want once per session", built)
+	}
+	if a.Value(sessionValueKey{}) != b.Value(sessionValueKey{}) || a.Value(sessionValueKey{}) == nil {
+		t.Errorf("contexts carry %v and %v, want the same session value", a.Value(sessionValueKey{}), b.Value(sessionValueKey{}))
+	}
+	if a.Err() == nil || b.Err() != nil {
+		t.Errorf("Err() = %v and %v; each context keeps its own parent's cancellation", a.Err(), b.Err())
+	}
+}
+
+// TestSessionValueIsPerSession pins that one option given to two sessions
+// builds a value for each, so they never share state.
+func TestSessionValueIsPerSession(t *testing.T) {
+	t.Parallel()
+
+	opt := WithSessionValue(sessionValueKey{}, func() any { return new(int) })
+	a := NewSession(nil, opt).Context(context.Background(), Target{})
+	b := NewSession(nil, opt).Context(context.Background(), Target{})
+	if a.Value(sessionValueKey{}) == b.Value(sessionValueKey{}) {
+		t.Error("two sessions built from one option share a value")
+	}
+}
+
+// TestSessionValueReplacesTheParents pins that a session's value wins over one
+// the parent context carries under the same key, and that a nil option is
+// skipped.
+func TestSessionValueReplacesTheParents(t *testing.T) {
+	t.Parallel()
+
+	parent := context.WithValue(context.Background(), sessionValueKey{}, "parent")
+	ctx := NewSession(nil, nil, WithSessionValue(sessionValueKey{}, func() any { return "session" })).Context(parent, Target{})
+	if got := ctx.Value(sessionValueKey{}); got != "session" {
+		t.Errorf("value = %v, want the session's", got)
+	}
+	if got := NewSession(nil).Context(parent, Target{}).Value(sessionValueKey{}); got != "parent" {
+		t.Errorf("a session with no option changed the parent's value to %v", got)
+	}
+}
+
 // TestSessionNilMaskerKeepsParent pins that a session built without a masker
 // does not blank out one the caller already put on the context.
 func TestSessionNilMaskerKeepsParent(t *testing.T) {

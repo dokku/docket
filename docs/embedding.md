@@ -48,6 +48,11 @@ fails with `sdk.ErrSessionClosed`.
 
 `NewSession(nil)` installs no masker, leaving any masker already on the parent context in place.
 
+A session can also own the [version gate](#version-floors): `sdk.NewSession(masker,
+sdk.WithVersionGate())` installs it on every context the session hands out. That is the shape for a
+long-lived embedder that gets a new context for every call it serves - each call keeps its own
+cancellation, and the server's versions are still read once per session.
+
 ### Choosing the SSH key
 
 Without more, `ssh` picks the key itself from ssh-agent or `~/.ssh/config` on the machine running
@@ -258,10 +263,30 @@ plugin the task needs that is not installed at all is not a refusal: the task's 
 it, and an earlier task in the same run can install it.
 
 The gate reads `dokku version` and `dokku plugin:list` once per target - one host with or without
-sudo, and with its own identity file and ssh options - and keeps the answers for as long as the context lives, so install a fresh gate for each run
-rather than keeping one across runs that could straddle a server upgrade. `dokku_plugin` drops the
-cached plugin list itself after it installs or uninstalls a plugin, so a later task in the same run
-sees the change without anything from the caller.
+sudo, and with its own identity file and ssh options - and keeps the answers for as long as the
+context lives, so install a fresh gate for each run rather than keeping one across runs that could
+straddle a server upgrade. Calls checking the same server at once share one read, and only a
+successful read is kept: a failed one is returned to the call that made it, and the next call asks
+again. `dokku_plugin` drops the cached plugin list itself after it installs or uninstalls a plugin,
+so a later task in the same run sees the change without anything from the caller.
+
+A caller that builds a new context for every call it serves - a Terraform provider is called once
+per resource operation, each with its own context - would get a fresh cache from each
+`ContextWithVersionGate`. Give the gate to the session instead:
+
+```go
+session := sdk.NewSession(masker, sdk.WithVersionGate())
+defer func() { _ = session.Close() }()
+
+// Per call: cancellation from reqCtx, the version cache from the session.
+ctx := session.Context(reqCtx, target)
+current, exists, err := sdk.ReadTask(ctx, task)
+```
+
+Every context the session hands out shares one cache per target for as long as the session lives,
+and `dokku_plugin`'s invalidation reaches it from any of them. Each session has its own cache, and a
+session's gate replaces one already on the parent context. A session built without
+`WithVersionGate` installs none, which is the way to skip the check.
 
 A `VersionError` names no flag. `Plugin` is empty when the floor is Dokku's own. `Err` is set when
 the version could not be read or parsed, and is nil when the server is simply older than `Minimum`.

@@ -313,6 +313,9 @@ type ServicePropertyTask = tasks.ServicePropertyTask
 // Session is subprocess.Session.
 type Session = subprocess.Session
 
+// SessionOption is subprocess.SessionOption.
+type SessionOption = subprocess.SessionOption
+
 // SshKeyTask is tasks.SshKeyTask.
 type SshKeyTask = tasks.SshKeyTask
 

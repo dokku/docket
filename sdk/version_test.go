@@ -49,6 +49,34 @@ func TestCheckMinimumVersionsRefusesOldDokku(t *testing.T) {
 	}
 }
 
+// TestSessionWithVersionGate is the embedder #617 describes: every call gets a
+// context of its own from the session, and the server's version is still read
+// once for all of them, with each call's refusal intact.
+func TestSessionWithVersionGate(t *testing.T) {
+	fake := newFakeDokku("0.38.8")
+	session := sdk.NewSession(nil, sdk.WithVersionGate())
+	defer func() { _ = session.Close() }()
+	task, _ := sdk.NewTask("dokku_app")
+
+	for i := 0; i < 3; i++ {
+		reqCtx, cancel := context.WithCancel(fake.context())
+		ctx := session.Context(reqCtx, sdk.Target{})
+		var verr *sdk.VersionError
+		if err := sdk.CheckMinimumVersions(ctx, "dokku_app", task); !errors.As(err, &verr) {
+			t.Fatalf("call %d: error = %v, want a *VersionError", i, err)
+		}
+		cancel()
+	}
+	if got := fake.count("version"); got != 1 {
+		t.Errorf("version reads = %d, want 1 per session", got)
+	}
+
+	ungated := sdk.NewSession(nil).Context(fake.context(), sdk.Target{})
+	if err := sdk.CheckMinimumVersions(ungated, "dokku_app", task); err != nil {
+		t.Errorf("a session without the gate refused: %v", err)
+	}
+}
+
 func TestExportRecipeVersionGate(t *testing.T) {
 	fake := newFakeDokku("0.38.0")
 	res, err := sdk.ExportRecipe(fake.context(), sdk.ExportOptions{Apps: []string{"web"}, Inline: true})

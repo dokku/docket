@@ -23,6 +23,21 @@ func ExampleNewSession() {
 	_ = ctx
 }
 
+// A session given the version gate refuses tasks the server is too old for,
+// and reads the server's versions once however many calls it serves, each
+// with a context of its own.
+func ExampleWithVersionGate() {
+	session := sdk.NewSession(nil, sdk.WithVersionGate())
+	defer func() { _ = session.Close() }()
+
+	serve := func(reqCtx context.Context) {
+		ctx := session.Context(reqCtx, sdk.Target{Host: "deploy@dokku.example.com"})
+		_ = ctx
+	}
+	serve(context.Background())
+	serve(context.Background())
+}
+
 func ExampleNewTask() {
 	task, err := sdk.NewTask("dokku_app")
 	if err != nil {
