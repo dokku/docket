@@ -117,7 +117,7 @@ func paramDescription(field tasks.FieldSchema) string {
 		desc = strings.TrimSpace(desc + " (read from the machine running docket)")
 	}
 	if field.WriteOnly {
-		desc = strings.TrimSpace(desc + " (not read back from the server)")
+		desc = strings.TrimSpace(desc + " (not returned when reading state)")
 	}
 	if field.ApplyOnly {
 		desc = strings.TrimSpace(desc + " (applied only, not read back)")

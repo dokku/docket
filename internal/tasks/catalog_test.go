@@ -312,6 +312,9 @@ func TestCatalogWriteOnlyMatchesTags(t *testing.T) {
 		"dokku_registry_auth":  {"username", "password"},
 		"dokku_git_auth":       {"username", "password"},
 		"dokku_service_backup": {"aws_access_key_id", "aws_secret_access_key", "encryption_passphrase"},
+		// A read settles drift from the certificate's fingerprint and never
+		// returns the PEM, though export reads it back (#616).
+		"dokku_certs": {"cert_content", "key_content"},
 	} {
 		fields := schemaFor(t, catalog, typeKey).Fields
 		for _, name := range names {
@@ -323,9 +326,10 @@ func TestCatalogWriteOnlyMatchesTags(t *testing.T) {
 }
 
 // TestCatalogApplyOnlyMatchesTags checks the apply_only flag against the tag
-// and pins a knob from each kind: a convergence switch, a restart flag, and a
+// and pins a knob from each kind: a convergence switch, a restart flag, a
 // path dokku_certs reads its PEM from - the PEM is the state, exported as
-// cert_content, so the path is not (#604).
+// cert_content, so the path is not (#604) - and a runner-side tarball whose
+// page is read back as content instead (#616).
 func TestCatalogApplyOnlyMatchesTags(t *testing.T) {
 	catalog := wholeCatalog(t)
 	checkCatalogFlagMatchesTag(t, catalog, "apply_only", func(f FieldSchema) bool { return f.ApplyOnly })
@@ -334,6 +338,7 @@ func TestCatalogApplyOnlyMatchesTags(t *testing.T) {
 		"dokku_http_auth_user": {"update_password"},
 		"dokku_config":         {"restart"},
 		"dokku_certs":          {"cert", "key"},
+		"dokku_maintenance_custom_page": {"tarball"},
 	} {
 		fields := schemaFor(t, catalog, typeKey).Fields
 		for _, name := range names {
@@ -343,7 +348,7 @@ func TestCatalogApplyOnlyMatchesTags(t *testing.T) {
 		}
 	}
 	if fieldFor(t, schemaFor(t, catalog, "dokku_certs").Fields, "cert_content").ApplyOnly {
-		t.Error("dokku_certs.cert_content is read back and must not be apply_only")
+		t.Error("dokku_certs.cert_content is server state and must not be apply_only")
 	}
 }
 

@@ -122,7 +122,7 @@ the reference page lists them in.
 | `description` | Prose for a human. |
 | `sensitive` | Present and `true` when the value is a secret. |
 | `runner_file` | Present and `true` when the value names a file docket reads on the machine it runs on, not on the dokku server. |
-| `write_only` | Present and `true` when the server stores the value but never returns it. |
+| `write_only` | Present and `true` when the server stores the value but a read of the resource never returns it. |
 | `apply_only` | Present and `true` when the value steers how apply runs and is not server state. |
 | `ordered` | On every `list`: `true` when the element order is significant, `false` when docket ignores it. Absent on any other type. |
 | `identity` | `key` or `collection`. Absent on a field that is neither. |
@@ -145,19 +145,26 @@ read by docket itself, so the file has to exist on the runner even when docket d
 local files can warn about, or refuse, a recipe that sets one before running anything.
 
 `write_only` and `apply_only` matter to a consumer that refreshes its state from the server, such
-as a Terraform provider reading an [export](command-reference.md#docket-export). Neither field
-carries the server's value: an exported task leaves a `write_only` field empty or lifts it into a
-required input with no value, and carries an `apply_only` field at its zero value or default. A
-consumer should keep the value it was configured with rather than report the difference as drift.
+as a Terraform provider reading a resource back with
+[`sdk.ReadTask`](embedding.md#reading-one-resource). Neither field carries the server's value: a
+read leaves both at their zero value or default, and every field without either flag is one a read
+fills in. A consumer should keep the value it was configured with rather than report the
+difference as drift.
 
-- **`write_only`** is a value the server keeps but will not hand back, such as
-  `dokku_service_create`'s `password` or `dokku_registry_auth`'s `username` and `password`. The
-  probe may still verify it by comparison - `dokku_registry_auth` asks `registry:auth-status`
-  whether the credentials work, and `dokku_service_backup` compares fingerprints - so `write_only`
-  says nothing about drift detection.
+- **`write_only`** is a value the server keeps but a read will not hand back, such as
+  `dokku_service_create`'s `password` or `dokku_registry_auth`'s `username` and `password`. An
+  [export](command-reference.md#docket-export) leaves it empty or lifts it into a required input
+  with no value, unless another command reads it back: `dokku_certs`'s `cert_content` and
+  `key_content` are exported through `certs:show`, but a read settles drift from the certificate's
+  fingerprint and never moves the PEM off the server. The probe may still verify a `write_only`
+  value by comparison - `dokku_registry_auth` asks `registry:auth-status` whether the credentials
+  work, and `dokku_service_backup` compares fingerprints - so `write_only` says nothing about drift
+  detection.
 - **`apply_only`** is a knob that shapes one apply and leaves nothing behind to read, such as
-  `dokku_config`'s `restart`, `dokku_http_auth_user`'s `update_password`, or `dokku_certs`'s `cert`
-  path, whose certificate is exported as `cert_content` instead.
+  `dokku_config`'s `restart`, `dokku_http_auth_user`'s `update_password`, `dokku_certs`'s `cert`
+  path, whose certificate is exported as `cert_content` instead, or
+  `dokku_maintenance_custom_page`'s `tarball`, whose page is read back as `content`. An export
+  carries it at its zero value or default.
 
 Both flags are unconditional. A gap that depends on another value stays in the task's `export` and
 `probe` caveats instead: `dokku_service_property`'s `value` is unreadable only for the backup

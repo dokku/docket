@@ -33,11 +33,11 @@ type CertsTask struct {
 
 	// CertContent is the PEM-encoded certificate contents. Mutually
 	// exclusive with Cert.
-	CertContent string `required:"false" sensitive:"true" yaml:"cert_content,omitempty" description:"PEM-encoded certificate contents. Mutually exclusive with cert."`
+	CertContent string `required:"false" sensitive:"true" write_only:"true" yaml:"cert_content,omitempty" description:"PEM-encoded certificate contents. Mutually exclusive with cert. Export reads it back with certs:show or global-cert:show."`
 
 	// KeyContent is the PEM-encoded private key contents. Mutually
 	// exclusive with Key.
-	KeyContent string `required:"false" sensitive:"true" yaml:"key_content,omitempty" description:"PEM-encoded private key contents. Mutually exclusive with key."`
+	KeyContent string `required:"false" sensitive:"true" write_only:"true" yaml:"key_content,omitempty" description:"PEM-encoded private key contents. Mutually exclusive with key. Export reads it back with certs:show or global-cert:show."`
 
 	// State is the desired state of the SSL configuration
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the SSL configuration"`
@@ -170,8 +170,8 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 	}
 	// seen attaches whether the scope has a certificate installed. The
 	// certificate and key are not carried: the probe compares fingerprints
-	// and never moves the private key off the server, and Observed does not
-	// either.
+	// and never moves the private key off the server, which is why
+	// cert_content and key_content are tagged write_only.
 	seen := func(r PlanResult, enabled bool) PlanResult {
 		o := CertsTask{App: t.App, Global: t.Global, State: StateAbsent}
 		if enabled {

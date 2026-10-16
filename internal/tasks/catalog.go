@@ -243,11 +243,14 @@ type FieldSchema struct {
 	// dokku as an argument resolves on the server and is not marked.
 	RunnerFile bool `json:"runner_file,omitempty"`
 
-	// WriteOnly marks a field whose value the server stores but never returns,
-	// such as a password applied at create time. An exported task leaves it
-	// empty or lifts it into a required input with no value, so a consumer
-	// refreshing state keeps the configured value rather than reading the
-	// absence back as drift. A probe may still verify the value by comparison
+	// WriteOnly marks a field whose value the server stores but a read of the
+	// resource never returns, such as a password applied at create time:
+	// PlanResult.Observed, and so sdk.ReadTask, leaves it empty, and a
+	// consumer refreshing state keeps the configured value rather than
+	// reading the absence back as drift. An exported task leaves it empty or
+	// lifts it into a required input with no value, unless the task's export
+	// caveat names another command that reads it back, as dokku_certs does
+	// for its PEM. A probe may still verify the value by comparison
 	// (registry:auth-status, a fingerprint), which is why this says nothing
 	// about drift detection.
 	WriteOnly bool `json:"write_only,omitempty"`

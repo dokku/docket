@@ -322,8 +322,8 @@ func observedGitFixtures() map[string]observedFixture {
 			},
 		},
 		// dokku_certs never reads certificate material at plan time, so the
-		// exported body's PEM fields are left out of the comparison (see
-		// observedOmittedFields).
+		// exported body's PEM fields are tagged write_only and left out of the
+		// comparison.
 		"dokku_certs": {
 			responses: mergeFixtures(certsAppFixture("web", observedCert), map[string]string{
 				"--quiet certs:show web key":                                "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----",
