@@ -139,6 +139,11 @@ A caller that refreshes its own state from an export should keep the value it wa
 for both, rather than treat the difference as drift. Read the flags from `sdk.FieldSchema`, element
 fields included, through `sdk.Catalog()` - see [Task catalog](task-catalog.md#fields).
 
+A list field's `Ordered` says how to compare it. An exported list whose `Ordered` is true
+(`dokku_buildpacks`'s `Buildpacks`) comes back in the server's order, which is the order that
+matters. One whose `Ordered` is false may come back in any order, so compare it ignoring order rather
+than element by element.
+
 Read a body with `sdk.As`, passing the concrete value type (`sdk.ConfigTask`). It returns `false`
 for any other task, so a loop over every task can ask for the one type it wants. A body is always
 the value form of the type registered under `task.Type`, never a pointer, so

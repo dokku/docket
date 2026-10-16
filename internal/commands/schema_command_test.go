@@ -162,6 +162,55 @@ func TestTaskCatalogSchemaRejectsUnknownField(t *testing.T) {
 	}
 }
 
+// TestTaskCatalogSchemaScopesOrderedToLists is the self-check on the `ordered`
+// rule (#605): the schema forbids the key on a non-list field, and tolerates a
+// list without it, because a catalog from a docket that predates the key is
+// still a valid v1 document. Presence on every list is a Go-test guarantee.
+func TestTaskCatalogSchemaScopesOrderedToLists(t *testing.T) {
+	t.Parallel()
+	validate := func(mutate func(fields map[string]map[string]interface{})) error {
+		t.Helper()
+		out, stderr, exit := runSchema(t, "--task", "dokku_buildpacks")
+		if exit != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
+		}
+		doc := decodeCatalog(t, out)
+		fields := map[string]map[string]interface{}{}
+		list, _ := catalogTasks(t, doc)["dokku_buildpacks"]["fields"].([]interface{})
+		for _, entry := range list {
+			field, _ := entry.(map[string]interface{})
+			name, _ := field["name"].(string)
+			fields[name] = field
+		}
+		mutate(fields)
+
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
+		if err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return loadSchema(t, taskCatalogSchemaPath).Validate(inst)
+	}
+
+	if err := validate(func(fields map[string]map[string]interface{}) {
+		if _, ok := fields["buildpacks"]["ordered"]; !ok {
+			t.Fatal("dokku_buildpacks.buildpacks does not publish ordered")
+		}
+		delete(fields["buildpacks"], "ordered")
+	}); err != nil {
+		t.Errorf("a list without ordered must still validate: %v", err)
+	}
+
+	if err := validate(func(fields map[string]map[string]interface{}) {
+		fields["app"]["ordered"] = true
+	}); err == nil {
+		t.Error("expected ordered on a string field to fail validation")
+	}
+}
+
 // TestSchemaCommandPublishesPropertyTables covers the half of the catalog the
 // reference pages could not express before: which names a property task's
 // free-form-looking `property` field actually accepts.

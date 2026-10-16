@@ -43,7 +43,7 @@ One JSON object, pretty-printed, with a `version` and a `tasks` array sorted by 
         { "name": "global", "type": "bool", "required": false, "identity": "key",
           "description": "Flag indicating if the domains should be applied globally" },
         { "name": "domains", "type": "list", "required": false, "identity": "collection",
-          "description": "List of domain names; omit for state 'clear'",
+          "ordered": false, "description": "List of domain names; omit for state 'clear'",
           "item": { "type": "string", "identity": "value" } },
         { "name": "state", "type": "string", "required": false, "default": "present",
           "choices": ["present", "absent", "set", "clear"],
@@ -124,6 +124,7 @@ the reference page lists them in.
 | `runner_file` | Present and `true` when the value names a file docket reads on the machine it runs on, not on the dokku server. |
 | `write_only` | Present and `true` when the server stores the value but never returns it. |
 | `apply_only` | Present and `true` when the value steers how apply runs and is not server state. |
+| `ordered` | On every `list`: `true` when the element order is significant, `false` when docket ignores it. Absent on any other type. |
 | `identity` | `key` or `collection`. Absent on a field that is neither. |
 | `item` | The element shape of a `list` or `dict`. Absent on a scalar. |
 
@@ -163,6 +164,16 @@ Both flags are unconditional. A gap that depends on another value stays in the t
 credential properties, and `dokku_maintenance_custom_page`'s `content` only on a plugin without
 `maintenance:custom-page-export`.
 
+`ordered` tells a consumer whether to model a `list` as a list or as a set. `true` means docket
+applies the elements in order and compares them in order, so a reorder is drift:
+`dokku_buildpacks`'s `buildpacks` set build precedence, `dokku_service_expose`'s `ports` map
+positionally onto the service's container ports, and `dokku_service_create`'s network lists are
+compared as written. `false` means docket ignores the order, as it does for `dokku_domains`'s
+`domains` or `dokku_http_auth_allowed_ip`'s `allowed_ips`, and an exported task may return the
+elements in any order. `false` says nothing about uniqueness: `dokku_scheduler_k3s_profile`'s
+`kubelet_args` ignores order but still counts a repeated argument. Every `list` carries the key,
+element fields included, so a list without it comes from a docket that predates it.
+
 ### Item shapes
 
 `list` is the same word for a list of strings and a list of structured entries, so a collection
@@ -172,7 +183,7 @@ field carries an `item` describing its elements. When the element is structured,
 is read back:
 
 ```json
-{ "name": "users", "type": "list", "identity": "collection",
+{ "name": "users", "type": "list", "ordered": false, "identity": "collection",
   "item": {
     "type": "object", "identity": "fields", "keys": ["username"],
     "fields": [

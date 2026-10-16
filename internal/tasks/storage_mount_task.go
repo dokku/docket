@@ -54,7 +54,7 @@ type StorageMountTask struct {
 
 	// Phases is the deployment phases the attachment applies to (deploy, run).
 	// Empty defers to the dokku default (both phases).
-	Phases []string `required:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
+	Phases []string `required:"false" ordered:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
 
 	// ProcessType limits the attachment to a specific process type. For the
 	// mounts list it is the scope the list describes.
@@ -76,7 +76,7 @@ type StorageMountTask struct {
 	VolumeOptions string `required:"false" yaml:"volume_options,omitempty" description:"Comma-separated mount options applied to the attachment (e.g. 'Z' for SELinux, 'noexec,nosuid', NFS opts)"`
 
 	// Mounts is the list form: the attachments of one process-type scope.
-	Mounts []StorageMount `required:"false" identity:"collection" yaml:"mounts,omitempty" description:"Attachments of the process_type scope, instead of the single-mount fields. Under state 'set' the list is the scope's complete set of mounts; 'present' adds or updates the listed mounts and 'absent' removes them, leaving the rest of the scope in place; omit for state 'clear'."`
+	Mounts []StorageMount `required:"false" identity:"collection" ordered:"false" yaml:"mounts,omitempty" description:"Attachments of the process_type scope, instead of the single-mount fields. Under state 'set' the list is the scope's complete set of mounts; 'present' adds or updates the listed mounts and 'absent' removes them, leaving the rest of the scope in place; omit for state 'clear'."`
 
 	// State is the desired state of the storage
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the storage. 'set' and 'clear' require the mounts list form."`
@@ -98,7 +98,7 @@ type StorageMount struct {
 	ContainerDir string `required:"true" identity:"key" yaml:"container_dir" description:"Absolute container directory to mount; no two mounts in a list may share one"`
 
 	// Phases is the deployment phases the attachment applies to.
-	Phases []string `required:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
+	Phases []string `required:"false" ordered:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
 
 	// Subpath is the subpath within the entry to mount
 	Subpath string `required:"false" yaml:"subpath,omitempty" description:"Subpath within the entry to mount; must not contain ','"`

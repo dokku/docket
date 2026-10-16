@@ -58,10 +58,10 @@ type ServiceCreateTask struct {
 	InitialNetwork string `required:"false" yaml:"initial_network,omitempty" description:"Network to attach the service to initially. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// PostCreateNetwork are the networks attached after service creation.
-	PostCreateNetwork []string `required:"false" yaml:"post_create_network,omitempty" description:"Networks to attach the service container to after creation. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	PostCreateNetwork []string `required:"false" ordered:"true" yaml:"post_create_network,omitempty" description:"Networks to attach the service container to after creation. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// PostStartNetwork are the networks attached after service start.
-	PostStartNetwork []string `required:"false" yaml:"post_start_network,omitempty" description:"Networks to attach the service container to after start. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	PostStartNetwork []string `required:"false" ordered:"true" yaml:"post_start_network,omitempty" description:"Networks to attach the service container to after start. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// Password overrides the user-level service password.
 	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Override the user-level service password. Applied only when the service is created."`

@@ -259,6 +259,15 @@ type FieldSchema struct {
 	// WriteOnly field.
 	ApplyOnly bool `json:"apply_only,omitempty"`
 
+	// Ordered is present on every list field and absent on every other kind.
+	// True means docket applies and compares the elements in order, so a
+	// reorder is drift (buildpacks, exposed service ports). False means docket
+	// ignores element order. It says nothing about uniqueness: kubelet_args
+	// ignores order but still counts a repeated argument. A consumer choosing
+	// between a list and a set type reads it instead of keeping its own table,
+	// and a list without it comes from a docket that predates the key (#605).
+	Ordered *bool `json:"ordered,omitempty"`
+
 	// Identity is "key" or "collection" when the field carries an identity
 	// tag, and absent otherwise.
 	Identity string `json:"identity,omitempty"`
@@ -598,6 +607,9 @@ func buildFields(rt reflect.Type) []FieldSchema {
 		if opts := field.Tag.Get("options"); opts != "" {
 			schema.Choices = strings.Split(opts, ",")
 		}
+		if schema.Type == TypeList {
+			schema.Ordered = orderedTag(field.Tag)
+		}
 		switch field.Tag.Get(identityTag) {
 		case identityTagKey:
 			schema.Identity = IdentityRoleKey
@@ -609,6 +621,22 @@ func buildFields(rt reflect.Type) []FieldSchema {
 		fields = append(fields, schema)
 	}
 	return fields
+}
+
+// orderedTag reads a list field's `ordered:` tag. A missing or malformed tag
+// returns nil rather than guessing, and TestCatalogOrderedMatchesTags fails on
+// it, so a new list field cannot ship without deciding.
+func orderedTag(tag reflect.StructTag) *bool {
+	var ordered bool
+	switch tag.Get("ordered") {
+	case "true":
+		ordered = true
+	case "false":
+		ordered = false
+	default:
+		return nil
+	}
+	return &ordered
 }
 
 // buildItem describes the element shape of a list or dict field, and returns

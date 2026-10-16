@@ -154,6 +154,26 @@ func TestParamDescriptionMarksReadbackFlags(t *testing.T) {
 	}
 }
 
+// TestParamDescriptionMarksOrdered pins the ordered suffix: only an ordered
+// list says so, and it comes before the handling suffixes (#605).
+func TestParamDescriptionMarksOrdered(t *testing.T) {
+	ordered, unordered := true, false
+	cases := []struct {
+		field tasks.FieldSchema
+		want  string
+	}{
+		{tasks.FieldSchema{Description: "List of buildpack URLs", Ordered: &ordered}, "List of buildpack URLs (order is significant)"},
+		{tasks.FieldSchema{Description: "Networks", Ordered: &ordered, Sensitive: true}, "Networks (order is significant) (sensitive)"},
+		{tasks.FieldSchema{Description: "List of domain names", Ordered: &unordered}, "List of domain names"},
+		{tasks.FieldSchema{Description: "Name of the app"}, "Name of the app"},
+	}
+	for _, tc := range cases {
+		if got := paramDescription(tc.field); got != tc.want {
+			t.Errorf("paramDescription = %q; want %q", got, tc.want)
+		}
+	}
+}
+
 func TestEscapeProseEscapesBareAngleBrackets(t *testing.T) {
 	cases := []struct {
 		in, want string

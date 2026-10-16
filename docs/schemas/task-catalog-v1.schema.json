@@ -151,6 +151,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "type", "required"],
+      "if": { "properties": { "type": { "const": "list" } } },
+      "else": { "not": { "required": ["ordered"] } },
       "properties": {
         "name": { "type": "string", "description": "The recipe key." },
         "type": {
@@ -187,6 +189,10 @@
         "apply_only": {
           "const": true,
           "description": "The value steers how apply runs and is not server state, so an exported task carries its zero value or default. A consumer refreshing state keeps the configured value rather than reporting drift. Absent on a field that is server state."
+        },
+        "ordered": {
+          "type": "boolean",
+          "description": "Whether the order of a list's elements is significant. `true` means docket applies and compares them in order, so a reorder is drift; `false` means docket ignores order. It says nothing about uniqueness. Present on every `list` field and never on any other type; a list without it comes from a docket that predates the key."
         },
         "identity": {
           "enum": ["key", "collection"],

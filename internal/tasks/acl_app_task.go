@@ -14,7 +14,7 @@ type AclAppTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Users is the list of users to add, remove, or set on the ACL
-	Users []string `required:"false" identity:"collection" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL; omit for state 'clear'"`
+	Users []string `required:"false" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL; omit for state 'clear'"`
 
 	// State is the desired state of the ACL entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ACL entries"`
