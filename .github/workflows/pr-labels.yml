@@ -1,0 +1,27 @@
+---
+name: 'pr-labels'
+
+# yamllint disable-line rule:truthy
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - labeled
+      - unlabeled
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-notes-label:
+    name: release-notes-label
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+      - name: Check for a release notes label
+        run: bash .github/scripts/check-pr-labels.sh
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}

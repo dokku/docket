@@ -1,0 +1,36 @@
+---
+# Release notes are grouped by pull request label. A pull request lands in the
+# first category it matches, so keep the order and the labels in
+# .github/scripts/check-pr-labels.sh in step.
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - question
+      - wontfix
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking-change
+    - title: New features
+      labels:
+        - enhancement
+    - title: Bug fixes
+      labels:
+        - bug
+    - title: Refactors
+      labels:
+        - refactor
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Tests
+      labels:
+        - tests
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Other changes
+      labels:
+        - '*'

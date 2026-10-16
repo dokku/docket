@@ -538,6 +538,13 @@ task needs a prerequisite the shared placeholder apps do not provide - a backing
 app, a plugin, a cluster - or its documented value cannot apply verbatim (a secret or inline PEM),
 declare it in the driver's `exampleIntegrationPolicy` rather than leaving the example unapplied.
 
+## Opening a pull request
+
+Every pull request needs one of these labels: `breaking-change`, `enhancement`, `bug`, `refactor`,
+`documentation`, `tests`, or `dependencies`. The label decides which section of the release notes
+the pull request goes in, and CI fails until one is set. Use `breaking-change` for a change that
+breaks existing recipes or the `sdk` package.
+
 ## See also
 
 - [Tasks](tasks/README.md) - the generated reference for every task
