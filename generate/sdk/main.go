@@ -58,6 +58,10 @@ var roots = []reflect.Type{
 	reflect.TypeOf(subprocess.Session{}),
 	reflect.TypeOf(subprocess.Target{}),
 	reflect.TypeOf(subprocess.Masker{}),
+	reflect.TypeOf(subprocess.ExecRunner(nil)),
+	reflect.TypeOf(subprocess.ExecCommandInput{}),
+	reflect.TypeOf(subprocess.ExecCommandResponse{}),
+	reflect.TypeOf(subprocess.ExecError{}),
 }
 
 // collect walks t and records every exported named type from an aliased

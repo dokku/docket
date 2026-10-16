@@ -259,3 +259,31 @@ func NewMasker(values ...string) *Masker {
 
 // MaskPlaceholder is what a Masker replaces a sensitive value with.
 const MaskPlaceholder = subprocess.MaskPlaceholder
+
+// Testing.
+
+// ContextWithRunner returns a copy of ctx whose commands go to fn instead of
+// to a real process or server. The runner travels on the context rather than
+// in a package variable, so two tests can install different fakes at the same
+// time and both can call t.Parallel().
+//
+// Production code must not use it. The seam exists so a test can drive a task
+// without a server; a caller that wants to change where commands actually run
+// sets a Target.
+//
+// fn receives every command a call makes, not only dokku's, with its arguments
+// as they would have run: unmasked, and without the sudo or SSH wrapping a
+// Target adds. A Target on ctx has no effect while fn is installed.
+//
+// A command that ran and exited non-zero is a response carrying that ExitCode.
+// A probe reads it as its answer whether fn returns a nil error alongside it
+// or, as the real runner does, an *ExecError with Ran set. An apply fails only
+// on an error, so return the *ExecError to fail one. Any other error is a
+// command that could not run, which a probe reports as an error rather than
+// as absence.
+//
+// The response's Command is what an apply records in TaskOutputState.Commands,
+// so set it when a test reads that.
+func ContextWithRunner(ctx context.Context, fn ExecRunner) context.Context {
+	return subprocess.ContextWithRunner(ctx, fn)
+}
