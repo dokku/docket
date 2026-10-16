@@ -56,6 +56,7 @@ var roots = []reflect.Type{
 	reflect.TypeOf(tasks.VersionSupport{}),
 	reflect.TypeOf(tasks.VersionError{}),
 	reflect.TypeOf(subprocess.Session{}),
+	reflect.TypeOf(subprocess.SessionOption(nil)),
 	reflect.TypeOf(subprocess.Target{}),
 	reflect.TypeOf(subprocess.Masker{}),
 	reflect.TypeOf(subprocess.ExecRunner(nil)),

@@ -286,12 +286,15 @@ func (c *PlanCommand) Run(args []string) int {
 	// reference to it - and a second run in the same process can carry a
 	// different one. It also records every SSH connection the run opens, a
 	// play's own `host:` included, and closes them all on the way out.
-	session := subprocess.NewSession(masker)
+	// The session owns the version gate too, the way an sdk caller installs
+	// it, so every context it hands out shares one version cache per target.
+	var sessionOpts []subprocess.SessionOption
+	if !c.ignoreVersion {
+		sessionOpts = append(sessionOpts, tasks.SessionVersionGate())
+	}
+	session := subprocess.NewSession(masker, sessionOpts...)
 	defer func() { _ = session.Close() }()
 	ctx := session.Context(runContext(c.Ctx), target)
-	if !c.ignoreVersion {
-		ctx = tasks.ContextWithVersionGate(ctx)
-	}
 
 	plays, err := tasks.GetPlaysWithFormat(data, c.tasksFormat, inputCtx, userSet)
 	if err != nil {

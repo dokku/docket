@@ -229,11 +229,11 @@ func (c *ExportCommand) Run(args []string) int {
 		return 1
 	}
 	masker := subprocess.NewMasker()
-	session := subprocess.NewSession(masker)
-	defer func() { _ = session.Close() }()
 	// IgnoreVersion, not whether the gate is installed, is what skips it, so
 	// the CLI and an sdk caller turn it off the same way.
-	ctx := tasks.ContextWithVersionGate(session.Context(runContext(c.Ctx), target))
+	session := subprocess.NewSession(masker, tasks.SessionVersionGate())
+	defer func() { _ = session.Close() }()
+	ctx := session.Context(runContext(c.Ctx), target)
 
 	toStdout := c.output == taskFileStdin
 

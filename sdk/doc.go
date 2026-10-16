@@ -33,7 +33,9 @@
 //	defer func() { _ = session.Close() }()
 //	ctx := session.Context(context.Background(), sdk.Target{Host: "dokku@dokku.example.com"})
 //
-// The zero Target runs dokku locally.
+// The zero Target runs dokku locally. Pass WithVersionGate to NewSession to
+// refuse tasks the server is too old for, with the server's versions read once
+// per session however many contexts it hands out.
 //
 // # Testing
 //

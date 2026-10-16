@@ -28,12 +28,20 @@ var sessionIDs atomic.Uint64
 // talking to the same host do not share a master, and closing one cannot cut
 // off the other.
 //
+// A session can also own per-run state of the caller's choosing, given as
+// SessionOptions: every context it hands out carries the same value, so state
+// such as the version gate's cache outlives any one call's context.
+//
 // A Session is safe for concurrent use. Close is idempotent; call it once the
 // calls made under its contexts have returned, since a call still in flight
 // loses its connection.
 type Session struct {
 	sessionID uint64
 	masker    *Masker
+
+	// values are installed on every context Context returns, in option
+	// order, over whatever the parent carries under the same key.
+	values []sessionValue
 
 	// closeMaster tears down one master. It is exitControlMaster outside of
 	// tests, which replace it to observe what Close would close without an
@@ -45,27 +53,56 @@ type Session struct {
 	closed  bool
 }
 
-// NewSession returns a session whose contexts carry masker. A nil masker
-// leaves whatever masker the parent context carries in place.
-func NewSession(masker *Masker) *Session {
-	return &Session{
+// SessionOption configures a Session when NewSession builds it.
+type SessionOption func(*Session)
+
+// sessionValue is one context value a session owns.
+type sessionValue struct {
+	key   any
+	value any
+}
+
+// WithSessionValue makes every context the session hands out carry, under
+// key, a value newValue builds once when the session is created. Building it
+// then, rather than when the option is made, keeps two sessions given the
+// same option from sharing one value.
+func WithSessionValue(key any, newValue func() any) SessionOption {
+	return func(s *Session) {
+		s.values = append(s.values, sessionValue{key: key, value: newValue()})
+	}
+}
+
+// NewSession returns a session whose contexts carry masker and whatever opts
+// install. A nil masker leaves whatever masker the parent context carries in
+// place.
+func NewSession(masker *Masker, opts ...SessionOption) *Session {
+	s := &Session{
 		sessionID:   sessionIDs.Add(1),
 		masker:      masker,
 		closeMaster: exitControlMaster,
 		masters:     map[string]sshTarget{},
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s
 }
 
 // sessionKey is the context key a Session is stored under.
 type sessionKey struct{}
 
-// Context returns a copy of parent carrying target, the session's masker, and
-// the session itself, so every SSH connection a call under it opens is closed
-// by Close.
+// Context returns a copy of parent carrying target, the session's masker, the
+// values its options installed, and the session itself, so every SSH
+// connection a call under it opens is closed by Close.
 func (s *Session) Context(parent context.Context, target Target) context.Context {
 	ctx := ContextWithTarget(parent, target)
 	if s.masker != nil {
 		ctx = ContextWithMasker(ctx, s.masker)
+	}
+	for _, v := range s.values {
+		ctx = context.WithValue(ctx, v.key, v.value)
 	}
 	return context.WithValue(ctx, sessionKey{}, s)
 }

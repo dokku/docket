@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dokku/docket/internal/subprocess"
@@ -393,6 +395,239 @@ func TestFailedPluginChangeKeepsVersionCache(t *testing.T) {
 	}
 	if lists != 2 {
 		t.Errorf("plugin list reads = %d, want 2 (the gate once, the plan once; a failed change should keep the cache)", lists)
+	}
+}
+
+// countingRunner answers `dokku version` with 0.38.31 and counts how often it
+// was asked, safe to call from several goroutines.
+func countingRunner(calls *atomic.Int32) subprocess.ExecRunner {
+	return func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") == "version" {
+			calls.Add(1)
+			return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}, nil
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	}
+}
+
+// TestSessionVersionGateSharesOneCache is the case #617 is for: an embedder
+// builds a fresh context for every call from its own per-call parent, and a
+// session-owned gate still reads the server's version once.
+func TestSessionVersionGateSharesOneCache(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	parent := subprocess.ContextWithRunner(context.Background(), countingRunner(&calls))
+	session := subprocess.NewSession(nil, SessionVersionGate())
+
+	for i := 0; i < 3; i++ {
+		callCtx, cancel := context.WithCancel(parent)
+		ctx := session.Context(callCtx, subprocess.Target{})
+		if err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"}); err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("version reads = %d, want 1 across the session's contexts", got)
+	}
+
+	other := subprocess.NewSession(nil, SessionVersionGate()).Context(parent, subprocess.Target{})
+	if err := CheckMinimumVersions(other, "dokku_app", AppTask{App: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("version reads = %d, want a second session to read for itself", got)
+	}
+
+	ungated := subprocess.NewSession(nil).Context(parent, subprocess.Target{})
+	if versionCacheFrom(ungated) != nil {
+		t.Error("a session built without the option installed a gate")
+	}
+}
+
+// TestSessionVersionGateSeesPluginChanges pins that dokku_plugin's
+// invalidation reaches a session-owned cache from whichever of the session's
+// contexts the change ran under.
+func TestSessionVersionGateSeesPluginChanges(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	installed := true
+	parent := subprocess.ContextWithRunner(context.Background(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch strings.Join(in.Args, " ") {
+		case "version":
+			return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}, nil
+		case "--quiet plugin:list --format json":
+			if !installed {
+				return subprocess.ExecCommandResponse{Stdout: `[]`}, nil
+			}
+			return subprocess.ExecCommandResponse{Stdout: `[{"name":"letsencrypt","version":"0.1.0"}]`}, nil
+		case "--quiet plugin:uninstall letsencrypt":
+			installed = false
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	})
+	session := subprocess.NewSession(nil, SessionVersionGate())
+
+	check := session.Context(parent, subprocess.Target{})
+	if err := CheckMinimumVersions(check, "dokku_letsencrypt", LetsencryptTask{App: "a"}); err == nil {
+		t.Fatal("expected the old plugin to be refused before the change")
+	}
+	change := session.Context(parent, subprocess.Target{})
+	if state := (PluginTask{Name: "letsencrypt", State: StateAbsent}).Execute(change); state.Error != nil {
+		t.Fatalf("uninstall: %v", state.Error)
+	}
+	after := session.Context(parent, subprocess.Target{})
+	if err := CheckMinimumVersions(after, "dokku_letsencrypt", LetsencryptTask{App: "a"}); err != nil {
+		t.Fatalf("after uninstall: %v", err)
+	}
+}
+
+// TestVersionReadFailureIsNotCached pins that only a successful read is kept:
+// a cache that lives as long as a session must not hand one dropped
+// connection to every later call.
+func TestVersionReadFailureIsNotCached(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	ctx := gatedRunner(t, func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") != "version" {
+			return subprocess.ExecCommandResponse{}, nil
+		}
+		if calls.Add(1) == 1 {
+			return subprocess.ExecCommandResponse{}, errVersionProbe
+		}
+		return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}, nil
+	})
+
+	var verr *VersionError
+	if err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"}); !errors.As(err, &verr) || verr.Err == nil {
+		t.Fatalf("first check = %v, want a read failure", err)
+	}
+	if err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"}); err != nil {
+		t.Fatalf("second check = %v, want the retried read to pass", err)
+	}
+	if err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("version reads = %d, want 2 (the failure, then one cached success)", got)
+	}
+}
+
+// blockingVersionRunner answers `dokku version` only once release is closed,
+// signalling started on its first call.
+func blockingVersionRunner(calls *atomic.Int32, started, release chan struct{}) subprocess.ExecRunner {
+	return func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") != "version" {
+			return subprocess.ExecCommandResponse{}, nil
+		}
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}, nil
+	}
+}
+
+// TestConcurrentVersionChecksShareOneRead pins that calls checking the same
+// server at once wait for one read instead of each asking: an embedder plans
+// many resources in parallel, and the first wave would otherwise all probe.
+func TestConcurrentVersionChecksShareOneRead(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	started, release := make(chan struct{}), make(chan struct{})
+	ctx := gatedRunner(t, blockingVersionRunner(&calls, started, release))
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"})
+		}()
+	}
+	<-started
+	close(release)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("version reads = %d, want 1 shared by every concurrent check", got)
+	}
+}
+
+// TestCancelledWaiterStopsWaiting pins that a call waiting on another call's
+// read gives up when its own context ends, and that its cancellation does not
+// disturb the read it was waiting on.
+func TestCancelledWaiterStopsWaiting(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	started, release := make(chan struct{}), make(chan struct{})
+	ctx := gatedRunner(t, blockingVersionRunner(&calls, started, release))
+
+	leader := make(chan error, 1)
+	go func() { leader <- CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"}) }()
+	<-started
+
+	waiterCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	err := CheckMinimumVersions(waiterCtx, "dokku_app", AppTask{App: "a"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiter error = %v, want context.Canceled", err)
+	}
+
+	close(release)
+	if err := <-leader; err != nil {
+		t.Fatalf("leader: %v", err)
+	}
+	if err := CheckMinimumVersions(ctx, "dokku_app", AppTask{App: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("version reads = %d, want the leader's read cached", got)
+	}
+}
+
+// TestInvalidateDuringPluginReadDropsTheAnswer pins that a plugin list read
+// before a plugin change, but finishing after it, is not cached: the next
+// check reads the list again.
+func TestInvalidateDuringPluginReadDropsTheAnswer(t *testing.T) {
+	t.Parallel()
+	var lists atomic.Int32
+	started, release := make(chan struct{}), make(chan struct{})
+	ctx := gatedRunner(t, func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		switch strings.Join(in.Args, " ") {
+		case "version":
+			return subprocess.ExecCommandResponse{Stdout: "0.38.31\n"}, nil
+		case "--quiet plugin:list --format json":
+			if lists.Add(1) == 1 {
+				close(started)
+				<-release
+			}
+			return subprocess.ExecCommandResponse{Stdout: `[]`}, nil
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"}) }()
+	<-started
+	InvalidatePluginVersions(ctx)
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckMinimumVersions(ctx, "dokku_letsencrypt", LetsencryptTask{App: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := lists.Load(); got != 2 {
+		t.Errorf("plugin list reads = %d, want 2 (the read straddling the change is not kept)", got)
 	}
 }
 
