@@ -26,8 +26,8 @@ Keyed by `app`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `username` | string | no |  |  | HTTP auth username to seed when enabling; supplied together with password |
-| `password` | string | no |  |  | HTTP auth password for the seeded username; supplied together with username (sensitive) |
+| `username` | string | no |  |  | HTTP auth username to seed when enabling; supplied together with password (applied only, not read back) |
+| `password` | string | no |  |  | HTTP auth password for the seeded username; supplied together with username (applied only, not read back) (sensitive) |
 | `state` | string | no | present | present, absent | State of the HTTP auth |
 
 ## Examples

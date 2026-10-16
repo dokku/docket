@@ -26,7 +26,7 @@ Keyed by `app`. Manages the whole `scale` collection; entries are identified by 
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
 | `scale` | dict | yes |  |  | Map of process types to quantities |
-| `skip_deploy` | bool | no | false |  | Skip the corresponding deploy |
+| `skip_deploy` | bool | no | false |  | Skip the corresponding deploy (applied only, not read back) |
 | `state` | string | no | present | present, set | Desired state of the process scale; 'set' declares the whole formation |
 
 ## Examples

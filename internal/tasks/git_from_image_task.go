@@ -20,13 +20,13 @@ type GitFromImageTask struct {
 	Image string `required:"true" sensitive:"true" yaml:"image" description:"Docker image to deploy"`
 
 	// BuildDir is the directory to build the git repository
-	BuildDir string `required:"false" yaml:"build_dir,omitempty" description:"Directory to build the git repository"`
+	BuildDir string `required:"false" apply_only:"true" yaml:"build_dir,omitempty" description:"Directory to build the git repository"`
 
 	// GitUsername is the username to use for the git repository
-	GitUsername string `required:"false" yaml:"git_username,omitempty" description:"Username to use for the git repository (requires git_email)"`
+	GitUsername string `required:"false" apply_only:"true" yaml:"git_username,omitempty" description:"Username to use for the git repository (requires git_email)"`
 
 	// GitEmail is the email to use for the git repository
-	GitEmail string `required:"false" yaml:"git_email,omitempty" description:"Email to use for the git repository (requires git_username)"`
+	GitEmail string `required:"false" apply_only:"true" yaml:"git_email,omitempty" description:"Email to use for the git repository (requires git_username)"`
 
 	// State is the desired state of the git repository
 	State State `required:"false" yaml:"state,omitempty" default:"deployed" options:"deployed" description:"Desired state of the git repository"`

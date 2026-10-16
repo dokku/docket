@@ -16,10 +16,10 @@ type HttpAuthTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Username is the HTTP auth username seeded when auth is enabled
-	Username string `required:"false" yaml:"username,omitempty" description:"HTTP auth username to seed when enabling; supplied together with password"`
+	Username string `required:"false" apply_only:"true" yaml:"username,omitempty" description:"HTTP auth username to seed when enabling; supplied together with password"`
 
 	// Password is the HTTP auth password seeded when auth is enabled
-	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"HTTP auth password for the seeded username; supplied together with username"`
+	Password string `required:"false" sensitive:"true" apply_only:"true" yaml:"password,omitempty" description:"HTTP auth password for the seeded username; supplied together with username"`
 
 	// State is the state of the HTTP auth
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"State of the HTTP auth"`

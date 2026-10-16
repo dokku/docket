@@ -79,11 +79,11 @@ type RegistryAuthTask struct {
 	Server string `required:"true" identity:"key" yaml:"server" description:"Docker registry hostname (e.g. docker.io, ghcr.io)"`
 
 	// Username is the registry username (required when state is present)
-	Username string `required:"false" yaml:"username,omitempty" description:"Registry username (required when state is present)"`
+	Username string `required:"false" write_only:"true" yaml:"username,omitempty" description:"Registry username (required when state is present)"`
 
 	// Password is the registry password (required when state is present)
 	// The value is fed to dokku via --password-stdin and never appears on argv
-	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"Registry password (required when state is present)"`
+	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Registry password (required when state is present)"`
 
 	// State is the desired state of the registry credential
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the registry credential"`

@@ -30,12 +30,12 @@ Keyed by `service` and `name`. Fields left empty are omitted from the address.
 | `schedule` | string | no |  |  | Cron schedule for backups (requires bucket) |
 | `bucket` | string | no |  |  | S3 bucket backups are written to (requires schedule) |
 | `use_iam` | bool | no |  |  | Use the instance IAM profile instead of static credentials |
-| `aws_access_key_id` | string | no |  |  | AWS access key id for backup auth (requires aws_secret_access_key) |
-| `aws_secret_access_key` | string | no |  |  | AWS secret access key for backup auth (requires aws_access_key_id) (sensitive) |
+| `aws_access_key_id` | string | no |  |  | AWS access key id for backup auth (requires aws_secret_access_key) (not read back from the server) |
+| `aws_secret_access_key` | string | no |  |  | AWS secret access key for backup auth (requires aws_access_key_id) (not read back from the server) (sensitive) |
 | `aws_default_region` | string | no |  |  | AWS region used for backup auth |
 | `aws_signature_version` | string | no |  |  | AWS signature version used for backup auth (requires aws_default_region) |
 | `endpoint_url` | string | no |  |  | S3-compatible endpoint url used for backup auth (requires aws_signature_version) |
-| `encryption_passphrase` | string | no |  |  | Passphrase used to encrypt future backups (sensitive) |
+| `encryption_passphrase` | string | no |  |  | Passphrase used to encrypt future backups (not read back from the server) (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the backup configuration. 'absent' removes whichever of the schedule, the auth settings and the encryption passphrase the service reports as stored, without needing the secrets in the recipe, and leaves the settings dokku_service_property manages alone. On a datastore that cannot be backed up, 'absent' is always in sync and 'present' fails with the plugin's own error. |
 
 ## Examples

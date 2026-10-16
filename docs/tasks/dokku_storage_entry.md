@@ -36,7 +36,7 @@ Keyed by `name`.
 | `reclaim_policy` | string | no |  | Retain, Delete | Reclaim policy applied to the underlying volume (k3s scheduler). Converged on an entry that exists |
 | `annotations` | dict | no |  |  | Map of annotations set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone |
 | `labels` | dict | no |  |  | Map of labels set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone |
-| `destroy_host_dir` | bool | no |  |  | Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set |
+| `destroy_host_dir` | bool | no |  |  | Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set (applied only, not read back) |
 | `state` | string | no | present | present, absent | Desired state of the storage entry |
 
 ## Examples

@@ -15,7 +15,7 @@ type StorageEnsureTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Chown is the chown value to set
-	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Chown value to set: an ownership preset or a numeric uid (0-65535)"`
+	Chown string `required:"false" apply_only:"true" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Chown value to set: an ownership preset or a numeric uid (0-65535)"`
 
 	// State is the desired state of the storage
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage"`

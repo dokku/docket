@@ -122,6 +122,8 @@ the reference page lists them in.
 | `description` | Prose for a human. |
 | `sensitive` | Present and `true` when the value is a secret. |
 | `runner_file` | Present and `true` when the value names a file docket reads on the machine it runs on, not on the dokku server. |
+| `write_only` | Present and `true` when the server stores the value but never returns it. |
+| `apply_only` | Present and `true` when the value steers how apply runs and is not server state. |
 | `identity` | `key` or `collection`. Absent on a field that is neither. |
 | `item` | The element shape of a `list` or `dict`. Absent on a scalar. |
 
@@ -141,12 +143,33 @@ read by docket itself, so the file has to exist on the runner even when docket d
 [remote server](remote-execution.md#what-the-runner-needs). A wrapper that knows it cannot supply
 local files can warn about, or refuse, a recipe that sets one before running anything.
 
+`write_only` and `apply_only` matter to a consumer that refreshes its state from the server, such
+as a Terraform provider reading an [export](command-reference.md#docket-export). Neither field
+carries the server's value: an exported task leaves a `write_only` field empty or lifts it into a
+required input with no value, and carries an `apply_only` field at its zero value or default. A
+consumer should keep the value it was configured with rather than report the difference as drift.
+
+- **`write_only`** is a value the server keeps but will not hand back, such as
+  `dokku_service_create`'s `password` or `dokku_registry_auth`'s `username` and `password`. The
+  probe may still verify it by comparison - `dokku_registry_auth` asks `registry:auth-status`
+  whether the credentials work, and `dokku_service_backup` compares fingerprints - so `write_only`
+  says nothing about drift detection.
+- **`apply_only`** is a knob that shapes one apply and leaves nothing behind to read, such as
+  `dokku_config`'s `restart`, `dokku_http_auth_user`'s `update_password`, or `dokku_certs`'s `cert`
+  path, whose certificate is exported as `cert_content` instead.
+
+Both flags are unconditional. A gap that depends on another value stays in the task's `export` and
+`probe` caveats instead: `dokku_service_property`'s `value` is unreadable only for the backup
+credential properties, and `dokku_maintenance_custom_page`'s `content` only on a plugin without
+`maintenance:custom-page-export`.
+
 ### Item shapes
 
 `list` is the same word for a list of strings and a list of structured entries, so a collection
 field carries an `item` describing its elements. When the element is structured, `item.type` is
 `object` and `item.fields` is a full field list for it - which is where a consumer learns that a
-`dokku_http_auth_user` entry's `password` is a secret:
+`dokku_http_auth_user` entry's `password` is a secret the server never returns, while its `hash`
+is read back:
 
 ```json
 { "name": "users", "type": "list", "identity": "collection",
@@ -154,7 +177,7 @@ field carries an `item` describing its elements. When the element is structured,
     "type": "object", "identity": "fields", "keys": ["username"],
     "fields": [
       { "name": "username", "type": "string", "required": true, "identity": "key" },
-      { "name": "password", "type": "string", "required": false, "sensitive": true },
+      { "name": "password", "type": "string", "required": false, "sensitive": true, "write_only": true },
       { "name": "hash", "type": "string", "required": false, "sensitive": true }
     ]
   } }

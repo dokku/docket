@@ -131,6 +131,14 @@ file can never describe different exports. Each task body is the task's own type
 comes back as a `ConfigTask` - so there is no marshalling to YAML and parsing it straight back.
 `MarshalRecipe` takes `sdk.FormatYAML`, `sdk.FormatJSON5` or `sdk.FormatHCL`.
 
+Some fields of a body never hold the server's value. A field whose catalog entry carries
+`WriteOnly` (`dokku_service_create`'s `Password`) is stored by the server but never returned, so it
+comes back empty or as a placeholder for an input with no value. A field carrying `ApplyOnly`
+(`dokku_config`'s `Restart`) is not server state, so it comes back at its zero value or default.
+A caller that refreshes its own state from an export should keep the value it was configured with
+for both, rather than treat the difference as drift. Read the flags from `sdk.FieldSchema`, element
+fields included, through `sdk.Catalog()` - see [Task catalog](task-catalog.md#fields).
+
 Read a body with `sdk.As`, passing the concrete value type (`sdk.ConfigTask`). It returns `false`
 for any other task, so a loop over every task can ask for the one type it wants. A body is always
 the value form of the type registered under `task.Type`, never a pointer, so

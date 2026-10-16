@@ -113,6 +113,12 @@ func paramDescription(field tasks.FieldSchema) string {
 	if field.RunnerFile {
 		desc = strings.TrimSpace(desc + " (read from the machine running docket)")
 	}
+	if field.WriteOnly {
+		desc = strings.TrimSpace(desc + " (not read back from the server)")
+	}
+	if field.ApplyOnly {
+		desc = strings.TrimSpace(desc + " (applied only, not read back)")
+	}
 	if field.Sensitive {
 		desc = strings.TrimSpace(desc + " (sensitive)")
 	}

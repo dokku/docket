@@ -27,8 +27,8 @@ Keyed by `app`.
 | `app` | string | yes |  |  | Name of the app |
 | `archive_url` | string | yes |  |  | URL of the archive to deploy (sensitive) |
 | `archive_type` | string | no | tar | tar, tar.gz, zip | Format of the archive |
-| `git_username` | string | no |  |  | Git author username for the synthetic commit |
-| `git_email` | string | no |  |  | Git author email for the synthetic commit |
+| `git_username` | string | no |  |  | Git author username for the synthetic commit (applied only, not read back) |
+| `git_email` | string | no |  |  | Git author email for the synthetic commit (applied only, not read back) |
 | `state` | string | no | deployed | deployed | Desired state of the deployment |
 
 ## Examples

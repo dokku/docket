@@ -27,7 +27,7 @@ Keyed by `app`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `chown` | string | no |  | heroku, herokuish, paketo, root, false | Chown value to set: an ownership preset or a numeric uid (0-65535) |
+| `chown` | string | no |  | heroku, herokuish, paketo, root, false | Chown value to set: an ownership preset or a numeric uid (0-65535) (applied only, not read back) |
 | `state` | string | no | present | present, absent | Desired state of the storage |
 
 ## Examples

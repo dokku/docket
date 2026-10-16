@@ -21,10 +21,10 @@ type GitFromArchiveTask struct {
 	ArchiveType string `required:"false" yaml:"archive_type,omitempty" default:"tar" options:"tar,tar.gz,zip" description:"Format of the archive"`
 
 	// GitUsername is the git author username for the synthetic commit
-	GitUsername string `required:"false" yaml:"git_username,omitempty" description:"Git author username for the synthetic commit"`
+	GitUsername string `required:"false" apply_only:"true" yaml:"git_username,omitempty" description:"Git author username for the synthetic commit"`
 
 	// GitEmail is the git author email for the synthetic commit
-	GitEmail string `required:"false" yaml:"git_email,omitempty" description:"Git author email for the synthetic commit"`
+	GitEmail string `required:"false" apply_only:"true" yaml:"git_email,omitempty" description:"Git author email for the synthetic commit"`
 
 	// State is the desired state of the deployment
 	State State `required:"false" yaml:"state,omitempty" default:"deployed" options:"deployed" description:"Desired state of the deployment"`

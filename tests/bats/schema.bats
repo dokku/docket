@@ -94,6 +94,34 @@ setup() {
     fail "a narrowed catalog drops runner_file"
 }
 
+@test "docket schema marks fields export cannot read back (#604)" {
+  run "$(docket_bin)" schema
+  assert_success
+
+  # The cleartext password is never returned, but the hash beside it is read
+  # back through http-auth:export-users, so only the password is write_only.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_http_auth_user") | .fields[] | select(.name == "users") | .item.fields[] | select(.name == "password") | .write_only == true' >/dev/null ||
+    fail "dokku_http_auth_user users[].password is not marked write_only"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_http_auth_user") | .fields[] | select(.name == "users") | .item.fields[] | select(.name == "hash") | (.write_only // false) == false' >/dev/null ||
+    fail "dokku_http_auth_user users[].hash is marked write_only"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_service_create") | all(.fields[] | select(.name == "password" or .name == "root_password"); .write_only == true)' >/dev/null ||
+    fail "dokku_service_create passwords are not marked write_only"
+
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_http_auth_user") | .fields[] | select(.name == "update_password") | .apply_only == true' >/dev/null ||
+    fail "dokku_http_auth_user update_password is not marked apply_only"
+
+  run "$(docket_bin)" schema --task dokku_registry_auth
+  assert_success
+  echo "$output" |
+    jq -e '.tasks[0] | all(.fields[] | select(.name == "username" or .name == "password"); .write_only == true)' >/dev/null ||
+    fail "a narrowed catalog drops write_only"
+}
+
 @test "docket schema publishes the whole shape of a property task (#454)" {
   run "$(docket_bin)" schema
   assert_success

@@ -180,6 +180,14 @@
           "const": true,
           "description": "The value names a file docket reads on the machine it runs on rather than on the dokku server, so the file must exist there even over `--host`. Absent on a field that is not one."
         },
+        "write_only": {
+          "const": true,
+          "description": "The server stores the value but never returns it, so an exported task leaves the field empty or lifts it into a required input with no value. A consumer refreshing state keeps the configured value rather than reporting drift. A probe may still verify the value by comparison. Absent on a field that is read back."
+        },
+        "apply_only": {
+          "const": true,
+          "description": "The value steers how apply runs and is not server state, so an exported task carries its zero value or default. A consumer refreshing state keeps the configured value rather than reporting drift. Absent on a field that is server state."
+        },
         "identity": {
           "enum": ["key", "collection"],
           "description": "`key` selects which resource the task manages; `collection` is a set of items the task manages wholesale. Absent on a field that is neither."

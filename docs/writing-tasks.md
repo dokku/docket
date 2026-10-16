@@ -82,8 +82,8 @@ A few conventions to follow:
 - The struct holds the fields the task needs. The only required field is `State`, the desired state;
   everything else is specific to the task.
 - Give every field a `description:"..."` tag. The docs generator reads it (along with `required`,
-  `default`, `options`, `sensitive`, and `runner_file`) to build the task's Parameters table, so a
-  field without one renders an empty description cell. Those same tags are what
+  `default`, `options`, `sensitive`, `runner_file`, `write_only`, and `apply_only`) to build the
+  task's Parameters table, so a field without one renders an empty description cell. Those same tags are what
   [`docket schema`](task-catalog.md) publishes, so a missing description is a hole in the
   machine-readable catalog as well as in the docs. Add `,omitempty` to the `yaml` tag of optional
   fields so example YAML stays clean, and use `required:"false"` whenever a field has a `default`
@@ -112,6 +112,15 @@ A few conventions to follow:
   generator lists the field under Runner requirements on the task's page, so someone running docket
   against a remote server knows the file has to exist locally. Do not tag a path the task hands to
   dokku as an argument - that resolves on the server.
+- When the server stores a field's value but never returns it (a password applied at create, a
+  registry username), tag it `write_only:"true"`. When a field only steers how apply runs and is
+  not server state at all (a restart flag, a commit author, a forced re-issue), tag it
+  `apply_only:"true"`. [`docket schema`](task-catalog.md#fields) publishes both, so a consumer
+  refreshing state keeps the configured value instead of reporting drift. Neither may sit on an
+  `identity:"key"` field, and a value that is unreadable only for some inputs belongs in the
+  `ExportSupport()` / `ProbeSupport()` caveat instead. An exporting task with either tag needs a
+  fixture in `internal/tasks/export_readback_test.go`, which fails the build otherwise and proves
+  the exporter never fills the field from the server.
 - When a task type is deprecated (typically because the underlying dokku subcommand was deprecated
   or a richer replacement task exists), implement the optional `Deprecation() string` method.
   The generator renders the returned message in a Deprecated admonition on the task's page and

@@ -243,6 +243,22 @@ type FieldSchema struct {
 	// dokku as an argument resolves on the server and is not marked.
 	RunnerFile bool `json:"runner_file,omitempty"`
 
+	// WriteOnly marks a field whose value the server stores but never returns,
+	// such as a password applied at create time. An exported task leaves it
+	// empty or lifts it into a required input with no value, so a consumer
+	// refreshing state keeps the configured value rather than reading the
+	// absence back as drift. A probe may still verify the value by comparison
+	// (registry:auth-status, a fingerprint), which is why this says nothing
+	// about drift detection.
+	WriteOnly bool `json:"write_only,omitempty"`
+
+	// ApplyOnly marks a field that steers how apply runs - a restart flag, a
+	// commit author, a forced password re-issue - and is not server state at
+	// all. An exported task carries its zero value or default, so a consumer
+	// refreshing state keeps the configured value the same way it does for a
+	// WriteOnly field.
+	ApplyOnly bool `json:"apply_only,omitempty"`
+
 	// Identity is "key" or "collection" when the field carries an identity
 	// tag, and absent otherwise.
 	Identity string `json:"identity,omitempty"`
@@ -576,6 +592,8 @@ func buildFields(rt reflect.Type) []FieldSchema {
 			Description: field.Tag.Get("description"),
 			Sensitive:   field.Tag.Get("sensitive") == "true",
 			RunnerFile:  field.Tag.Get("runner_file") == "true",
+			WriteOnly:   field.Tag.Get("write_only") == "true",
+			ApplyOnly:   field.Tag.Get("apply_only") == "true",
 		}
 		if opts := field.Tag.Get("options"); opts != "" {
 			schema.Choices = strings.Split(opts, ",")

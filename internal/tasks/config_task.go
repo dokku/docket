@@ -22,13 +22,13 @@ type ConfigTask struct {
 	// key: nil defaults to true via boolValue(t.Restart, true). The default:"true"
 	// tag only drives the generated docs table; go-defaults leaves pointer fields
 	// untouched, which is what fixes the silent override of an explicit false.
-	Restart *bool `yaml:"restart,omitempty" default:"true" description:"Flag indicating if the app should be restarted"`
+	Restart *bool `apply_only:"true" yaml:"restart,omitempty" default:"true" description:"Flag indicating if the app should be restarted"`
 
 	// Config is a map of configuration key-value pairs
 	Config map[string]string `identity:"collection" yaml:"config,omitempty" description:"Map of configuration key-value pairs; omit for state 'clear'"`
 
 	// Preserve lists keys that state 'set' and 'clear' leave in place
-	Preserve []string `required:"false" yaml:"preserve,omitempty" description:"Keys that state 'set' and 'clear' leave untouched, on top of the service-link keys, NO_VHOST, and the git rev-env-var key they always keep; only valid for state 'set' or 'clear'"`
+	Preserve []string `required:"false" apply_only:"true" yaml:"preserve,omitempty" description:"Keys that state 'set' and 'clear' leave untouched, on top of the service-link keys, NO_VHOST, and the git rev-env-var key they always keep; only valid for state 'set' or 'clear'"`
 
 	// State is the desired state of the configuration
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the configuration: 'present' sets the named keys and 'absent' unsets them, leaving every other key alone; 'set' declares the app's entire config, unsetting every key it does not name; 'clear' unsets every key. Both 'set' and 'clear' keep keys a service link wrote, NO_VHOST, the git rev-env-var key, and any key listed in 'preserve'"`

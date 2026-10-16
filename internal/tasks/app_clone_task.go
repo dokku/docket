@@ -13,10 +13,10 @@ type AppCloneTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the new (target) app"`
 
 	// SourceApp is the name of the existing app to clone from
-	SourceApp string `required:"true" yaml:"source_app" description:"Name of the existing app to clone from"`
+	SourceApp string `required:"true" apply_only:"true" yaml:"source_app" description:"Name of the existing app to clone from"`
 
 	// SkipDeploy skips deployment of the cloned app
-	SkipDeploy bool `required:"false" yaml:"skip_deploy,omitempty" description:"Skip deployment of the cloned app"`
+	SkipDeploy bool `required:"false" apply_only:"true" yaml:"skip_deploy,omitempty" description:"Skip deployment of the cloned app"`
 
 	// State is the desired state of the cloned app
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present" description:"Desired state of the cloned app"`

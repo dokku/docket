@@ -137,6 +137,23 @@ func TestParamDescriptionMarksRunnerFile(t *testing.T) {
 	}
 }
 
+// TestParamDescriptionMarksReadbackFlags pins the write_only and apply_only
+// suffixes and their order against the sensitive one (#604).
+func TestParamDescriptionMarksReadbackFlags(t *testing.T) {
+	cases := []struct {
+		field tasks.FieldSchema
+		want  string
+	}{
+		{tasks.FieldSchema{Description: "Registry password", WriteOnly: true, Sensitive: true}, "Registry password (not read back from the server) (sensitive)"},
+		{tasks.FieldSchema{Description: "Restart the app", ApplyOnly: true}, "Restart the app (applied only, not read back)"},
+	}
+	for _, tc := range cases {
+		if got := paramDescription(tc.field); got != tc.want {
+			t.Errorf("paramDescription = %q; want %q", got, tc.want)
+		}
+	}
+}
+
 func TestEscapeProseEscapesBareAngleBrackets(t *testing.T) {
 	cases := []struct {
 		in, want string

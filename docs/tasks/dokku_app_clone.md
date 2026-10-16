@@ -25,8 +25,8 @@ Keyed by `app`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the new (target) app |
-| `source_app` | string | yes |  |  | Name of the existing app to clone from |
-| `skip_deploy` | bool | no |  |  | Skip deployment of the cloned app |
+| `source_app` | string | yes |  |  | Name of the existing app to clone from (applied only, not read back) |
+| `skip_deploy` | bool | no |  |  | Skip deployment of the cloned app (applied only, not read back) |
 | `state` | string | no | present | present | Desired state of the cloned app |
 
 ## Examples

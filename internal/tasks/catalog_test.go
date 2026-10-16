@@ -262,6 +262,115 @@ func TestCatalogRunnerFileFieldsAreStrings(t *testing.T) {
 	}
 }
 
+// checkCatalogFlagMatchesTag walks every task's fields, element fields
+// included, and fails where the catalog flag got disagrees with the struct tag.
+func checkCatalogFlagMatchesTag(t *testing.T, catalog TaskCatalog, tag string, got func(FieldSchema) bool) {
+	t.Helper()
+	var check func(where string, rt reflect.Type, fields []FieldSchema)
+	check = func(where string, rt reflect.Type, fields []FieldSchema) {
+		for _, field := range fields {
+			structField, ok := structFieldByYAMLName(rt, field.Name)
+			if !ok {
+				continue
+			}
+			want := structField.Tag.Get(tag) == "true"
+			if got(field) != want {
+				t.Errorf("%s.%s %s = %v; want %v", where, field.Name, tag, got(field), want)
+			}
+			if field.Item != nil && field.Item.Type == TypeObject {
+				check(where+"."+field.Name+"[]", structElem(sliceOrMapElem(structField.Type)), field.Item.Fields)
+			}
+		}
+	}
+
+	for _, schema := range catalog.Tasks {
+		check(schema.Type, taskStructType(lookupTask(schema.Type)), schema.Fields)
+	}
+}
+
+// TestCatalogWriteOnlyMatchesTags checks the write_only flag against the tag
+// and pins the fields the terraform provider has to keep on refresh (#604).
+// dokku_http_auth_user is the trap: its cleartext password is never returned,
+// but the hash beside it is, through http-auth:export-users.
+func TestCatalogWriteOnlyMatchesTags(t *testing.T) {
+	catalog := wholeCatalog(t)
+	checkCatalogFlagMatchesTag(t, catalog, "write_only", func(f FieldSchema) bool { return f.WriteOnly })
+
+	users := fieldFor(t, schemaFor(t, catalog, "dokku_http_auth_user").Fields, "users")
+	if users.Item == nil {
+		t.Fatal("dokku_http_auth_user.users has no item schema")
+	}
+	if !fieldFor(t, users.Item.Fields, "password").WriteOnly {
+		t.Error("dokku_http_auth_user.users[].password must be write_only")
+	}
+	if fieldFor(t, users.Item.Fields, "hash").WriteOnly {
+		t.Error("dokku_http_auth_user.users[].hash is read back and must not be write_only")
+	}
+
+	for typeKey, names := range map[string][]string{
+		"dokku_service_create": {"password", "root_password"},
+		"dokku_registry_auth":  {"username", "password"},
+		"dokku_git_auth":       {"username", "password"},
+		"dokku_service_backup": {"aws_access_key_id", "aws_secret_access_key", "encryption_passphrase"},
+	} {
+		fields := schemaFor(t, catalog, typeKey).Fields
+		for _, name := range names {
+			if !fieldFor(t, fields, name).WriteOnly {
+				t.Errorf("%s.%s must be write_only", typeKey, name)
+			}
+		}
+	}
+}
+
+// TestCatalogApplyOnlyMatchesTags checks the apply_only flag against the tag
+// and pins a knob from each kind: a convergence switch, a restart flag, and a
+// path dokku_certs reads its PEM from - the PEM is the state, exported as
+// cert_content, so the path is not (#604).
+func TestCatalogApplyOnlyMatchesTags(t *testing.T) {
+	catalog := wholeCatalog(t)
+	checkCatalogFlagMatchesTag(t, catalog, "apply_only", func(f FieldSchema) bool { return f.ApplyOnly })
+
+	for typeKey, names := range map[string][]string{
+		"dokku_http_auth_user": {"update_password"},
+		"dokku_config":         {"restart"},
+		"dokku_certs":          {"cert", "key"},
+	} {
+		fields := schemaFor(t, catalog, typeKey).Fields
+		for _, name := range names {
+			if !fieldFor(t, fields, name).ApplyOnly {
+				t.Errorf("%s.%s must be apply_only", typeKey, name)
+			}
+		}
+	}
+	if fieldFor(t, schemaFor(t, catalog, "dokku_certs").Fields, "cert_content").ApplyOnly {
+		t.Error("dokku_certs.cert_content is read back and must not be apply_only")
+	}
+}
+
+// TestCatalogFieldReadbackFlagsAreConsistent rules out the combinations that
+// cannot mean anything: a value that is both server state and not, and an
+// identity key a consumer could not read back to address the resource with.
+func TestCatalogFieldReadbackFlagsAreConsistent(t *testing.T) {
+	var check func(t *testing.T, where string, fields []FieldSchema)
+	check = func(t *testing.T, where string, fields []FieldSchema) {
+		for _, field := range fields {
+			if field.WriteOnly && field.ApplyOnly {
+				t.Errorf("%s.%s is both write_only and apply_only", where, field.Name)
+			}
+			if (field.WriteOnly || field.ApplyOnly) && field.Identity == IdentityRoleKey {
+				t.Errorf("%s.%s is an identity key and cannot be write_only or apply_only", where, field.Name)
+			}
+			if field.Item != nil {
+				check(t, where+"."+field.Name+"[]", field.Item.Fields)
+			}
+		}
+	}
+
+	for _, schema := range wholeCatalog(t).Tasks {
+		check(t, schema.Type, schema.Fields)
+	}
+}
+
 // TestCatalogIdentityMatchesTaskIdentity checks the catalog against the same
 // helpers the loader and the export filter read. The "every key is a field"
 // half also guards the two yaml-name helpers staying in agreement: a key hidden
