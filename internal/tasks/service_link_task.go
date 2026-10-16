@@ -128,6 +128,9 @@ func (t ServiceLinkTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the ServiceLinkTask would produce.
 func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			svcExists, err := serviceExists(ctx, t.Service, t.Name)
@@ -149,13 +152,13 @@ func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if linked {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceLink(t, PlanResult{InSync: true, Status: PlanStatusOK}, linked)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", fmt.Sprintf("%s:link", t.Service), t.Name, t.App},
 			}}
-			return PlanResult{
+			return observedServiceLink(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("%s service %s not linked to %s", t.Service, t.Name, t.App),
@@ -164,7 +167,7 @@ func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, linked)
 		},
 		StateAbsent: func() PlanResult {
 			svcExists, err := serviceExists(ctx, t.Service, t.Name)
@@ -186,13 +189,13 @@ func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !linked {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceLink(t, PlanResult{InSync: true, Status: PlanStatusOK}, linked)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", fmt.Sprintf("%s:unlink", t.Service), t.Name, t.App},
 			}}
-			return PlanResult{
+			return observedServiceLink(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%s service %s linked to %s", t.Service, t.Name, t.App),
@@ -201,7 +204,7 @@ func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, linked)
 		},
 	})
 }
@@ -225,4 +228,14 @@ func serviceLinked(ctx context.Context, service, name, app string) (bool, error)
 // init registers the ServiceLinkTask with the task registry
 func init() {
 	RegisterTask(&ServiceLinkTask{})
+}
+
+// observedServiceLink attaches the link the probe read to r: the task's identity,
+// present when the service is linked to the app.
+func observedServiceLink(t ServiceLinkTask, r PlanResult, linked bool) PlanResult {
+	o := ServiceLinkTask{App: t.App, Service: t.Service, Name: t.Name, State: StateAbsent}
+	if linked {
+		o.State = StatePresent
+	}
+	return observed(r, o, linked)
 }

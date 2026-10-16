@@ -110,7 +110,10 @@ func (t ChecksToggleTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the ChecksToggleTask would produce.
 func (t ChecksToggleTask) Plan(ctx context.Context) PlanResult {
-	return planToggle(ctx, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planToggle(ctx, func(f ToggleFields) Task { return ChecksToggleTask(f) }, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 
 // init registers the ChecksToggleTask with the task registry

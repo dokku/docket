@@ -162,28 +162,37 @@ func (t ServiceCreateTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 		if err != nil {
 			return nil, err
 		}
-		image, version := splitImageRef(strings.TrimSpace(info["version"]))
-		task := ServiceCreateTask{
-			Service:           s.Type,
-			Name:              s.Name,
-			Image:             image,
-			ImageVersion:      version,
-			ConfigOptions:     strings.TrimSpace(info["config-options"]),
-			ShmSize:           strings.TrimSpace(info["shm-size"]),
-			InitialNetwork:    strings.TrimSpace(info["initial-network"]),
-			PostCreateNetwork: splitNetworks(info["post-create-network"]),
-			PostStartNetwork:  splitNetworks(info["post-start-network"]),
-			State:             StatePresent,
-		}
-		if env := parseCustomEnv(info["custom-env"]); len(env) > 0 {
-			task.CustomEnv = env
-		}
-		if memory, err := strconv.Atoi(strings.TrimSpace(info["memory"])); err == nil && memory > 0 {
-			task.Memory = memory
-		}
-		out = append(out, task)
+		out = append(out, serviceCreateFromInfo(s.Type, s.Name, info))
 	}
 	return out, nil
+}
+
+// serviceCreateFromInfo builds the dokku_service_create task an existing
+// service's `<service>:info` report describes: the image it runs and every
+// create-time option info reports. password and root_password are never
+// reported, so they stay empty. Export and Plan's Observed share it, so the
+// two can never read a service differently.
+func serviceCreateFromInfo(service, name string, info map[string]string) ServiceCreateTask {
+	image, version := splitImageRef(strings.TrimSpace(info["version"]))
+	task := ServiceCreateTask{
+		Service:           service,
+		Name:              name,
+		Image:             image,
+		ImageVersion:      version,
+		ConfigOptions:     strings.TrimSpace(info["config-options"]),
+		ShmSize:           strings.TrimSpace(info["shm-size"]),
+		InitialNetwork:    strings.TrimSpace(info["initial-network"]),
+		PostCreateNetwork: splitNetworks(info["post-create-network"]),
+		PostStartNetwork:  splitNetworks(info["post-start-network"]),
+		State:             StatePresent,
+	}
+	if env := parseCustomEnv(info["custom-env"]); len(env) > 0 {
+		task.CustomEnv = env
+	}
+	if memory, err := strconv.Atoi(strings.TrimSpace(info["memory"])); err == nil && memory > 0 {
+		task.Memory = memory
+	}
+	return task
 }
 
 // splitNetworks reads a comma-joined network list info reports back into the
@@ -699,6 +708,9 @@ func (t ServiceCreateTask) Validate() error {
 
 // Plan reports the drift the ServiceCreateTask would produce.
 func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -709,17 +721,18 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if exists {
-				if drift := planServiceDrift(ctx, t); drift != nil {
-					return *drift
+				info, infoErr := readServiceCreateInfo(ctx, t)
+				if drift := planServiceDrift(ctx, t, info, infoErr); drift != nil {
+					return observedServiceCreate(t, *drift, true, info, infoErr)
 				}
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceCreate(t, PlanResult{InSync: true, Status: PlanStatusOK}, true, info, infoErr)
 			}
 			args := append([]string{"--quiet", fmt.Sprintf("%s:create", t.Service), t.Name}, t.createFlags()...)
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    args,
 			}}
-			return PlanResult{
+			return observedServiceCreate(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    fmt.Sprintf("%s service %s missing", t.Service, t.Name),
@@ -728,7 +741,7 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, false, nil, nil)
 		},
 		StateAbsent: func() PlanResult {
 			exists, err := serviceExists(ctx, t.Service, t.Name)
@@ -736,13 +749,14 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !exists {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceCreate(t, PlanResult{InSync: true, Status: PlanStatusOK}, false, nil, nil)
 			}
+			info, infoErr := readServiceCreateInfo(ctx, t)
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "--force", fmt.Sprintf("%s:destroy", t.Service), t.Name},
 			}}
-			return PlanResult{
+			return observedServiceCreate(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("%s service %s present", t.Service, t.Name),
@@ -751,9 +765,37 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, true, info, infoErr)
 		},
 	})
+}
+
+// readServiceCreateInfo reads an existing service's info report for both the
+// drift comparison and Observed. custom_env is sensitive, and the values the
+// server holds are as secret as the ones the recipe declares, so they are
+// masked before anything can echo them.
+func readServiceCreateInfo(ctx context.Context, t ServiceCreateTask) (map[string]string, error) {
+	info, err := serviceInfo(ctx, t.Service, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	registerSensitiveMapValues(ctx, parseCustomEnv(info["custom-env"]))
+	return info, nil
+}
+
+// observedServiceCreate attaches the service the probe read to r. A missing service
+// is the identity alone, absent. An existing one is what its info report
+// describes; when that report could not be read - a plugin older than the
+// floor, where the plan itself only needed the existence probe - nothing is
+// attached, since the service exists but its options are unknown.
+func observedServiceCreate(t ServiceCreateTask, r PlanResult, exists bool, info map[string]string, infoErr error) PlanResult {
+	if !exists {
+		return observed(r, ServiceCreateTask{Service: t.Service, Name: t.Name, State: StateAbsent}, false)
+	}
+	if infoErr != nil {
+		return r
+	}
+	return observed(r, serviceCreateFromInfo(t.Service, t.Name, info), true)
 }
 
 // planServiceDrift reports what an existing service's image and create-time
@@ -762,7 +804,7 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 // recipe declared nothing info reports, the recipe asked for the comparison to
 // be skipped, and everything it declared already matches.
 //
-// One `<service>:info` call answers every comparison. The image and the other
+// One `<service>:info` call, made by Plan, answers every comparison. The image and the other
 // options are reported as separate warnings, since they are separate remedies:
 // an image moves only with `<service>:upgrade`, while every other option can be
 // set in place and picked up by a rebuild.
@@ -770,20 +812,18 @@ func (t ServiceCreateTask) Plan(ctx context.Context) PlanResult {
 // It is a package-level func rather than a method because
 // TestProbeSupportMatchesPlanWiring walks the tasks package for plan-returning
 // methods and allows exactly one per task, Plan itself.
-func planServiceDrift(ctx context.Context, t ServiceCreateTask) *PlanResult {
+func planServiceDrift(ctx context.Context, t ServiceCreateTask, info map[string]string, infoErr error) *PlanResult {
 	mode := t.imageDriftMode()
 	if mode == imageDriftIgnore || (!t.pinsImage() && !t.declaresOptions()) {
 		return nil
 	}
 
-	info, err := serviceInfo(ctx, t.Service, t.Name)
-	if err != nil {
-		return &PlanResult{Status: PlanStatusError, Error: err}
+	// The info report is read once by Plan, for this comparison and for
+	// Observed; only a comparison that needs it fails on a report it could
+	// not read.
+	if infoErr != nil {
+		return &PlanResult{Status: PlanStatusError, Error: infoErr}
 	}
-	// custom_env is sensitive, and the values the server holds are as secret
-	// as the ones the recipe declares, so they are masked before anything
-	// below can echo them.
-	registerSensitiveMapValues(ctx, parseCustomEnv(info["custom-env"]))
 
 	var warnings []PlanWarning
 	running := strings.TrimSpace(info["version"])

@@ -108,7 +108,12 @@ func (t ResourceReserveTask) Validate() error {
 
 // Plan reports the drift the ResourceReserveTask would produce.
 func (t ResourceReserveTask) Plan(ctx context.Context) PlanResult {
-	return planResource(ctx, t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:reserve")
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planResource(ctx, func(resources map[string]string, state State) Task {
+		return ResourceReserveTask{App: t.App, ProcessType: t.ProcessType, Resources: resources, State: state}
+	}, t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:reserve")
 }
 
 // init registers the ResourceReserveTask with the task registry

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"sort"
@@ -337,31 +338,75 @@ func TestHttpAuthUserTaskMixedPlansImportFirst(t *testing.T) {
 	}
 }
 
-// TestHttpAuthUserTaskPasswordOnlySkipsExportUsers keeps the cleartext path on
-// exactly one report round trip: export-users is a hash overlay, not a
-// replacement for the membership probe, so a password-only recipe still works
-// against a plugin that predates the command.
-func TestHttpAuthUserTaskPasswordOnlySkipsExportUsers(t *testing.T) {
+// TestHttpAuthUserTaskPasswordOnlyIgnoresExportUsers keeps a password-only
+// recipe working against a plugin that predates http-auth:export-users:
+// membership comes from the report, and the hashes are read only for
+// PlanResult.Observed, so a rejected export-users leaves the plan in sync and
+// carries no Observed state, whatever the failure.
+func TestHttpAuthUserTaskPasswordOnlyIgnoresExportUsers(t *testing.T) {
 	t.Parallel()
-	asked := false
-	ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	failures := map[string]error{
+		"dokku-level": &subprocess.ExecError{Response: subprocess.ExecCommandResponse{ExitCode: 1, Stderr: "Invalid command"}, Err: errors.New("Invalid command"), Ran: true},
+		"transport":   &subprocess.SSHError{Err: errors.New("connection reset")},
+	}
+	for name, failure := range failures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+				joined := strings.Join(in.Args, " ")
+				if strings.Contains(joined, "export-users") {
+					return subprocess.ExecCommandResponse{ExitCode: 1}, failure
+				}
+				if strings.Contains(joined, "http-auth:report") {
+					return subprocess.ExecCommandResponse{Stdout: `{"enabled":"true","users":"alice","allowed-ips":"","domains":""}`}, nil
+				}
+				return subprocess.ExecCommandResponse{}, nil
+			})
+
+			plan := HttpAuthUserTask{
+				App:   "test-app",
+				Users: []HttpAuthUser{{Username: "alice", Password: "secret"}},
+				State: StatePresent,
+			}.Plan(ctx)
+			if plan.Error != nil || !plan.InSync {
+				t.Fatalf("expected an in-sync plan, got InSync=%v error=%v", plan.InSync, plan.Error)
+			}
+			if plan.Observed != nil {
+				t.Errorf("Observed = %#v, want nil when the hashes could not be read", plan.Observed)
+			}
+		})
+	}
+}
+
+// TestHttpAuthUserTaskObservesStoredHashes pins what Observed carries for a
+// password user: the hash the server stores for it, never the password, which
+// is write-only. The hash is registered with the masker, since it is
+// credential material read from the server.
+func TestHttpAuthUserTaskObservesStoredHashes(t *testing.T) {
+	t.Parallel()
+	masker := subprocess.NewMasker()
+	ctx := subprocess.ContextWithMasker(subprocess.ContextWithRunner(testCtx(), func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		joined := strings.Join(in.Args, " ")
 		if strings.Contains(joined, "export-users") {
-			asked = true
+			return subprocess.ExecCommandResponse{Stdout: "alice:$apr1$stored\nbob:$apr1$other\n"}, nil
 		}
 		if strings.Contains(joined, "http-auth:report") {
-			return subprocess.ExecCommandResponse{Stdout: `{"enabled":"true","users":"alice","allowed-ips":"","domains":""}`}, nil
+			return subprocess.ExecCommandResponse{Stdout: `{"enabled":"true","users":"alice bob","allowed-ips":"","domains":""}`}, nil
 		}
 		return subprocess.ExecCommandResponse{}, nil
-	})
+	}), masker)
 
-	HttpAuthUserTask{
+	plan := HttpAuthUserTask{
 		App:   "test-app",
 		Users: []HttpAuthUser{{Username: "alice", Password: "secret"}},
 		State: StatePresent,
 	}.Plan(ctx)
-	if asked {
-		t.Error("a password-only task must not probe http-auth:export-users")
+	want := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "alice", Hash: "$apr1$stored"}}, State: StatePresent}
+	if !reflect.DeepEqual(plan.Observed, want) || !plan.Exists {
+		t.Errorf("Observed = %#v exists=%v, want %#v and exists", plan.Observed, plan.Exists, want)
+	}
+	if got := masker.String("$apr1$stored"); strings.Contains(got, "$apr1$stored") {
+		t.Errorf("the stored hash was not registered with the masker: %q", got)
 	}
 }
 

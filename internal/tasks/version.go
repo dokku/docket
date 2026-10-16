@@ -278,6 +278,22 @@ func (e *VersionError) Unwrap() error {
 	return e.Err
 }
 
+// gatePlan is the first statement of every task's Plan: it refuses the task
+// when ctx carries a version gate and the server is older than the task's
+// floor, so a caller planning a task directly gets the same refusal the CLI
+// gives, and a read never reports a resource the gate skipped as absent. ok is
+// false when the plan must stop with r. A context with no gate always passes.
+// TestEveryPlanChecksVersionGate fails the build for a Plan that skips it.
+func gatePlan(ctx context.Context, t Task) (r PlanResult, ok bool) {
+	if versionCacheFrom(ctx) == nil {
+		return PlanResult{}, true
+	}
+	if err := CheckMinimumVersions(ctx, typeKeyOf(t), t); err != nil {
+		return planErr(err), false
+	}
+	return PlanResult{}, true
+}
+
 // CheckMinimumVersions reports whether the server ctx targets is older than
 // the floor task declares. A context with no version gate returns nil, as
 // does a task that declares no floor. An uninstalled plugin is not a failure:

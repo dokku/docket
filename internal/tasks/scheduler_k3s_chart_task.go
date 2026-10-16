@@ -159,6 +159,9 @@ func (t SchedulerK3sChartTask) Validate() error {
 
 // Plan reports the drift the SchedulerK3sChartTask would produce.
 func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -183,9 +186,22 @@ func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
 		}
 	}
 
+	// The observed values keep the flat, escaped keys the server stores them
+	// under, the same shape the exporter emits.
+	observe := func(pairs map[string]string, state State) Task {
+		var values map[string]any
+		if len(pairs) > 0 {
+			values = make(map[string]any, len(pairs))
+			for k, v := range pairs {
+				values[k] = v
+			}
+		}
+		return SchedulerK3sChartTask{Chart: t.Chart, Values: values, State: state}
+	}
+
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planPairsSet(ctx, "chart value", desired, currentFn, commandFn) },
-		StateAbsent:  func() PlanResult { return planPairsUnset(ctx, "chart value", desired, currentFn, commandFn) },
+		StatePresent: func() PlanResult { return planPairsSet(ctx, observe, "chart value", desired, currentFn, commandFn) },
+		StateAbsent:  func() PlanResult { return planPairsUnset(ctx, observe, "chart value", desired, currentFn, commandFn) },
 	})
 }
 

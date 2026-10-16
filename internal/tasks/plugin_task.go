@@ -65,7 +65,7 @@ func (t PluginTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku this task's probe parses.
-// The floor is 0.38.31, the release the integration suite runs; the probe is `plugin:list`.
+// The floor is 0.38.31, the release the integration suite runs; the probe is `plugin:list --format json` (dokku 0.38.22+).
 // committish remains how a recipe pins the plugin this task installs.
 func (t PluginTask) MinimumVersions() VersionSupport {
 	return VersionSupport{Dokku: "0.38.31"}
@@ -117,17 +117,28 @@ func (t PluginTask) Validate() error {
 
 // Plan reports the drift the PluginTask would produce.
 func (t PluginTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
+	// seen attaches the plugin as plugin:list reports it. Drift is decided by
+	// name alone; the source and committish are what export would emit.
+	seen := func(r PlanResult, entry pluginListEntry, installed bool) PlanResult {
+		if !installed {
+			return observed(r, PluginTask{Name: t.Name, State: StateAbsent}, false)
+		}
+		return observed(r, entry.task(), true)
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			installed, err := pluginInstalled(ctx, t.Name)
+			entry, installed, err := pluginListed(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if installed {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, entry, installed)
 			}
 			args := []string{"--quiet", "plugin:install", t.URL}
 			if t.Committish != "" {
@@ -135,7 +146,7 @@ func (t PluginTask) Plan(ctx context.Context) PlanResult {
 			}
 			args = append(args, t.Name)
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "plugin not installed",
@@ -144,21 +155,21 @@ func (t PluginTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runPluginChange(ctx, StateAbsent, StatePresent, inputs)
 				},
-			}
+			}, entry, installed)
 		},
 		StateAbsent: func() PlanResult {
-			installed, err := pluginInstalled(ctx, t.Name)
+			entry, installed, err := pluginListed(ctx, t.Name)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !installed {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, entry, installed)
 			}
 			inputs := []subprocess.ExecCommandInput{{
 				Command: "dokku",
 				Args:    []string{"--quiet", "plugin:uninstall", t.Name},
 			}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "plugin installed",
@@ -167,7 +178,7 @@ func (t PluginTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runPluginChange(ctx, StatePresent, StateAbsent, inputs)
 				},
-			}
+			}, entry, installed)
 		},
 	})
 }
@@ -183,26 +194,68 @@ type pluginListEntry struct {
 	Branch     string `json:"branch"`
 }
 
+// task returns the dokku_plugin task that reinstalls the plugin as listed.
+// The followed branch is preferred so the task mirrors the install intent; a
+// detached checkout (a pinned commit or tag) reports no branch, so the exact
+// commit stands in for it.
+func (e pluginListEntry) task() PluginTask {
+	committish := e.Branch
+	if committish == "" {
+		committish = e.Committish
+	}
+	return PluginTask{
+		Name:       e.Name,
+		URL:        e.SourceURL,
+		Committish: committish,
+		State:      StatePresent,
+	}
+}
+
+// readPluginList runs `plugin:list --format json`, which exposes each plugin's
+// install source URL, followed branch, and checked-out commit.
+func readPluginList(ctx context.Context) ([]pluginListEntry, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var entries []pluginListEntry
+	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
+		return nil, fmt.Errorf("parse plugin:list json: %w", err)
+	}
+	return entries, nil
+}
+
+// pluginListed returns the plugin:list entry for name and whether it is
+// installed. Plan reads it rather than pluginInstalled so the plan's observed
+// state carries the same source and committish ExportGlobal emits.
+func pluginListed(ctx context.Context, name string) (pluginListEntry, bool, error) {
+	entries, err := readPluginList(ctx)
+	if err != nil {
+		return pluginListEntry{}, false, err
+	}
+	for _, e := range entries {
+		if e.Name == name {
+			return e, true, nil
+		}
+	}
+	return pluginListEntry{}, false, nil
+}
+
 // ExportGlobal reconstructs the server's third-party plugins from
 // `plugin:list --format json`, which exposes each plugin's install source URL,
 // followed branch, and checked-out commit. Core plugins ship with dokku (and
 // plugin:uninstall rejects them), and plugins without a git source (a tarball or
 // local path) cannot be reinstalled declaratively, so both are skipped.
 func (t PluginTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
-	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
-		Command: "dokku",
-		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
-	})
+	entries, err := readPluginList(ctx)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
 			return nil, err
 		}
-		return nil, nil
-	}
-
-	var entries []pluginListEntry
-	if err := json.Unmarshal(result.StdoutBytes(), &entries); err != nil {
 		return nil, nil
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
@@ -212,19 +265,7 @@ func (t PluginTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
 		if e.Core || e.SourceURL == "" {
 			continue
 		}
-		// Prefer the followed branch so the export mirrors the install intent; a
-		// detached checkout (a pinned commit or tag) reports no branch, so fall
-		// back to the exact commit.
-		committish := e.Branch
-		if committish == "" {
-			committish = e.Committish
-		}
-		out = append(out, PluginTask{
-			Name:       e.Name,
-			URL:        e.SourceURL,
-			Committish: committish,
-			State:      StatePresent,
-		})
+		out = append(out, e.task())
 	}
 	return out, nil
 }

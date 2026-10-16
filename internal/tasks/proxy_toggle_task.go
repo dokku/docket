@@ -97,7 +97,10 @@ func (t ProxyToggleTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the ProxyToggleTask would produce.
 func (t ProxyToggleTask) Plan(ctx context.Context) PlanResult {
-	return planToggle(ctx, t.State, t.App, "proxy:enable", "proxy:disable", proxyEnabled)
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planToggle(ctx, func(f ToggleFields) Task { return ProxyToggleTask(f) }, t.State, t.App, "proxy:enable", "proxy:disable", proxyEnabled)
 }
 
 // init registers the ProxyToggleTask with the task registry

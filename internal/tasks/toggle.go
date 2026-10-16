@@ -58,56 +58,62 @@ type ToggleProbe func(ctx context.Context, tc ToggleContext) (enabled bool, err 
 // underlying enable/disable command. An SSH transport failure short-
 // circuits to a plan error so an unreachable host is not mistaken for
 // drift.
-func planToggle(ctx context.Context, state State, app string, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
+//
+// observe builds the calling task's own type from the fields the probe read,
+// so PlanResult.Observed carries the toggle's position as its State. A plan
+// whose probe could not answer carries no Observed.
+func planToggle(ctx context.Context, observe func(ToggleFields) Task, state State, app string, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
 	tc := ToggleContext{App: app}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			if probe != nil {
-				enabled, err := probe(ctx, tc)
-				if err != nil {
-					var sshErr *subprocess.SSHError
-					if errors.As(err, &sshErr) {
-						return PlanResult{Status: PlanStatusError, Error: err}
-					}
-					// non-SSH probe error: treat as drift, must mutate
-				} else if enabled {
-					return PlanResult{InSync: true, Status: PlanStatusOK}
-				}
-			}
-			inputs := toggleInputs(enableCmd, app)
-			return PlanResult{
-				InSync:    false,
-				Status:    PlanStatusModify,
-				Reason:    fmt.Sprintf("would run %s on %s", enableCmd, app),
-				Mutations: []string{fmt.Sprintf("%s %s", enableCmd, app)},
-				Commands:  resolveCommands(ctx, inputs),
-				apply:     applyToggle(enableCmd, app, StatePresent),
-			}
+			return planTogglePosition(ctx, observe, tc, probe, true, enableCmd, StatePresent)
 		},
 		StateAbsent: func() PlanResult {
-			if probe != nil {
-				enabled, err := probe(ctx, tc)
-				if err != nil {
-					var sshErr *subprocess.SSHError
-					if errors.As(err, &sshErr) {
-						return PlanResult{Status: PlanStatusError, Error: err}
-					}
-					// non-SSH probe error: treat as drift, must mutate
-				} else if !enabled {
-					return PlanResult{InSync: true, Status: PlanStatusOK}
-				}
-			}
-			inputs := toggleInputs(disableCmd, app)
-			return PlanResult{
-				InSync:    false,
-				Status:    PlanStatusModify,
-				Reason:    fmt.Sprintf("would run %s on %s", disableCmd, app),
-				Mutations: []string{fmt.Sprintf("%s %s", disableCmd, app)},
-				Commands:  resolveCommands(ctx, inputs),
-				apply:     applyToggle(disableCmd, app, StateAbsent),
-			}
+			return planTogglePosition(ctx, observe, tc, probe, false, disableCmd, StateAbsent)
 		},
+	})
+}
+
+// planTogglePosition probes the toggle once and plans moving it to the wanted
+// position: in sync when it is already there, otherwise cmd.
+func planTogglePosition(ctx context.Context, observe func(ToggleFields) Task, tc ToggleContext, probe ToggleProbe, want bool, cmd string, final State) PlanResult {
+	read := false
+	enabled := false
+	if probe != nil {
+		var err error
+		enabled, err = probe(ctx, tc)
+		if err != nil {
+			var sshErr *subprocess.SSHError
+			if errors.As(err, &sshErr) {
+				return PlanResult{Status: PlanStatusError, Error: err}
+			}
+			// non-SSH probe error: treat as drift, must mutate
+		} else {
+			read = true
+		}
+	}
+	seen := func(r PlanResult) PlanResult {
+		if !read {
+			return r
+		}
+		f := ToggleFields{App: tc.App, State: StateAbsent}
+		if enabled {
+			f.State = StatePresent
+		}
+		return observed(r, observe(f), enabled)
+	}
+	if read && enabled == want {
+		return seen(PlanResult{InSync: true, Status: PlanStatusOK})
+	}
+	inputs := toggleInputs(cmd, tc.App)
+	return seen(PlanResult{
+		InSync:    false,
+		Status:    PlanStatusModify,
+		Reason:    fmt.Sprintf("would run %s on %s", cmd, tc.App),
+		Mutations: []string{fmt.Sprintf("%s %s", cmd, tc.App)},
+		Commands:  resolveCommands(ctx, inputs),
+		apply:     applyToggle(cmd, tc.App, final),
 	})
 }
 

@@ -2,6 +2,7 @@ package sdk_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -86,6 +87,41 @@ func ExampleContextWithRunner() {
 	// Output:
 	// app missing [dokku --quiet apps:create api]
 	// true [--quiet apps:exists api --quiet apps:create api]
+}
+
+// Reading one resource's current state through its task, without exporting
+// the server.
+func ExampleReadTask() {
+	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
+		switch strings.Join(in.Args, " ") {
+		case "version":
+			return sdk.ExecCommandResponse{Stdout: "dokku version 0.38.31"}, nil
+		case "--quiet config:export --format json api":
+			return sdk.ExecCommandResponse{Stdout: `{"LOG_LEVEL":"debug","OTHER":"x"}`}, nil
+		}
+		return sdk.ExecCommandResponse{}, nil
+	})
+	ctx = sdk.ContextWithVersionGate(ctx)
+
+	task, _ := sdk.NewTask("dokku_config")
+	cfg := task.(*sdk.ConfigTask)
+	cfg.App = "api"
+	cfg.Config = map[string]string{"LOG_LEVEL": "info"}
+
+	current, exists, err := sdk.ReadTask(ctx, cfg)
+	var verr *sdk.VersionError
+	if errors.As(err, &verr) {
+		fmt.Println("server too old for", verr.TaskType)
+		return
+	}
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	observed := current.(sdk.ConfigTask)
+	fmt.Println(exists, observed.Config)
+	// Output:
+	// true map[LOG_LEVEL:debug]
 }
 
 func ExampleCatalogFor() {

@@ -98,14 +98,23 @@ func (t GitSyncTask) Execute(ctx context.Context) TaskOutputState {
 
 // Plan reports the drift the GitSyncTask would produce.
 func (t GitSyncTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			match, err := checkAppSyncState(ctx, t.App, t.Remote, t.GitRef, t.SkipDeployBranch)
+			sync, err := readAppSyncState(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if match {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+			seen := func(r PlanResult) PlanResult {
+				if !sync.read {
+					return r
+				}
+				return observed(r, sync.observed, sync.observed.State == StatePresent)
+			}
+			if sync.matches(t.Remote, t.GitRef, t.SkipDeployBranch) {
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 			}
 			ref := t.GitRef
 			if ref == "" {
@@ -126,7 +135,7 @@ func (t GitSyncTask) Plan(ctx context.Context) PlanResult {
 				args = append(args, t.GitRef)
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "remote/ref drift",
@@ -135,54 +144,95 @@ func (t GitSyncTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			})
 		},
 	})
 }
 
-// checkAppSyncState checks if the app is already synced from the expected
-// remote and ref. dokku records the deploy source as "<remote>#<resolved SHA>"
-// (and only after a build), so the stored SHA cannot be compared against a
-// branch or tag name. Instead the remote portion of the metadata is compared,
-// and the ref is compared against the deploy-branch git:sync persists from it
-// (unless the caller opted out with skip_deploy_branch, or pinned no ref, in
-// which case a matching remote is the most that can be verified offline). A
-// transport-level failure (`*subprocess.SSHError`) is propagated; any other
-// error is treated as "no match" so the planner proposes a re-sync.
-func checkAppSyncState(ctx context.Context, app, expectedRemote, expectedRef string, skipDeployBranch bool) (bool, error) {
+// appSyncState is what the git-sync probe read for an app: whether its last
+// deploy came from git:sync, the remote it synced, and the deploy-branch
+// git:sync persisted from the ref.
+type appSyncState struct {
+	// sourceRead is false when apps:report could not be read or parsed.
+	sourceRead bool
+
+	// gitSync is true when the app's deploy source is git-sync.
+	gitSync bool
+
+	// remote is the synced remote, the metadata before its last "#".
+	remote string
+
+	// branchRead is false when git:report could not be read or parsed.
+	branchRead bool
+
+	// deployBranch is the deploy-branch dokku has stored.
+	deployBranch string
+
+	// read is true when observed holds everything the exporter reads.
+	read bool
+
+	// observed is the app's git sync as the exporter would emit it, or the
+	// app alone with StateAbsent when its deploy source is not git-sync.
+	observed GitSyncTask
+}
+
+// matches reports whether the app is already synced from the expected remote
+// and ref. dokku records the deploy source as "<remote>#<resolved SHA>" (and
+// only after a build), so the stored SHA cannot be compared against a branch or
+// tag name. Instead the remote portion of the metadata is compared, and the ref
+// is compared against the deploy-branch git:sync persists from it (unless the
+// caller opted out with skip_deploy_branch, or pinned no ref, in which case a
+// matching remote is the most that can be verified offline). A read that
+// failed is "no match", so the planner proposes a re-sync.
+func (s appSyncState) matches(expectedRemote, expectedRef string, skipDeployBranch bool) bool {
+	if !s.sourceRead || !s.gitSync || s.remote != expectedRemote {
+		return false
+	}
+	if expectedRef == "" || skipDeployBranch {
+		return true
+	}
+	return s.branchRead && s.deployBranch == expectedRef
+}
+
+// readAppSyncState reads an app's deploy source and, when it is git-sync, the
+// deploy-branch. A transport-level failure (`*subprocess.SSHError`) is
+// returned; any other read failure is recorded on the state, which then
+// matches nothing and observes nothing.
+func readAppSyncState(ctx context.Context, app string) (appSyncState, error) {
+	var state appSyncState
 	source, err := getAppDeploySource(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
-			return false, err
+			return state, err
 		}
-		return false, nil
+		return state, nil
 	}
+	state.sourceRead = true
 	if source.Source != "git-sync" {
-		return false, nil
+		state.read = true
+		state.observed = GitSyncTask{App: app, State: StateAbsent}
+		return state, nil
 	}
-
-	remote := source.SourceMetadata
+	state.gitSync = true
+	state.remote = source.SourceMetadata
 	if i := strings.LastIndex(source.SourceMetadata, "#"); i >= 0 {
-		remote = source.SourceMetadata[:i]
-	}
-	if remote != expectedRemote {
-		return false, nil
-	}
-
-	if expectedRef == "" || skipDeployBranch {
-		return true, nil
+		state.remote = source.SourceMetadata[:i]
 	}
 
 	deployBranch, err := getGitDeployBranch(ctx, app)
 	if err != nil {
 		var sshErr *subprocess.SSHError
 		if errors.As(err, &sshErr) {
-			return false, err
+			return state, err
 		}
-		return false, nil
+		return state, nil
 	}
-	return deployBranch == expectedRef, nil
+	state.branchRead = true
+	state.deployBranch = deployBranch
+	state.read = true
+	state.observed = GitSyncTask{App: app, Remote: state.remote, GitRef: deployBranch, State: StatePresent}
+	return state, nil
 }
 
 // getGitDeployBranch returns the deploy-branch dokku has stored for the app,

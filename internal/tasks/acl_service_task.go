@@ -159,26 +159,32 @@ func (t AclServiceTask) Validate() error {
 
 // Plan reports the drift the AclServiceTask would produce.
 func (t AclServiceTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	probe := func() (map[string]bool, error) { return getAclServiceUsers(ctx, t.Type, t.Service) }
+	observe := func(users []string, state State) Task {
+		return AclServiceTask{Service: t.Service, Type: t.Type, Users: users, State: state}
+	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			return planAclPresent(ctx, probe, t.Users, func(u string) []string {
+			return planAclPresent(ctx, observe, probe, t.Users, func(u string) []string {
 				return []string{"--quiet", "acl:add-service", t.Type, t.Service, u}
 			})
 		},
 		StateAbsent: func() PlanResult {
-			return planAclAbsent(ctx, probe, t.Users, func(u string) []string {
+			return planAclAbsent(ctx, observe, probe, t.Users, func(u string) []string {
 				return []string{"--quiet", "acl:remove-service", t.Type, t.Service, u}
 			})
 		},
 		StateSet: func() PlanResult {
-			return planAclSet(ctx, probe, t.Users, aclSetServiceUsersInputs(t.Type, t.Service, t.Users))
+			return planAclSet(ctx, observe, probe, t.Users, aclSetServiceUsersInputs(t.Type, t.Service, t.Users))
 		},
 		StateClear: func() PlanResult {
-			return planAclClear(ctx, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil))
+			return planAclClear(ctx, observe, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil))
 		},
 	})
 }

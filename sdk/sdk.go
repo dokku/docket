@@ -194,13 +194,38 @@ func ContextWithVersionGate(ctx context.Context) context.Context {
 
 // CheckMinimumVersions returns a *VersionError when the server ctx targets,
 // or an installed plugin task needs, is older than the floor task declares.
-// Call it before a task's Plan or Execute. It returns nil when ctx carries no
-// gate, when task declares no floor, and when a plugin task needs is not
-// installed, which the task's own probe reports. typeKey names the task in
-// the error, such as "dokku_app".
+// A task's Plan and Execute already refuse through it when ctx carries a
+// gate; call it to check a task before planning it. It returns nil when ctx
+// carries no gate, when task declares no floor, and when a plugin task needs
+// is not installed, which the task's own probe reports. typeKey names the
+// task in the error, such as "dokku_app".
 func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error {
 	return tasks.CheckMinimumVersions(ctx, typeKey, task)
 }
+
+// ReadTask returns task as it exists on the server, and whether the resource
+// exists, from a single Plan; nothing is applied. The returned task is the
+// value type registered for task (AppTask, not *AppTask), carrying the
+// identity keys from task and every field the server reports. Fields whose
+// catalog entry is WriteOnly or ApplyOnly are left empty or at their default.
+//
+// task must be a valid task: its State picks which members of a collection
+// are read, so a dokku_config in state present reads the keys it names, and
+// one in state set reads every key it would own. A property task known only
+// by its identity keys is read with State absent, which needs no Value.
+//
+// When ctx carries a version gate and the server is older than task's floor,
+// the error is the *VersionError, never a resource reported as absent. A task
+// whose probe cannot read its state returns an error wrapping
+// ErrStateUnreadable.
+func ReadTask(ctx context.Context, task Task) (Task, bool, error) {
+	return tasks.ReadTask(ctx, task)
+}
+
+// ErrStateUnreadable is wrapped by the error ReadTask returns when a task's
+// probe cannot read its current state, such as dokku_storage_ensure, or when
+// the probe failed in a way the plan treats as drift.
+var ErrStateUnreadable = tasks.ErrStateUnreadable
 
 // ExecutePlan applies p, the result of a task's Plan, without probing the
 // server again. A plan that is already in sync applies nothing.

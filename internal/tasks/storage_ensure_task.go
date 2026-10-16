@@ -141,6 +141,9 @@ func (t StorageEnsureTask) ensureArgs() []string {
 // not expose a probe for storage:ensure-directory, so the plan reports
 // drift unconditionally.
 func (t StorageEnsureTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}

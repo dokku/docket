@@ -229,6 +229,9 @@ func (t ServiceBackupTask) Validate() error {
 // declared group against `<service>:info` once the service is confirmed to
 // exist.
 func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -300,9 +303,9 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 			}
 
 			if len(inputs) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceBackup(t, PlanResult{InSync: true, Status: PlanStatusOK}, info)
 			}
-			return PlanResult{
+			return observedServiceBackup(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    fmt.Sprintf("backup drift on %s: %s", target, strings.Join(drift, "; ")),
@@ -311,7 +314,7 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, info)
 		},
 		StateAbsent: func() PlanResult {
 			info, result := probe()
@@ -351,9 +354,9 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 			}
 
 			if len(inputs) == 0 {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return observedServiceBackup(t, PlanResult{InSync: true, Status: PlanStatusOK}, info)
 			}
-			return PlanResult{
+			return observedServiceBackup(t, PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    fmt.Sprintf("backup %s configured on %s", strings.Join(present, ", "), target),
@@ -362,7 +365,7 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, info)
 		},
 	})
 }
@@ -427,6 +430,32 @@ func backupAuthStored(info map[string]string) bool {
 		}
 	}
 	return false
+}
+
+// observedServiceBackup attaches the backup settings the info report carries to r.
+// The credentials and the passphrase are reported only as fingerprints, so
+// they stay empty; the region, signature version and endpoint are reported
+// as stored, so Observed carries them even though export, which cannot emit
+// them without the credentials, does not. The resource exists when any
+// setting is stored: a schedule, an auth setting, or an encryption
+// passphrase.
+func observedServiceBackup(t ServiceBackupTask, r PlanResult, info map[string]string) PlanResult {
+	o := ServiceBackupTask{
+		Service:             t.Service,
+		Name:                t.Name,
+		Schedule:            infoValue(info, "backup-schedule"),
+		Bucket:              infoValue(info, "backup-bucket"),
+		UseIam:              infoValue(info, "backup-use-iam") == "true",
+		AwsDefaultRegion:    infoValue(info, "backup-default-region"),
+		AwsSignatureVersion: infoValue(info, "backup-signature-version"),
+		EndpointURL:         infoValue(info, "backup-endpoint-url"),
+		State:               StateAbsent,
+	}
+	exists := o.Schedule != "" || backupAuthStored(info) || infoValue(info, "backup-encryption-fingerprint") != ""
+	if exists {
+		o.State = StatePresent
+	}
+	return observed(r, o, exists)
 }
 
 // init registers the ServiceBackupTask with the task registry

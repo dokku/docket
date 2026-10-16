@@ -143,6 +143,9 @@ func (t HttpAuthAllowedIpTask) Validate() error {
 
 // Plan reports the drift the HttpAuthAllowedIpTask would produce.
 func (t HttpAuthAllowedIpTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -169,7 +172,7 @@ func planHttpAuthAllowedIpsPresent(ctx context.Context, t HttpAuthAllowedIpTask)
 		}
 	}
 	if len(toAdd) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthAllowedIps(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, false)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
@@ -182,7 +185,7 @@ func planHttpAuthAllowedIpsPresent(ctx context.Context, t HttpAuthAllowedIpTask)
 			Args:    []string{"--quiet", "http-auth:add-allowed-ip", t.App, ip},
 		})
 	}
-	return PlanResult{
+	return observedHttpAuthAllowedIps(t, PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d allowed ip(s) to add", len(toAdd)),
@@ -191,7 +194,7 @@ func planHttpAuthAllowedIpsPresent(ctx context.Context, t HttpAuthAllowedIpTask)
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}
+	}, current, false)
 }
 
 // planHttpAuthAllowedIpsAbsent reports drift for the absent-state address remove.
@@ -209,7 +212,7 @@ func planHttpAuthAllowedIpsAbsent(ctx context.Context, t HttpAuthAllowedIpTask) 
 		}
 	}
 	if len(toRemove) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthAllowedIps(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, false)
 	}
 	inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
 	for _, ip := range toRemove {
@@ -218,7 +221,7 @@ func planHttpAuthAllowedIpsAbsent(ctx context.Context, t HttpAuthAllowedIpTask) 
 			Args:    []string{"--quiet", "http-auth:remove-allowed-ip", t.App, ip},
 		})
 	}
-	return PlanResult{
+	return observedHttpAuthAllowedIps(t, PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d allowed ip(s) to remove", len(toRemove)),
@@ -227,7 +230,7 @@ func planHttpAuthAllowedIpsAbsent(ctx context.Context, t HttpAuthAllowedIpTask) 
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
-	}
+	}, current, false)
 }
 
 // planHttpAuthAllowedIpsSet reports drift for the set-state full replacement.
@@ -252,21 +255,21 @@ func planHttpAuthAllowedIpsSet(ctx context.Context, t HttpAuthAllowedIpTask) Pla
 		}
 	}
 	if len(mutations) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthAllowedIps(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, true)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
 		status = PlanStatusCreate
 	}
 	inputs := dokkuArgsInputs("http-auth:set-allowed-ips", t.App, t.AllowedIps)
-	return PlanResult{
+	return observedHttpAuthAllowedIps(t, PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d allowed ip change(s)", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("http-auth:set-allowed-ips", t.App, t.AllowedIps, StateSet, StateAbsent),
-	}
+	}, current, true)
 }
 
 // planHttpAuthAllowedIpsClear reports drift for the clear-state operation.
@@ -276,7 +279,7 @@ func planHttpAuthAllowedIpsClear(ctx context.Context, t HttpAuthAllowedIpTask) P
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if len(current) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedHttpAuthAllowedIps(t, PlanResult{InSync: true, Status: PlanStatusOK}, current, true)
 	}
 	ips := sortedSetKeys(current)
 	mutations := make([]string, 0, len(ips))
@@ -284,14 +287,14 @@ func planHttpAuthAllowedIpsClear(ctx context.Context, t HttpAuthAllowedIpTask) P
 		mutations = append(mutations, "remove "+ip)
 	}
 	inputs := dokkuArgsInputs("http-auth:set-allowed-ips", t.App, nil)
-	return PlanResult{
+	return observedHttpAuthAllowedIps(t, PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d allowed ip(s)", len(current)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("http-auth:set-allowed-ips", t.App, nil, StateClear, StatePresent),
-	}
+	}, current, true)
 }
 
 // httpAuthIPv4Pattern, httpAuthIPv6ShapePattern and httpAuthPrefixPattern back
@@ -427,6 +430,13 @@ func (t HttpAuthAllowedIpTask) ExportApp(ctx context.Context, app string) ([]int
 		return nil, nil
 	}
 	return []interface{}{HttpAuthAllowedIpTask{App: app, AllowedIps: sortedSetKeys(ips), State: StateSet}}, nil
+}
+
+// observedHttpAuthAllowedIps attaches the allowed IPs the probe read to r, through
+// httpAuthObservedMembers.
+func observedHttpAuthAllowedIps(t HttpAuthAllowedIpTask, r PlanResult, current map[string]bool, whole bool) PlanResult {
+	held, state := httpAuthObservedMembers(current, t.AllowedIps, whole)
+	return observed(r, HttpAuthAllowedIpTask{App: t.App, AllowedIps: held, State: state}, len(held) > 0)
 }
 
 // init registers the HttpAuthAllowedIpTask with the task registry

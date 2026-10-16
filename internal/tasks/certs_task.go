@@ -162,8 +162,22 @@ func (t CertsTask) Validate() error {
 
 // Plan reports the drift the CertsTask would produce.
 func (t CertsTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
+	}
+	// seen attaches whether the scope has a certificate installed. The
+	// certificate and key are not carried: the probe compares fingerprints
+	// and never moves the private key off the server, and Observed does not
+	// either.
+	seen := func(r PlanResult, enabled bool) PlanResult {
+		o := CertsTask{App: t.App, Global: t.Global, State: StateAbsent}
+		if enabled {
+			o.State = StatePresent
+		}
+		return observed(r, o, enabled)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -179,7 +193,7 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 					return PlanResult{Status: PlanStatusError, Error: err}
 				}
 				if !drifted {
-					return PlanResult{InSync: true, Status: PlanStatusOK}
+					return seen(PlanResult{InSync: true, Status: PlanStatusOK}, enabled)
 				}
 			}
 			target := t.App
@@ -210,7 +224,7 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 				// certs:add and certs:update are the same command in dokku, and
 				// both fn-certs-set and fn-global-cert-set overwrite what is
 				// there, so replacing a certificate needs no command of its own.
-				return PlanResult{
+				return seen(PlanResult{
 					InSync:    false,
 					Status:    PlanStatusModify,
 					Reason:    "certificate material drift",
@@ -219,9 +233,9 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 					apply: func(ctx context.Context) TaskOutputState {
 						return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
 					},
-				}
+				}, enabled)
 			}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "certificate not installed",
@@ -230,7 +244,7 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, enabled)
 		},
 		StateAbsent: func() PlanResult {
 			enabled, err := certsEnabled(ctx, t)
@@ -238,7 +252,7 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !enabled {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, enabled)
 			}
 			target := t.App
 			if t.Global {
@@ -249,7 +263,7 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 				args = []string{"--quiet", "global-cert:remove"}
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "certificate present",
@@ -258,7 +272,7 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, enabled)
 		},
 	})
 }

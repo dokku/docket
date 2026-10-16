@@ -103,8 +103,21 @@ func (t SshKeyTask) Validate() error {
 
 // Plan reports the drift the SshKeyTask would produce.
 func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
+	}
+	// seen attaches the key installed under the task's name, as
+	// ssh-keys:list reports it. A list dokku could not produce reads as no
+	// keys, the same answer the probe acts on.
+	seen := func(r PlanResult, keys map[string]sshKeyEntry) PlanResult {
+		entry, found := keys[t.Name]
+		if !found {
+			return observed(r, SshKeyTask{Name: t.Name, State: StateAbsent}, false)
+		}
+		return observed(r, SshKeyTask{Name: t.Name, Key: entry.PublicKey, State: StatePresent}, true)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -120,7 +133,7 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 			}
 			if existing, found := keys[t.Name]; found {
 				if sshKeyMatches(existing, pub) {
-					return PlanResult{InSync: true, Status: PlanStatusOK}
+					return seen(PlanResult{InSync: true, Status: PlanStatusOK}, keys)
 				}
 				// The name is taken by a different key; ssh-keys:add refuses to
 				// clobber, so remove the stale entry first then re-add.
@@ -128,7 +141,7 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 					{Command: "dokku", Args: []string{"--quiet", "ssh-keys:remove", t.Name}},
 					addInput,
 				}
-				return PlanResult{
+				return seen(PlanResult{
 					InSync:    false,
 					Status:    PlanStatusModify,
 					Reason:    "key contents changed",
@@ -137,10 +150,10 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 					apply: func(ctx context.Context) TaskOutputState {
 						return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StatePresent, inputs)
 					},
-				}
+				}, keys)
 			}
 			inputs := []subprocess.ExecCommandInput{addInput}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusCreate,
 				Reason:    "key missing",
@@ -149,7 +162,7 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, keys)
 		},
 		StateAbsent: func() PlanResult {
 			keys, err := sshKeysList(ctx)
@@ -157,12 +170,12 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if _, found := keys[t.Name]; !found {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, keys)
 			}
 			inputs := []subprocess.ExecCommandInput{
 				{Command: "dokku", Args: []string{"--quiet", "ssh-keys:remove", t.Name}},
 			}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    "key present",
@@ -171,7 +184,7 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, keys)
 		},
 	})
 }

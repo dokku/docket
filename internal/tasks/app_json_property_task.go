@@ -96,7 +96,10 @@ func (t AppJsonPropertyTask) Validate() error {
 
 // Plan reports the drift the AppJsonPropertyTask would produce.
 func (t AppJsonPropertyTask) Plan(ctx context.Context) PlanResult {
-	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planProperty(ctx, t, func(f PropertyFields) Task { return AppJsonPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.

@@ -188,6 +188,9 @@ func (t PortsTask) Validate() error {
 
 // Plan reports the drift the PortsTask would produce.
 func (t PortsTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -197,6 +200,33 @@ func (t PortsTask) Plan(ctx context.Context) PlanResult {
 		StateSet:     func() PlanResult { return planPortsSet(ctx, t) },
 		StateClear:   func() PlanResult { return planPortsClear(ctx, t) },
 	})
+}
+
+// observedPorts attaches the mappings the probe read to r, sorted. An additive
+// state (present, absent) reads the mappings t names; set and clear own the
+// whole list, so they read every mapping, reported as set, or as clear when
+// there are none.
+func observedPorts(r PlanResult, t PortsTask, current map[string]PortMapping, whole bool) PlanResult {
+	declared := map[string]bool{}
+	for _, pm := range t.PortMappings {
+		declared[pm.String()] = true
+	}
+	var held []PortMapping
+	for _, k := range sortedPortMappings(current) {
+		if whole || declared[k] {
+			held = append(held, current[k])
+		}
+	}
+	state := StateAbsent
+	switch {
+	case whole && len(held) > 0:
+		state = StateSet
+	case whole:
+		state = StateClear
+	case len(held) > 0:
+		state = StatePresent
+	}
+	return observed(r, PortsTask{App: t.App, PortMappings: held, State: state}, len(held) > 0)
 }
 
 // planPortsPresent reports drift for the present-state mapping add.
@@ -227,21 +257,21 @@ func planPortsPresent(ctx context.Context, t PortsTask) PlanResult {
 		mutations = append(mutations, fmt.Sprintf("add %s", pm.String()))
 	}
 	if len(toAdd) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedPorts(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentPorts, false)
 	}
 	status := PlanStatusModify
 	if len(currentPorts) == 0 {
 		status = PlanStatusCreate
 	}
 	inputs := dokkuArgsInputs("ports:add", t.App, toAdd)
-	return PlanResult{
+	return observedPorts(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d port mapping(s) to add", len(toAdd)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:add", t.App, toAdd, StatePresent, StateAbsent),
-	}
+	}, t, currentPorts, false)
 }
 
 // planPortsAbsent reports drift for the absent-state mapping remove.
@@ -259,17 +289,17 @@ func planPortsAbsent(ctx context.Context, t PortsTask) PlanResult {
 		}
 	}
 	if len(toRemove) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedPorts(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentPorts, false)
 	}
 	inputs := dokkuArgsInputs("ports:remove", t.App, toRemove)
-	return PlanResult{
+	return observedPorts(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d port mapping(s) to remove", len(toRemove)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:remove", t.App, toRemove, StateAbsent, StatePresent),
-	}
+	}, t, currentPorts, false)
 }
 
 // planPortsSet reports drift for the set-state full replacement. The itemized
@@ -297,7 +327,7 @@ func planPortsSet(ctx context.Context, t PortsTask) PlanResult {
 		}
 	}
 	if len(mutations) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedPorts(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentPorts, true)
 	}
 	status := PlanStatusModify
 	if len(currentPorts) == 0 {
@@ -305,14 +335,14 @@ func planPortsSet(ctx context.Context, t PortsTask) PlanResult {
 	}
 	args := portMappingArgs(t.PortMappings)
 	inputs := dokkuArgsInputs("ports:set", t.App, args)
-	return PlanResult{
+	return observedPorts(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("%d port mapping change(s)", len(mutations)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:set", t.App, args, StateSet, StateAbsent),
-	}
+	}, t, currentPorts, true)
 }
 
 // planPortsClear reports drift for the clear-state operation.
@@ -322,7 +352,7 @@ func planPortsClear(ctx context.Context, t PortsTask) PlanResult {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if len(currentPorts) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedPorts(PlanResult{InSync: true, Status: PlanStatusOK}, t, currentPorts, true)
 	}
 	mappings := sortedPortMappings(currentPorts)
 	mutations := make([]string, 0, len(mappings))
@@ -330,14 +360,14 @@ func planPortsClear(ctx context.Context, t PortsTask) PlanResult {
 		mutations = append(mutations, fmt.Sprintf("remove %s", mapping))
 	}
 	inputs := dokkuArgsInputs("ports:clear", t.App, nil)
-	return PlanResult{
+	return observedPorts(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d port mapping(s)", len(currentPorts)),
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply:     applyDokkuArgs("ports:clear", t.App, nil, StateClear, StatePresent),
-	}
+	}, t, currentPorts, true)
 }
 
 // portMappingArgs renders mappings as the scheme:host:container arguments the

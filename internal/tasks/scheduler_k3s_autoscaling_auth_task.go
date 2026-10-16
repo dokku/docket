@@ -151,6 +151,9 @@ func (t SchedulerK3sAutoscalingAuthTask) Validate() error {
 
 // Plan reports the drift the SchedulerK3sAutoscalingAuthTask would produce.
 func (t SchedulerK3sAutoscalingAuthTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -170,6 +173,9 @@ func (t SchedulerK3sAutoscalingAuthTask) spec() schedulerK3sAutoscalingAuthSpec 
 		Global:   t.Global,
 		Trigger:  t.Trigger,
 		Metadata: t.Metadata,
+		Observe: func(metadata map[string]string, state State) Task {
+			return SchedulerK3sAutoscalingAuthTask{App: t.App, Global: t.Global, Trigger: t.Trigger, Metadata: metadata, State: state}
+		},
 	}
 }
 

@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/dokku/docket/internal/subprocess"
@@ -119,6 +118,9 @@ func (t GitFromArchiveTask) Validate() error {
 
 // Plan reports the drift the GitFromArchiveTask would produce.
 func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -128,19 +130,33 @@ func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
 			if archiveType == "" {
 				archiveType = "tar"
 			}
-			match, err := checkAppSourceArchive(ctx, t.App, archiveType, t.ArchiveURL)
+			// The archive type is stored as the deploy source value, so a
+			// tar.gz deploy reports source "tar.gz".
+			source, read, err := readAppDeploySource(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
-			if match {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+			seen := func(r PlanResult) PlanResult {
+				if !read {
+					return r
+				}
+				if !isArchiveDeploySource(source.Source) {
+					return observed(r, GitFromArchiveTask{App: t.App, State: StateAbsent}, false)
+				}
+				// The URL can carry credentials, and the server's value is
+				// not the recipe's, so mask it too.
+				subprocess.MaskerFromContext(ctx).Add(source.SourceMetadata)
+				return observed(r, GitFromArchiveTask{App: t.App, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source, State: StateDeployed}, true)
+			}
+			if read && source.Source == archiveType && source.SourceMetadata == t.ArchiveURL {
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
 			}
 			args := []string{"git:from-archive", "--archive-type", archiveType, t.App, t.ArchiveURL}
 			if t.GitUsername != "" {
 				args = append(args, t.GitUsername, t.GitEmail)
 			}
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusModify,
 				Reason:    "archive source drift",
@@ -149,27 +165,19 @@ func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: "undeployed"}, StateDeployed, inputs)
 				},
-			}
+			})
 		},
 	})
 }
 
-// checkAppSourceArchive returns true if the app is already deployed
-// from the expected archive URL with the expected archive type. The
-// archive type is stored as the deploy source value, so a tar.gz
-// deploy reports source "tar.gz". A transport-level failure
-// (`*subprocess.SSHError`) is propagated; any other error is treated
-// as "no match" so the planner proposes a re-deploy.
-func checkAppSourceArchive(ctx context.Context, app, expectedType, expectedURL string) (bool, error) {
-	source, err := getAppDeploySource(ctx, app)
-	if err != nil {
-		var sshErr *subprocess.SSHError
-		if errors.As(err, &sshErr) {
-			return false, err
-		}
-		return false, nil
+// isArchiveDeploySource reports whether a deploy source value is one
+// git:from-archive records: the archive type it was deployed from.
+func isArchiveDeploySource(source string) bool {
+	switch source {
+	case "tar", "tar.gz", "zip":
+		return true
 	}
-	return source.Source == expectedType && source.SourceMetadata == expectedURL, nil
+	return false
 }
 
 // ExportApp reconstructs a git-from-archive deploy source from apps:report.
@@ -180,11 +188,10 @@ func (t GitFromArchiveTask) ExportApp(ctx context.Context, app string) ([]interf
 	if err != nil {
 		return nil, err
 	}
-	switch source.Source {
-	case "tar", "tar.gz", "zip":
-		return []interface{}{GitFromArchiveTask{App: app, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source}}, nil
+	if !isArchiveDeploySource(source.Source) {
+		return nil, nil
 	}
-	return nil, nil
+	return []interface{}{GitFromArchiveTask{App: app, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source}}, nil
 }
 
 // init registers the GitFromArchiveTask with the task registry

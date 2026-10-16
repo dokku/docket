@@ -195,12 +195,40 @@ func (t RegistryAuthTask) Validate() error {
 
 // Plan reports the drift the RegistryAuthTask would produce.
 func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
 	target := t.App
 	if t.Global {
 		target = "(global)"
+	}
+	// seen attaches whether a credential is stored for the server, from the
+	// exit code registry:auth-status answered with. The username and password
+	// are write-only, so Observed carries the scope and server alone. A code
+	// that says nothing about the credential - one the subcommand does not
+	// define, which is also what a dokku without it reports - leaves the plan
+	// with no observed state.
+	seen := func(r PlanResult, code int) PlanResult {
+		exists := false
+		switch code {
+		case registryAuthDiffers, registryAuthUnknown:
+			exists = true
+		case registryAuthMatch:
+			// A match answers the question that was asked: present when
+			// handed a credential to compare, absent when handed none.
+			exists = t.State == StatePresent
+		case registryAuthMissing, registryAuthNoSuchApp:
+		default:
+			return r
+		}
+		o := RegistryAuthTask{App: t.App, Global: t.Global, Server: t.Server, State: StateAbsent}
+		if exists {
+			o.State = StatePresent
+		}
+		return observed(r, o, exists)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -209,7 +237,7 @@ func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if code == registryAuthMatch {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, code)
 			}
 			if code == registryAuthInvalidArguments {
 				return registryAuthArgumentError(t, message)
@@ -249,7 +277,7 @@ func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 			if status == PlanStatusCreate {
 				priorState = StateAbsent
 			}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    reason,
@@ -259,7 +287,7 @@ func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: priorState}, StatePresent, inputs)
 				},
-			}
+			}, code)
 		},
 		StateAbsent: func() PlanResult {
 			code, message, err := registryAuthStatus(ctx, t, "", "")
@@ -270,7 +298,7 @@ func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 			// an app that does not exist guarantees a failure at apply. It can
 			// hold no credential either way, which is the state asked for.
 			if code == registryAuthMatch || code == registryAuthNoSuchApp {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, code)
 			}
 			if code == registryAuthInvalidArguments {
 				return registryAuthArgumentError(t, message)
@@ -293,7 +321,7 @@ func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 			args = append(args, registryAuthScopeArgs(t)...)
 			args = append(args, t.Server)
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: args}}
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    reason,
@@ -303,7 +331,7 @@ func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, code)
 		},
 	})
 }

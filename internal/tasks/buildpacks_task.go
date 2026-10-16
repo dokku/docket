@@ -109,6 +109,9 @@ func (t BuildpacksTask) Validate() error {
 
 // Plan reports the drift the BuildpacksTask would produce.
 func (t BuildpacksTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
 	}
@@ -116,6 +119,23 @@ func (t BuildpacksTask) Plan(ctx context.Context) PlanResult {
 		StatePresent: func() PlanResult { return planBuildpacksAdd(ctx, t) },
 		StateAbsent:  func() PlanResult { return planBuildpacksRemove(ctx, t) },
 	})
+}
+
+// observedBuildpacks attaches the buildpacks the probe read to r, in the
+// server's precedence order: every one of them when the plan owns the whole
+// list, or only those t names when an absent plan removes named buildpacks.
+func observedBuildpacks(r PlanResult, t BuildpacksTask, current []string, whole bool) PlanResult {
+	var held []string
+	for _, bp := range current {
+		if whole || slices.Contains(t.Buildpacks, bp) {
+			held = append(held, bp)
+		}
+	}
+	state := StateAbsent
+	if len(held) > 0 {
+		state = StatePresent
+	}
+	return observed(r, BuildpacksTask{App: t.App, Buildpacks: held, State: state}, len(held) > 0)
 }
 
 func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
@@ -128,7 +148,7 @@ func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
 	// drift, not in sync (issue #356). Validate() already guarantees the desired
 	// list is non-empty for state present.
 	if slices.Equal(current, t.Buildpacks) {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, current, true)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
@@ -142,7 +162,7 @@ func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
 	for i, bp := range t.Buildpacks {
 		mutations = append(mutations, fmt.Sprintf("set %s (position %d)", bp, i))
 	}
-	return PlanResult{
+	return observedBuildpacks(PlanResult{
 		InSync:    false,
 		Status:    status,
 		Reason:    fmt.Sprintf("set %d buildpack(s) in order", len(t.Buildpacks)),
@@ -151,17 +171,24 @@ func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}
+	}, t, current, true)
 }
 
 func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
-	current, err := getBuildpacks(ctx, t.App)
+	ordered, err := listBuildpacks(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
-	if len(t.Buildpacks) == 0 {
+	current := make(map[string]bool, len(ordered))
+	for _, bp := range ordered {
+		current[bp] = true
+	}
+	// With no buildpacks named the plan clears the whole list, so it reads all
+	// of them; otherwise it reads only the ones it would remove.
+	whole := len(t.Buildpacks) == 0
+	if whole {
 		if len(current) == 0 {
-			return PlanResult{InSync: true, Status: PlanStatusOK}
+			return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, ordered, whole)
 		}
 		mutations := make([]string, 0, len(current))
 		for bp := range current {
@@ -171,7 +198,7 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 			Command: "dokku",
 			Args:    []string{"--quiet", "buildpacks:clear", t.App},
 		}}
-		return PlanResult{
+		return observedBuildpacks(PlanResult{
 			InSync:    false,
 			Status:    PlanStatusDestroy,
 			Reason:    fmt.Sprintf("clear %d buildpack(s)", len(current)),
@@ -180,7 +207,7 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 			apply: func(ctx context.Context) TaskOutputState {
 				return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 			},
-		}
+		}, t, ordered, whole)
 	}
 	toRemove := []string{}
 	mutations := []string{}
@@ -191,7 +218,7 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 		}
 	}
 	if len(toRemove) == 0 {
-		return PlanResult{InSync: true, Status: PlanStatusOK}
+		return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, ordered, whole)
 	}
 	inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
 	for _, bp := range toRemove {
@@ -200,7 +227,7 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 			Args:    []string{"--quiet", "buildpacks:remove", t.App, bp},
 		})
 	}
-	return PlanResult{
+	return observedBuildpacks(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("%d buildpack(s) to remove", len(toRemove)),
@@ -209,7 +236,7 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
-	}
+	}, t, ordered, whole)
 }
 
 // ExportApp reads the app's buildpacks and returns a dokku_buildpacks task, or
@@ -257,8 +284,22 @@ func getOrderedBuildpacks(ctx context.Context, app string) ([]string, error) {
 	return list, nil
 }
 
-// getBuildpacks fetches the current buildpacks list for an app
+// getBuildpacks fetches the current buildpacks list for an app as a set.
 func getBuildpacks(ctx context.Context, app string) (map[string]bool, error) {
+	list, err := listBuildpacks(ctx, app)
+	if err != nil {
+		return nil, err
+	}
+	buildpacks := make(map[string]bool, len(list))
+	for _, bp := range list {
+		buildpacks[bp] = true
+	}
+	return buildpacks, nil
+}
+
+// listBuildpacks fetches the app's buildpacks from `buildpacks:list`, in the
+// precedence order it prints them.
+func listBuildpacks(ctx context.Context, app string) ([]string, error) {
 	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
 		Command: "dokku",
 		Args:    []string{"--quiet", "buildpacks:list", app},
@@ -267,13 +308,13 @@ func getBuildpacks(ctx context.Context, app string) (map[string]bool, error) {
 		return nil, err
 	}
 
-	buildpacks := map[string]bool{}
+	var buildpacks []string
 	for _, line := range strings.Split(result.StdoutContents(), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "=====>") {
 			continue
 		}
-		buildpacks[trimmed] = true
+		buildpacks = append(buildpacks, trimmed)
 	}
 	return buildpacks, nil
 }

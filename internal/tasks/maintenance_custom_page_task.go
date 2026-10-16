@@ -129,8 +129,34 @@ func (t MaintenanceCustomPageTask) Validate() error {
 
 // Plan reports the drift the MaintenanceCustomPageTask would produce.
 func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
 	if err := t.Validate(); err != nil {
 		return planErr(err)
+	}
+	// seen attaches the page the report says is installed. A checksum the
+	// plugin does not report, or a report that could not be read, says
+	// nothing either way and leaves the plan with no observed state. An
+	// installed page's content is read back the way export reads it.
+	seen := func(r PlanResult, current string, reported bool, probeErr error) PlanResult {
+		if probeErr != nil || !reported || r.Error != nil {
+			return r
+		}
+		if current == "" {
+			return observed(r, MaintenanceCustomPageTask{App: t.App, State: StateAbsent}, false)
+		}
+		content, _, err := maintenanceCustomPageExport(ctx, t.App)
+		if err != nil {
+			var sshErr *subprocess.SSHError
+			if errors.As(err, &sshErr) {
+				return PlanResult{Status: PlanStatusError, Error: err}
+			}
+			// An older dokku-maintenance has no export command, so the page
+			// is known to be installed but its content is not.
+			content = ""
+		}
+		return observed(r, MaintenanceCustomPageTask{App: t.App, Content: content, State: StatePresent}, true)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
@@ -151,7 +177,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 				}
 			}
 			if err == nil && reported && current == desired {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, current, reported, err)
 			}
 
 			input := subprocess.ExecCommandInput{
@@ -174,7 +200,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 				reason = fmt.Sprintf("custom page not set for %s", t.App)
 			}
 
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    reason,
@@ -183,7 +209,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 				},
-			}
+			}, current, reported, err)
 		},
 		StateAbsent: func() PlanResult {
 			current, reported, err := maintenanceCustomPageState(ctx, t.App)
@@ -194,7 +220,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 				}
 			}
 			if err == nil && reported && current == "" {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, current, reported, err)
 			}
 
 			inputs := []subprocess.ExecCommandInput{{Command: "dokku", Args: []string{"--quiet", "maintenance:custom-page-remove", t.App}}}
@@ -206,7 +232,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 				reason = fmt.Sprintf("custom page checksum not reported for %s", t.App)
 			}
 
-			return PlanResult{
+			return seen(PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    reason,
@@ -215,7 +241,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 				apply: func(ctx context.Context) TaskOutputState {
 					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 				},
-			}
+			}, current, reported, err)
 		},
 	})
 }

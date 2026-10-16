@@ -44,6 +44,25 @@ func registeredType(typeKey string) (reflect.Type, bool) {
 	return t, ok
 }
 
+// typeKeyOf returns the type key t is registered under, or "" for a type the
+// registry does not know. A pointer to a registered type answers the same key
+// as the value, since NewTask hands out pointers.
+func typeKeyOf(t Task) string {
+	if t == nil {
+		return ""
+	}
+	rt := reflect.TypeOf(t)
+	if rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+	for key, registered := range registeredTasks {
+		if registered == rt {
+			return key
+		}
+	}
+	return ""
+}
+
 // Lookup reports whether typeKey is a registered task type and, when it is,
 // returns a zero-value instance of it for reading the task's metadata - its
 // synopsis, identity keys, export support and so on.

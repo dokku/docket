@@ -158,7 +158,10 @@ func (t SchedulerK3sPropertyTask) Validate() error {
 
 // Plan reports the drift the SchedulerK3sPropertyTask would produce.
 func (t SchedulerK3sPropertyTask) Plan(ctx context.Context) PlanResult {
-	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planProperty(ctx, t, func(f PropertyFields) Task { return SchedulerK3sPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // ExportApp reconstructs the app's explicitly-set properties.

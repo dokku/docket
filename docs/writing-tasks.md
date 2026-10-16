@@ -45,15 +45,25 @@ type LollipopTask struct {
 }
 
 func (t LollipopTask) Plan(ctx context.Context) PlanResult {
+  // Refuse the task when the context carries a version gate and the server is
+  // older than MinimumVersions declares.
+  if r, ok := gatePlan(ctx, t); !ok {
+    return r
+  }
   // DispatchPlan keeps its argument-free branch signature; the closures capture
   // ctx from the enclosing Plan.
   return DispatchPlan(t.State, map[State]func() PlanResult{
     "present": func() PlanResult {
       // Probe the server once, decide whether to mutate.
-      if /* already in desired state */ {
-        return PlanResult{InSync: true, Status: PlanStatusOK}
+      current := /* the flavors the server holds, among t.Flavors */
+      seen := LollipopTask{App: t.App, Flavors: current, State: StatePresent}
+      if len(current) == 0 {
+        seen.State = StateAbsent
       }
-      return PlanResult{
+      if /* already in desired state */ {
+        return observed(PlanResult{InSync: true, Status: PlanStatusOK}, seen, len(current) > 0)
+      }
+      return observed(PlanResult{
         InSync:    false,
         Status:    PlanStatusCreate, // or PlanStatusModify, PlanStatusDestroy
         Reason:    "...",
@@ -62,7 +72,7 @@ func (t LollipopTask) Plan(ctx context.Context) PlanResult {
           // Run the underlying dokku command. Return Changed=true on success.
           return TaskOutputState{Changed: true, State: StatePresent}
         },
-      }
+      }, seen, len(current) > 0)
     },
     "absent": func() PlanResult { /* ... */ },
   })
@@ -91,6 +101,22 @@ A few conventions to follow:
 - For a task that performs several atomic changes in one call (such as setting multiple config
   keys), populate `PlanResult.Mutations` with one entry per change, so `plan` can itemize the diff.
 - `DispatchPlan` and `DispatchState` set `DesiredState` on the result automatically.
+- `Plan()` starts with the `gatePlan` check, before validation and before any probe, so a task
+  planned outside the CLI honours a version gate on its context.
+  `TestEveryPlanChecksVersionGate` fails the build for a `Plan()` that does not.
+- Every result built from a probe goes through `observed(result, task, exists)`, which sets
+  `PlanResult.Observed` and `PlanResult.Exists` - what `sdk.ReadTask` returns (see
+  [Reading one resource](embedding.md#reading-one-resource)). The task is the value type, with
+  the identity keys copied from `t` and every field the probe read. Fields tagged `write_only` or
+  `apply_only` stay at their zero value or default. `State` is the state that would plan in sync
+  against what was read. A collection in an additive state reads only the members `t` names, and
+  one in a state that owns the collection reads them all. Read every field the task's exporter
+  reads, even one the drift check ignores, unless reading it would undo a deliberate choice of the
+  probe's - such as `dokku_certs` never moving certificate material at plan time - in which case
+  name the field in `observedOmittedFields` with the reason. A probe failure the plan treats as
+  drift, rather than as an error, sets no observed state. `TestPlanObservesServerState` plans every
+  exported body against a fixture in `observed_*_test.go` and checks that it observes itself, and
+  `TestObservedFixturesCoverEveryTask` fails the build for a task with no fixture.
 - `init()` registers the task with `RegisterTask`, which makes it usable in a recipe.
 - Every task must implement `MinimumVersions() VersionSupport`. `Dokku` is the oldest release
   whose command and output shape the current probe parses, as `major.minor.patch`. Where the
@@ -219,6 +245,9 @@ func (t LollipopTask) Validate() error {
 }
 
 func (t LollipopTask) Plan(ctx context.Context) PlanResult {
+  if r, ok := gatePlan(ctx, t); !ok {
+    return r
+  }
   if err := t.Validate(); err != nil {
     return planErr(err)
   }
@@ -323,7 +352,12 @@ func checksEnabled(ctx context.Context, tc ToggleContext) (bool, error) {
 }
 
 func (t ChecksToggleTask) Plan(ctx context.Context) PlanResult {
-  return planToggle(ctx, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
+  if r, ok := gatePlan(ctx, t); !ok {
+    return r
+  }
+  // The closure converts the shared field set back to the task's own type, so
+  // PlanResult.Observed carries a ChecksToggleTask.
+  return planToggle(ctx, func(f ToggleFields) Task { return ChecksToggleTask(f) }, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 ```
 
@@ -370,7 +404,10 @@ func (t NginxPropertyTask) Validate() error {
 }
 
 func (t NginxPropertyTask) Plan(ctx context.Context) PlanResult {
-  return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
+  if r, ok := gatePlan(ctx, t); !ok {
+    return r
+  }
+  return planProperty(ctx, t, func(f PropertyFields) Task { return NginxPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 ```
 

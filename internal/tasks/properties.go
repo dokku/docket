@@ -750,7 +750,7 @@ func validatePropertyInput(task PropertyTableDocer, state State, app string, glo
 	return nil
 }
 
-func planProperty(ctx context.Context, task PropertyTableDocer, state State, app string, global bool, property, value string) PlanResult {
+func planProperty(ctx context.Context, task PropertyTableDocer, observe func(PropertyFields) Task, state State, app string, global bool, property, value string) PlanResult {
 	if err := validatePropertyInput(task, state, app, global, property, value); err != nil {
 		return planErr(err)
 	}
@@ -762,6 +762,17 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 	target := app
 	if global {
 		target = "--global"
+	}
+
+	// seen is the task as the probe read it: the identity from the planned
+	// task and the value the report carries. An empty value is an unset
+	// property, which a recipe declares as state absent.
+	seen := func(r PlanResult, current string) PlanResult {
+		f := PropertyFields{App: app, Global: global, Property: property, Value: current, State: StatePresent}
+		if current == "" {
+			f.State = StateAbsent
+		}
+		return observed(r, observe(f), current != "")
 	}
 
 	// A dynamic property has no static map entry. When its plugin reports the
@@ -809,7 +820,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 				}
 			}
 			if probeErr == nil && current == value {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, current)
 			}
 
 			status := PlanStatusModify
@@ -824,7 +835,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 			}
 
 			inputs := propertySetInputs(subcommand, target, property, value)
-			return PlanResult{
+			result := PlanResult{
 				InSync:    false,
 				Status:    status,
 				Reason:    reason,
@@ -833,6 +844,10 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 				Warnings:  warnings,
 				apply:     applyPropertySet(subcommand, target, property, value),
 			}
+			if probeErr != nil {
+				return result
+			}
+			return seen(result, current)
 		},
 		StateAbsent: func() PlanResult {
 			if _, mapped := keys[property]; !mapped && isDynamicProperty(plugin, property) {
@@ -854,7 +869,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 				}
 			}
 			if probeErr == nil && current == "" {
-				return PlanResult{InSync: true, Status: PlanStatusOK}
+				return seen(PlanResult{InSync: true, Status: PlanStatusOK}, current)
 			}
 
 			var reason string
@@ -865,7 +880,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 			}
 
 			inputs := propertyUnsetInputs(subcommand, target, property)
-			return PlanResult{
+			result := PlanResult{
 				InSync:    false,
 				Status:    PlanStatusDestroy,
 				Reason:    reason,
@@ -874,6 +889,10 @@ func planProperty(ctx context.Context, task PropertyTableDocer, state State, app
 				Warnings:  warnings,
 				apply:     applyPropertyUnset(subcommand, target, property),
 			}
+			if probeErr != nil {
+				return result
+			}
+			return seen(result, current)
 		},
 	})
 }

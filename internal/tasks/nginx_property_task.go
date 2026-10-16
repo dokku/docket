@@ -149,7 +149,10 @@ func (t NginxPropertyTask) Validate() error {
 
 // Plan reports the drift the NginxPropertyTask would produce.
 func (t NginxPropertyTask) Plan(ctx context.Context) PlanResult {
-	return planProperty(ctx, t, t.State, t.App, t.Global, t.Property, t.Value)
+	if r, ok := gatePlan(ctx, t); !ok {
+		return r
+	}
+	return planProperty(ctx, t, func(f PropertyFields) Task { return NginxPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 
 // init registers the NginxPropertyTask with the task registry
