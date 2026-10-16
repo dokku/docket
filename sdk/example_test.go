@@ -108,3 +108,21 @@ func ExampleTaskTypes() {
 	}
 	// Output: dokku_app - Creates or destroys an app
 }
+
+// Building a masker for one task before planning it, so nothing rendered for
+// it carries a secret.
+func ExampleTaskSensitiveValues() {
+	task, err := sdk.DecodeTask("dokku_http_auth_user", []byte(`
+app: api
+users:
+  - username: admin
+    password: s3cr3t
+`))
+	if err != nil {
+		panic(err)
+	}
+
+	masker := sdk.NewMasker(sdk.TaskSensitiveValues(task)...)
+	fmt.Println(masker.String("http-auth:add-user api admin s3cr3t"))
+	// Output: http-auth:add-user api admin ***
+}

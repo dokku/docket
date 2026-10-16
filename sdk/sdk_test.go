@@ -187,3 +187,73 @@ func TestMasker(t *testing.T) {
 		t.Errorf("String = %q, want %q", got, want)
 	}
 }
+
+func TestTaskSensitiveValues(t *testing.T) {
+	cases := []struct {
+		name    string
+		typeKey string
+		body    string
+		want    []string
+	}{
+		{
+			name:    "tagged field",
+			typeKey: "dokku_registry_auth",
+			body:    "server: ghcr.io\nusername: bot\npassword: reg-pass\n",
+			want:    []string{"reg-pass"},
+		},
+		{
+			name:    "nested items",
+			typeKey: "dokku_http_auth_user",
+			body:    "app: api\nusers:\n  - username: admin\n    password: user-pass\n  - username: ops\n    hash: user-hash\n",
+			want:    []string{"user-hash", "user-pass"},
+		},
+		{
+			name:    "SensitiveValues method",
+			typeKey: "dokku_config",
+			body:    "app: api\nconfig:\n  TOKEN: cfg-secret\n",
+			want:    []string{"Y2ZnLXNlY3JldA==", "cfg-secret"},
+		},
+		{
+			name:    "sensitive property",
+			typeKey: "dokku_traefik_property",
+			body:    "global: true\nproperty: basic-auth-password\nvalue: prop-secret\n",
+			want:    []string{"prop-secret"},
+		},
+		{
+			name:    "sensitive dynamic property",
+			typeKey: "dokku_traefik_property",
+			body:    "global: true\nproperty: dns-provider-CF_API_TOKEN\nvalue: dns-secret\n",
+			want:    []string{"dns-secret"},
+		},
+		{
+			name:    "benign property",
+			typeKey: "dokku_traefik_property",
+			body:    "global: true\nproperty: api-enabled\nvalue: \"true\"\n",
+		},
+		{
+			name:    "nothing sensitive",
+			typeKey: "dokku_app",
+			body:    "app: api\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			task, err := sdk.DecodeTask(tc.typeKey, []byte(tc.body))
+			if err != nil {
+				t.Fatalf("DecodeTask: %v", err)
+			}
+			got := sdk.TaskSensitiveValues(task)
+			sort.Strings(got)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("TaskSensitiveValues = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	if got := sdk.TaskSensitiveValues(nil); got != nil {
+		t.Errorf("TaskSensitiveValues(nil) = %q, want nil", got)
+	}
+	if got := sdk.TaskSensitiveValues((*sdk.ConfigTask)(nil)); got != nil {
+		t.Errorf("TaskSensitiveValues of a nil pointer = %q, want nil", got)
+	}
+}

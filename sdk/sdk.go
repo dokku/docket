@@ -260,6 +260,18 @@ func NewMasker(values ...string) *Masker {
 // MaskPlaceholder is what a Masker replaces a sensitive value with.
 const MaskPlaceholder = subprocess.MaskPlaceholder
 
+// TaskSensitiveValues returns the values the CLI masks for t before a run:
+// its `sensitive:"true"` fields, including those of nested items, the value of
+// a property marked sensitive, and whatever t's own SensitiveValues method
+// returns. Pass them to NewMasker. Empty values are dropped and duplicates
+// removed; the order is unspecified.
+//
+// A value only known once the server is read, such as a secret property's
+// current value, is added to the context's masker during Plan.
+func TaskSensitiveValues(t Task) []string {
+	return tasks.TaskSensitiveValues(t)
+}
+
 // Testing.
 
 // ContextWithRunner returns a copy of ctx whose commands go to fn instead of

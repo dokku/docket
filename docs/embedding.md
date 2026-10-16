@@ -146,6 +146,22 @@ state := sdk.ExecutePlan(ctx, plan)  // applies that plan without probing again
 `app.Execute(ctx)` plans and applies in one call. `sdk.DecodeTask` is the same thing as `NewTask`
 from a YAML task body, for a caller that already holds a recipe fragment.
 
+### Masking a task
+
+`sdk.TaskSensitiveValues` returns the values the CLI masks for a task before a run: its
+`sensitive:"true"` fields, including those of nested items such as `dokku_http_auth_user`'s users,
+the value of a property marked sensitive, and whatever the task's own `SensitiveValues()` returns.
+Build the masker from it before planning, so nothing rendered for the task carries a secret:
+
+```go
+masker := sdk.NewMasker(sdk.TaskSensitiveValues(task)...)
+session := sdk.NewSession(masker)
+```
+
+Empty values are dropped and duplicates removed. A value only known once the server is read, such as
+a secret property's current value, is added to the context's masker during `Plan`, so pass the same
+masker to the session rather than building a second one.
+
 ### Version floors
 
 Every task declares the oldest Dokku it runs on, and any plugins it needs, in its Requirements
@@ -243,11 +259,11 @@ has no effect while a fake is installed. The response's `Command` is what an app
 the engine and masked by the session's masker either way.
 
 The engine does not mask the errors and messages it returns; the caller masks what it shows. Build
-the masker from the task's `SensitiveValues()`, as the CLI does before a run, and a test can check
-both the masked plan and the masked diagnostic:
+the masker from `sdk.TaskSensitiveValues` (see [Masking a task](#masking-a-task)), as the CLI does
+before a run, and a test can check both the masked plan and the masked diagnostic:
 
 ```go
-masker := sdk.NewMasker(cfg.SensitiveValues()...)
+masker := sdk.NewMasker(sdk.TaskSensitiveValues(cfg)...)
 session := sdk.NewSession(masker)
 defer func() { _ = session.Close() }()
 ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), fake)
