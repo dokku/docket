@@ -44,10 +44,10 @@ type ServiceBackupTask struct {
 	UseIam bool `required:"false" yaml:"use_iam,omitempty" description:"Use the instance IAM profile instead of static credentials"`
 
 	// AwsAccessKeyID is the AWS access key id used for backup auth. Requires aws_secret_access_key.
-	AwsAccessKeyID string `required:"false" yaml:"aws_access_key_id,omitempty" description:"AWS access key id for backup auth (requires aws_secret_access_key)"`
+	AwsAccessKeyID string `required:"false" write_only:"true" yaml:"aws_access_key_id,omitempty" description:"AWS access key id for backup auth (requires aws_secret_access_key)"`
 
 	// AwsSecretAccessKey is the AWS secret access key used for backup auth. Requires aws_access_key_id.
-	AwsSecretAccessKey string `required:"false" sensitive:"true" yaml:"aws_secret_access_key,omitempty" description:"AWS secret access key for backup auth (requires aws_access_key_id)"`
+	AwsSecretAccessKey string `required:"false" sensitive:"true" write_only:"true" yaml:"aws_secret_access_key,omitempty" description:"AWS secret access key for backup auth (requires aws_access_key_id)"`
 
 	// AwsDefaultRegion is the AWS region used for backup auth.
 	AwsDefaultRegion string `required:"false" yaml:"aws_default_region,omitempty" description:"AWS region used for backup auth"`
@@ -59,7 +59,7 @@ type ServiceBackupTask struct {
 	EndpointURL string `required:"false" yaml:"endpoint_url,omitempty" description:"S3-compatible endpoint url used for backup auth (requires aws_signature_version)"`
 
 	// EncryptionPassphrase is the passphrase used to encrypt future backups.
-	EncryptionPassphrase string `required:"false" sensitive:"true" yaml:"encryption_passphrase,omitempty" description:"Passphrase used to encrypt future backups"`
+	EncryptionPassphrase string `required:"false" sensitive:"true" write_only:"true" yaml:"encryption_passphrase,omitempty" description:"Passphrase used to encrypt future backups"`
 
 	// State is the desired state of the backup configuration
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the backup configuration. 'absent' removes whichever of the schedule, the auth settings and the encryption passphrase the service reports as stored, without needing the secrets in the recipe, and leaves the settings dokku_service_property manages alone. On a datastore that cannot be backed up, 'absent' is always in sync and 'present' fails with the plugin's own error."`

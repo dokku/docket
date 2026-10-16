@@ -32,7 +32,7 @@ type PsScaleTask struct {
 
 	// SkipDeploy skips the corresponding deploy. It is a *bool so the value
 	// survives decoding unchanged; nil defaults to false.
-	SkipDeploy *bool `yaml:"skip_deploy,omitempty" default:"false" description:"Skip the corresponding deploy"`
+	SkipDeploy *bool `apply_only:"true" yaml:"skip_deploy,omitempty" default:"false" description:"Skip the corresponding deploy"`
 
 	// State is the desired state of the process scale
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,set" description:"Desired state of the process scale; 'set' declares the whole formation"`

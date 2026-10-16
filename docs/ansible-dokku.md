@@ -212,7 +212,10 @@ each task's [reference page](tasks/README.md) carries a **Probe support** sectio
 marks them `(never converges)`, and `--list-tasks --json` carries a `probe` field
 (`unsupported` for a task that reads nothing, `partial` for one that reads only some of its fields)
 plus a `probe_caveat` naming what cannot be read. A wrapper that reports "no changes needed" should
-read that field rather than treating a perpetual `would_change` as a bug.
+read that field rather than treating a perpetual `would_change` as a bug. Which individual fields
+are never read back is in [`docket schema`](task-catalog.md#fields): a field marked `write_only` or
+`apply_only` carries no server value in an export, so a wrapper comparing against one should keep
+the value the user supplied.
 
 That is a different thing from a probe that fails at runtime. When the probe itself fails - no
 `dokku` binary, unreachable host - the task reports `"status": "error"` and `plan` exits `1` rather

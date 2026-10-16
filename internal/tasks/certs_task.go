@@ -26,10 +26,10 @@ type CertsTask struct {
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin"`
 
 	// Cert is the path on the dokku server to the SSL certificate file
-	Cert string `required:"false" sensitive:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content."`
+	Cert string `required:"false" sensitive:"true" apply_only:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content."`
 
 	// Key is the path on the dokku server to the SSL certificate key file
-	Key string `required:"false" sensitive:"true" yaml:"key,omitempty" description:"Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content."`
+	Key string `required:"false" sensitive:"true" apply_only:"true" yaml:"key,omitempty" description:"Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content."`
 
 	// CertContent is the PEM-encoded certificate contents. Mutually
 	// exclusive with Cert.

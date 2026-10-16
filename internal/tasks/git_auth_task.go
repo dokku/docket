@@ -25,10 +25,10 @@ type GitAuthTask struct {
 	Host string `required:"true" identity:"key" yaml:"host" description:"Git server hostname (e.g. github.com)"`
 
 	// Username is the netrc username. Required when state is present.
-	Username string `required:"false" yaml:"username,omitempty" description:"Netrc username. Required when state is present."`
+	Username string `required:"false" write_only:"true" yaml:"username,omitempty" description:"Netrc username. Required when state is present."`
 
 	// Password is the netrc password. Required when state is present.
-	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"Netrc password. Required when state is present. Must not contain a newline."`
+	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Netrc password. Required when state is present. Must not contain a newline."`
 
 	// State is the desired state of the netrc entry
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the netrc entry"`

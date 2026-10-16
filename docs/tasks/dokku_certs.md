@@ -27,8 +27,8 @@ Keyed by `app` and `global`. Fields left empty are omitted from the address.
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | no |  |  | Name of the app. Required if Global is false. |
 | `global` | bool | no |  |  | Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin |
-| `cert` | string | no |  |  | Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content. (sensitive) |
-| `key` | string | no |  |  | Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content. (sensitive) |
+| `cert` | string | no |  |  | Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content. (applied only, not read back) (sensitive) |
+| `key` | string | no |  |  | Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content. (applied only, not read back) (sensitive) |
 | `cert_content` | string | no |  |  | PEM-encoded certificate contents. Mutually exclusive with cert. (sensitive) |
 | `key_content` | string | no |  |  | PEM-encoded private key contents. Mutually exclusive with key. (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the SSL configuration |

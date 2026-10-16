@@ -77,7 +77,7 @@ type StorageEntryTask struct {
 
 	// DestroyHostDir removes the host directory alongside the entry, and
 	// is only meaningful under state 'absent'.
-	DestroyHostDir bool `required:"false" yaml:"destroy_host_dir,omitempty" description:"Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set"`
+	DestroyHostDir bool `required:"false" apply_only:"true" yaml:"destroy_host_dir,omitempty" description:"Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set"`
 
 	// State is the desired state of the storage entry
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage entry"`

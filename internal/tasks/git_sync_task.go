@@ -22,13 +22,13 @@ type GitSyncTask struct {
 	GitRef string `required:"false" yaml:"git_ref" description:"Git reference to sync"`
 
 	// Build triggers an application build after syncing
-	Build bool `required:"false" yaml:"build" description:"Trigger an application build after syncing"`
+	Build bool `required:"false" apply_only:"true" yaml:"build" description:"Trigger an application build after syncing"`
 
 	// BuildIfChanges triggers a build only if changes are detected
-	BuildIfChanges bool `required:"false" yaml:"build_if_changes" description:"Trigger a build only if changes are detected"`
+	BuildIfChanges bool `required:"false" apply_only:"true" yaml:"build_if_changes" description:"Trigger a build only if changes are detected"`
 
 	// SkipDeployBranch skips automatically setting the deploy-branch property
-	SkipDeployBranch bool `required:"false" yaml:"skip_deploy_branch" description:"Skip automatically setting the deploy-branch property"`
+	SkipDeployBranch bool `required:"false" apply_only:"true" yaml:"skip_deploy_branch" description:"Skip automatically setting the deploy-branch property"`
 
 	// State is the desired state of the git sync
 	State State `required:"false" yaml:"state" default:"present" options:"present" description:"Desired state of the git sync"`

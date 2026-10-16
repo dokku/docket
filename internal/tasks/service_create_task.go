@@ -64,21 +64,21 @@ type ServiceCreateTask struct {
 	PostStartNetwork []string `required:"false" yaml:"post_start_network,omitempty" description:"Networks to attach the service container to after start. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// Password overrides the user-level service password.
-	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"Override the user-level service password. Applied only when the service is created."`
+	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Override the user-level service password. Applied only when the service is created."`
 
 	// RootPassword overrides the root-level service password.
-	RootPassword string `required:"false" sensitive:"true" yaml:"root_password,omitempty" description:"Override the root-level service password. Applied only when the service is created."`
+	RootPassword string `required:"false" sensitive:"true" write_only:"true" yaml:"root_password,omitempty" description:"Override the root-level service password. Applied only when the service is created."`
 
 	// ImageDrift is what the task does when the service already exists with an
 	// image or a create-time option other than the one the recipe declares.
 	// Read through imageDriftMode, never directly: the `default:` tag is only
 	// applied to a decoded recipe, so a task built in Go carries the empty
 	// string.
-	ImageDrift string `required:"false" yaml:"image_drift,omitempty" default:"warn" options:"ignore,warn,error,upgrade" description:"What to do when the service already exists on an image other than the one pinned, or with a create-time option other than the one declared: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. An image is reconciled with <service>:upgrade, which recreates the container with no data migration across major versions; any other option with <service>:set followed by a stop and a start. Both mean downtime. Options the recipe does not declare are left as the server has them."`
+	ImageDrift string `required:"false" apply_only:"true" yaml:"image_drift,omitempty" default:"warn" options:"ignore,warn,error,upgrade" description:"What to do when the service already exists on an image other than the one pinned, or with a create-time option other than the one declared: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. An image is reconciled with <service>:upgrade, which recreates the container with no data migration across major versions; any other option with <service>:set followed by a stop and a start. Both mean downtime. Options the recipe does not declare are left as the server has them."`
 
 	// RestartApps forces the apps linked to the service to restart after an
 	// image_drift upgrade has recreated its container.
-	RestartApps bool `required:"false" yaml:"restart_apps,omitempty" description:"Restart the apps linked to the service after an image_drift 'upgrade' runs <service>:upgrade, so they reconnect to the new container. Only valid with image_drift 'upgrade', and only acted on when the image drifted and the service has linked apps: reconciling the other options with a stop and a start leaves linked apps alone."`
+	RestartApps bool `required:"false" apply_only:"true" yaml:"restart_apps,omitempty" description:"Restart the apps linked to the service after an image_drift 'upgrade' runs <service>:upgrade, so they reconnect to the new container. Only valid with image_drift 'upgrade', and only acted on when the image drifted and the service has linked apps: reconciling the other options with a stop and a start leaves linked apps alone."`
 
 	// State is the desired state of the service
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service"`

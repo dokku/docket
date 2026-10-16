@@ -15,7 +15,7 @@ type ResourceReserveTask struct {
 
 	// ClearBefore clears all resource reservations before applying new ones. It
 	// is a *bool so the value survives decoding unchanged; nil defaults to false.
-	ClearBefore *bool `yaml:"clear_before,omitempty" default:"false" description:"ClearBefore clears all resource reservations before applying new ones"`
+	ClearBefore *bool `apply_only:"true" yaml:"clear_before,omitempty" default:"false" description:"ClearBefore clears all resource reservations before applying new ones"`
 
 	// State is the desired state of the resource reservations
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the resource reservations"`

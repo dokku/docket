@@ -27,9 +27,9 @@ Keyed by `app`.
 | `app` | string | yes |  |  | Name of the app |
 | `remote` | string | yes |  |  | Git remote url to sync |
 | `git_ref` | string | no |  |  | Git reference to sync |
-| `build` | bool | no |  |  | Trigger an application build after syncing |
-| `build_if_changes` | bool | no |  |  | Trigger a build only if changes are detected |
-| `skip_deploy_branch` | bool | no |  |  | Skip automatically setting the deploy-branch property |
+| `build` | bool | no |  |  | Trigger an application build after syncing (applied only, not read back) |
+| `build_if_changes` | bool | no |  |  | Trigger a build only if changes are detected (applied only, not read back) |
+| `skip_deploy_branch` | bool | no |  |  | Skip automatically setting the deploy-branch property (applied only, not read back) |
 | `state` | string | no | present | present | Desired state of the git sync |
 
 ## Examples

@@ -27,7 +27,7 @@ type HttpAuthUserTask struct {
 	// convergence. It governs the password path only - a hash user converges on
 	// its own, because http-auth:export-users reads the stored hash back. It is
 	// a *bool so the value survives decoding unchanged; nil defaults to false.
-	UpdatePassword *bool `required:"false" yaml:"update_password,omitempty" default:"false" description:"Re-issue add-user for users that already exist so their cleartext password converges. Users given by hash converge on their own and ignore this"`
+	UpdatePassword *bool `required:"false" apply_only:"true" yaml:"update_password,omitempty" default:"false" description:"Re-issue add-user for users that already exist so their cleartext password converges. Users given by hash converge on their own and ignore this"`
 
 	// State is the desired state of the HTTP auth users. There is no `clear`
 	// state, unlike the sibling dokku_http_auth_domain: `absent` with an empty
@@ -46,7 +46,7 @@ type HttpAuthUser struct {
 
 	// Password is the cleartext HTTP auth password, applied with
 	// http-auth:add-user. Mutually exclusive with Hash.
-	Password string `required:"false" sensitive:"true" yaml:"password,omitempty" description:"Cleartext HTTP auth password. Mutually exclusive with hash"`
+	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Cleartext HTTP auth password. Mutually exclusive with hash"`
 
 	// Hash is the user's htpasswd entry, as emitted by
 	// http-auth:export-users. Applied with http-auth:import-users over stdin,
