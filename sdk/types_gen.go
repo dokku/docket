@@ -91,6 +91,18 @@ type DynamicPropertySchema = tasks.DynamicPropertySchema
 // ExampleSchema is tasks.ExampleSchema.
 type ExampleSchema = tasks.ExampleSchema
 
+// ExecCommandInput is subprocess.ExecCommandInput.
+type ExecCommandInput = subprocess.ExecCommandInput
+
+// ExecCommandResponse is subprocess.ExecCommandResponse.
+type ExecCommandResponse = subprocess.ExecCommandResponse
+
+// ExecError is subprocess.ExecError.
+type ExecError = subprocess.ExecError
+
+// ExecRunner is subprocess.ExecRunner.
+type ExecRunner = subprocess.ExecRunner
+
 // ExportOptions is tasks.ExportOptions.
 type ExportOptions = tasks.ExportOptions
 

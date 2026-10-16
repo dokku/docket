@@ -205,6 +205,63 @@ task's metadata.
 probe and export support, identity and fields - and is what `docket schema` emits.
 `sdk.CatalogFor` narrows it to the types you name. See [Task catalog](task-catalog.md).
 
+## Testing without a server
+
+`sdk.ContextWithRunner` installs a fake in place of dokku, so a test can plan and apply tasks and
+assert the exact commands they issue without a server:
+
+```go
+var calls []string
+ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
+    calls = append(calls, strings.Join(in.Args, " "))
+    switch strings.Join(in.Args, " ") {
+    case "--quiet apps:exists api":
+        // The app is absent: the command ran and exited non-zero.
+        return sdk.ExecCommandResponse{ExitCode: 1}, nil
+    case "--quiet apps:create api":
+        // The create fails the way the real runner reports it.
+        res := sdk.ExecCommandResponse{Stderr: "name is reserved", ExitCode: 1}
+        return res, &sdk.ExecError{Response: res, Err: errors.New(res.Stderr), Ran: true}
+    }
+    return sdk.ExecCommandResponse{}, nil
+})
+
+plan := app.Plan(ctx)                // Status create, from the apps:exists answer
+state := sdk.ExecutePlan(ctx, plan)  // state.Error is the *sdk.ExecError, state.Message its stderr
+```
+
+A command that ran and exited non-zero is a response carrying that `ExitCode`. A probe reads it as
+its answer whether the fake returns a nil error with it or, as the real runner does, an
+`*sdk.ExecError` with `Ran` set. An apply fails only on an error, so return the `*sdk.ExecError` to
+fail one. Any other error is a command that could not run, and a plan reports it as an error rather
+than as the resource being absent.
+
+The fake receives every command a call makes, not only dokku's, with the arguments as they would
+have run: unmasked, and without the sudo or SSH wrapping a `Target` adds. A `Target` on the context
+has no effect while a fake is installed. The response's `Command` is what an apply records in
+`TaskOutputState.Commands`, so set it when a test reads that. `PlanResult.Commands` is rendered by
+the engine and masked by the session's masker either way.
+
+The engine does not mask the errors and messages it returns; the caller masks what it shows. Build
+the masker from the task's `SensitiveValues()`, as the CLI does before a run, and a test can check
+both the masked plan and the masked diagnostic:
+
+```go
+masker := sdk.NewMasker(cfg.SensitiveValues()...)
+session := sdk.NewSession(masker)
+defer func() { _ = session.Close() }()
+ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), fake)
+
+state := sdk.ExecutePlan(ctx, cfg.Plan(ctx))
+shown := masker.String(state.Message)
+```
+
+The fake travels on the context rather than in a package variable, so tests that install different
+fakes can all call `t.Parallel()`.
+
+Production code must not use `ContextWithRunner`. It exists so a test can drive a task without a
+server; to change where commands actually run, set a `Target`.
+
 ## Stability
 
 The exported identifiers in `sdk` are stable from the release they first ship in. While docket is

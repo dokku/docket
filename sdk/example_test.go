@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dokku/docket/sdk"
 )
@@ -59,6 +60,32 @@ func ExampleExportRecipe() {
 			fmt.Println(play.Name, cfg.App, len(cfg.Config))
 		}
 	}
+}
+
+// Planning and applying a task against a fake dokku in a test, with no server.
+func ExampleContextWithRunner() {
+	var calls []string
+	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
+		calls = append(calls, strings.Join(in.Args, " "))
+		if len(in.Args) > 1 && in.Args[1] == "apps:exists" {
+			// The app is absent: the command ran and exited non-zero.
+			return sdk.ExecCommandResponse{ExitCode: 1}, nil
+		}
+		return sdk.ExecCommandResponse{}, nil
+	})
+
+	task, _ := sdk.NewTask("dokku_app")
+	app := task.(*sdk.AppTask)
+	app.App = "api"
+
+	plan := app.Plan(ctx)
+	fmt.Println(plan.Reason, plan.Commands)
+
+	state := sdk.ExecutePlan(ctx, plan)
+	fmt.Println(state.Changed, calls)
+	// Output:
+	// app missing [dokku --quiet apps:create api]
+	// true [--quiet apps:exists api --quiet apps:create api]
 }
 
 func ExampleCatalogFor() {

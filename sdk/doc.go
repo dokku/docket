@@ -34,6 +34,13 @@
 //	ctx := session.Context(context.Background(), sdk.Target{Host: "dokku@dokku.example.com"})
 //
 // The zero Target runs dokku locally.
+//
+// # Testing
+//
+// A test can drive tasks without a server by installing a fake runner with
+// ContextWithRunner. The fake answers every command a call makes, and since it
+// travels on the context, tests with different fakes can run in parallel.
+// Production code must not use it.
 package sdk
 
 //go:generate go run ../generate/sdk
