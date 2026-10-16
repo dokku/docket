@@ -2,9 +2,12 @@ package commands
 
 import (
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/internal/subprocess"
 )
 
 // sshEnv turns a map into the lookup resolveSshFlags takes. It replaces a
@@ -19,8 +22,8 @@ func sshEnv(vars map[string]string) func(string) string {
 
 func TestResolveSshFlagsDefaultsToLocal(t *testing.T) {
 	t.Parallel()
-	got := resolveSshFlags(sshEnv(nil), "", false, false)
-	if got.Host != "" || got.Sudo || got.AcceptNewHostKeys {
+	got := mustResolveSshFlags(t, sshEnv(nil), "", false, false, "", nil)
+	if got.Host != "" || got.Sudo || got.AcceptNewHostKeys || got.IdentityFile != "" || got.SSHOptions != nil {
 		t.Errorf("resolveSshFlags = %+v, want the zero Target", got)
 	}
 }
@@ -39,7 +42,7 @@ func TestResolveSshFlagsReadsTheEnvironment(t *testing.T) {
 		"DOKKU_SSH_ACCEPT_NEW_HOST_KEYS": "1",
 	})
 
-	got := resolveSshFlags(env, "", false, false)
+	got := mustResolveSshFlags(t, env, "", false, false, "", nil)
 	if got.Host != "deploy@dokku.example.com" {
 		t.Errorf("Host = %q, want it read from DOKKU_HOST", got.Host)
 	}
@@ -60,7 +63,7 @@ func TestResolveSshFlagsOnlyHonorsTheDocumentedEnvValue(t *testing.T) {
 		"DOKKU_SSH_ACCEPT_NEW_HOST_KEYS": "false",
 	})
 
-	got := resolveSshFlags(env, "", false, false)
+	got := mustResolveSshFlags(t, env, "", false, false, "", nil)
 	if got.Sudo {
 		t.Error("DOKKU_SUDO=0 must not enable sudo")
 	}
@@ -73,7 +76,7 @@ func TestResolveSshFlagsFlagWinsOverEnv(t *testing.T) {
 	t.Parallel()
 	env := sshEnv(map[string]string{"DOKKU_HOST": "from-env"})
 
-	got := resolveSshFlags(env, "from-flag", true, true)
+	got := mustResolveSshFlags(t, env, "from-flag", true, true, "", nil)
 	if got.Host != "from-flag" {
 		t.Errorf("Host = %q, want --host to win over DOKKU_HOST", got.Host)
 	}
@@ -99,7 +102,7 @@ func TestResolveSshFlagsDoesNotMutateProcessEnv(t *testing.T) {
 	t.Parallel()
 	before := sortedEnv()
 
-	resolveSshFlags(os.Getenv, "deploy@dokku.example.com", true, true)
+	mustResolveSshFlags(t, os.Getenv, "deploy@dokku.example.com", true, true, "/keys/deploy", []string{"ConnectTimeout=5"})
 
 	if after := sortedEnv(); after != before {
 		t.Error("resolving flags must not write the process environment")
@@ -110,4 +113,49 @@ func sortedEnv() string {
 	env := os.Environ()
 	sort.Strings(env)
 	return strings.Join(env, "\n")
+}
+
+// mustResolveSshFlags is resolveSshFlags for the cases that expect no error.
+func mustResolveSshFlags(t *testing.T, getenv func(string) string, host string, sudo, acceptNewHostKeys bool, identityFile string, sshOptions []string) subprocess.Target {
+	t.Helper()
+	got, err := resolveSshFlags(getenv, host, sudo, acceptNewHostKeys, identityFile, sshOptions)
+	if err != nil {
+		t.Fatalf("resolveSshFlags: %v", err)
+	}
+	return got
+}
+
+func TestResolveSshFlagsIdentityFile(t *testing.T) {
+	t.Parallel()
+	env := sshEnv(map[string]string{"DOKKU_SSH_IDENTITY_FILE": "/keys/from-env"})
+
+	if got := mustResolveSshFlags(t, env, "", false, false, "", nil); got.IdentityFile != "/keys/from-env" {
+		t.Errorf("IdentityFile = %q, want it read from DOKKU_SSH_IDENTITY_FILE", got.IdentityFile)
+	}
+	if got := mustResolveSshFlags(t, env, "", false, false, "/keys/from-flag", nil); got.IdentityFile != "/keys/from-flag" {
+		t.Errorf("IdentityFile = %q, want --ssh-identity-file to win over DOKKU_SSH_IDENTITY_FILE", got.IdentityFile)
+	}
+}
+
+func TestResolveSshFlagsPassesOptionsThrough(t *testing.T) {
+	t.Parallel()
+	opts := []string{"ConnectTimeout=5", "ProxyJump bastion"}
+	got := mustResolveSshFlags(t, sshEnv(nil), "deploy@dokku.example.com", false, false, "", opts)
+	if !reflect.DeepEqual(got.SSHOptions, opts) {
+		t.Errorf("SSHOptions = %q, want %q", got.SSHOptions, opts)
+	}
+}
+
+// TestResolveSshFlagsRefusesAManagedOption pins that a bad --ssh-option fails
+// while the flags are resolved, before anything connects, and that the error
+// names the flag it came from.
+func TestResolveSshFlagsRefusesAManagedOption(t *testing.T) {
+	t.Parallel()
+	_, err := resolveSshFlags(sshEnv(nil), "deploy@dokku.example.com", false, false, "", []string{"ControlPath=/tmp/x"})
+	if err == nil {
+		t.Fatal("resolveSshFlags accepted ControlPath, want an error")
+	}
+	if !strings.Contains(err.Error(), "--ssh-option") {
+		t.Errorf("error = %q, want it to name --ssh-option", err)
+	}
 }

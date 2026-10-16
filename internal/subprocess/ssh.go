@@ -11,10 +11,10 @@
 // via OpenSSH ControlMaster multiplexing. The first `ssh` invocation
 // negotiates the master connection and writes a unix-domain socket at
 // `<tmpdir>/docket-<hash>.sock`; subsequent invocations reuse it. The
-// socket name hashes the resolved user, host and port, the docket PID, and
-// the Session the call ran under, so neither two docket processes nor two
-// sessions in one process targeting the same host collide on the socket
-// path.
+// socket name hashes the resolved user, host and port, the identity file and
+// ssh options, the docket PID, and the Session the call ran under, so neither
+// two docket processes, two sessions in one process, nor two identities for
+// the same host collide on the socket path.
 //
 // The ControlPersist option keeps the master alive 60 seconds past the
 // last command exit. A Session records every master its calls opened and
@@ -28,11 +28,11 @@
 // as the underlying error so the formatter renders it as a `dokku:`
 // failure.
 //
-// Where a command runs, whether it is sudo-wrapped, and whether an unknown
-// host key is accepted all travel on the context as a `Target`. SSH dispatch
-// reads it the same way the local path does, so `--sudo` means "run dokku as
-// root" on both sides - remotely as `sudo -n` inside the ssh argv, locally as
-// `sudo -n -u root` around the child.
+// Where a command runs, whether it is sudo-wrapped, whether an unknown host
+// key is accepted, and which identity and ssh options are used all travel on
+// the context as a `Target`. SSH dispatch reads it the same way the local path
+// does, so `--sudo` means "run dokku as root" on both sides - remotely as
+// `sudo -n` inside the ssh argv, locally as `sudo -n -u root` around the child.
 package subprocess
 
 import (
@@ -51,6 +51,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	execute "github.com/alexellis/go-execute/v2"
 	"mvdan.cc/sh/v3/syntax"
@@ -181,14 +182,53 @@ func defaultSshUser(getenv func(string) string) string {
 //
 // The port is part of the key because ssh reuses whatever master answers on
 // the socket: without it, `host:22` and `host:2222` in one run would share
-// the first connection and the second would never reach its own port.
-func controlPath(target sshTarget, pid int, session uint64) string {
+// the first connection and the second would never reach its own port. The
+// identity file and ssh options are part of it for the same reason: a master
+// authenticated with one key would otherwise carry a target that named
+// another, and an option such as HostName or ProxyJump can change where the
+// connection goes at all.
+func controlPath(target sshTarget, opts Target, pid int, session uint64) string {
 	key := target.UserHost() + ":" + target.Port + ":" + strconv.Itoa(pid)
+	if opts.IdentityFile != "" || len(opts.SSHOptions) > 0 {
+		key += "\x00" + opts.IdentityFile + "\x00" + strings.Join(opts.SSHOptions, "\x00")
+	}
 	if session != 0 {
 		key += ":" + strconv.FormatUint(session, 10)
 	}
 	sum := sha256.Sum256([]byte(key))
 	return filepath.Join(os.TempDir(), "docket-"+hex.EncodeToString(sum[:])[:16]+".sock")
+}
+
+// reservedSSHOptions are the ssh options docket sets on every connection. ssh
+// keeps the first value it sees for an option, and docket's come first, so a
+// caller's value for one of these would be silently ignored - or, for
+// ControlPath, would split the connection from the socket the Session closes.
+var reservedSSHOptions = []string{"ControlMaster", "ControlPath", "ControlPersist", "BatchMode"}
+
+// ValidateSSHOptions reports whether opts can be passed to ssh as `-o` values,
+// without contacting anything. An option must be non-empty, must not contain a
+// control character, and must not set one of the options docket owns. It is
+// exported so `docket validate` can check a play's `ssh_options` offline and
+// the commands layer can refuse a bad `--ssh-option` before connecting.
+func ValidateSSHOptions(opts []string) error {
+	for _, opt := range opts {
+		if strings.TrimSpace(opt) == "" {
+			return errors.New("ssh option is empty")
+		}
+		if strings.IndexFunc(opt, unicode.IsControl) >= 0 {
+			return fmt.Errorf("ssh option %q contains a control character", opt)
+		}
+		key := strings.TrimSpace(opt)
+		if i := strings.IndexAny(key, "= \t"); i >= 0 {
+			key = key[:i]
+		}
+		for _, reserved := range reservedSSHOptions {
+			if strings.EqualFold(key, reserved) {
+				return fmt.Errorf("ssh option %q cannot be set: docket manages %s itself", opt, reserved)
+			}
+		}
+	}
+	return nil
 }
 
 // buildSshArgv assembles the full argv for the `ssh` subprocess. OpenSSH
@@ -209,15 +249,30 @@ func controlPath(target sshTarget, pid int, session uint64) string {
 // write them into the process environment to communicate them - and once
 // written, they applied to every invocation in the process for the rest of its
 // life.
+//
+// The order of the `-o` options matters, because ssh keeps the first value it
+// sees for each. docket's connection options come first so nothing can
+// override them, then the caller's SSHOptions, then the options docket adds
+// for AcceptNewHostKeys and IdentityFile - so `IdentitiesOnly=no`, or a
+// StrictHostKeyChecking value, stated by the caller wins over docket's own.
 func buildSshArgv(parsed sshTarget, opts Target, socket string, remote []string) ([]string, error) {
+	if err := ValidateSSHOptions(opts.SSHOptions); err != nil {
+		return nil, err
+	}
 	argv := []string{
 		"-o", "ControlMaster=auto",
 		"-o", "ControlPath=" + socket,
 		"-o", "ControlPersist=60",
 		"-o", "BatchMode=yes",
 	}
+	for _, opt := range opts.SSHOptions {
+		argv = append(argv, "-o", opt)
+	}
 	if opts.AcceptNewHostKeys {
 		argv = append(argv, "-o", "StrictHostKeyChecking=accept-new")
+	}
+	if opts.IdentityFile != "" {
+		argv = append(argv, "-i", opts.IdentityFile, "-o", "IdentitiesOnly=yes")
 	}
 	if parsed.Port != "" && parsed.Port != "22" {
 		argv = append(argv, "-p", parsed.Port)
@@ -357,7 +412,7 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 
 	remote := append([]string{input.Command}, input.Args...)
 	session := sessionFromContext(ctx)
-	socket := controlPath(parsed, os.Getpid(), session.id())
+	socket := controlPath(parsed, target, os.Getpid(), session.id())
 	argv, err := buildSshArgv(parsed, target, socket, remote)
 	if err != nil {
 		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Command: remote, Err: err}
@@ -468,14 +523,16 @@ func classifySshResult(target sshTarget, remote []string, resp ExecCommandRespon
 // down cleanly. Best-effort: errors are swallowed because the master may
 // already have exited (ControlPersist timeout, kill -9, etc.).
 //
-// Prefer a Session, which closes every master its calls opened - including
-// ones for hosts the caller never named, such as a play's own target.
+// It reaches only a master opened for a Target that named no IdentityFile or
+// SSHOptions, since those are part of the socket path. Prefer a Session, which
+// closes every master its calls opened - including ones for hosts the caller
+// never named, such as a play's own target.
 func CloseSshControlMaster(host string) error {
 	target, err := parseDokkuHost(host, os.Getenv)
 	if err != nil {
 		return nil
 	}
-	exitControlMaster(target, controlPath(target, os.Getpid(), 0))
+	exitControlMaster(target, controlPath(target, Target{Host: host}, os.Getpid(), 0))
 	return nil
 }
 

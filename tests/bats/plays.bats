@@ -605,12 +605,43 @@ EOF
   host: deploy@remote.example.com:2222
   sudo: true
   accept_new_host_keys: false
+  ssh_identity_file: ~/.ssh/deploy
+  ssh_options: [ConnectTimeout=5]
   tasks:
     - dokku_app:
         app: docket-test-noop
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_success
+}
+
+@test "plays: a non-list ssh_options: is rejected offline" {
+  write_tasks_file <<EOF
+---
+- name: bad
+  ssh_options: ConnectTimeout=5
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "ssh_options must be a list of strings"
+}
+
+@test "plays: an ssh option docket manages is rejected offline" {
+  write_tasks_file <<EOF
+---
+- name: bad
+  ssh_options: [ControlPath=/tmp/elsewhere]
+  tasks:
+    - dokku_app:
+        app: docket-test-noop
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "ssh_options is not usable"
+  assert_output --partial "ControlPath"
 }
 
 @test "plays: an unusable host: is rejected offline" {

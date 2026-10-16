@@ -167,14 +167,20 @@ func versionCacheFrom(ctx context.Context) *versionCache {
 // (empty locally). Sudo is part of the key because the plan and apply
 // contexts carry it on the target, and a sudo and a non-sudo view of the
 // same host are different invocations even when they happen to see the same
-// Dokku.
+// Dokku. The identity file and ssh options are part of it because an option
+// such as HostName or ProxyJump can send the same host string to a different
+// server, and the identity keeps the key in step with the control socket.
 func targetCacheKey(ctx context.Context) string {
 	target := subprocess.TargetFromContext(ctx)
 	sudo := "0"
 	if target.Sudo {
 		sudo = "1"
 	}
-	return target.Host + "\x00" + sudo
+	key := target.Host + "\x00" + sudo
+	if target.IdentityFile != "" || len(target.SSHOptions) > 0 {
+		key += "\x00" + target.IdentityFile + "\x00" + strings.Join(target.SSHOptions, "\x00")
+	}
+	return key
 }
 
 func (c *versionCache) entry(ctx context.Context) *targetVersions {

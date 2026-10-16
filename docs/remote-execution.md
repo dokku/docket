@@ -26,6 +26,8 @@ You do not need to teach docket about any of it.
 | `--host <user@host:port>` | The remote host to ssh into. Overrides `DOKKU_HOST`. |
 | `--sudo` | Run `dokku` as root, with passwordless sudo only. Equivalent to `DOKKU_SUDO=1`. |
 | `--accept-new-host-keys` | Pass `-o StrictHostKeyChecking=accept-new` so SSH trusts an unknown host on first connect. Equivalent to `DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1`. |
+| `--ssh-identity-file <path>` | Authenticate with this private key only, as `-i <path> -o IdentitiesOnly=yes`. Equivalent to `DOKKU_SSH_IDENTITY_FILE=<path>`. |
+| `--ssh-option <option>` | Pass an extra option to `ssh` as `-o <option>`. Repeatable. |
 
 `--sudo` works on both sides of the transport: with `--host` it wraps the remote invocation in
 `sudo -n`, and without one it runs the local `dokku` under `sudo -n -u root`. Either way it covers
@@ -41,10 +43,44 @@ the key yourself:
 ssh-keyscan dokku.example.com >> ~/.ssh/known_hosts
 ```
 
+## Choosing a key and ssh options
+
+By default `ssh` picks the key itself, from ssh-agent or `~/.ssh/config`. Where neither is set up -
+a CI runner holding a deploy key as a file, say - name the key with `--ssh-identity-file`:
+
+```bash
+docket apply --host deploy@dokku.example.com --ssh-identity-file ~/.ssh/dokku_deploy
+```
+
+docket passes it as `-i <path> -o IdentitiesOnly=yes`, so `ssh` offers that key alone rather than
+trying every key the agent holds first, which can exhaust the server's `MaxAuthTries` before the
+right one is reached. The path is read on the machine running docket, and `ssh` expands a leading
+`~`. docket takes a path only: when a tool holds the key material itself, it writes the key to a file
+readable only by its owner (mode `0600`) and passes that path.
+
+`--ssh-option` passes any other `ssh` option, in either `Key=Value` or `Key Value` form, and can be
+repeated:
+
+```bash
+docket apply --host deploy@dokku.example.com \
+  --ssh-option ConnectTimeout=10 --ssh-option "ProxyJump bastion.example.com"
+```
+
+`ssh` keeps the first value it sees for an option. Your options come after the ones docket uses to
+share one connection - `ControlMaster`, `ControlPath`, `ControlPersist`, and `BatchMode` - so those
+four are refused rather than silently ignored. They come before the options docket adds for
+`--accept-new-host-keys` and `--ssh-identity-file`, so an explicit `IdentitiesOnly=no` or
+`StrictHostKeyChecking` value of your own wins over docket's.
+
+The identity and the options are part of what decides which connection a command shares. Two plays
+on the same host with different keys or options each open their own, and both are closed at the end
+of the run.
+
 A [saved plan](command-reference.md#saved-plans) records the target it was planned against.
-`docket apply --plan` runs against that target and ignores `DOKKU_HOST`, `DOKKU_SUDO`, and
-`DOKKU_SSH_ACCEPT_NEW_HOST_KEYS`, and it refuses `--host`, `--sudo`, and `--accept-new-host-keys`.
-A plan made against one server cannot be pointed at another.
+`docket apply --plan` runs against that target and ignores `DOKKU_HOST`, `DOKKU_SUDO`,
+`DOKKU_SSH_ACCEPT_NEW_HOST_KEYS`, and `DOKKU_SSH_IDENTITY_FILE`, and it refuses `--host`, `--sudo`,
+`--accept-new-host-keys`, `--ssh-identity-file`, and `--ssh-option`. A plan made against one server
+cannot be pointed at another.
 
 ## A recipe that spans hosts
 
@@ -65,8 +101,8 @@ migration or a fan-out deploy is written as a single recipe:
 ```
 
 Each play opens its own multiplexed SSH connection and docket closes all of them at the end of the
-run. A play that names no `host:` uses the run-wide target, and `sudo` / `accept_new_host_keys`
-carry over to a play that redirects unless it overrides them. See
+run. A play that names no `host:` uses the run-wide target, and `sudo`, `accept_new_host_keys`,
+`ssh_identity_file`, and `ssh_options` carry over to a play that redirects unless it overrides them. See
 [recipes](recipes.md#plays-on-different-servers) for the full rules.
 
 ## Argument quoting

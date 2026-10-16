@@ -381,6 +381,8 @@ optimistically predicting `[+] create` for state it never actually read.
 | `--host <user@host:port>` | Plan against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
+| `--ssh-identity-file <path>` | Authenticate over SSH with this private key only. Overrides `DOKKU_SSH_IDENTITY_FILE`. See [remote execution](remote-execution.md#choosing-a-key-and-ssh-options). |
+| `--ssh-option <option>` | Pass an extra option to `ssh` as `-o <option>`. Repeatable. See [remote execution](remote-execution.md#choosing-a-key-and-ssh-options). |
 | `--ignore-version` | Plan a task even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that task errors and the rest of its play does not run. |
 | `--output <path>` | Save the plan to a file for `docket apply --plan`. Written `0600`, and not written at all when the plan has errors. Not valid with `-` or `--list-tasks`. See [saved plans](#saved-plans). |
 | `--force` | Overwrite an existing `--output` file. |
@@ -408,15 +410,16 @@ The plan file freezes everything that decides what `apply` does:
   the plan was saved does not change what is applied.
 - Every input's resolved value, whether it came from a default, a flag, or a `--vars-file`.
 - `--play`, `--tags`, and `--skip-tags`.
-- The target: `--host`, `--sudo`, `--accept-new-host-keys`, and the `DOKKU_HOST`, `DOKKU_SUDO`,
-  and `DOKKU_SSH_ACCEPT_NEW_HOST_KEYS` they fall back to. Under `--plan` those variables are ignored.
-  A play's own `host:` still comes from the saved recipe.
+- The target: `--host`, `--sudo`, `--accept-new-host-keys`, `--ssh-identity-file`, `--ssh-option`,
+  and the `DOKKU_HOST`, `DOKKU_SUDO`, `DOKKU_SSH_ACCEPT_NEW_HOST_KEYS`, and `DOKKU_SSH_IDENTITY_FILE`
+  they fall back to. Under `--plan` those variables are ignored. A play's own `host:` still comes
+  from the saved recipe.
 - The plan itself: every play and task, what each would change, and the commands it would run.
 
 Because all of that comes from the file, `apply --plan` refuses the flags that would contradict it:
 `--tasks`, a positional recipe, `--tasks-format`, `--vars-file`, input flags, `--play`, `--tags`,
-`--skip-tags`, `--host`, `--sudo`, `--accept-new-host-keys`, `--start-at-task`, and
-`--list-tasks`. `--json`, `--verbose`, `--fail-fast`, and `--detailed-exitcode` work as usual.
+`--skip-tags`, `--host`, `--sudo`, `--accept-new-host-keys`, `--ssh-identity-file`, `--ssh-option`,
+`--start-at-task`, and `--list-tasks`. `--json`, `--verbose`, `--fail-fast`, and `--detailed-exitcode` work as usual.
 
 **The saved plan is checked before anything runs.** `apply --plan` first probes every task again,
 exactly as `plan` does, and compares the result with what the file recorded. If anything differs -
@@ -517,6 +520,8 @@ recipe cannot be loaded or a `when:` fails to evaluate, and `0` otherwise.
 | `--host <user@host:port>` | Apply against a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. See [remote execution](remote-execution.md). |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. See [remote execution](remote-execution.md). |
+| `--ssh-identity-file <path>` | Authenticate over SSH with this private key only. Overrides `DOKKU_SSH_IDENTITY_FILE`. See [remote execution](remote-execution.md#choosing-a-key-and-ssh-options). |
+| `--ssh-option <option>` | Pass an extra option to `ssh` as `-o <option>`. Repeatable. See [remote execution](remote-execution.md#choosing-a-key-and-ssh-options). |
 | `--ignore-version` | Run a task even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that task errors and the rest of its play does not run. `ignore_errors` and `failed_when` still apply to the refusal, and neither one runs the task. |
 | `--plan <path>` | Apply a plan saved by `docket plan --output`, after checking the server still matches it. Takes the recipe, inputs, filters and target from the file. See [saved plans](#saved-plans). |
 
@@ -758,6 +763,8 @@ it.
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. |
 | `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
+| `--ssh-identity-file <path>` | Authenticate over SSH with this private key only. Overrides `DOKKU_SSH_IDENTITY_FILE`. See [remote execution](remote-execution.md#choosing-a-key-and-ssh-options). |
+| `--ssh-option <option>` | Pass an extra option to `ssh` as `-o <option>`. Repeatable. See [remote execution](remote-execution.md#choosing-a-key-and-ssh-options). |
 | `--ignore-version` | Export a task type even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it, that exporter is skipped with a warning and the rest of the server still exports, and the warnings end with one line naming this flag. |
 
 The output format follows `--format` when given, otherwise the `--output` extension (`.json` /

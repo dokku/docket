@@ -72,6 +72,8 @@ type ExportCommand struct {
 	host              string
 	sudo              bool
 	acceptNewHostKeys bool
+	sshIdentityFile   string
+	sshOptions        []string
 	ignoreVersion     bool
 }
 
@@ -125,6 +127,8 @@ func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
 	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via sudo -n, remotely with --host and locally without")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "trust an unknown SSH host key on first connect")
+	f.StringVar(&c.sshIdentityFile, "ssh-identity-file", "", "authenticate over SSH with this private key only; overrides DOKKU_SSH_IDENTITY_FILE")
+	f.StringArrayVar(&c.sshOptions, "ssh-option", nil, "pass an extra ssh option as -o <option> (repeatable)")
 	f.BoolVar(&c.ignoreVersion, "ignore-version", false, "export tasks even when Dokku or a required plugin is older than the task declares")
 	return f
 }
@@ -143,6 +147,8 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 			"--host":                 complete.PredictNothing,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
+			"--ssh-identity-file":    complete.PredictFiles("*"),
+			"--ssh-option":           complete.PredictAnything,
 			"--ignore-version":       complete.PredictNothing,
 		},
 	)
@@ -217,7 +223,11 @@ func (c *ExportCommand) Run(args []string) int {
 	// second export in the same process can read a different one. It also
 	// closes the SSH connection the export opens on the way out. The masker
 	// starts empty: what it masks is only known once the read below returns.
-	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
+	target, err := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys, c.sshIdentityFile, c.sshOptions)
+	if err != nil {
+		c.Ui.Error(err.Error())
+		return 1
+	}
 	masker := subprocess.NewMasker()
 	session := subprocess.NewSession(masker)
 	defer func() { _ = session.Close() }()

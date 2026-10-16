@@ -61,6 +61,8 @@ type ApplyCommand struct {
 	host              string
 	sudo              bool
 	acceptNewHostKeys bool
+	sshIdentityFile   string
+	sshOptions        []string
 	tags              []string
 	skipTags          []string
 	varsFiles         []string
@@ -133,6 +135,8 @@ func (c *ApplyCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.host, "host", "", "remote dokku host as [user@]host[:port]; equivalent to DOKKU_HOST. Routes every dokku invocation through ssh.")
 	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via `sudo -n` - remotely with --host, locally without. Covers dokku only, not docket's own reads of local files. Equivalent to DOKKU_SUDO=1.")
 	f.BoolVar(&c.acceptNewHostKeys, "accept-new-host-keys", false, "for SSH transport, accept new host keys on first connection (`-o StrictHostKeyChecking=accept-new`). MITM risk on first connect.")
+	f.StringVar(&c.sshIdentityFile, "ssh-identity-file", "", "for SSH transport, authenticate with this private key only (`-i <file> -o IdentitiesOnly=yes`). A path on this machine. Equivalent to DOKKU_SSH_IDENTITY_FILE.")
+	f.StringArrayVar(&c.sshOptions, "ssh-option", nil, "for SSH transport, pass an extra ssh option as `-o <option>`, e.g. ConnectTimeout=10 (repeatable). ControlMaster, ControlPath, ControlPersist and BatchMode are managed by docket and refused.")
 	f.BoolVar(&c.ignoreVersion, "ignore-version", false, "run tasks even when Dokku or a required plugin is older than the task declares")
 	f.StringSliceVar(&c.tags, "tags", nil, "comma-separated tag list; only tasks whose `tags:` set intersects this list run")
 	f.StringSliceVar(&c.skipTags, "skip-tags", nil, "comma-separated tag list; tasks whose `tags:` set intersects this list are skipped")
@@ -186,6 +190,8 @@ func (c *ApplyCommand) AutocompleteFlags() complete.Flags {
 			"--host":                 complete.PredictAnything,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
+			"--ssh-identity-file":    complete.PredictFiles("*"),
+			"--ssh-option":           complete.PredictAnything,
 			"--ignore-version":       complete.PredictNothing,
 			"--tags":                 complete.PredictAnything,
 			"--skip-tags":            complete.PredictAnything,
@@ -503,7 +509,10 @@ func (c *ApplyCommand) resolveRun(flags *flag.FlagSet, saved *savedPlan) (runSou
 		c.Ui.Warn(w)
 	}
 
-	target := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys)
+	target, err := resolveSshFlags(os.Getenv, c.host, c.sudo, c.acceptNewHostKeys, c.sshIdentityFile, c.sshOptions)
+	if err != nil {
+		return runSource{}, err
+	}
 
 	formatOverride, err := parseRecipeFormatFlag("--tasks-format", c.tasksFormatFlag)
 	if err != nil {
@@ -556,6 +565,8 @@ var planConflictFlags = []struct {
 	{"host", "the saved plan carries its own target"},
 	{"sudo", "the saved plan carries its own target"},
 	{"accept-new-host-keys", "the saved plan carries its own target"},
+	{"ssh-identity-file", "the saved plan carries its own target"},
+	{"ssh-option", "the saved plan carries its own target"},
 	{"start-at-task", "a saved plan is applied whole"},
 	{"list-tasks", "a saved plan is not a recipe to preview; read it with docket plan instead"},
 }

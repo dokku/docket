@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dokku/docket/internal/subprocess"
 )
@@ -13,6 +14,12 @@ import (
 //   - --host over DOKKU_HOST
 //   - --sudo over DOKKU_SUDO=1
 //   - --accept-new-host-keys over DOKKU_SSH_ACCEPT_NEW_HOST_KEYS=1
+//   - --ssh-identity-file over DOKKU_SSH_IDENTITY_FILE
+//
+// --ssh-option has no env var: a list of options, each of which may contain
+// spaces, has no spelling in one variable that splits back unambiguously. An
+// option docket manages itself is refused here, so a bad flag fails before
+// anything connects rather than on the first dokku command.
 //
 // The caller puts the result on the run context through a subprocess.Session,
 // and every dokku invocation under that context reads it from there. Nothing
@@ -21,15 +28,20 @@ import (
 // os.Setenv so the SSH argv builder could read them back, which made them
 // sticky for the life of the process and impossible to vary per call.
 //
-// getenv is how the three variables are read - `os.Getenv` in production. It
-// is a parameter rather than a direct call so the tests can state their own
+// getenv is how the variables are read - `os.Getenv` in production. It is a
+// parameter rather than a direct call so the tests can state their own
 // environment and still run in parallel, which `t.Setenv` panics on.
-func resolveSshFlags(getenv func(string) string, hostFlag string, sudo, acceptNewHostKeys bool) subprocess.Target {
+func resolveSshFlags(getenv func(string) string, hostFlag string, sudo, acceptNewHostKeys bool, identityFile string, sshOptions []string) (subprocess.Target, error) {
+	if err := subprocess.ValidateSSHOptions(sshOptions); err != nil {
+		return subprocess.Target{}, fmt.Errorf("--ssh-option: %w", err)
+	}
 	return subprocess.Target{
 		Host:              firstNonEmpty(hostFlag, getenv("DOKKU_HOST")),
 		Sudo:              sudo || getenv("DOKKU_SUDO") == "1",
 		AcceptNewHostKeys: acceptNewHostKeys || getenv("DOKKU_SSH_ACCEPT_NEW_HOST_KEYS") == "1",
-	}
+		IdentityFile:      firstNonEmpty(identityFile, getenv("DOKKU_SSH_IDENTITY_FILE")),
+		SSHOptions:        sshOptions,
+	}, nil
 }
 
 // firstNonEmpty returns the first of its arguments that is not the empty

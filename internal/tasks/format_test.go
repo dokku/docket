@@ -399,6 +399,8 @@ func TestFormatOrdersTargetingPlayKeys(t *testing.T) {
 	input := []byte(`---
 - tasks:
     - dokku_app: {app: api}
+  ssh_options: [ConnectTimeout=5]
+  ssh_identity_file: /keys/deploy
   accept_new_host_keys: true
   sudo: true
   host: deploy@example.com
@@ -410,7 +412,7 @@ func TestFormatOrdersTargetingPlayKeys(t *testing.T) {
 	}
 	got := string(out)
 
-	order := []string{"name:", "host:", "sudo:", "accept_new_host_keys:", "tasks:"}
+	order := []string{"name:", "host:", "sudo:", "accept_new_host_keys:", "ssh_identity_file:", "ssh_options:", "tasks:"}
 	for i := 1; i < len(order); i++ {
 		prev, cur := strings.Index(got, order[i-1]), strings.Index(got, order[i])
 		if prev < 0 || cur < 0 {
@@ -431,6 +433,8 @@ func TestFormatTargetingKeysStayValidatable(t *testing.T) {
   host: deploy@example.com
   sudo: false
   accept_new_host_keys: true
+  ssh_identity_file: ""
+  ssh_options: []
   tasks:
     - dokku_app: {app: api}
 `)

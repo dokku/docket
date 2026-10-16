@@ -327,6 +327,28 @@ func checkPlayKeyValue(label, key string, valueNode *yaml.Node) []Problem {
 		if err := valueNode.Decode(&b); err != nil {
 			return problem(fmt.Sprintf("%s must be a bool, got %s", key, scalarTypeName(valueNode)))
 		}
+	case "ssh_identity_file":
+		// An empty string is allowed: it declines the run's identity.
+		if _, ok, typeName := scalarString(valueNode); !ok {
+			return problem(fmt.Sprintf("ssh_identity_file must be a string, got %s", typeName))
+		}
+	case "ssh_options":
+		if valueNode.Kind != yaml.SequenceNode {
+			return problem(fmt.Sprintf("ssh_options must be a list of strings, got %s", scalarTypeName(valueNode)))
+		}
+		opts := make([]string, 0, len(valueNode.Content))
+		for _, item := range valueNode.Content {
+			opt, ok, typeName := scalarString(item)
+			if !ok {
+				return problem(fmt.Sprintf("ssh_options must be a list of strings, got an entry of type %s", typeName))
+			}
+			opts = append(opts, opt)
+		}
+		// Checked offline for the same reason as host: an option docket owns
+		// would otherwise fail the play's first command with an `ssh:` error.
+		if err := subprocess.ValidateSSHOptions(opts); err != nil {
+			return problem(fmt.Sprintf("ssh_options is not usable: %v", err))
+		}
 	}
 	return nil
 }

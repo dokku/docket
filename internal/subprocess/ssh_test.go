@@ -113,8 +113,8 @@ const testSocket = "/tmp/docket-test.sock"
 func TestControlPathStableForSamePidHost(t *testing.T) {
 	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	a := controlPath(target, 1234, 0)
-	b := controlPath(target, 1234, 0)
+	a := controlPath(target, Target{}, 1234, 0)
+	b := controlPath(target, Target{}, 1234, 0)
 	if a != b {
 		t.Errorf("controlPath should be stable: %q vs %q", a, b)
 	}
@@ -123,8 +123,8 @@ func TestControlPathStableForSamePidHost(t *testing.T) {
 func TestControlPathDiffersByPid(t *testing.T) {
 	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	a := controlPath(target, 1234, 0)
-	b := controlPath(target, 5678, 0)
+	a := controlPath(target, Target{}, 1234, 0)
+	b := controlPath(target, Target{}, 5678, 0)
 	if a == b {
 		t.Errorf("controlPath should differ by pid (got %q for both)", a)
 	}
@@ -132,8 +132,8 @@ func TestControlPathDiffersByPid(t *testing.T) {
 
 func TestControlPathDiffersByHost(t *testing.T) {
 	t.Parallel()
-	a := controlPath(sshTarget{User: "alice", Host: "hostA", Port: "22"}, 1234, 0)
-	b := controlPath(sshTarget{User: "alice", Host: "hostB", Port: "22"}, 1234, 0)
+	a := controlPath(sshTarget{User: "alice", Host: "hostA", Port: "22"}, Target{}, 1234, 0)
+	b := controlPath(sshTarget{User: "alice", Host: "hostB", Port: "22"}, Target{}, 1234, 0)
 	if a == b {
 		t.Errorf("controlPath should differ by host (got %q for both)", a)
 	}
@@ -144,8 +144,8 @@ func TestControlPathDiffersByHost(t *testing.T) {
 // would send the second port's commands down the first port's connection.
 func TestControlPathDiffersByPort(t *testing.T) {
 	t.Parallel()
-	a := controlPath(sshTarget{User: "alice", Host: "host", Port: "22"}, 1234, 0)
-	b := controlPath(sshTarget{User: "alice", Host: "host", Port: "2222"}, 1234, 0)
+	a := controlPath(sshTarget{User: "alice", Host: "host", Port: "22"}, Target{}, 1234, 0)
+	b := controlPath(sshTarget{User: "alice", Host: "host", Port: "2222"}, Target{}, 1234, 0)
 	if a == b {
 		t.Errorf("controlPath should differ by port (got %q for both)", a)
 	}
@@ -159,7 +159,7 @@ func TestControlPathDiffersBySession(t *testing.T) {
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	paths := map[string]uint64{}
 	for _, session := range []uint64{0, 1, 2} {
-		got := controlPath(target, 1234, session)
+		got := controlPath(target, Target{}, 1234, session)
 		if other, ok := paths[got]; ok {
 			t.Errorf("sessions %d and %d share control path %q", other, session, got)
 		}
@@ -169,7 +169,7 @@ func TestControlPathDiffersBySession(t *testing.T) {
 
 func TestControlPathExtension(t *testing.T) {
 	t.Parallel()
-	got := controlPath(sshTarget{Host: "host", Port: "22"}, 1, 0)
+	got := controlPath(sshTarget{Host: "host", Port: "22"}, Target{}, 1, 0)
 	if !strings.HasSuffix(got, ".sock") {
 		t.Errorf("controlPath should end with .sock: %q", got)
 	}
@@ -739,4 +739,156 @@ func TestProbeCodeKeepsTheExitCode(t *testing.T) {
 			t.Fatal("ProbeCode should propagate a transport failure, not report it as an answer")
 		}
 	})
+}
+
+// TestControlPathDiffersByIdentityAndOptions pins that two targets on one host
+// with a different identity, or different ssh options, get their own masters.
+// ssh reuses whatever master answers on the socket, so a shared path would run
+// the second target's commands over a connection authenticated with the first
+// target's key - or, for an option such as HostName, to the first target's
+// server.
+func TestControlPathDiffersByIdentityAndOptions(t *testing.T) {
+	t.Parallel()
+	target := sshTarget{User: "alice", Host: "host", Port: "22"}
+	opts := []Target{
+		{},
+		{IdentityFile: "/keys/a"},
+		{IdentityFile: "/keys/b"},
+		{SSHOptions: []string{"HostName=other"}},
+		{IdentityFile: "/keys/a", SSHOptions: []string{"HostName=other"}},
+	}
+	paths := map[string]int{}
+	for i, o := range opts {
+		got := controlPath(target, o, 1234, 0)
+		if other, ok := paths[got]; ok {
+			t.Errorf("targets %+v and %+v share control path %q", opts[other], o, got)
+		}
+		paths[got] = i
+	}
+
+	again := controlPath(target, Target{IdentityFile: "/keys/a", SSHOptions: []string{"HostName=other"}}, 1234, 0)
+	if again != controlPath(target, opts[4], 1234, 0) {
+		t.Error("controlPath should be stable for an equal identity and options")
+	}
+	if controlPath(target, Target{Host: "alice@host", Sudo: true}, 1234, 0) != controlPath(target, Target{}, 1234, 0) {
+		t.Error("controlPath should not change for settings that do not reach ssh's connection")
+	}
+}
+
+func TestBuildSshArgvIdentityFile(t *testing.T) {
+	t.Parallel()
+
+	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(parsed, Target{IdentityFile: "/keys/deploy"}, testSocket, []string{"dokku", "version"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
+	i := indexOf(argv, "-i")
+	if i < 0 || i+1 >= len(argv) || argv[i+1] != "/keys/deploy" {
+		t.Fatalf("argv missing -i /keys/deploy: %v", argv)
+	}
+	if !containsExact(argv, "IdentitiesOnly=yes") {
+		t.Errorf("argv missing IdentitiesOnly=yes: %v", argv)
+	}
+	if host := indexOf(argv, "alice@host"); i > host {
+		t.Errorf("-i must come before the destination: %v", argv)
+	}
+}
+
+func TestBuildSshArgvDefaultHasNoIdentity(t *testing.T) {
+	t.Parallel()
+
+	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
+	argv, err := buildSshArgv(parsed, Target{}, testSocket, []string{"dokku", "version"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
+	if containsExact(argv, "-i") || containsExact(argv, "IdentitiesOnly=yes") {
+		t.Errorf("argv should leave the identity to ssh when none is named: %v", argv)
+	}
+}
+
+// TestBuildSshArgvOptionOrder pins where caller options land. ssh keeps the
+// first value it sees for each option, so docket's connection options must come
+// before them (nothing may override ControlPath), and the options docket adds
+// for AcceptNewHostKeys and IdentityFile must come after them (an explicit
+// caller choice beats a docket convenience).
+func TestBuildSshArgvOptionOrder(t *testing.T) {
+	t.Parallel()
+
+	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
+	target := Target{
+		AcceptNewHostKeys: true,
+		IdentityFile:      "/keys/deploy",
+		SSHOptions:        []string{"ConnectTimeout=5", "IdentitiesOnly no"},
+	}
+	argv, err := buildSshArgv(parsed, target, testSocket, []string{"dokku", "version"})
+	if err != nil {
+		t.Fatalf("buildSshArgv returned error: %v", err)
+	}
+	batch := indexOf(argv, "BatchMode=yes")
+	connect := indexOf(argv, "ConnectTimeout=5")
+	callerIdentities := indexOf(argv, "IdentitiesOnly no")
+	acceptNew := indexOf(argv, "StrictHostKeyChecking=accept-new")
+	identitiesOnly := indexOf(argv, "IdentitiesOnly=yes")
+	dest := indexOf(argv, "alice@host")
+	if batch < 0 || connect < 0 || callerIdentities < 0 || acceptNew < 0 || identitiesOnly < 0 || dest < 0 {
+		t.Fatalf("argv missing an expected option: %v", argv)
+	}
+	if !(batch < connect && connect < callerIdentities && callerIdentities < acceptNew && acceptNew < identitiesOnly && identitiesOnly < dest) {
+		t.Errorf("options out of order: %v", argv)
+	}
+	if argv[connect-1] != "-o" || argv[callerIdentities-1] != "-o" {
+		t.Errorf("each caller option should be its own -o value: %v", argv)
+	}
+}
+
+func TestBuildSshArgvRejectsAManagedOption(t *testing.T) {
+	t.Parallel()
+
+	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
+	if _, err := buildSshArgv(parsed, Target{SSHOptions: []string{"ControlPath=/tmp/x"}}, testSocket, []string{"dokku", "version"}); err == nil {
+		t.Error("buildSshArgv accepted a ControlPath option, want an error")
+	}
+}
+
+func TestValidateSSHOptions(t *testing.T) {
+	t.Parallel()
+
+	valid := [][]string{
+		nil,
+		{},
+		{"ConnectTimeout=5"},
+		{"ProxyJump bastion.example.com", "ServerAliveInterval=30"},
+		{"IdentitiesOnly=no"},
+		{"StrictHostKeyChecking=no"},
+	}
+	for _, opts := range valid {
+		if err := ValidateSSHOptions(opts); err != nil {
+			t.Errorf("ValidateSSHOptions(%q) = %v, want nil", opts, err)
+		}
+	}
+
+	invalid := map[string]string{
+		"empty":                   "",
+		"blank":                   "   ",
+		"newline":                 "ConnectTimeout=5\nProxyCommand=evil",
+		"tab inside":              "ConnectTimeout=5\tx",
+		"ControlPath":             "ControlPath=/tmp/x",
+		"ControlMaster":           "ControlMaster=no",
+		"ControlPersist":          "ControlPersist=600",
+		"BatchMode":               "BatchMode=no",
+		"case insensitive":        "controlpath=/tmp/x",
+		"space form":              "BatchMode no",
+		"leading space":           " ControlPath=/tmp/x",
+		"space before the equals": "ControlMaster =no",
+	}
+	for name, opt := range invalid {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if err := ValidateSSHOptions([]string{"ConnectTimeout=5", opt}); err == nil {
+				t.Errorf("ValidateSSHOptions(%q) = nil, want an error", opt)
+			}
+		})
+	}
 }

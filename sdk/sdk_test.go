@@ -257,3 +257,13 @@ func TestTaskSensitiveValues(t *testing.T) {
 		t.Errorf("TaskSensitiveValues of a nil pointer = %q, want nil", got)
 	}
 }
+
+func TestValidateSSHOptions(t *testing.T) {
+	t.Parallel()
+	if err := sdk.ValidateSSHOptions([]string{"ConnectTimeout=10", "ProxyJump bastion"}); err != nil {
+		t.Errorf("ValidateSSHOptions rejected ordinary options: %v", err)
+	}
+	if err := sdk.ValidateSSHOptions([]string{"ControlPath=/tmp/x"}); err == nil {
+		t.Error("ValidateSSHOptions accepted ControlPath, want an error")
+	}
+}

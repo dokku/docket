@@ -3,6 +3,7 @@ package subprocess
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 )
@@ -10,8 +11,14 @@ import (
 func TestContextWithTargetRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	want := Target{Host: "deploy@dokku.example.com:2222", Sudo: true, AcceptNewHostKeys: true}
-	if got := TargetFromContext(ContextWithTarget(context.Background(), want)); got != want {
+	want := Target{
+		Host:              "deploy@dokku.example.com:2222",
+		Sudo:              true,
+		AcceptNewHostKeys: true,
+		IdentityFile:      "/keys/deploy",
+		SSHOptions:        []string{"ConnectTimeout=5"},
+	}
+	if got := TargetFromContext(ContextWithTarget(context.Background(), want)); !reflect.DeepEqual(got, want) {
 		t.Errorf("TargetFromContext = %+v, want %+v", got, want)
 	}
 }
@@ -23,12 +30,12 @@ func TestContextWithTargetRoundTrip(t *testing.T) {
 func TestTargetFromContextDefaultsToLocal(t *testing.T) {
 	t.Parallel()
 
-	if got := TargetFromContext(context.Background()); got != (Target{}) {
+	if got := TargetFromContext(context.Background()); !reflect.DeepEqual(got, Target{}) {
 		t.Errorf("TargetFromContext = %+v, want the zero Target", got)
 	}
 	//nolint:staticcheck // deliberately passing nil: a caller not yet threaded
 	// a context should run locally rather than panic.
-	if got := TargetFromContext(nil); got != (Target{}) {
+	if got := TargetFromContext(nil); !reflect.DeepEqual(got, Target{}) {
 		t.Errorf("TargetFromContext(nil) = %+v, want the zero Target", got)
 	}
 }

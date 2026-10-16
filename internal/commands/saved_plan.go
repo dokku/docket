@@ -76,9 +76,11 @@ type savedPlanInput struct {
 // savedPlanTarget is the run-wide target the plan probed. A play's own
 // `host:` / `sudo:` override still comes from the recipe.
 type savedPlanTarget struct {
-	Host              string `json:"host"`
-	Sudo              bool   `json:"sudo"`
-	AcceptNewHostKeys bool   `json:"accept_new_host_keys"`
+	Host              string   `json:"host"`
+	Sudo              bool     `json:"sudo"`
+	AcceptNewHostKeys bool     `json:"accept_new_host_keys"`
+	SSHIdentityFile   string   `json:"ssh_identity_file"`
+	SSHOptions        []string `json:"ssh_options"`
 }
 
 // savedPlanEvent is one entry in a plan's fingerprint: the plan stream in
@@ -216,6 +218,8 @@ func newSavedPlan(version string, recipe recipeSource, arguments map[string]*Arg
 			Host:              target.Host,
 			Sudo:              target.Sudo,
 			AcceptNewHostKeys: target.AcceptNewHostKeys,
+			SSHIdentityFile:   target.IdentityFile,
+			SSHOptions:        nonNilStrings(target.SSHOptions),
 		},
 		Events: events,
 	}
@@ -288,12 +292,19 @@ func (p *savedPlan) arguments() (map[string]*Argument, map[string]bool, error) {
 	return arguments, userSet, nil
 }
 
-// target returns the run-wide target the plan probed.
+// target returns the run-wide target the plan probed. An empty options list
+// comes back nil, which is what resolving no --ssh-option gives.
 func (p *savedPlan) target() subprocess.Target {
+	var sshOptions []string
+	if len(p.Target.SSHOptions) > 0 {
+		sshOptions = p.Target.SSHOptions
+	}
 	return subprocess.Target{
 		Host:              p.Target.Host,
 		Sudo:              p.Target.Sudo,
 		AcceptNewHostKeys: p.Target.AcceptNewHostKeys,
+		IdentityFile:      p.Target.SSHIdentityFile,
+		SSHOptions:        sshOptions,
 	}
 }
 
