@@ -835,8 +835,21 @@ func TestBuildSshArgvOptionOrder(t *testing.T) {
 	if batch < 0 || connect < 0 || callerIdentities < 0 || acceptNew < 0 || identitiesOnly < 0 || dest < 0 {
 		t.Fatalf("argv missing an expected option: %v", argv)
 	}
-	if !(batch < connect && connect < callerIdentities && callerIdentities < acceptNew && acceptNew < identitiesOnly && identitiesOnly < dest) {
-		t.Errorf("options out of order: %v", argv)
+	order := []struct {
+		name string
+		pos  int
+	}{
+		{"BatchMode=yes", batch},
+		{"ConnectTimeout=5", connect},
+		{"IdentitiesOnly no", callerIdentities},
+		{"StrictHostKeyChecking=accept-new", acceptNew},
+		{"IdentitiesOnly=yes", identitiesOnly},
+		{"alice@host", dest},
+	}
+	for i := 1; i < len(order); i++ {
+		if order[i-1].pos >= order[i].pos {
+			t.Errorf("%s should come before %s: %v", order[i-1].name, order[i].name, argv)
+		}
 	}
 	if argv[connect-1] != "-o" || argv[callerIdentities-1] != "-o" {
 		t.Errorf("each caller option should be its own -o value: %v", argv)
