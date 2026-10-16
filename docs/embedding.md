@@ -48,6 +48,58 @@ fails with `sdk.ErrSessionClosed`.
 
 `NewSession(nil)` installs no masker, leaving any masker already on the parent context in place.
 
+### Choosing the SSH key
+
+Without more, `ssh` picks the key itself from ssh-agent or `~/.ssh/config` on the machine running
+your program. A `Target` can name it instead, along with any other `ssh` options:
+
+```go
+ctx := session.Context(context.Background(), sdk.Target{
+    Host:         "deploy@dokku.example.com",
+    IdentityFile: "/run/secrets/dokku_deploy",
+    SSHOptions:   []string{"ConnectTimeout=10", "ProxyJump bastion.example.com"},
+})
+```
+
+`IdentityFile` is passed as `-i <path> -o IdentitiesOnly=yes`, so `ssh` offers that key alone.
+Each entry of `SSHOptions` is one `-o` value, in `Key=Value` or `Key Value` form. The four options
+docket uses to share a connection - `ControlMaster`, `ControlPath`, `ControlPersist` and
+`BatchMode` - are refused: a call that names one fails with an `ssh:` error before `ssh` runs.
+Check a caller-supplied list ahead of time with `sdk.ValidateSSHOptions`. The identity and the
+options are part of what picks the shared connection, so two targets on one host with different
+keys never share one.
+
+`IdentityFile` is a path, not key material. When your program holds the key itself - a Terraform
+provider block, or a secret read from a vault - write it to a file only its owner can read, keep the
+file for as long as the session is open, and remove it after `Close()`:
+
+```go
+f, err := os.CreateTemp("", "dokku-key-*")
+if err != nil {
+    return err
+}
+defer os.Remove(f.Name())
+if err := f.Chmod(0o600); err != nil {
+    return err
+}
+if _, err := f.WriteString(privateKey); err != nil {
+    return err
+}
+if err := f.Close(); err != nil {
+    return err
+}
+
+session := sdk.NewSession(nil)
+defer func() { _ = session.Close() }()
+ctx := session.Context(context.Background(), sdk.Target{
+    Host:         "deploy@dokku.example.com",
+    IdentityFile: f.Name(),
+})
+```
+
+Deferred calls run in reverse order, so the session closes its connections before the key file is
+removed.
+
 Cancel the context and in-flight dokku commands stop; give it a deadline and they are bounded by it.
 A signal handler is the caller's business - docket's own is installed in `main.go`, not in the
 engine.
@@ -188,7 +240,7 @@ plugin the task needs that is not installed at all is not a refusal: the task's 
 it, and an earlier task in the same run can install it.
 
 The gate reads `dokku version` and `dokku plugin:list` once per target - one host with or without
-sudo - and keeps the answers for as long as the context lives, so install a fresh gate for each run
+sudo, and with its own identity file and ssh options - and keeps the answers for as long as the context lives, so install a fresh gate for each run
 rather than keeping one across runs that could straddle a server upgrade. `dokku_plugin` drops the
 cached plugin list itself after it installs or uninstalls a plugin, so a later task in the same run
 sees the change without anything from the caller.

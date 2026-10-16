@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"sort"
 	"sync"
 	"testing"
@@ -48,7 +49,7 @@ func sessionSocket(t *testing.T, s *Session, raw string) string {
 	if err != nil {
 		t.Fatalf("parseDokkuHost(%q): %v", raw, err)
 	}
-	return controlPath(parsed, os.Getpid(), s.id())
+	return controlPath(parsed, Target{}, os.Getpid(), s.id())
 }
 
 // dispatch sends a dokku command over ssh under ctx. The targets these tests
@@ -67,7 +68,7 @@ func TestSessionContextCarriesTargetAndMasker(t *testing.T) {
 	target := Target{Host: "deploy@one", Sudo: true}
 	ctx := s.Context(context.Background(), target)
 
-	if got := TargetFromContext(ctx); got != target {
+	if got := TargetFromContext(ctx); !reflect.DeepEqual(got, target) {
 		t.Errorf("TargetFromContext = %+v, want %+v", got, target)
 	}
 	if got := MaskerFromContext(ctx); got != masker {

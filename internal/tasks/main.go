@@ -102,6 +102,14 @@ type RecipeEntry struct {
 	Sudo              *bool `yaml:"sudo,omitempty" json:"sudo,omitempty"`
 	AcceptNewHostKeys *bool `yaml:"accept_new_host_keys,omitempty" json:"accept_new_host_keys,omitempty"`
 
+	// SSHIdentityFile and SSHOptions override the run-wide
+	// --ssh-identity-file and --ssh-option for this play. An omitted key
+	// inherits the run's setting; `ssh_identity_file: ""` declines the run's
+	// identity, and any `ssh_options` list - `[]` included - replaces the
+	// run's options.
+	SSHIdentityFile *string  `yaml:"ssh_identity_file,omitempty" json:"ssh_identity_file,omitempty"`
+	SSHOptions      []string `yaml:"ssh_options,omitempty" json:"ssh_options,omitempty"`
+
 	// Tasks is the raw per-play task list, decoded into envelopes by
 	// GetPlays via buildEnvelopesForEntry.
 	Tasks []map[string]interface{} `yaml:"tasks,omitempty" json:"tasks,omitempty"`
@@ -396,6 +404,8 @@ var ReservedInputNames = map[string]bool{
 	"list-tasks":           true,
 	"start-at-task":        true,
 	"accept-new-host-keys": true,
+	"ssh-identity-file":    true,
+	"ssh-option":           true,
 	"ignore-version":       true,
 	"detailed-exitcode":    true,
 	"strict":               true,
@@ -617,6 +627,8 @@ func GetPlaysWithFormat(data []byte, format string, context map[string]interface
 			Host:              meta.Host,
 			Sudo:              meta.Sudo,
 			AcceptNewHostKeys: meta.AcceptNewHostKeys,
+			SSHIdentityFile:   meta.SSHIdentityFile,
+			SSHOptions:        meta.SSHOptions,
 		}
 		if play.Name == "" {
 			// Single-play recipes without a name keep the legacy
@@ -740,6 +752,8 @@ type playMeta struct {
 	Host              string      `yaml:"host"`
 	Sudo              *bool       `yaml:"sudo"`
 	AcceptNewHostKeys *bool       `yaml:"accept_new_host_keys"`
+	SSHIdentityFile   *string     `yaml:"ssh_identity_file"`
+	SSHOptions        []string    `yaml:"ssh_options"`
 }
 
 // decodePlayMeta decodes a play mapping node's metadata fields.

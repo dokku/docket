@@ -202,6 +202,8 @@ Declaring one is reported as `reserved_input_name` by `docket validate` (and rej
 - `plan`
 - `play`
 - `skip-tags`
+- `ssh-identity-file`
+- `ssh-option`
 - `start-at-task`
 - `strict`
 - `sudo`

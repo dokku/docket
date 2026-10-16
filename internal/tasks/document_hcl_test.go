@@ -63,6 +63,35 @@ func TestHCLLabelIsTheNameKey(t *testing.T) {
 	}
 }
 
+// TestHCLPlaySSHKeysRoundTrip pins that a play's ssh keys, including the
+// empty spellings that decline the run's settings, survive a trip through HCL
+// and back. The codec maps play attributes generically, so this is the
+// tripwire for a key that has no HCL spelling.
+func TestHCLPlaySSHKeysRoundTrip(t *testing.T) {
+	t.Parallel()
+	const in = `- name: remote
+  host: deploy@example.com
+  ssh_identity_file: /keys/deploy
+  ssh_options:
+    - ConnectTimeout=5
+    - ProxyJump bastion
+  tasks:
+    - dokku_app:
+        app: api
+
+- name: declines
+  ssh_identity_file: ""
+  ssh_options: []
+  tasks:
+    - dokku_app:
+        app: worker
+`
+	hcl := yamlToHCL(t, in)
+	if got := hclToYAML(t, hcl); got != in {
+		t.Errorf("round trip through hcl =\n%s\nwant\n%s\nvia\n%s", got, in, hcl)
+	}
+}
+
 // TestHCLUnlabelledBlocks covers the other half: a label is optional
 // everywhere, because YAML does not require a name and every existing recipe
 // has to convert.

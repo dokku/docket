@@ -163,6 +163,8 @@ A play can carry these keys:
 | `host` | The server this play's tasks run against, as `[user@]host[:port]`. Overrides `--host` / `DOKKU_HOST` for this play. See [remote execution](remote-execution.md#a-recipe-that-spans-hosts). |
 | `sudo` | Run this play's `dokku` calls as root. Overrides `--sudo`. |
 | `accept_new_host_keys` | Trust an unknown SSH host key on first connect for this play. Overrides `--accept-new-host-keys`. |
+| `ssh_identity_file` | The private key this play's SSH connection authenticates with. Overrides `--ssh-identity-file` / `DOKKU_SSH_IDENTITY_FILE`; `""` declines it. See [remote execution](remote-execution.md#choosing-a-key-and-ssh-options). |
+| `ssh_options` | A list of extra `ssh` options for this play, each passed as `-o <option>`. Replaces `--ssh-option`; `[]` declines it. |
 | `inputs` | Variable defaults for this play. See [inputs](inputs.md). |
 | `tasks` | The play's list of tasks. |
 
@@ -213,7 +215,7 @@ one recipe:
 A play that names no `host:` runs against `--host` / `DOKKU_HOST` as before, so every recipe written
 without these keys behaves exactly as it did.
 
-The three keys override **individually**, not as a group. A play that sets `host:` and nothing else
+The targeting keys override **individually**, not as a group. A play that sets `host:` and nothing else
 still gets the run's `--sudo` and `--accept-new-host-keys`, which is what lets the example above
 send both plays to servers that need root without repeating the flag. A play that wants the opposite
 says so explicitly:
@@ -224,6 +226,27 @@ says so explicitly:
   sudo: false
   tasks: ...
 ```
+
+`ssh_identity_file` and `ssh_options` follow the same rule: omitted, a play keeps the run's
+`--ssh-identity-file` and `--ssh-option`. A play that sets `ssh_options` gets exactly that list -
+it replaces the run's options rather than adding to them - and `ssh_identity_file: ""` or
+`ssh_options: []` drops the run's setting for that play:
+
+```yaml
+- name: a server reached through a bastion, with its own key
+  host: deploy@internal.example.com
+  ssh_identity_file: ~/.ssh/internal_deploy
+  ssh_options: ["ProxyJump bastion.example.com"]
+  tasks: ...
+
+- name: a server whose key comes from ~/.ssh/config
+  host: deploy@other.example.com
+  ssh_identity_file: ""
+  tasks: ...
+```
+
+`docket validate` checks `ssh_options` offline too, so an option docket manages itself is reported
+before anything connects.
 
 `docket validate` checks each `host:` offline, so a typo is caught before anything connects rather
 than surfacing as an `ssh:` failure partway through the run. `docket plan --list-tasks` and the play

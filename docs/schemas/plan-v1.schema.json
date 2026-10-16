@@ -65,12 +65,21 @@
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["host", "sudo", "accept_new_host_keys"],
-      "description": "The run-wide target the plan probed, after --host / --sudo / --accept-new-host-keys and their environment variables. A play's own host:, sudo: and accept_new_host_keys: still come from the recipe.",
+      "required": ["host", "sudo", "accept_new_host_keys", "ssh_identity_file", "ssh_options"],
+      "description": "The run-wide target the plan probed, after --host / --sudo / --accept-new-host-keys / --ssh-identity-file / --ssh-option and their environment variables. A play's own host:, sudo:, accept_new_host_keys:, ssh_identity_file: and ssh_options: still come from the recipe.",
       "properties": {
         "host": { "type": "string" },
         "sudo": { "type": "boolean" },
-        "accept_new_host_keys": { "type": "boolean" }
+        "accept_new_host_keys": { "type": "boolean" },
+        "ssh_identity_file": {
+          "type": "string",
+          "description": "The private key ssh authenticates with, a path on the machine running docket. Empty when none was named."
+        },
+        "ssh_options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extra ssh options, each passed as one -o value."
+        }
       }
     },
     "events": {

@@ -252,6 +252,13 @@ func ContextWithTarget(ctx context.Context, target Target) context.Context {
 	return subprocess.ContextWithTarget(ctx, target)
 }
 
+// ValidateSSHOptions reports whether opts can be a Target's SSHOptions,
+// without contacting anything: each must be non-empty, free of control
+// characters, and must not set an option docket manages itself.
+func ValidateSSHOptions(opts []string) error {
+	return subprocess.ValidateSSHOptions(opts)
+}
+
 // NewMasker returns a masker for values.
 func NewMasker(values ...string) *Masker {
 	return subprocess.NewMasker(values...)

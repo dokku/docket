@@ -1597,7 +1597,7 @@ func TestBuildSigilContextKeepsUnparseableDefaultText(t *testing.T) {
 	}
 }
 
-// TestValidateAcceptsTargetingPlayKeys pins that the three keys are on the
+// TestValidateAcceptsTargetingPlayKeys pins that the targeting keys are on the
 // play allowlist. Adding them to canonicalPlayKeys without this would make
 // fmt reorder a recipe validate then rejects.
 func TestValidateAcceptsTargetingPlayKeys(t *testing.T) {
@@ -1606,12 +1606,51 @@ func TestValidateAcceptsTargetingPlayKeys(t *testing.T) {
   host: deploy@example.com:2222
   sudo: true
   accept_new_host_keys: true
+  ssh_identity_file: ~/.ssh/deploy
+  ssh_options: [ConnectTimeout=5, "ProxyJump bastion"]
   tasks:
     - dokku_app: { app: api }
+- name: declines the run's ssh settings
+  ssh_identity_file: ""
+  ssh_options: []
+  tasks:
+    - dokku_app: { app: worker }
 `)
 	problems := Validate(data, ValidateOptions{})
 	if len(problems) != 0 {
 		t.Errorf("targeting keys should validate cleanly; got %+v", problems)
+	}
+}
+
+// TestValidateRejectsUnusableSSHKeys pins the offline checks on the two ssh
+// keys: the wrong shape is a positioned diagnostic rather than a decode error,
+// and an option docket manages itself is refused before anything connects.
+func TestValidateRejectsUnusableSSHKeys(t *testing.T) {
+	cases := map[string]struct {
+		yaml string
+		want string
+	}{
+		"identity as a list":    {"ssh_identity_file: [a]", "ssh_identity_file must be a string"},
+		"options as a string":   {"ssh_options: ConnectTimeout=5", "ssh_options must be a list of strings"},
+		"options holding a map": {"ssh_options: [{a: b}]", "ssh_options must be a list of strings"},
+		"a managed option":      {"ssh_options: [ControlPath=/tmp/x]", "ssh_options is not usable"},
+		"an empty option":       {`ssh_options: [""]`, "ssh_options is not usable"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			data := []byte("---\n- " + tc.yaml + "\n  tasks:\n    - dokku_app: { app: api }\n")
+			problems := Validate(data, ValidateOptions{})
+			p := findProblem(problems, "play_key_type")
+			if p == nil {
+				t.Fatalf("expected a play_key_type problem; got %+v", problems)
+			}
+			if !strings.Contains(p.Message, tc.want) {
+				t.Errorf("message = %q, want it to contain %q", p.Message, tc.want)
+			}
+			if p.Line == 0 {
+				t.Error("problem should carry the line the key was declared on")
+			}
+		})
 	}
 }
 

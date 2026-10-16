@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -393,7 +394,7 @@ func TestMergePlayTagsEmptyPlay(t *testing.T) {
 	}
 }
 
-// TestGetPlaysTargetingKeysDecode pins that the three targeting keys reach the
+// TestGetPlaysTargetingKeysDecode pins that the targeting keys reach the
 // Play. They are decoded through playMeta rather than RecipeEntry, which is
 // the shape that actually runs, so a field added to one and not the other
 // would silently never arrive.
@@ -404,6 +405,8 @@ func TestGetPlaysTargetingKeysDecode(t *testing.T) {
   host: deploy@example.com:2222
   sudo: true
   accept_new_host_keys: false
+  ssh_identity_file: /keys/deploy
+  ssh_options: [ConnectTimeout=5, "ProxyJump bastion"]
   tasks:
     - dokku_app: { app: api }
 `)
@@ -424,6 +427,36 @@ func TestGetPlaysTargetingKeysDecode(t *testing.T) {
 	if play.AcceptNewHostKeys == nil || *play.AcceptNewHostKeys {
 		t.Errorf("AcceptNewHostKeys = %v, want a pointer to false", play.AcceptNewHostKeys)
 	}
+	if play.SSHIdentityFile == nil || *play.SSHIdentityFile != "/keys/deploy" {
+		t.Errorf("SSHIdentityFile = %v, want a pointer to /keys/deploy", play.SSHIdentityFile)
+	}
+	if want := []string{"ConnectTimeout=5", "ProxyJump bastion"}; !reflect.DeepEqual(play.SSHOptions, want) {
+		t.Errorf("SSHOptions = %q, want %q", play.SSHOptions, want)
+	}
+}
+
+// TestGetPlaysEmptySSHKeysDecline pins that the empty spellings survive
+// decoding as set rather than collapsing into "omitted": `ssh_identity_file:
+// ""` must be a non-nil pointer and `ssh_options: []` a non-nil list, or a play
+// could not decline the run's identity or options.
+func TestGetPlaysEmptySSHKeysDecline(t *testing.T) {
+	t.Parallel()
+	data := []byte(`---
+- ssh_identity_file: ""
+  ssh_options: []
+  tasks:
+    - dokku_app: { app: api }
+`)
+	plays, err := GetPlays(data, map[string]interface{}{}, nil)
+	if err != nil {
+		t.Fatalf("GetPlays: %v", err)
+	}
+	if plays[0].SSHIdentityFile == nil || *plays[0].SSHIdentityFile != "" {
+		t.Errorf("SSHIdentityFile = %v, want a pointer to the empty string", plays[0].SSHIdentityFile)
+	}
+	if plays[0].SSHOptions == nil || len(plays[0].SSHOptions) != 0 {
+		t.Errorf("SSHOptions = %#v, want a non-nil empty list", plays[0].SSHOptions)
+	}
 }
 
 // TestGetPlaysOmittedTargetingKeysAreNil pins the distinction the pointers
@@ -435,7 +468,8 @@ func TestGetPlaysOmittedTargetingKeysAreNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPlays: %v", err)
 	}
-	if plays[0].Host != "" || plays[0].Sudo != nil || plays[0].AcceptNewHostKeys != nil {
+	if plays[0].Host != "" || plays[0].Sudo != nil || plays[0].AcceptNewHostKeys != nil ||
+		plays[0].SSHIdentityFile != nil || plays[0].SSHOptions != nil {
 		t.Errorf("a play declaring no targeting keys should leave them unset; got %+v", plays[0])
 	}
 }
@@ -443,7 +477,7 @@ func TestGetPlaysOmittedTargetingKeysAreNil(t *testing.T) {
 func TestPlayResolveTarget(t *testing.T) {
 	t.Parallel()
 
-	base := subprocess.Target{Host: "run@base", Sudo: true, AcceptNewHostKeys: true}
+	base := subprocess.Target{Host: "run@base", Sudo: true, AcceptNewHostKeys: true, IdentityFile: "/keys/run", SSHOptions: []string{"ConnectTimeout=5"}}
 	tests := []struct {
 		name string
 		play *Play
@@ -457,12 +491,12 @@ func TestPlayResolveTarget(t *testing.T) {
 		{
 			name: "host alone redirects but keeps the run's flags",
 			play: &Play{Host: "play@other"},
-			want: subprocess.Target{Host: "play@other", Sudo: true, AcceptNewHostKeys: true},
+			want: subprocess.Target{Host: "play@other", Sudo: true, AcceptNewHostKeys: true, IdentityFile: "/keys/run", SSHOptions: []string{"ConnectTimeout=5"}},
 		},
 		{
 			name: "an explicit false declines a flag the run was given",
 			play: &Play{Host: "play@other", Sudo: boolPtr(false)},
-			want: subprocess.Target{Host: "play@other", Sudo: false, AcceptNewHostKeys: true},
+			want: subprocess.Target{Host: "play@other", Sudo: false, AcceptNewHostKeys: true, IdentityFile: "/keys/run", SSHOptions: []string{"ConnectTimeout=5"}},
 		},
 		{
 			name: "a flag can be asked for without redirecting",
@@ -474,11 +508,31 @@ func TestPlayResolveTarget(t *testing.T) {
 			play: nil,
 			want: base,
 		},
+		{
+			name: "a play's identity replaces the run's",
+			play: &Play{SSHIdentityFile: stringPtr("/keys/play")},
+			want: subprocess.Target{Host: "run@base", Sudo: true, AcceptNewHostKeys: true, IdentityFile: "/keys/play", SSHOptions: []string{"ConnectTimeout=5"}},
+		},
+		{
+			name: "an empty identity declines the run's",
+			play: &Play{SSHIdentityFile: stringPtr("")},
+			want: subprocess.Target{Host: "run@base", Sudo: true, AcceptNewHostKeys: true, SSHOptions: []string{"ConnectTimeout=5"}},
+		},
+		{
+			name: "a play's options replace the run's rather than adding to them",
+			play: &Play{SSHOptions: []string{"ProxyJump bastion"}},
+			want: subprocess.Target{Host: "run@base", Sudo: true, AcceptNewHostKeys: true, IdentityFile: "/keys/run", SSHOptions: []string{"ProxyJump bastion"}},
+		},
+		{
+			name: "an empty options list declines the run's",
+			play: &Play{SSHOptions: []string{}},
+			want: subprocess.Target{Host: "run@base", Sudo: true, AcceptNewHostKeys: true, IdentityFile: "/keys/run", SSHOptions: []string{}},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := tc.play.ResolveTarget(base); got != tc.want {
+			if got := tc.play.ResolveTarget(base); !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("ResolveTarget() = %+v, want %+v", got, tc.want)
 			}
 		})
@@ -492,7 +546,11 @@ func TestPlayResolveTargetOffALocalRun(t *testing.T) {
 	t.Parallel()
 	got := (&Play{Host: "play@other", Sudo: boolPtr(true)}).ResolveTarget(subprocess.Target{})
 	want := subprocess.Target{Host: "play@other", Sudo: true}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ResolveTarget() = %+v, want %+v", got, want)
 	}
 }
+
+// stringPtr returns a pointer to s, for the play fields that tell an omitted
+// key from an empty one.
+func stringPtr(s string) *string { return &s }

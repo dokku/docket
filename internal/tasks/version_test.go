@@ -296,6 +296,27 @@ func TestVersionCacheIsPerTarget(t *testing.T) {
 	}
 }
 
+// TestVersionCacheKeyFollowsTheConnection pins that the identity file and ssh
+// options are part of the cache key. An option such as HostName sends the same
+// host string to a different server, which may run a different Dokku.
+func TestVersionCacheKeyFollowsTheConnection(t *testing.T) {
+	t.Parallel()
+	targets := []subprocess.Target{
+		{Host: "deploy@example.com"},
+		{Host: "deploy@example.com", IdentityFile: "/keys/a"},
+		{Host: "deploy@example.com", IdentityFile: "/keys/b"},
+		{Host: "deploy@example.com", SSHOptions: []string{"HostName=other.example.com"}},
+	}
+	seen := map[string]int{}
+	for i, target := range targets {
+		key := targetCacheKey(subprocess.ContextWithTarget(context.Background(), target))
+		if other, ok := seen[key]; ok {
+			t.Errorf("targets %+v and %+v share version cache key %q", targets[other], target, key)
+		}
+		seen[key] = i
+	}
+}
+
 func TestPluginInstallInvalidatesVersionCache(t *testing.T) {
 	t.Parallel()
 	installed := false

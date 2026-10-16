@@ -52,6 +52,16 @@ type Play struct {
 	Sudo              *bool
 	AcceptNewHostKeys *bool
 
+	// SSHIdentityFile and SSHOptions override the run-wide
+	// --ssh-identity-file and --ssh-option for this play. A nil pointer or
+	// slice inherits the run's setting. An empty identity declines the run's
+	// identity, leaving the choice to ssh-agent and ~/.ssh/config, and a
+	// non-nil options list - even an empty one - replaces the run's options
+	// rather than adding to them, so a play can always say exactly which
+	// options its connection gets.
+	SSHIdentityFile *string
+	SSHOptions      []string
+
 	// Tasks is the per-play envelope map populated by GetPlays. Insertion
 	// order mirrors the play's tasks: source order.
 	Tasks OrderedStringEnvelopeMap
@@ -80,6 +90,12 @@ func (p *Play) ResolveTarget(base subprocess.Target) subprocess.Target {
 	}
 	out.Sudo = boolValue(p.Sudo, base.Sudo)
 	out.AcceptNewHostKeys = boolValue(p.AcceptNewHostKeys, base.AcceptNewHostKeys)
+	if p.SSHIdentityFile != nil {
+		out.IdentityFile = *p.SSHIdentityFile
+	}
+	if p.SSHOptions != nil {
+		out.SSHOptions = append([]string{}, p.SSHOptions...)
+	}
 	return out
 }
 

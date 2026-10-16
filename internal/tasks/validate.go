@@ -96,12 +96,14 @@ var allowedPlayKeys = map[string]bool{
 	"host":                 true,
 	"sudo":                 true,
 	"accept_new_host_keys": true,
+	"ssh_identity_file":    true,
+	"ssh_options":          true,
 	"tasks":                true,
 }
 
 // allowedPlayKeysList is the comma-separated form rendered into the
 // "unexpected play key" diagnostic so users see the full allowlist.
-const allowedPlayKeysList = "name, tags, when, inputs, host, sudo, accept_new_host_keys, tasks"
+const allowedPlayKeysList = "name, tags, when, inputs, host, sudo, accept_new_host_keys, ssh_identity_file, ssh_options, tasks"
 
 // Validate parses data as a docket recipe and returns every problem it finds.
 // It is offline by contract: the implementation must never invoke

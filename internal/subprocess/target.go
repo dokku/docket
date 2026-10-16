@@ -31,6 +31,21 @@ type Target struct {
 	// AcceptNewHostKeys adds `-o StrictHostKeyChecking=accept-new`, so ssh
 	// trusts an unknown host on first connect. Only meaningful with Host.
 	AcceptNewHostKeys bool
+
+	// IdentityFile is the private key ssh authenticates with, passed as `-i`
+	// together with `-o IdentitiesOnly=yes` so ssh offers that key alone
+	// rather than every key the agent holds first. It is a path on the machine
+	// running docket; ssh expands a leading `~`. Empty leaves the choice to
+	// ssh-agent and `~/.ssh/config`. Only meaningful with Host.
+	IdentityFile string
+
+	// SSHOptions are extra ssh options, each passed as one `-o` value in the
+	// `Key=Value` or `Key Value` form ssh_config(5) describes. They come after
+	// the connection options docket owns - ControlMaster, ControlPath,
+	// ControlPersist and BatchMode, which ValidateSSHOptions refuses - and
+	// before the ones docket adds for AcceptNewHostKeys and IdentityFile, so
+	// an option stated here beats those. Only meaningful with Host.
+	SSHOptions []string
 }
 
 // targetKey is the context key Target is stored under. An unexported struct

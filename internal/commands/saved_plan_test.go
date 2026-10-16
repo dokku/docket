@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -401,6 +402,8 @@ func TestApplyPlanFlagCombinations(t *testing.T) {
 		"host":                 {[]string{"--host", "h"}, "--plan cannot be used with --host"},
 		"sudo":                 {[]string{"--sudo"}, "--plan cannot be used with --sudo"},
 		"accept-new-host-keys": {[]string{"--accept-new-host-keys"}, "--plan cannot be used with --accept-new-host-keys"},
+		"ssh-identity-file":    {[]string{"--ssh-identity-file", "k"}, "--plan cannot be used with --ssh-identity-file"},
+		"ssh-option":           {[]string{"--ssh-option", "ConnectTimeout=5"}, "--plan cannot be used with --ssh-option"},
 		"start-at-task":        {[]string{"--start-at-task", "x"}, "--plan cannot be used with --start-at-task"},
 		"list-tasks":           {[]string{"--list-tasks"}, "--plan cannot be used with --list-tasks"},
 		"positional recipe":    {[]string{"tasks.yml"}, "--plan cannot be used with a recipe argument"},
@@ -521,27 +524,36 @@ func TestApplyPlanWarnsOnReadableFile(t *testing.T) {
 // it sets a process environment variable.
 func TestApplyPlanUsesSavedTarget(t *testing.T) {
 	t.Setenv("DOKKU_HOST", "env@other.example.com")
+	t.Setenv("DOKKU_SSH_IDENTITY_FILE", "/keys/from-env")
 	dir, path := writeRecipeIn(t, `---
 - tasks:
     - name: app
       dokku_app: { app: a }
 `)
 	seen := map[string]int{}
+	var identities []string
+	var options [][]string
 	ctx := subprocess.ContextWithRunner(context.Background(),
 		func(ctx context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
-			seen[subprocess.TargetFromContext(ctx).Host]++
+			target := subprocess.TargetFromContext(ctx)
+			seen[target.Host]++
+			identities = append(identities, target.IdentityFile)
+			options = append(options, target.SSHOptions)
 			return versionedEmptyResponse(in), nil
 		})
 
-	if res := runPlanSaving(t, ctx, dir, testDocketVersion, "--tasks", path, "--host", "saved@example.com", "--output", "plan.json"); res.exit != 0 {
+	if res := runPlanSaving(t, ctx, dir, testDocketVersion, "--tasks", path, "--host", "saved@example.com",
+		"--ssh-identity-file", "/keys/saved", "--ssh-option", "ConnectTimeout=5", "--output", "plan.json"); res.exit != 0 {
 		t.Fatalf("plan exit = %d, stderr:\n%s", res.exit, res.stderr)
 	}
 	p, _ := readSavedPlanFile(t, filepath.Join(dir, "plan.json"))
-	if p.Target.Host != "saved@example.com" {
+	if p.Target.Host != "saved@example.com" || p.Target.SSHIdentityFile != "/keys/saved" ||
+		!reflect.DeepEqual(p.Target.SSHOptions, []string{"ConnectTimeout=5"}) {
 		t.Errorf("saved target = %+v", p.Target)
 	}
 
 	clear(seen)
+	identities, options = nil, nil
 	res := runApplySaved(t, ctx, dir, testDocketVersion, "--plan", "plan.json")
 	if res.exit != 0 {
 		t.Fatalf("apply exit = %d, stderr:\n%s", res.exit, res.stderr)
@@ -551,6 +563,13 @@ func TestApplyPlanUsesSavedTarget(t *testing.T) {
 	}
 	if seen["saved@example.com"] == 0 {
 		t.Errorf("apply --plan should run against the saved target: %v", seen)
+	}
+	// DOKKU_SSH_IDENTITY_FILE is ignored the same way DOKKU_HOST is: every
+	// command uses the identity and options the plan was made with.
+	for i, identity := range identities {
+		if identity != "/keys/saved" || !reflect.DeepEqual(options[i], []string{"ConnectTimeout=5"}) {
+			t.Errorf("apply --plan command %d ran with identity %q and options %q, want the saved ones", i, identity, options[i])
+		}
 	}
 }
 
