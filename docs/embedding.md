@@ -179,7 +179,8 @@ res, err := sdk.ExportRecipe(ctx, sdk.ExportOptions{Resources: sel, Inline: true
 ```
 
 `sdk.IdentityAddress` renders the address of a task you hold, and `sdk.ParseIdentityAddress` splits
-one back into its type and keys.
+one back into its type and keys. To read one resource as a task rather than as a recipe, including
+one export cannot reconstruct, use [`sdk.ReadAddress`](#reading-from-an-address) instead.
 
 ### Secrets
 
@@ -352,10 +353,11 @@ The task you pass picks what is read, so it must be valid:
 - A property task needs a `Value` in state `present`. To read one known only by its identity keys,
   pass it with `State` absent.
 
-To read every member of a collection without naming them, export the resource instead. The same goes
-for `dokku_certs`: its plans settle drift from the certificate's fingerprint so no certificate
-material leaves the server, and a read keeps to that, returning whether a certificate is installed
-but not its PEM. That is why `CertContent` and `KeyContent` carry `WriteOnly`: a read leaves every
+To read every member of a collection without naming them, read it from its address instead (see
+[Reading from an address](#reading-from-an-address)). `dokku_certs` is the exception to reading
+everything: its plans settle drift from the certificate's fingerprint so no certificate material
+leaves the server, and a read keeps to that, returning whether a certificate is installed but not
+its PEM. That is why `CertContent` and `KeyContent` carry `WriteOnly`: a read leaves every
 field flagged `WriteOnly` or `ApplyOnly` empty, and fills every other field the server reports.
 
 The same values are on the plan itself, so a caller that plans anyway reads them with no extra probe.
@@ -371,6 +373,44 @@ on every plan that read the server, in sync or not. `ReadTask` is `Plan` plus th
 A probe registers the server values it treats as secrets with the context's masker, as it does for
 any plan, but the returned task carries them raw. Mask what you show, the same way you mask a plan's
 `Reason`.
+
+### Reading from an address
+
+`sdk.ReadAddress` reads a resource known only by its identity address - the shape `terraform import`
+or a data source has - and returns the same task, `exists` flag and errors as `sdk.ReadTask`. It is
+what [`docket read`](command-reference.md#docket-read) runs:
+
+```go
+current, exists, err := sdk.ReadAddress(ctx, "dokku_buildpacks[app=api]")
+if err != nil {
+    return err
+}
+buildpacks := current.(sdk.BuildpacksTask).Buildpacks // every buildpack the app has
+```
+
+It builds the task from the address's keys and reads every member the resource has, whatever states
+the task offers. A collection comes back the way a task in state `set` or `clear` would own it, so a
+resource imported from the read plans in sync:
+
+- `dokku_config` leaves out the keys docket keeps on its own - linked-service DSNs, `NO_VHOST`, and
+  the git rev env var - and `dokku_ps_scale` leaves out process types scaled to zero. An export
+  leaves out the same ones.
+- `dokku_storage_mount[app=api]` reads every mount in the `_default_` scope; name `process_type` to
+  read another scope's, or `container_dir` to read one mount.
+- `dokku_docker_options` keys on the option itself, so its address reads whether that one option is
+  set.
+- A `dokku_service_property` whose value dokku reports only as a fingerprint, such as
+  `backup-secret-access-key`, comes back `present` with an empty `Value`.
+- The service tasks (`dokku_service_backup`, `dokku_service_expose`, `dokku_service_link`,
+  `dokku_service_property`) return an error rather than `exists` false when the service or app they
+  name is missing, as their plans do.
+
+The address must name one resource. A bare type such as `dokku_config`, a key the task does not
+declare, or a missing required key is an error, raised before the server is contacted. Keys the
+task treats as mutually exclusive, such as `app` and `global`, are refused by the task's own
+validation. A task whose probe cannot read anything (`dokku_storage_ensure`) returns an error wrapping
+`sdk.ErrStateUnreadable`, and a gate on the context refuses a server that is too old with the
+`*sdk.VersionError` before anything else is read.
 
 ## Testing without a server
 

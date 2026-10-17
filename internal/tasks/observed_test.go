@@ -38,6 +38,19 @@ type observedFixture struct {
 	// cases are plans whose Observed is stated outright. Every fixture carries
 	// at least one whose resource is absent.
 	cases []observedCase
+
+	// addressCases are ReadAddress reads whose result is stated outright.
+	// Every exported body is also read back from its address, so these cover
+	// what export cannot: a task that does not export, and an absent resource.
+	addressCases []observedAddressCase
+}
+
+// observedAddressCase is one address read against a fixture and what it must
+// return.
+type observedAddressCase struct {
+	address string
+	want    Task
+	exists  bool
 }
 
 // observedCase is one task planned against a fixture and what it must read.
@@ -86,6 +99,12 @@ func observedFixtures() map[string]observedFixture {
 	out := map[string]observedFixture{}
 	for _, set := range observedFixtureSets {
 		for name, fixture := range set() {
+			out[name] = fixture
+		}
+	}
+	for name, cases := range observedAddressCases() {
+		if fixture, ok := out[name]; ok {
+			fixture.addressCases = append(fixture.addressCases, cases...)
 			out[name] = fixture
 		}
 	}
@@ -335,6 +354,77 @@ func TestUnobservedFieldsCatchesAGap(t *testing.T) {
 	})
 	if len(got) != 0 {
 		t.Errorf("a read setting every untagged field reported %q", got)
+	}
+}
+
+// TestReadAddressReadsEveryResource checks ReadAddress against every fixture:
+// each exported body that declares its resource there is read back from its
+// identity address alone and must come back whole - every field the body
+// carries, whatever state the read settles on - and each address case returns
+// what it states. Every task that can read its state needs an address read of
+// a present resource and of an absent one, so a task whose keys alone cannot
+// plan a whole read fails here until it gets an addressReader.
+func TestReadAddressReadsEveryResource(t *testing.T) {
+	t.Parallel()
+	for typeKey, fixture := range observedFixtures() {
+		t.Run(typeKey, func(t *testing.T) {
+			t.Parallel()
+			ctx := subprocess.ContextWithRunner(testCtx(), observedRunner(t, fixture))
+			present, absent := false, false
+
+			if fixture.export != nil {
+				bodies, err := fixture.export(ctx)
+				if err != nil {
+					t.Fatalf("export: %v", err)
+				}
+				for _, body := range bodies {
+					if !declaresPresent(withDefaults(body)) {
+						continue
+					}
+					address := IdentityAddress(typeKey, body.(Task))
+					got, exists, err := ReadAddress(ctx, address)
+					if err != nil {
+						t.Errorf("%s: %v", address, err)
+						continue
+					}
+					present = true
+					if !exists {
+						t.Errorf("%s: exists = false for an exported resource", address)
+					}
+					gotFields := withField(normalizeObserved(got), "State")
+					wantFields := withField(normalizeObserved(body), "State")
+					if !reflect.DeepEqual(gotFields, wantFields) {
+						t.Errorf("%s: read back differs from the export\n got: %#v\nwant: %#v", address, gotFields, wantFields)
+					}
+				}
+			}
+
+			for _, c := range fixture.addressCases {
+				got, exists, err := ReadAddress(ctx, c.address)
+				if err != nil {
+					t.Errorf("%s: %v", c.address, err)
+					continue
+				}
+				if c.exists {
+					present = true
+				} else {
+					absent = true
+				}
+				if exists != c.exists {
+					t.Errorf("%s: exists = %v, want %v", c.address, exists, c.exists)
+				}
+				if g, w := normalizeObserved(got), normalizeObserved(c.want); !reflect.DeepEqual(g, w) {
+					t.Errorf("%s: read mismatch\n got: %#v\nwant: %#v", c.address, g, w)
+				}
+			}
+
+			if !present {
+				t.Error("no address read of a present resource: add an exported body or an address case")
+			}
+			if !absent {
+				t.Error("no address read of an absent resource: add an address case")
+			}
+		})
 	}
 }
 

@@ -39,6 +39,33 @@ func TestReadTaskReadsTheDeclaredKeys(t *testing.T) {
 	}
 }
 
+func TestReadAddressReadsTheWholeResource(t *testing.T) {
+	fake := newFakeDokku("0.99.0")
+	ctx := sdk.NewSession(nil, sdk.WithVersionGate()).Context(fake.context(), sdk.Target{})
+
+	got, exists, err := sdk.ReadAddress(ctx, "dokku_app[app=web]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (sdk.AppTask{App: "web", State: sdk.StatePresent}); !exists || got != want {
+		t.Errorf("ReadAddress = %#v (exists %v), want %#v", got, exists, want)
+	}
+}
+
+func TestReadAddressRefusesOldDokku(t *testing.T) {
+	fake := newFakeDokku("0.38.8")
+	ctx := sdk.NewSession(nil, sdk.WithVersionGate()).Context(fake.context(), sdk.Target{})
+
+	_, _, err := sdk.ReadAddress(ctx, "dokku_app[app=web]")
+	var verr *sdk.VersionError
+	if !errors.As(err, &verr) {
+		t.Fatalf("error = %v, want a *VersionError", err)
+	}
+	if fake.count("--quiet apps:exists web") != 0 {
+		t.Error("a refused read should not probe the app")
+	}
+}
+
 func TestReadTaskRefusesOldDokku(t *testing.T) {
 	fake := newFakeDokku("0.38.8")
 	ctx := sdk.ContextWithVersionGate(fake.context())

@@ -66,6 +66,9 @@ func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFact
 		"plan": func() (cli.Command, error) {
 			return &commands.PlanCommand{Meta: meta, Ctx: ctx, Argv: os.Args, Version: Version}, nil
 		},
+		"read": func() (cli.Command, error) {
+			return &commands.ReadCommand{Meta: meta, Ctx: ctx, Stdout: os.Stdout}, nil
+		},
 		"schema": func() (cli.Command, error) {
 			return &commands.SchemaCommand{Meta: meta, Stdout: os.Stdout}, nil
 		},

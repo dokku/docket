@@ -1,6 +1,6 @@
 # Command reference
 
-docket has eight commands. Running `docket` with no subcommand prints the list:
+docket has nine commands. Running `docket` with no subcommand prints the list:
 
 | Command | What it does |
 |---------|--------------|
@@ -10,6 +10,7 @@ docket has eight commands. Running `docket` with no subcommand prints the list:
 | [`docket plan`](#docket-plan) | Preview what `apply` would change. |
 | [`docket apply`](#docket-apply) | Run the recipe, making changes as needed. |
 | [`docket export`](#docket-export) | Read a live server and write a recipe describing it. |
+| [`docket read`](#docket-read) | Read one resource from its address and print it. |
 | [`docket schema`](#docket-schema) | Print the machine-readable catalog of task types. |
 | [`docket version`](#docket-version) | Print the binary's version. |
 
@@ -751,6 +752,9 @@ When every address either names its app or is global, export reads only the name
 list the server's apps first. An app that does not exist is still reported as the address that named
 it.
 
+To look at one resource rather than write a recipe for it, [`docket read`](#docket-read) takes the
+same address, reads task types export cannot reconstruct, and says whether the resource exists.
+
 | Flag | Effect |
 |------|--------|
 | `--output <path>` | Where to write the recipe (default `tasks.yml`). Pass `-` to stream a single self-contained recipe (values inlined, no vars-file) to stdout for inspection. Because a stream has no vars-file and touches no file on disk, combining `-` with `--vars-output` or `--overwrite` is an error rather than a silently ignored flag. |
@@ -791,6 +795,65 @@ address reported as not found on the server, and the output paths, both of which
 arguments echoed back at you - a name masked down to `***` would hide the typo the message exists
 to report. The one gap is a value export never managed to read: if an exporter fails while parsing
 it, nothing ever learned it was a secret, and the error text is the only place it appears.
+
+## docket read
+
+`docket read` reads one resource from its [resource address](task-envelope.md#names-and-resource-addresses)
+and prints it. The address alone names what to read: docket builds the task from its keys and reads
+every member the resource has through the task's own probe, the way a task in state `set` or `clear`
+would own them.
+
+```bash
+docket read 'dokku_buildpacks[app=api]'
+docket read --json 'dokku_config[app=api]'
+docket read --host dokku@dokku.example.com --format hcl 'dokku_domains[app=api]'
+```
+
+By default it prints a one-task recipe, in the same format `export` writes, that you can paste into
+a recipe. `--json` prints an object instead, for scripts:
+
+```json
+{
+  "address": "dokku_app[app=api]",
+  "type": "dokku_app",
+  "exists": true,
+  "task": { "app": "api", "state": "present" }
+}
+```
+
+A collection reads the way `set` would own it: `dokku_config` leaves out the keys docket keeps on its
+own (linked-service DSNs, `NO_VHOST`, the git rev env var), and `dokku_ps_scale` leaves out process
+types scaled to zero. `dokku_storage_mount[app=api]` reads the `_default_` scope; name
+`process_type` for another scope, or `container_dir` for one mount. Fields a task marks
+[write-only or apply-only](task-catalog.md#fields) are never read back, so they print empty or at
+their default.
+
+Sensitive values the read returns - every `config` value, every field a task marks sensitive, and
+every property in a family declared sensitive - print as `***` unless you pass `--show-sensitive`.
+The address's own keys are your argument echoed back and print as given.
+
+The address must name one resource. A bare type such as `dokku_config`, a key the task does not
+declare, or a missing required key fails before the server is contacted.
+
+| Exit | Meaning |
+|------|---------|
+| `0` | The resource exists and was printed. |
+| `1` | A usage error, an address that names no single resource, a version refusal, a read error, or a task whose probe cannot read its state (`dokku_storage_ensure`). |
+| `2` | The read succeeded and the resource is not on the server. It is still printed, in the state that says so (`exists: false` under `--json`). |
+
+| Flag | Effect |
+|------|--------|
+| `--format <fmt>` | Print the recipe as `yaml` (the default), `json5` or `hcl`. Not valid with `--json`. |
+| `--json` | Print `{address, type, exists, task}` instead of a recipe. |
+| `--show-sensitive` | Print sensitive values instead of `***`. |
+| `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
+| `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. |
+| `--accept-new-host-keys` | Trust an unknown SSH host key on first connect. |
+| `--ssh-identity-file <path>` | Authenticate over SSH with this private key only. Overrides `DOKKU_SSH_IDENTITY_FILE`. |
+| `--ssh-option <option>` | Pass an extra option to `ssh` as `-o <option>`. Repeatable. |
+| `--ignore-version` | Read even when Dokku, or an installed plugin the task needs, is older than the floor in its Requirements section. Without it the read is refused with a message naming this flag. |
+
+The same read is available to Go callers as [`sdk.ReadAddress`](embedding.md#reading-from-an-address).
 
 ## docket schema
 

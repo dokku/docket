@@ -287,6 +287,7 @@ func observedGitFixtures() map[string]observedFixture {
 			exitCodes: map[string]int{
 				"--quiet registry:auth-status --password-stdin web ghcr.io deploy-bot": 0,
 				"--quiet registry:auth-status web docker.io":                           0,
+				"--quiet registry:auth-status web ghcr.io":                             2,
 				"--quiet registry:auth-status web quay.io":                             4,
 				"--quiet registry:auth-status --password-stdin web quay.io deploy-bot": 1,
 			},

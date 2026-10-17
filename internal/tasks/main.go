@@ -394,7 +394,13 @@ func ReadTask(ctx context.Context, t Task) (Task, bool, error) {
 	if t == nil {
 		return nil, false, errors.New("nil task")
 	}
-	p := t.Plan(ctx)
+	return observedResult(t.Plan(ctx))
+}
+
+// observedResult is what ReadTask and ReadAddress return for a plan: its
+// error, an error wrapping ErrStateUnreadable when it observed nothing, or
+// what it observed.
+func observedResult(p PlanResult) (Task, bool, error) {
 	if p.Error != nil {
 		return nil, false, p.Error
 	}

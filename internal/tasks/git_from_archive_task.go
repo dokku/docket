@@ -116,6 +116,31 @@ func (t GitFromArchiveTask) Validate() error {
 	return nil
 }
 
+// observedGitFromArchive attaches app's archive deploy source to r. A source
+// that could not be read sets no observed state.
+func observedGitFromArchive(ctx context.Context, r PlanResult, app string, source AppDeploySource, read bool) PlanResult {
+	if !read {
+		return r
+	}
+	if !isArchiveDeploySource(source.Source) {
+		return observed(r, GitFromArchiveTask{App: app, State: StateAbsent}, false)
+	}
+	// The URL can carry credentials, and the server's value is not the
+	// recipe's, so mask it too.
+	subprocess.MaskerFromContext(ctx).Add(source.SourceMetadata)
+	return observed(r, GitFromArchiveTask{App: app, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source, State: StateDeployed}, true)
+}
+
+// readAddress reads the archive an address's app deploys from, without the
+// archive URL Validate demands in the task's only state.
+func (t GitFromArchiveTask) readAddress(ctx context.Context) (Task, bool, error) {
+	source, read, err := readAppDeploySource(ctx, t.App)
+	if err != nil {
+		return nil, false, err
+	}
+	return observedResult(observedGitFromArchive(ctx, PlanResult{Status: PlanStatusOK}, t.App, source, read))
+}
+
 // Plan reports the drift the GitFromArchiveTask would produce.
 func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
@@ -137,16 +162,7 @@ func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			seen := func(r PlanResult) PlanResult {
-				if !read {
-					return r
-				}
-				if !isArchiveDeploySource(source.Source) {
-					return observed(r, GitFromArchiveTask{App: t.App, State: StateAbsent}, false)
-				}
-				// The URL can carry credentials, and the server's value is
-				// not the recipe's, so mask it too.
-				subprocess.MaskerFromContext(ctx).Add(source.SourceMetadata)
-				return observed(r, GitFromArchiveTask{App: t.App, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source, State: StateDeployed}, true)
+				return observedGitFromArchive(ctx, r, t.App, source, read)
 			}
 			if read && source.Source == archiveType && source.SourceMetadata == t.ArchiveURL {
 				return seen(PlanResult{InSync: true, Status: PlanStatusOK})

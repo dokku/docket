@@ -157,6 +157,36 @@ func (t SchedulerK3sChartTask) Validate() error {
 	return nil
 }
 
+// schedulerK3sChartObserved is the chart as read: the observed values keep
+// the flat, escaped keys the server stores them under, the same shape the
+// exporter emits.
+func schedulerK3sChartObserved(chart string, pairs map[string]string, state State) SchedulerK3sChartTask {
+	var values map[string]any
+	if len(pairs) > 0 {
+		values = make(map[string]any, len(pairs))
+		for k, v := range pairs {
+			values[k] = v
+		}
+	}
+	return SchedulerK3sChartTask{Chart: chart, Values: values, State: state}
+}
+
+// readAddress reads every value stored for the chart an address names. Both
+// of the task's states read only the values they declare, and both demand
+// some, so neither can read the whole chart; a chart with no stored values
+// reads as absent.
+func (t SchedulerK3sChartTask) readAddress(ctx context.Context) (Task, bool, error) {
+	current, err := getSchedulerK3sChartValues(ctx, t.Chart)
+	if err != nil {
+		return nil, false, err
+	}
+	state := StateAbsent
+	if len(current) > 0 {
+		state = StatePresent
+	}
+	return schedulerK3sChartObserved(t.Chart, current, state), len(current) > 0, nil
+}
+
 // Plan reports the drift the SchedulerK3sChartTask would produce.
 func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
@@ -186,17 +216,8 @@ func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
 		}
 	}
 
-	// The observed values keep the flat, escaped keys the server stores them
-	// under, the same shape the exporter emits.
 	observe := func(pairs map[string]string, state State) Task {
-		var values map[string]any
-		if len(pairs) > 0 {
-			values = make(map[string]any, len(pairs))
-			for k, v := range pairs {
-				values[k] = v
-			}
-		}
-		return SchedulerK3sChartTask{Chart: t.Chart, Values: values, State: state}
+		return schedulerK3sChartObserved(t.Chart, pairs, state)
 	}
 
 	return DispatchPlan(t.State, map[State]func() PlanResult{

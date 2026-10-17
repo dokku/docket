@@ -1,0 +1,140 @@
+package tasks
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+)
+
+// addressReader is implemented by a task whose identity keys alone do not make
+// a task that plans a read of the whole resource - one that requires a payload
+// in every state, or whose states all read only the members they name. The
+// receiver holds its identity keys and its defaults and nothing else.
+// readAddress returns the resource those keys name, and whether it exists,
+// as ReadAddress does. ReadAddress checks the version gate before calling it,
+// so it need not.
+type addressReader interface {
+	readAddress(ctx context.Context) (Task, bool, error)
+}
+
+// ReadAddress returns the resource an identity address such as
+// `dokku_buildpacks[app=api]` names, as it exists on the server, and whether
+// it exists. It reads every member the resource has, whatever states the
+// task offers: a collection comes back as a task in state set or clear would
+// own it, so dokku_config leaves out the keys docket keeps (linked-service
+// DSNs, NO_VHOST, the git rev env var) and dokku_ps_scale leaves out process
+// types scaled to zero. The result and errors are ReadTask's: the value type
+// registered for the task, a *VersionError when the gate on ctx refuses it, and
+// an error wrapping ErrStateUnreadable when its probe cannot read anything.
+//
+// The address must name one resource: a bare type, a key the task does not
+// declare, or a missing required key is an error, raised before the server is
+// contacted.
+func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
+	typeKey, task, err := taskFromAddress(address)
+	if err != nil {
+		return nil, false, err
+	}
+	if support, _ := TaskProbeSupport(task); support.Status == ProbeUnsupported {
+		return nil, false, fmt.Errorf("%w: %s cannot read its state", ErrStateUnreadable, typeKey)
+	}
+	if err := CheckMinimumVersions(ctx, typeKey, task); err != nil {
+		return nil, false, err
+	}
+
+	if reader, ok := task.(addressReader); ok {
+		return reader.readAddress(ctx)
+	}
+	setReadState(task)
+	return observedResult(task.Plan(ctx))
+}
+
+// taskFromAddress parses address and builds the task it names: a new task of
+// its type, with defaults applied, carrying the address's keys.
+func taskFromAddress(address string) (string, Task, error) {
+	typeKey, keys, err := ParseIdentityAddress(address)
+	if err != nil {
+		return "", nil, err
+	}
+	prototype, ok := Lookup(typeKey)
+	if !ok {
+		msg := fmt.Sprintf("unknown task type %q in resource address %q", typeKey, address)
+		if near := nearestEnvelopeOrTaskKey(typeKey); near != "" {
+			msg += fmt.Sprintf(" (did you mean %q?)", near)
+		}
+		return "", nil, errors.New(msg)
+	}
+	if len(keys) == 0 {
+		return "", nil, fmt.Errorf("resource address %q names no keys, so it is every resource of %s rather than one (keys: %s)",
+			address, typeKey, strings.Join(sortedIdentityKeyNames(prototype), ", "))
+	}
+
+	task, err := NewTask(typeKey)
+	if err != nil {
+		return "", nil, err
+	}
+	v := reflect.ValueOf(task).Elem()
+	declared := map[string]reflect.StructField{}
+	for _, key := range TaskIdentity(task) {
+		field, _ := v.Type().FieldByName(key.Field)
+		declared[key.YAMLName] = field
+	}
+	for name, raw := range keys {
+		field, ok := declared[name]
+		if !ok {
+			return "", nil, fmt.Errorf("resource address %q: %q is not an identity key of %s (keys: %s)",
+				address, name, typeKey, strings.Join(sortedIdentityKeyNames(prototype), ", "))
+		}
+		if err := setIdentityValue(v.FieldByIndex(field.Index), raw); err != nil {
+			return "", nil, fmt.Errorf("resource address %q: %s: %w", address, name, err)
+		}
+	}
+	for name, field := range declared {
+		if _, ok := keys[name]; !ok && field.Tag.Get("required") == "true" {
+			return "", nil, fmt.Errorf("resource address %q: missing required key %q of %s", address, name, typeKey)
+		}
+	}
+	return typeKey, task, nil
+}
+
+// setIdentityValue sets one key field from its address spelling. Every task
+// key is a string or a bool.
+func setIdentityValue(field reflect.Value, raw string) error {
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(raw)
+	case reflect.Bool:
+		b, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf("%q is not true or false", raw)
+		}
+		field.SetBool(b)
+	default:
+		return fmt.Errorf("a %s key cannot be read from an address", field.Kind())
+	}
+	return nil
+}
+
+// setReadState sets the state a task built from keys alone plans a whole read
+// in: clear, which reads every member a collection owns; otherwise absent,
+// which reads a property known only by its keys, a list declared empty, or
+// whether a single resource is there; otherwise the default.
+func setReadState(task Task) {
+	v := reflect.ValueOf(task).Elem()
+	field, ok := v.Type().FieldByName("State")
+	if !ok {
+		return
+	}
+	options := strings.Split(field.Tag.Get("options"), ",")
+	for _, want := range []State{StateClear, StateAbsent} {
+		for _, option := range options {
+			if State(option) == want {
+				v.FieldByIndex(field.Index).SetString(string(want))
+				return
+			}
+		}
+	}
+}
