@@ -27,10 +27,12 @@ type SchedulerK3sChartTask struct {
 	// flattenChartValues for the exact coalescing rules, including the
 	// nested-segment escaping that lets dotted leaf keys survive Helm's
 	// strvals parser.
-	Values map[string]any `required:"true" identity:"collection" yaml:"values,omitempty" description:"Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \\. so they reach Helm as a single annotation/label key."`
+	Values map[string]any `required:"false" identity:"collection" yaml:"values,omitempty" description:"Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \\. so they reach Helm as a single annotation/label key. Required for states 'present' and 'absent'; omit for state 'clear'."`
 
-	// State is the desired state of the chart values.
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the chart values."`
+	// State is the desired state of the chart values. dokku writes chart
+	// values one key at a time, so set and clear issue one
+	// scheduler-k3s:charts:set per changed key and are not atomic.
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the chart values. 'set' and 'clear' write one value per command, so a failure partway through leaves the chart with a mixture of the old and new values."`
 }
 
 // SchedulerK3sChartTaskExample contains an example of a SchedulerK3sChartTask
@@ -112,6 +114,23 @@ func (t SchedulerK3sChartTask) examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Replace the chart's values with exactly these",
+			SchedulerK3sChartTask: SchedulerK3sChartTask{
+				Chart: "ingress-nginx",
+				Values: map[string]any{
+					"controller.replicaCount": "2",
+				},
+				State: StateSet,
+			},
+		},
+		{
+			Name: "Clear every value for a chart",
+			SchedulerK3sChartTask: SchedulerK3sChartTask{
+				Chart: "ingress-nginx",
+				State: StateClear,
+			},
+		},
+		{
 			Name: "Clear specific chart values",
 			SchedulerK3sChartTask: SchedulerK3sChartTask{
 				Chart: "ingress-nginx",
@@ -138,19 +157,29 @@ func (t SchedulerK3sChartTask) Validate() error {
 	if state == "" {
 		state = StatePresent
 	}
-	if len(t.Values) == 0 {
+	// Clearing removes every value the chart holds, so a map supplied
+	// alongside it would be silently discarded rather than removed.
+	if state == StateClear {
+		if len(t.Values) > 0 {
+			return fmt.Errorf("'values' must not be set for state 'clear'")
+		}
+		return nil
+	}
+	// An empty set plans as clear; the additive states each need a value.
+	if len(t.Values) == 0 && state != StateSet {
 		return fmt.Errorf("'values' must not be empty for state '%s'", state)
 	}
 	flattened, err := flattenChartValues(t.Values)
 	if err != nil {
 		return err
 	}
-	// dokku clears a chart value set to an empty string, so a present-state
-	// empty value can never converge (issue #358); clearing uses state 'absent'.
-	if state == StatePresent {
-		for key, value := range flattened {
-			if value == "" {
-				return fmt.Errorf("chart value %q must not be empty for state 'present'; use state 'absent' to clear it", key)
+	// dokku clears a chart value set to an empty string, so a present- or
+	// set-state empty value can never converge (issue #358); clearing uses
+	// state 'absent', or leaving the key out of a set.
+	if state == StatePresent || state == StateSet {
+		for _, key := range sortedPairKeys(flattened) {
+			if flattened[key] == "" {
+				return fmt.Errorf("chart value %q must not be empty for state '%s'; use state 'absent' to clear it", key, state)
 			}
 		}
 	}
@@ -169,22 +198,6 @@ func schedulerK3sChartObserved(chart string, pairs map[string]string, state Stat
 		}
 	}
 	return SchedulerK3sChartTask{Chart: chart, Values: values, State: state}
-}
-
-// readAddress reads every value stored for the chart an address names. Both
-// of the task's states read only the values they declare, and both demand
-// some, so neither can read the whole chart; a chart with no stored values
-// reads as absent.
-func (t SchedulerK3sChartTask) readAddress(ctx context.Context) (Task, bool, error) {
-	current, err := getSchedulerK3sChartValues(ctx, t.Chart)
-	if err != nil {
-		return nil, false, err
-	}
-	state := StateAbsent
-	if len(current) > 0 {
-		state = StatePresent
-	}
-	return schedulerK3sChartObserved(t.Chart, current, state), len(current) > 0, nil
 }
 
 // Plan reports the drift the SchedulerK3sChartTask would produce.
@@ -223,6 +236,15 @@ func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planPairsSet(ctx, observe, "chart value", desired, currentFn, commandFn) },
 		StateAbsent:  func() PlanResult { return planPairsUnset(ctx, observe, "chart value", desired, currentFn, commandFn) },
+		// dokku has no whole-chart write, so set and clear go one key at a
+		// time rather than through planPairsReplace and planPairsClear.
+		StateSet: func() PlanResult {
+			if len(desired) == 0 {
+				return planSetAsClear(planPairsClearPerKey(ctx, observe, "chart value", currentFn, commandFn))
+			}
+			return planPairsReplacePerKey(ctx, observe, "chart value", desired, currentFn, commandFn)
+		},
+		StateClear: func() PlanResult { return planPairsClearPerKey(ctx, observe, "chart value", currentFn, commandFn) },
 	})
 }
 

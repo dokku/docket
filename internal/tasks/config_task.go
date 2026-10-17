@@ -129,11 +129,8 @@ func (t ConfigTask) Validate() error {
 	}
 	switch state {
 	case StateSet:
-		// An empty map is not a request to unset everything: 'clear' owns that,
-		// and config:import refuses an empty payload anyway.
-		if len(t.Config) == 0 {
-			return errors.New("'config' must not be empty for state 'set'")
-		}
+		// An empty map plans as clear, since config:import refuses an empty
+		// payload; the preserve check below has nothing to collide with then.
 		for _, k := range t.Preserve {
 			if _, ok := t.Config[k]; ok {
 				return fmt.Errorf("key %q must not be in both 'config' and 'preserve'", k)
@@ -186,8 +183,13 @@ func (t ConfigTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planConfigSet(ctx, t) },
 		StateAbsent:  func() PlanResult { return planConfigUnset(ctx, t) },
-		StateSet:     func() PlanResult { return planConfigReplace(ctx, t) },
-		StateClear:   func() PlanResult { return planConfigClear(ctx, t) },
+		StateSet: func() PlanResult {
+			if len(t.Config) == 0 {
+				return planSetAsClear(planConfigClear(ctx, t))
+			}
+			return planConfigReplace(ctx, t)
+		},
+		StateClear: func() PlanResult { return planConfigClear(ctx, t) },
 	})
 }
 

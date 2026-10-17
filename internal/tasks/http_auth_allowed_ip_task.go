@@ -119,9 +119,6 @@ func (t HttpAuthAllowedIpTask) Validate() error {
 	if t.State == StateAbsent && len(t.AllowedIps) == 0 {
 		return fmt.Errorf("'allowed_ips' must not be empty for state 'absent'")
 	}
-	if t.State == StateSet && len(t.AllowedIps) == 0 {
-		return fmt.Errorf("'allowed_ips' must not be empty for state 'set'")
-	}
 	// http-auth:set-allowed-ips is called with no addresses to clear, so a list
 	// supplied alongside it would be silently discarded rather than removed.
 	if t.State == StateClear && len(t.AllowedIps) > 0 {
@@ -152,8 +149,13 @@ func (t HttpAuthAllowedIpTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planHttpAuthAllowedIpsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planHttpAuthAllowedIpsAbsent(ctx, t) },
-		StateSet:     func() PlanResult { return planHttpAuthAllowedIpsSet(ctx, t) },
-		StateClear:   func() PlanResult { return planHttpAuthAllowedIpsClear(ctx, t) },
+		StateSet: func() PlanResult {
+			if len(t.AllowedIps) == 0 {
+				return planSetAsClear(planHttpAuthAllowedIpsClear(ctx, t))
+			}
+			return planHttpAuthAllowedIpsSet(ctx, t)
+		},
+		StateClear: func() PlanResult { return planHttpAuthAllowedIpsClear(ctx, t) },
 	})
 }
 

@@ -118,6 +118,11 @@ type TaskSchema struct {
 	// task is current.
 	Deprecation string `json:"deprecation,omitempty"`
 
+	// Imperative is true for a task that runs an operation rather than
+	// declaring a resource, so it has nothing to undo and offers no absent or
+	// clear state. Absent for every declarative task.
+	Imperative bool `json:"imperative,omitempty"`
+
 	// Requirements are the non-core dokku plugins the task needs, in declared
 	// order, as the prose a task page prints. Absent when the task needs
 	// nothing beyond dokku core. The Dokku floor is MinimumDokkuVersion;
@@ -503,6 +508,7 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 	}
 
 	schema.Deprecation = strings.TrimSpace(TaskDeprecation(task))
+	schema.Imperative = TaskImperative(task)
 	if support, ok := TaskMinimumVersions(task); ok {
 		schema.MinimumDokkuVersion = support.Dokku
 		for _, plugin := range support.Plugins {

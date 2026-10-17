@@ -173,6 +173,13 @@ A few conventions to follow:
   `apply` and `plan` emit a one-time `warning` line above each deprecated task's result line.
   Keep the message short and name the replacement, e.g.
   `"use dokku_storage_entry instead; storage:ensure-directory has been deprecated"`.
+- When a task runs an operation rather than declaring a resource (`dokku_app_clone`,
+  `dokku_git_sync`, `dokku_git_from_archive`, `dokku_git_from_image`), implement the optional
+  `Imperative() bool` method and return true. Such a task has nothing to undo, so it offers no
+  `absent` or `clear` state. [`docket schema`](task-catalog.md) marks it `imperative`, and the
+  generator adds a note to its page. `TestImperativeTasksOfferNoTeardown` fails the build if an
+  imperative task offers a teardown state, or if a task other than `dokku_ps_scale` offers
+  neither `absent` nor `clear` without declaring itself imperative.
 - Every task must also implement `Doc() string` and `examples() ([]Doc, error)`, the optional
   `Documented` interface. They are not part of `Task`, since running a task never needs them, but
   they supply the Synopsis and Examples on the task's generated page and in
@@ -511,8 +518,14 @@ Identity section calls the collection the resource, not part of its key. Such a 
 states beyond `present` and `absent`:
 
 - **`set`** declares the complete collection. Every entry the recipe names is written, and every
-  entry stored on the server that it does not name is removed. It requires a non-empty collection.
+  entry stored on the server that it does not name is removed. An empty collection under `set`
+  declares that the collection is empty, and plans exactly what `clear` plans.
 - **`clear`** empties the collection. It takes no entries at all.
+
+Every collection task offers all four states, so a consumer that owns a whole collection can map
+create and update to `set` and destroy to `clear` without special cases. `dokku_ps_scale` is the
+one exception: it offers `present` and `set`, because an app always runs some count of each
+process type, so there is nothing to clear.
 
 `present` and `absent` stay additive alongside them: `present` writes the named entries and leaves
 the rest, `absent` removes the named entries and leaves the rest. That is the whole point of the
@@ -524,14 +537,26 @@ entries. `dokku_domains` uses `domains:set` and `domains:clear`, `dokku_ports` u
 `ports:clear`, the scheduler-k3s map tasks use `<plugin>:set --replace` and `<plugin>:clear`, and
 the dokku-acl tasks use `acl:set-users` and `acl:set-service-users`, called with no users to clear.
 Emitting one command per entry would leave the collection carrying a mixture of the old and new sets
-when a run fails partway, which is the outcome these states exist to rule out. Where dokku has no
-whole-set command, the task does not get the states.
+when a run fails partway, which is the outcome these states exist to rule out.
 
-Two validation rules go with them, and every task carrying the states shares both:
+Where dokku has no whole-set command, the task still gets the states, but its reference page says
+the work is not atomic. There are three such cases today:
 
-- an empty collection under `set` is an error, not a request to remove everything. `clear` owns
-  that, and the rule keeps a generated list that expands to nothing from silently emptying a
-  collection. Dokku enforces the same rule on its side.
+- `dokku_scheduler_k3s_chart` writes one `scheduler-k3s:charts:set` per changed value, through
+  `planPairsReplacePerKey` and `planPairsClearPerKey`, until dokku grows a whole-chart form (#625).
+- `dokku_http_auth_user` clears with one `http-auth:remove-user` per user, since the plugin has
+  no command that removes them all. Its `set` is one `http-auth:import-users --replace` only when
+  every user is given by hash.
+- `dokku_service_expose` sets with `<service>:unexpose` and then `<service>:expose`, because
+  dokku refuses to expose a service that is already exposed.
+
+Two rules go with them, and every task carrying the states shares both:
+
+- an empty collection under `set` plans as `clear`. Dokku's whole-set commands reject an empty
+  list, so the `set` branch hands an empty collection to the task's clear plan through
+  `planSetAsClear` in `internal/tasks/dispatch.go`, which keeps the apply reporting `set`, the
+  state the recipe declared. `TestEmptySetPlansAsClear` holds every task offering both states to
+  it.
 - a collection supplied under `clear` is an error rather than something to ignore, since the command
   cannot act on it and silently discarding it would read as a removal that never happened.
 
@@ -553,7 +578,11 @@ is not true of the additive `present` and `absent` states, where the itemized li
 command are built from the same slice and the declared order is the order the work happens in.
 
 `docket export` emits an authoritative collection as `state: set`, so re-applying an export
-reproduces the exact collection rather than merging into whatever the target already holds.
+reproduces the exact collection rather than merging into whatever the target already holds. The
+tasks that gained the states later keep exporting `state: present`. For `dokku_buildpacks` and
+`dokku_service_expose` that already replaces the whole list. For `dokku_resource_limit`,
+`dokku_resource_reserve`, `dokku_scheduler_k3s_chart` and `dokku_http_auth_user`, `present` is
+additive, so an exported recipe does not delete values that exist only on the destination.
 
 Sometimes the server stores entries in the collection that belong to something other than the
 recipe, and a whole-set command would remove them too. `dokku_config` is the case in point. The

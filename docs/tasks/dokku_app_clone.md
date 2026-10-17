@@ -4,6 +4,8 @@
 
 Clones an existing dokku app to a new app
 
+> **Imperative:** this task runs an operation rather than declaring a resource. It has nothing to undo, so it offers no `absent` or `clear` state.
+
 ## Requirements
 
 - Dokku >= 0.38.31

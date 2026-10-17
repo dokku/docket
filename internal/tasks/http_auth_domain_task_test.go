@@ -72,13 +72,10 @@ func TestHttpAuthDomainTaskAbsentEmptyDomains(t *testing.T) {
 }
 
 func TestHttpAuthDomainTaskSetEmptyDomains(t *testing.T) {
+	// An empty set plans as clear, so it validates like one.
 	task := HttpAuthDomainTask{App: "test-app", State: StateSet}
-	result := task.Execute(testCtx())
-	if result.Error == nil {
-		t.Fatal("Execute with empty domains and state=set should return an error")
-	}
-	if !strings.Contains(result.Error.Error(), "'domains' must not be empty") {
-		t.Errorf("unexpected error: %v", result.Error)
+	if err := task.Validate(); err != nil {
+		t.Fatalf("Validate() with empty domains and state=set = %v, want nil", err)
 	}
 }
 

@@ -75,13 +75,10 @@ func TestHttpAuthAllowedIpTaskAbsentEmptyAllowedIps(t *testing.T) {
 }
 
 func TestHttpAuthAllowedIpTaskSetEmptyAllowedIps(t *testing.T) {
+	// An empty set plans as clear, so it validates like one.
 	task := HttpAuthAllowedIpTask{App: "test-app", State: StateSet}
-	result := task.Execute(testCtx())
-	if result.Error == nil {
-		t.Fatal("Execute with empty allowed_ips and state=set should return an error")
-	}
-	if !strings.Contains(result.Error.Error(), "'allowed_ips' must not be empty for state 'set'") {
-		t.Errorf("unexpected error: %v", result.Error)
+	if err := task.Validate(); err != nil {
+		t.Fatalf("Validate() with empty allowed_ips and state=set = %v, want nil", err)
 	}
 }
 

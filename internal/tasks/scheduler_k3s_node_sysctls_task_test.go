@@ -249,9 +249,8 @@ func TestSchedulerK3sNodeSysctlsValidate(t *testing.T) {
 			wantErr: "'profile' must be at most 26 characters, got 27",
 		},
 		{
-			name:    "set rejects an empty map",
-			task:    SchedulerK3sNodeSysctlsTask{Global: true, State: StateSet},
-			wantErr: "'sysctls' must not be empty for state 'set'",
+			name: "set accepts an empty map, which plans as clear",
+			task: SchedulerK3sNodeSysctlsTask{Global: true, State: StateSet},
 		},
 		{
 			name:    "clear rejects a map",

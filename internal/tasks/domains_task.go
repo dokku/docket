@@ -100,7 +100,9 @@ func (t DomainsTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the DomainsTask's inputs without contacting the server.
 func (t DomainsTask) Validate() error {
-	if err := validateDomainsTask(t, t.State != StateClear); err != nil {
+	// An empty set plans as clear, so it is held to clear's rule.
+	requireDomains := t.State != StateClear && (t.State != StateSet || len(t.Domains) != 0)
+	if err := validateDomainsTask(t, requireDomains); err != nil {
 		return err
 	}
 	return nil
@@ -117,8 +119,13 @@ func (t DomainsTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planDomainsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planDomainsAbsent(ctx, t) },
-		StateSet:     func() PlanResult { return planDomainsSet(ctx, t) },
-		StateClear:   func() PlanResult { return planDomainsClear(ctx, t) },
+		StateSet: func() PlanResult {
+			if len(t.Domains) == 0 {
+				return planSetAsClear(planDomainsClear(ctx, t))
+			}
+			return planDomainsSet(ctx, t)
+		},
+		StateClear: func() PlanResult { return planDomainsClear(ctx, t) },
 	})
 }
 

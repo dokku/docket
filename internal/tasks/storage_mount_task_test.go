@@ -733,11 +733,6 @@ func TestStorageMountValidatesForms(t *testing.T) {
 			want: "must not be set for state 'clear'; use 'mounts'",
 		},
 		{
-			name: "set without mounts",
-			task: StorageMountTask{App: "a", State: StateSet},
-			want: "'mounts' must not be empty for state 'set'",
-		},
-		{
 			name: "clear with mounts",
 			task: StorageMountTask{App: "a", Mounts: []StorageMount{data}, State: StateClear},
 			want: "'mounts' must not be set for state 'clear'",

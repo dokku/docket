@@ -11,14 +11,14 @@ type ResourceLimitTask struct {
 	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to set resource limits for"`
 
 	// Resources is a map of resource type to quantity
-	Resources map[string]string `identity:"collection" yaml:"resources" description:"Map of resource type to quantity"`
+	Resources map[string]string `identity:"collection" yaml:"resources,omitempty" description:"Map of resource type to quantity; omit for state 'clear'"`
 
 	// ClearBefore clears all resource limits before applying new ones. It is a
 	// *bool so the value survives decoding unchanged; nil defaults to false.
 	ClearBefore *bool `apply_only:"true" yaml:"clear_before,omitempty" default:"false" description:"ClearBefore clears all resource limits before applying new ones"`
 
 	// State is the desired state of the resource limits
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the resource limits"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the resource limits"`
 }
 
 // ResourceLimitTaskExample contains an example of a ResourceLimitTask
@@ -80,10 +80,20 @@ func (t ResourceLimitTask) examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Replace the resource limits with exactly these",
+			ResourceLimitTask: ResourceLimitTask{
+				App: "hello-world",
+				Resources: map[string]string{
+					"memory": "256",
+				},
+				State: StateSet,
+			},
+		},
+		{
 			Name: "Clear all resource limits",
 			ResourceLimitTask: ResourceLimitTask{
 				App:   "hello-world",
-				State: StateAbsent,
+				State: StateClear,
 			},
 		},
 	})
@@ -103,7 +113,7 @@ func (t ResourceLimitTask) ExportApp(ctx context.Context, app string) ([]interfa
 
 // Validate checks the ResourceLimitTask's inputs without contacting the server.
 func (t ResourceLimitTask) Validate() error {
-	return validateResourceInput(t.State, t.Resources)
+	return validateResourceInput(t.State, t.Resources, boolValue(t.ClearBefore, false))
 }
 
 // Plan reports the drift the ResourceLimitTask would produce.

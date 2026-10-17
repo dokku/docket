@@ -28,7 +28,7 @@ Keyed by `app`. Manages the whole `users` collection; entries are identified by 
 | `app` | string | yes |  |  | Name of the app |
 | `users` | list | no |  |  | List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive. Each item has: username, password, hash. |
 | `update_password` | bool | no | false |  | Re-issue add-user for users that already exist so their cleartext password converges. Users given by hash converge on their own and ignore this (applied only, not read back) |
-| `state` | string | no | present | present, absent, set | Desired state of the HTTP auth users |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the HTTP auth users |
 
 ## Examples
 
@@ -91,8 +91,7 @@ dokku_http_auth_user:
 ```yaml
 dokku_http_auth_user:
     app: hello-world
-    users: []
-    state: absent
+    state: clear
 ```
 
 ## Return Values

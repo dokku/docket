@@ -376,3 +376,33 @@ setup() {
   jq -e '(.tasks | length) == 1' "$BATS_TEST_TMPDIR/catalog.json" >/dev/null ||
     fail "the written file is not narrowed to one task"
 }
+
+@test "docket schema marks the imperative tasks and nothing else" {
+  run "$(docket_bin)" schema
+  assert_success
+  echo "$output" |
+    jq -e '[.tasks[] | select(.imperative == true) | .type] == ["dokku_app_clone", "dokku_git_from_archive", "dokku_git_from_image", "dokku_git_sync"]' >/dev/null ||
+    fail "the imperative tasks are not exactly app_clone and the three git deploy tasks"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_buildpacks") | has("imperative") | not' >/dev/null ||
+    fail "a declarative task carries the imperative key"
+  # An imperative task has nothing to undo, so it offers no teardown state.
+  echo "$output" |
+    jq -e '[.tasks[] | select(.imperative == true) | .fields[] | select(.name == "state") | .choices[]] | all(. != "absent" and . != "clear")' >/dev/null ||
+    fail "an imperative task offers absent or clear"
+}
+
+@test "docket schema offers set and clear on every collection task" {
+  run "$(docket_bin)" schema
+  assert_success
+  # Every task owning a collection offers the four states, except
+  # dokku_ps_scale, which has nothing to clear.
+  echo "$output" |
+    jq -e '[.tasks[] | select(.identity.collections != null and (.identity.collections | length) > 0 and .type != "dokku_ps_scale") | .fields[] | select(.name == "state") | .choices] | length > 0 and all(index("present") != null and index("absent") != null and index("set") != null and index("clear") != null)' >/dev/null ||
+    fail "a collection task is missing one of present, absent, set or clear"
+  for task in dokku_buildpacks dokku_resource_limit dokku_resource_reserve dokku_service_expose dokku_scheduler_k3s_chart dokku_http_auth_user; do
+    echo "$output" |
+      jq -e --arg t "$task" '.tasks[] | select(.type == $t) | .fields[] | select(.name == "state") | .choices | index("clear") != null' >/dev/null ||
+      fail "$task does not offer clear"
+  done
+}

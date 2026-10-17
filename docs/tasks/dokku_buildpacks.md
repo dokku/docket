@@ -25,8 +25,8 @@ Keyed by `app`. Manages the whole `buildpacks` collection; entries are identifie
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `buildpacks` | list | no |  |  | List of buildpack URLs (order is significant) |
-| `state` | string | no | present | present, absent | Desired state of the buildpacks |
+| `buildpacks` | list | no |  |  | List of buildpack URLs; omit for state 'clear' (order is significant) |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the buildpacks |
 
 ## Examples
 
@@ -51,13 +51,22 @@ dokku_buildpacks:
     state: absent
 ```
 
+### Replace the buildpacks for an app with exactly this list
+
+```yaml
+dokku_buildpacks:
+    app: node-js-app
+    buildpacks:
+        - https://github.com/heroku/heroku-buildpack-nodejs.git
+    state: set
+```
+
 ### Clear all buildpacks from an app
 
 ```yaml
 dokku_buildpacks:
     app: node-js-app
-    buildpacks: []
-    state: absent
+    state: clear
 ```
 
 ## Return Values

@@ -408,7 +408,7 @@ func TestConfigTaskValidate(t *testing.T) {
 		{"present ok", ConfigTask{App: "web", Config: map[string]string{"K": "v"}}, ""},
 		{"set ok", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"P"}, State: StateSet}, ""},
 		{"clear ok", ConfigTask{App: "web", Preserve: []string{"P"}, State: StateClear}, ""},
-		{"set empty", ConfigTask{App: "web", State: StateSet}, "'config' must not be empty for state 'set'"},
+		{"set empty plans as clear", ConfigTask{App: "web", Preserve: []string{"P"}, State: StateSet}, ""},
 		{"clear with config", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, State: StateClear}, "'config' must not be set for state 'clear'"},
 		{"preserve under present", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"P"}}, "'preserve' is only valid for state 'set' or 'clear', got state 'present'"},
 		{"preserve under absent", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"P"}, State: StateAbsent}, "'preserve' is only valid for state 'set' or 'clear', got state 'absent'"},

@@ -52,6 +52,12 @@ func TaskDeprecation(t Task) string {
 	return tasks.TaskDeprecation(t)
 }
 
+// TaskImperative reports whether t runs an operation rather than declaring a
+// resource, so it has nothing to undo.
+func TaskImperative(t Task) bool {
+	return tasks.TaskImperative(t)
+}
+
 // TaskProbeSupport reports how much of its own state t's Plan can read back.
 // The bool is false when t declares nothing.
 func TaskProbeSupport(t Task) (ProbeSupport, bool) {

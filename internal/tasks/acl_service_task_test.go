@@ -174,7 +174,7 @@ func TestAclServiceTaskValidateUsersPerState(t *testing.T) {
 		{name: "set missing service", task: AclServiceTask{Type: "redis", Users: []string{"alice"}, State: StateSet}, wantErr: "'service' is required"},
 		{name: "clear missing type", task: AclServiceTask{Service: "my-redis", State: StateClear}, wantErr: "'type' is required"},
 		{name: "absent without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateAbsent}, wantErr: "'users' must not be empty for state 'absent'"},
-		{name: "set without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateSet}, wantErr: "'users' must not be empty for state 'set'"},
+		{name: "set without users plans as clear", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateSet}},
 		{name: "clear with users", task: AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"alice"}, State: StateClear}, wantErr: "'users' must not be set for state 'clear'"},
 		{name: "set with invalid name", task: AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"../ENV"}, State: StateSet}, wantErr: `for users[0], got "../ENV"`},
 		{name: "clear without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateClear}},

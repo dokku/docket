@@ -136,6 +136,9 @@ func (t AclAppTask) Plan(ctx context.Context) PlanResult {
 			})
 		},
 		StateSet: func() PlanResult {
+			if len(t.Users) == 0 {
+				return planSetAsClear(planAclClear(ctx, observe, probe, dokkuArgsInputs("acl:set-users", t.App, nil)))
+			}
 			return planAclSet(ctx, observe, probe, t.Users, dokkuArgsInputs("acl:set-users", t.App, t.Users))
 		},
 		StateClear: func() PlanResult {
@@ -145,16 +148,17 @@ func (t AclAppTask) Plan(ctx context.Context) PlanResult {
 }
 
 // validateAclUsers checks the users list against the state it is used with.
-// present, absent and set each need at least one user, and clear takes none:
-// acl:set-users is called with no users to clear, so a list supplied alongside
-// it would be silently discarded rather than removed. Every user is held to
+// present and absent each need at least one user, a set with none plans as
+// clear, and clear takes none: acl:set-users is called with no users to clear,
+// so a list supplied alongside it would be silently discarded rather than
+// removed. Every user is held to
 // fn-acl-validate-user in dokku-acl, which acl:add, acl:remove and
 // acl:set-users (and their service variants) all apply, since the name is used
 // as a file name inside the acl directory.
 func validateAclUsers(state State, users []string) error {
 	switch state {
 	case StatePresent, StateAbsent, StateSet:
-		if len(users) == 0 {
+		if len(users) == 0 && state != StateSet {
 			return fmt.Errorf("'users' must not be empty for state '%s'", state)
 		}
 		for i, u := range users {

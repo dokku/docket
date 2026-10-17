@@ -51,6 +51,12 @@ func (t GitFromImageTask) Doc() string {
 	return "Deploys a git repository from a docker image"
 }
 
+// Imperative reports that the task runs an operation rather than declaring
+// a resource: deploying an image has nothing to undo.
+func (t GitFromImageTask) Imperative() bool {
+	return true
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t GitFromImageTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportPartial, Caveat: "the image reference is written to the companion vars-file"}

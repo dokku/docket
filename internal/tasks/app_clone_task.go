@@ -41,6 +41,12 @@ func (t AppCloneTask) Doc() string {
 	return "Clones an existing dokku app to a new app"
 }
 
+// Imperative reports that the task runs an operation rather than declaring
+// a resource: cloning an app has nothing to undo.
+func (t AppCloneTask) Imperative() bool {
+	return true
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t AppCloneTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportUnsupported, Caveat: "an imperative clone operation, not reconstructable state"}

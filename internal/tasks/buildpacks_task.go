@@ -17,10 +17,12 @@ type BuildpacksTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Buildpacks is the list of buildpack URLs
-	Buildpacks []string `required:"false" identity:"collection" ordered:"true" yaml:"buildpacks" description:"List of buildpack URLs"`
+	Buildpacks []string `required:"false" identity:"collection" ordered:"true" yaml:"buildpacks,omitempty" description:"List of buildpack URLs; omit for state 'clear'"`
 
-	// State is the desired state of the buildpacks
-	State State `required:"false" yaml:"state" default:"present" options:"present,absent" description:"Desired state of the buildpacks"`
+	// State is the desired state of the buildpacks. present and set both
+	// replace the whole ordered list, since buildpack order is build
+	// precedence; set also accepts an empty list, which clears it.
+	State State `required:"false" yaml:"state" default:"present" options:"present,absent,set,clear" description:"Desired state of the buildpacks"`
 }
 
 // BuildpacksTaskExample contains an example of a BuildpacksTask
@@ -82,10 +84,20 @@ func (t BuildpacksTask) examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Replace the buildpacks for an app with exactly this list",
+			BuildpacksTask: BuildpacksTask{
+				App: "node-js-app",
+				Buildpacks: []string{
+					"https://github.com/heroku/heroku-buildpack-nodejs.git",
+				},
+				State: StateSet,
+			},
+		},
+		{
 			Name: "Clear all buildpacks from an app",
 			BuildpacksTask: BuildpacksTask{
 				App:   "node-js-app",
-				State: StateAbsent,
+				State: StateClear,
 			},
 		},
 	})
@@ -104,6 +116,11 @@ func (t BuildpacksTask) Validate() error {
 	if t.State == StatePresent && len(t.Buildpacks) == 0 {
 		return fmt.Errorf("'buildpacks' must not be empty for state 'present'")
 	}
+	// buildpacks:clear takes no buildpacks, so a list supplied alongside it
+	// would be silently discarded rather than removed.
+	if t.State == StateClear && len(t.Buildpacks) > 0 {
+		return fmt.Errorf("'buildpacks' must not be set for state 'clear'")
+	}
 	return nil
 }
 
@@ -116,29 +133,48 @@ func (t BuildpacksTask) Plan(ctx context.Context) PlanResult {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planBuildpacksAdd(ctx, t) },
-		StateAbsent:  func() PlanResult { return planBuildpacksRemove(ctx, t) },
+		StatePresent: func() PlanResult { return planBuildpacksAdd(ctx, t, StatePresent) },
+		StateAbsent:  func() PlanResult { return planBuildpacksRemove(ctx, t, StateAbsent) },
+		StateSet: func() PlanResult {
+			if len(t.Buildpacks) == 0 {
+				return planSetAsClear(planBuildpacksRemove(ctx, t, StateClear))
+			}
+			return planBuildpacksAdd(ctx, t, StateSet)
+		},
+		StateClear: func() PlanResult { return planBuildpacksRemove(ctx, t, StateClear) },
 	})
 }
 
 // observedBuildpacks attaches the buildpacks the probe read to r, in the
 // server's precedence order: every one of them when the plan owns the whole
 // list, or only those t names when an absent plan removes named buildpacks.
-func observedBuildpacks(r PlanResult, t BuildpacksTask, current []string, whole bool) PlanResult {
+// state is the state the plan was made for: present and absent report what
+// they read as present or absent, while set and clear report it as set, or as
+// clear when there are none.
+func observedBuildpacks(r PlanResult, t BuildpacksTask, state State, current []string, whole bool) PlanResult {
 	var held []string
 	for _, bp := range current {
 		if whole || slices.Contains(t.Buildpacks, bp) {
 			held = append(held, bp)
 		}
 	}
-	state := StateAbsent
-	if len(held) > 0 {
-		state = StatePresent
+	authoritative := state == StateSet || state == StateClear
+	observedState := StateAbsent
+	switch {
+	case authoritative && len(held) > 0:
+		observedState = StateSet
+	case authoritative:
+		observedState = StateClear
+	case len(held) > 0:
+		observedState = StatePresent
 	}
-	return observed(r, BuildpacksTask{App: t.App, Buildpacks: held, State: state}, len(held) > 0)
+	return observed(r, BuildpacksTask{App: t.App, Buildpacks: held, State: observedState}, len(held) > 0)
 }
 
-func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
+// planBuildpacksAdd reports drift for replacing the app's buildpacks with the
+// declared ordered list, for state present or set. finalState is the state
+// the apply reports.
+func planBuildpacksAdd(ctx context.Context, t BuildpacksTask, finalState State) PlanResult {
 	current, err := getOrderedBuildpacks(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -148,7 +184,7 @@ func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
 	// drift, not in sync (issue #356). Validate() already guarantees the desired
 	// list is non-empty for state present.
 	if slices.Equal(current, t.Buildpacks) {
-		return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, current, true)
+		return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, finalState, current, true)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
@@ -169,12 +205,15 @@ func planBuildpacksAdd(ctx context.Context, t BuildpacksTask) PlanResult {
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply: func(ctx context.Context) TaskOutputState {
-			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, finalState, inputs)
 		},
-	}, t, current, true)
+	}, t, finalState, current, true)
 }
 
-func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
+// planBuildpacksRemove reports drift for removing the named buildpacks, or
+// every buildpack when none are named, which is all state clear ever does.
+// finalState is the state the apply reports.
+func planBuildpacksRemove(ctx context.Context, t BuildpacksTask, finalState State) PlanResult {
 	ordered, err := listBuildpacks(ctx, t.App)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -188,7 +227,7 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 	whole := len(t.Buildpacks) == 0
 	if whole {
 		if len(current) == 0 {
-			return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, ordered, whole)
+			return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, finalState, ordered, whole)
 		}
 		mutations := make([]string, 0, len(current))
 		for bp := range current {
@@ -205,9 +244,9 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 			Mutations: mutations,
 			Commands:  resolveCommands(ctx, inputs),
 			apply: func(ctx context.Context) TaskOutputState {
-				return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+				return runExecInputs(ctx, TaskOutputState{State: StatePresent}, finalState, inputs)
 			},
-		}, t, ordered, whole)
+		}, t, finalState, ordered, whole)
 	}
 	toRemove := []string{}
 	mutations := []string{}
@@ -218,7 +257,7 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 		}
 	}
 	if len(toRemove) == 0 {
-		return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, ordered, whole)
+		return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, finalState, ordered, whole)
 	}
 	inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
 	for _, bp := range toRemove {
@@ -234,9 +273,9 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask) PlanResult {
 		Mutations: mutations,
 		Commands:  resolveCommands(ctx, inputs),
 		apply: func(ctx context.Context) TaskOutputState {
-			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, finalState, inputs)
 		},
-	}, t, ordered, whole)
+	}, t, finalState, ordered, whole)
 }
 
 // ExportApp reads the app's buildpacks and returns a dokku_buildpacks task, or

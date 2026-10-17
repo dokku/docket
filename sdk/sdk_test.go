@@ -141,6 +141,9 @@ func TestMetadataHelpersMatchCatalog(t *testing.T) {
 		if got := strings.TrimSpace(sdk.TaskDeprecation(task)); got != schema.Deprecation {
 			t.Errorf("%s: TaskDeprecation = %q, catalog = %q", schema.Type, got, schema.Deprecation)
 		}
+		if got := sdk.TaskImperative(task); got != schema.Imperative {
+			t.Errorf("%s: TaskImperative = %v, catalog = %v", schema.Type, got, schema.Imperative)
+		}
 		if got, _ := sdk.TaskProbeSupport(task); got != schema.Probe {
 			t.Errorf("%s: TaskProbeSupport = %+v, catalog = %+v", schema.Type, got, schema.Probe)
 		}

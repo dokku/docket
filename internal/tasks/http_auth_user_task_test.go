@@ -83,13 +83,21 @@ func TestHttpAuthUserTaskSetWithoutCredential(t *testing.T) {
 
 func TestHttpAuthUserTaskSetEmptyUsers(t *testing.T) {
 	t.Parallel()
+	// An empty set plans as clear, so it validates like one.
 	task := HttpAuthUserTask{App: "test-app", State: StateSet}
-	result := task.Execute(testCtx())
-	if result.Error == nil {
-		t.Fatal("expected error when state=set has no users")
+	if err := task.Validate(); err != nil {
+		t.Fatalf("Validate() with no users and state=set = %v, want nil", err)
 	}
-	if !strings.Contains(result.Error.Error(), "'users' must not be empty for state 'set'") {
-		t.Errorf("unexpected error: %v", result.Error)
+}
+
+func TestHttpAuthUserTaskClearRejectsUsers(t *testing.T) {
+	t.Parallel()
+	// Clearing removes every user, so a list here would be silently
+	// discarded rather than removed.
+	task := HttpAuthUserTask{App: "test-app", Users: []HttpAuthUser{{Username: "admin"}}, State: StateClear}
+	err := task.Validate()
+	if err == nil || !strings.Contains(err.Error(), "'users' must not be set for state 'clear'") {
+		t.Fatalf("Validate() = %v, want the clear-with-users error", err)
 	}
 }
 

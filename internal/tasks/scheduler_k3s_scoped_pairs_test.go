@@ -253,9 +253,8 @@ func TestSchedulerK3sScopedPairsValidateStates(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "set rejects an empty map",
-			task:    SchedulerK3sAnnotationsTask{App: "a", ResourceType: "deployment", State: StateSet},
-			wantErr: "'annotations' must not be empty for state 'set'",
+			name: "set accepts an empty map, which plans as clear",
+			task: SchedulerK3sAnnotationsTask{App: "a", ResourceType: "deployment", State: StateSet},
 		},
 		{
 			name:    "clear rejects a map",

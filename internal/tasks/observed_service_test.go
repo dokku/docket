@@ -143,6 +143,17 @@ func observedServiceFixtures() map[string]observedFixture {
 					want:   ServiceExposeTask{Service: "postgres", Name: "my-db", Ports: []string{"5433"}, State: StatePresent},
 					exists: true,
 				},
+				{
+					name:   "set reads the exposure as set",
+					task:   ServiceExposeTask{Service: "postgres", Name: "my-db", Ports: []string{"9999"}, State: StateSet},
+					want:   ServiceExposeTask{Service: "postgres", Name: "my-db", Ports: []string{"5433"}, State: StateSet},
+					exists: true,
+				},
+				{
+					name: "clear on an unexposed service",
+					task: ServiceExposeTask{Service: "redis", Name: "cache", State: StateClear},
+					want: ServiceExposeTask{Service: "redis", Name: "cache", State: StateClear},
+				},
 			},
 		},
 		"dokku_service_backup": {
@@ -227,6 +238,17 @@ func observedServiceFixtures() map[string]observedFixture {
 					task:   HttpAuthUserTask{App: "web", State: StateAbsent},
 					want:   HttpAuthUserTask{App: "web", Users: []HttpAuthUser{{Username: "admin", Hash: exportHttpAuthHash}}, State: StateSet},
 					exists: true,
+				},
+				{
+					name:   "clear owns the list",
+					task:   HttpAuthUserTask{App: "web", State: StateClear},
+					want:   HttpAuthUserTask{App: "web", Users: []HttpAuthUser{{Username: "admin", Hash: exportHttpAuthHash}}, State: StateSet},
+					exists: true,
+				},
+				{
+					name: "clear on an app with no users",
+					task: HttpAuthUserTask{App: "off", State: StateClear},
+					want: HttpAuthUserTask{App: "off", State: StateClear},
 				},
 			},
 		},

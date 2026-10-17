@@ -150,7 +150,9 @@ func (t PortsTask) Validate() error {
 		}
 		return nil
 	}
-	if len(t.PortMappings) == 0 {
+	// An empty set plans as clear; the present and absent states each need a
+	// mapping to act on.
+	if len(t.PortMappings) == 0 && t.State != StateSet {
 		return fmt.Errorf("'port_mappings' must not be empty for state '%s'", t.State)
 	}
 	// Each mapping renders as scheme:host:container, so an unknown or
@@ -197,8 +199,13 @@ func (t PortsTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planPortsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planPortsAbsent(ctx, t) },
-		StateSet:     func() PlanResult { return planPortsSet(ctx, t) },
-		StateClear:   func() PlanResult { return planPortsClear(ctx, t) },
+		StateSet: func() PlanResult {
+			if len(t.PortMappings) == 0 {
+				return planSetAsClear(planPortsClear(ctx, t))
+			}
+			return planPortsSet(ctx, t)
+		},
+		StateClear: func() PlanResult { return planPortsClear(ctx, t) },
 	})
 }
 
