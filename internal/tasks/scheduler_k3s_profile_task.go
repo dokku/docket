@@ -282,6 +282,20 @@ func observedSchedulerK3sProfile(r PlanResult, t SchedulerK3sProfileTask, curren
 	}, true)
 }
 
+// readAddress reads the profile an address names. Validate demands a role in
+// every state, and the role is what the read returns, so the name is checked
+// against dokku's own rules and the stored definition read directly.
+func (t SchedulerK3sProfileTask) readAddress(ctx context.Context) (Task, bool, error) {
+	if err := validateSchedulerK3sProfileNameStored("name", t.Name); err != nil {
+		return nil, false, err
+	}
+	current, found, err := getSchedulerK3sProfile(ctx, t.Name)
+	if err != nil {
+		return nil, false, err
+	}
+	return observedResult(observedSchedulerK3sProfile(PlanResult{Status: PlanStatusOK}, t, current, found))
+}
+
 // planSchedulerK3sProfileSet probes for the named profile and, if its
 // captured state differs from the task's desired state, emits a single
 // `profiles:add` that carries the complete desired state. `--role` is always

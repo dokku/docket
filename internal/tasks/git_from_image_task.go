@@ -112,6 +112,31 @@ func (t GitFromImageTask) Validate() error {
 	return nil
 }
 
+// observedGitFromImage attaches app's image deploy source to r. A source that
+// could not be read sets no observed state.
+func observedGitFromImage(ctx context.Context, r PlanResult, app string, source AppDeploySource, read bool) PlanResult {
+	if !read {
+		return r
+	}
+	if source.Source != "docker-image" {
+		return observed(r, GitFromImageTask{App: app, State: StateAbsent}, false)
+	}
+	// The image reference can carry registry credentials, and the server's
+	// value is not the recipe's, so mask it too.
+	subprocess.MaskerFromContext(ctx).Add(source.SourceMetadata)
+	return observed(r, GitFromImageTask{App: app, Image: source.SourceMetadata, State: StateDeployed}, true)
+}
+
+// readAddress reads the image an address's app deploys from, without the
+// image Validate demands in the task's only state.
+func (t GitFromImageTask) readAddress(ctx context.Context) (Task, bool, error) {
+	source, read, err := readAppDeploySource(ctx, t.App)
+	if err != nil {
+		return nil, false, err
+	}
+	return observedResult(observedGitFromImage(ctx, PlanResult{Status: PlanStatusOK}, t.App, source, read))
+}
+
 // Plan reports the drift the GitFromImageTask would produce.
 func (t GitFromImageTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
@@ -127,16 +152,7 @@ func (t GitFromImageTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			seen := func(r PlanResult) PlanResult {
-				if !read {
-					return r
-				}
-				if source.Source != "docker-image" {
-					return observed(r, GitFromImageTask{App: t.App, State: StateAbsent}, false)
-				}
-				// The image reference can carry registry credentials, and
-				// the server's value is not the recipe's, so mask it too.
-				subprocess.MaskerFromContext(ctx).Add(source.SourceMetadata)
-				return observed(r, GitFromImageTask{App: t.App, Image: source.SourceMetadata, State: StateDeployed}, true)
+				return observedGitFromImage(ctx, r, t.App, source, read)
 			}
 			if read && source.Source == "docker-image" && source.SourceMetadata == t.Image {
 				return seen(PlanResult{InSync: true, Status: PlanStatusOK})

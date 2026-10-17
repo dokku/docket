@@ -119,6 +119,14 @@ A few conventions to follow:
   fails the build for a task with no fixture, and `TestObservedReadsEveryUntaggedField` fails it
   for a field that is not an identity key, not tagged, and set by no `Observed` across the
   fixture - so give the fixture's server a value for every field the probe reads.
+- `sdk.ReadAddress` reads a resource from its identity address alone. It builds the task from the
+  address's keys and plans it in `clear` when the task offers it, else `absent`, else the default.
+  When that cannot read the whole resource - a payload `Validate` demands in every state, or states
+  that each read only the members they name - implement `readAddress(ctx) (Task, bool, error)` on
+  the task, reusing the observed construction `Plan` uses (`dokku_ps_scale`, `dokku_app_clone`).
+  `TestReadAddressReadsEveryResource` reads every exported body back from its address and needs an
+  address read of a present and an absent resource for every task that can read its state; add the
+  missing ones to `observedAddressCases` in `observed_address_test.go`.
 - `init()` registers the task with `RegisterTask`, which makes it usable in a recipe.
 - Every task must implement `MinimumVersions() VersionSupport`. `Dokku` is the oldest release
   whose command and output shape the current probe parses, as `major.minor.patch`. Where the

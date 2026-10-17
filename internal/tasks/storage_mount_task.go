@@ -301,6 +301,23 @@ func (t StorageMountTask) Plan(ctx context.Context) PlanResult {
 	})
 }
 
+// readAddress reads what an address names. Without container_dir that is
+// every mount in its process_type's scope, read the way clear reads them.
+// With one it is the single mount at that path, which present and absent
+// both need a source to plan, so the attachments are read directly: the
+// observed mount matches on container path and scope, never on the source.
+func (t StorageMountTask) readAddress(ctx context.Context) (Task, bool, error) {
+	if t.ContainerDir == "" {
+		t.State = StateClear
+		return observedResult(t.Plan(ctx))
+	}
+	attachments, err := readStorageAttachments(ctx, t.App)
+	if err != nil {
+		return nil, false, err
+	}
+	return observedResult(observedStorageMount(t, PlanResult{Status: PlanStatusOK}, attachments))
+}
+
 // planStorageMountPresent reports drift for the single-mount present state. A
 // missing attachment is a create; drift in any mount-time field of an existing
 // one is an in-place modify, matching the create-vs-modify split in sibling

@@ -236,6 +236,24 @@ func ReadTask(ctx context.Context, task Task) (Task, bool, error) {
 	return tasks.ReadTask(ctx, task)
 }
 
+// ReadAddress returns the resource an identity address names, such as
+// `dokku_buildpacks[app=api]`, as it exists on the server, and whether it
+// exists, from the address alone; nothing is applied. It reads every member
+// the resource has, the way a task in state set or clear would own them: a
+// dokku_config leaves out the keys docket keeps (linked-service DSNs,
+// NO_VHOST, the git rev env var), and a dokku_ps_scale leaves out process
+// types scaled to zero. The returned task and errors are ReadTask's: the value
+// type registered for the task, the *VersionError when ctx carries a gate the
+// server is behind, and an error wrapping ErrStateUnreadable for a task whose
+// probe cannot read its state.
+//
+// The address must name one resource. A bare type, a key the task does not
+// declare, or a missing required key is an error, raised before the server is
+// contacted. IdentityAddress renders the address of a task you hold.
+func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
+	return tasks.ReadAddress(ctx, address)
+}
+
 // ErrStateUnreadable is wrapped by the error ReadTask returns when a task's
 // probe cannot read its current state, such as dokku_storage_ensure, or when
 // the probe failed in a way the plan treats as drift.

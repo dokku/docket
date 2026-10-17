@@ -50,6 +50,7 @@ func observedHttpAuthServer() map[string]string {
 		"http-auth:report web --format json": `{"enabled":"true","users":"admin","allowed-ips":"10.0.0.1","domains":"b.example.com a.example.com"}`,
 		"--quiet http-auth:export-users web": "admin:" + exportHttpAuthHash + "\n",
 		"http-auth:report off --format json": `{"enabled":"false","users":"","allowed-ips":"","domains":""}`,
+		"--quiet http-auth:export-users off": "",
 	}
 }
 

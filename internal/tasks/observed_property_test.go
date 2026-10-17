@@ -117,8 +117,21 @@ func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixtu
 			}
 			return append(bodies, global...), nil
 		},
-		cases: cases,
+		cases:        cases,
+		addressCases: propertyAddressCases(typeKey, cases),
 	}
+}
+
+// propertyAddressCases reads each case's property back from its address. A
+// property built from its keys alone plans absent, which reads the stored
+// value the same way every case here does, so each case's want is also what
+// its address reads.
+func propertyAddressCases(typeKey string, cases []observedCase) []observedAddressCase {
+	out := make([]observedAddressCase, 0, len(cases))
+	for _, c := range cases {
+		out = append(out, observedAddressCase{address: IdentityAddress(typeKey, c.task), want: c.want, exists: c.exists})
+	}
+	return out
 }
 
 // propertiesByScopeForTest returns the table's property names, sorted, that

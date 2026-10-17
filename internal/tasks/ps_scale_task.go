@@ -198,6 +198,17 @@ func observedPsScale(r PlanResult, t PsScaleTask, existing map[string]int, whole
 	return observed(r, PsScaleTask{App: t.App, Scale: held, State: state}, running)
 }
 
+// readAddress reads every process type the app an address names runs. Both of
+// the task's states demand a scale, so the formation is read the way set
+// reads it: every process type scaled above zero.
+func (t PsScaleTask) readAddress(ctx context.Context) (Task, bool, error) {
+	existing, err := getPsScale(ctx, t.App)
+	if err != nil {
+		return nil, false, err
+	}
+	return observedResult(observedPsScale(PlanResult{Status: PlanStatusOK}, t, existing, true))
+}
+
 // planPsScalePresent reports drift for the present-state additive scale. Only
 // the process types the recipe names are considered, so anything else the app
 // runs keeps the quantity it has.
