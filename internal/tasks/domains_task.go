@@ -101,7 +101,7 @@ func (t DomainsTask) Execute(ctx context.Context) TaskOutputState {
 // Validate checks the DomainsTask's inputs without contacting the server.
 func (t DomainsTask) Validate() error {
 	// An empty set plans as clear, so it is held to clear's rule.
-	requireDomains := t.State != StateClear && !(t.State == StateSet && len(t.Domains) == 0)
+	requireDomains := t.State != StateClear && (t.State != StateSet || len(t.Domains) != 0)
 	if err := validateDomainsTask(t, requireDomains); err != nil {
 		return err
 	}
