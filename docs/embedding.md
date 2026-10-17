@@ -377,7 +377,8 @@ any plan, but the returned task carries them raw. Mask what you show, the same w
 ### Reading from an address
 
 `sdk.ReadAddress` reads a resource known only by its identity address - the shape `terraform import`
-or a data source has - and returns the same task, `exists` flag and errors as `sdk.ReadTask`:
+or a data source has - and returns the same task, `exists` flag and errors as `sdk.ReadTask`. It is
+what [`docket read`](command-reference.md#docket-read) runs:
 
 ```go
 current, exists, err := sdk.ReadAddress(ctx, "dokku_buildpacks[app=api]")
