@@ -35,6 +35,10 @@
           "type": "string",
           "description": "The deprecation notice. Present only on a deprecated task; it names the replacement."
         },
+        "imperative": {
+          "const": true,
+          "description": "Present only on a task that runs an operation rather than declaring a resource. It has nothing to undo, so it offers no absent or clear state."
+        },
         "requirements": {
           "type": "array",
           "items": { "type": "string" },

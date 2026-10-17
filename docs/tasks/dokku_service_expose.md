@@ -27,8 +27,8 @@ Keyed by `service` and `name`. Fields left empty are omitted from the address. M
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | yes |  |  | Type of service to expose (e.g. redis, postgres, mysql) |
 | `name` | string | yes |  |  | Name of the service instance |
-| `ports` | list | no |  |  | Host ports to expose the service on. Required when state is present. (order is significant) |
-| `state` | string | no | present | present, absent | Desired state of the service exposure |
+| `ports` | list | no |  |  | Host ports to expose the service on. Required when state is present; omit for state 'clear'. (order is significant) |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the service exposure |
 
 ## Examples
 
@@ -52,13 +52,24 @@ dokku_service_expose:
         - "6379"
 ```
 
+### Expose a postgres service named my-db on exactly these host ports
+
+```yaml
+dokku_service_expose:
+    service: postgres
+    name: my-db
+    ports:
+        - "5433"
+    state: set
+```
+
 ### Unexpose a postgres service named my-db
 
 ```yaml
 dokku_service_expose:
     service: postgres
     name: my-db
-    state: absent
+    state: clear
 ```
 
 ## Return Values

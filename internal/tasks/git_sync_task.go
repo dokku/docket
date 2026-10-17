@@ -53,6 +53,12 @@ func (t GitSyncTask) Doc() string {
 	return "Syncs a git repository to a dokku application"
 }
 
+// Imperative reports that the task runs an operation rather than declaring
+// a resource: syncing a repository has nothing to undo.
+func (t GitSyncTask) Imperative() bool {
+	return true
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t GitSyncTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}

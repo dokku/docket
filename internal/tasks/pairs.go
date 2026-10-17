@@ -167,7 +167,8 @@ func planPairsReplace(ctx context.Context, observe pairsObserveFunc, kind string
 // the single command that empties the collection. The whole-map write cannot
 // stand in for it: dokku rejects an empty pair list rather than reading it as
 // "remove everything", so that a generated list which expands to nothing cannot
-// silently drop a collection.
+// silently drop a collection. A `set` that declares an empty map is planned
+// through this instead, by way of planSetAsClear.
 func planPairsClear(ctx context.Context, observe pairsObserveFunc, kind string, currentFn pairsCurrentFunc, commandFn pairsWholeCommandFunc) PlanResult {
 	current, err := currentFn(ctx)
 	if err != nil {
@@ -183,6 +184,80 @@ func planPairsClear(ctx context.Context, observe pairsObserveFunc, kind string, 
 		Status:    PlanStatusDestroy,
 		Reason:    fmt.Sprintf("clear %d %s(s)", len(current), kind),
 		Mutations: formatClearMutations(sortedPairKeys(current), current),
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateClear, inputs)
+		},
+	}, observe, current, nil, true)
+}
+
+// planPairsReplacePerKey is planPairsReplace for a collection dokku can only
+// write one key at a time: it diffs desired against current in both
+// directions, and its apply runs one command per drifted key followed by one
+// clearing command per stored key the recipe does not declare. That is not
+// atomic - a failure partway through leaves the collection carrying a mixture
+// of the old and new maps - so it is only for a collection with no whole-map
+// command, and the task documents it.
+func planPairsReplacePerKey(ctx context.Context, observe pairsObserveFunc, kind string, desired map[string]string, currentFn pairsCurrentFunc, commandFn pairsCommandFunc) PlanResult {
+	current, err := currentFn(ctx)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+
+	drifted, _ := driftedKeys(desired, current)
+	removed := removedKeys(desired, current)
+	mutations := formatSetMutations(drifted, desired, current)
+	mutations = append(mutations, formatClearMutations(removed, current)...)
+	if len(mutations) == 0 {
+		return observedPairs(PlanResult{InSync: true, Status: PlanStatusOK}, observe, current, desired, true)
+	}
+
+	status := PlanStatusModify
+	if len(current) == 0 {
+		status = PlanStatusCreate
+	}
+
+	inputs := make([]subprocess.ExecCommandInput, 0, len(drifted)+len(removed))
+	for _, key := range drifted {
+		inputs = append(inputs, commandFn(key, desired[key]))
+	}
+	for _, key := range removed {
+		inputs = append(inputs, commandFn(key, ""))
+	}
+	return observedPairs(PlanResult{
+		InSync:    false,
+		Status:    status,
+		Reason:    fmt.Sprintf("%d %s change(s)", len(mutations), kind),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StateSet, inputs)
+		},
+	}, observe, current, desired, true)
+}
+
+// planPairsClearPerKey is planPairsClear for a collection dokku can only clear
+// one key at a time: its apply runs one clearing command per stored key. Like
+// planPairsReplacePerKey it is not atomic.
+func planPairsClearPerKey(ctx context.Context, observe pairsObserveFunc, kind string, currentFn pairsCurrentFunc, commandFn pairsCommandFunc) PlanResult {
+	current, err := currentFn(ctx)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	if len(current) == 0 {
+		return observedPairs(PlanResult{InSync: true, Status: PlanStatusOK}, observe, current, nil, true)
+	}
+
+	keys := sortedPairKeys(current)
+	inputs := make([]subprocess.ExecCommandInput, 0, len(keys))
+	for _, key := range keys {
+		inputs = append(inputs, commandFn(key, ""))
+	}
+	return observedPairs(PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("clear %d %s(s)", len(current), kind),
+		Mutations: formatClearMutations(keys, current),
 		Commands:  resolveCommands(ctx, inputs),
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateClear, inputs)

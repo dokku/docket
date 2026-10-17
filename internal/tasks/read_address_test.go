@@ -98,7 +98,8 @@ func TestSetReadState(t *testing.T) {
 		want    State
 	}{
 		{"dokku_domains", StateClear},
-		{"dokku_buildpacks", StateAbsent},
+		{"dokku_buildpacks", StateClear},
+		{"dokku_docker_options", StateAbsent},
 		{"dokku_logs_property", StateAbsent},
 		{"dokku_git_sync", StatePresent},
 	}

@@ -291,8 +291,13 @@ func (t StorageMountTask) Plan(ctx context.Context) PlanResult {
 		return DispatchPlan(t.State, map[State]func() PlanResult{
 			StatePresent: func() PlanResult { return planStorageMountsPresent(ctx, t) },
 			StateAbsent:  func() PlanResult { return planStorageMountsAbsent(ctx, t) },
-			StateSet:     func() PlanResult { return planStorageMountsSet(ctx, t) },
-			StateClear:   func() PlanResult { return planStorageMountsClear(ctx, t) },
+			StateSet: func() PlanResult {
+				if len(t.Mounts) == 0 {
+					return planSetAsClear(planStorageMountsClear(ctx, t))
+				}
+				return planStorageMountsSet(ctx, t)
+			},
+			StateClear: func() PlanResult { return planStorageMountsClear(ctx, t) },
 		})
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
@@ -478,9 +483,6 @@ func (t StorageMountTask) validate() error {
 	case StateSet, StateClear:
 		if single {
 			return fmt.Errorf("the single-mount fields (entry_name, host_dir, container_dir, phases, subpath, readonly, volume_chown, volume_options) must not be set for state '%s'; use 'mounts'", t.State)
-		}
-		if t.State == StateSet && len(t.Mounts) == 0 {
-			return fmt.Errorf("'mounts' must not be empty for state '%s'", t.State)
 		}
 		// storage:unmount --all takes no mounts, so a list supplied alongside
 		// clear would be silently discarded rather than removed.

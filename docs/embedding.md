@@ -310,8 +310,8 @@ for _, typeKey := range sdk.TaskTypes() {
 
 Each `Lookup` call returns a new zero-value instance, so changing it affects nothing else. It has no
 defaults applied; use `sdk.NewTask` for a task to run. `sdk.TaskDeprecation`,
-`sdk.TaskProbeSupport`, `sdk.TaskExportSupport` and `sdk.TaskMinimumVersions` read the rest of a
-task's metadata.
+`sdk.TaskImperative`, `sdk.TaskProbeSupport`, `sdk.TaskExportSupport` and
+`sdk.TaskMinimumVersions` read the rest of a task's metadata.
 
 `sdk.Catalog()` describes every task type in one value - synopsis, deprecation, requirements,
 probe and export support, identity and fields - and is what `docket schema` emits.

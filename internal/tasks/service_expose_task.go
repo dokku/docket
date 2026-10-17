@@ -19,10 +19,12 @@ type ServiceExposeTask struct {
 	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Ports are the host ports to expose the service on. Required when state is present.
-	Ports []string `required:"false" identity:"collection" ordered:"true" yaml:"ports,omitempty" description:"Host ports to expose the service on. Required when state is present."`
+	Ports []string `required:"false" identity:"collection" ordered:"true" yaml:"ports,omitempty" description:"Host ports to expose the service on. Required when state is present; omit for state 'clear'."`
 
-	// State is the desired state of the service exposure
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service exposure"`
+	// State is the desired state of the service exposure. present and set
+	// both replace the whole port list; set also accepts an empty list, which
+	// unexposes the service.
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the service exposure"`
 }
 
 // ServiceExposeTaskExample contains an example of a ServiceExposeTask
@@ -113,11 +115,20 @@ func (t ServiceExposeTask) examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Expose a postgres service named my-db on exactly these host ports",
+			ServiceExposeTask: ServiceExposeTask{
+				Service: "postgres",
+				Name:    "my-db",
+				Ports:   []string{"5433"},
+				State:   StateSet,
+			},
+		},
+		{
 			Name: "Unexpose a postgres service named my-db",
 			ServiceExposeTask: ServiceExposeTask{
 				Service: "postgres",
 				Name:    "my-db",
-				State:   StateAbsent,
+				State:   StateClear,
 			},
 		},
 	})
@@ -133,6 +144,11 @@ func (t ServiceExposeTask) Validate() error {
 	if t.State == StatePresent && len(t.Ports) == 0 {
 		return fmt.Errorf("'ports' is required when state is 'present'")
 	}
+	// unexpose takes no ports, so a list supplied alongside clear would be
+	// silently discarded rather than removed.
+	if t.State == StateClear && len(t.Ports) > 0 {
+		return fmt.Errorf("'ports' must not be set for state 'clear'")
+	}
 	return nil
 }
 
@@ -145,83 +161,101 @@ func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 		return planErr(err)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult {
-			exists, err := serviceExists(ctx, t.Service, t.Name)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
+		StatePresent: func() PlanResult { return planServiceExpose(ctx, t, StatePresent) },
+		StateAbsent:  func() PlanResult { return planServiceUnexpose(ctx, t, StateAbsent) },
+		StateSet: func() PlanResult {
+			if len(t.Ports) == 0 {
+				return planSetAsClear(planServiceUnexpose(ctx, t, StateClear))
 			}
-			if !exists {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
-			}
-			current, err := serviceExposedPortList(ctx, t.Service, t.Name)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			// dokku maps expose arguments positionally to the plugin's container
-			// ports, so the comparison must be order-sensitive: a reorder of the
-			// same ports is a real change (issue #332).
-			if slices.Equal(current, t.Ports) {
-				return observedServiceExpose(t, PlanResult{InSync: true, Status: PlanStatusOK}, current)
-			}
-			inputs := []subprocess.ExecCommandInput{}
-			mutations := []string{}
-			status := PlanStatusCreate
-			// dokku rejects expose when the service is already exposed, so a
-			// change of ports must unexpose first, then re-expose the full set.
-			if len(current) > 0 {
-				status = PlanStatusModify
-				inputs = append(inputs, subprocess.ExecCommandInput{
-					Command: "dokku",
-					Args:    []string{"--quiet", fmt.Sprintf("%s:unexpose", t.Service), t.Name},
-				})
-				mutations = append(mutations, fmt.Sprintf("%s:unexpose %s", t.Service, t.Name))
-			}
-			exposeArgs := []string{"--quiet", fmt.Sprintf("%s:expose", t.Service), t.Name}
-			exposeArgs = append(exposeArgs, t.Ports...)
-			inputs = append(inputs, subprocess.ExecCommandInput{Command: "dokku", Args: exposeArgs})
-			mutations = append(mutations, fmt.Sprintf("%s:expose %s %s", t.Service, t.Name, strings.Join(t.Ports, " ")))
-			return observedServiceExpose(t, PlanResult{
-				InSync:    false,
-				Status:    status,
-				Reason:    fmt.Sprintf("%s service %s not exposed on %s", t.Service, t.Name, strings.Join(t.Ports, " ")),
-				Mutations: mutations,
-				Commands:  resolveCommands(ctx, inputs),
-				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
-				},
-			}, current)
+			return planServiceExpose(ctx, t, StateSet)
 		},
-		StateAbsent: func() PlanResult {
-			exists, err := serviceExists(ctx, t.Service, t.Name)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if !exists {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
-			}
-			current, err := serviceExposedPortList(ctx, t.Service, t.Name)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			if len(current) == 0 {
-				return observedServiceExpose(t, PlanResult{InSync: true, Status: PlanStatusOK}, current)
-			}
-			inputs := []subprocess.ExecCommandInput{{
-				Command: "dokku",
-				Args:    []string{"--quiet", fmt.Sprintf("%s:unexpose", t.Service), t.Name},
-			}}
-			return observedServiceExpose(t, PlanResult{
-				InSync:    false,
-				Status:    PlanStatusDestroy,
-				Reason:    fmt.Sprintf("%s service %s exposed", t.Service, t.Name),
-				Mutations: []string{fmt.Sprintf("%s:unexpose %s", t.Service, t.Name)},
-				Commands:  resolveCommands(ctx, inputs),
-				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
-				},
-			}, current)
-		},
+		StateClear: func() PlanResult { return planServiceUnexpose(ctx, t, StateClear) },
 	})
+}
+
+// planServiceExpose reports drift for exposing the service on exactly the
+// declared ports, for state present or set. finalState is the state the apply
+// reports.
+//
+// dokku rejects expose when the service is already exposed, so a change of
+// ports unexposes first and then re-exposes the full list: two commands, not
+// one, and a failure between them leaves the service unexposed.
+func planServiceExpose(ctx context.Context, t ServiceExposeTask, finalState State) PlanResult {
+	exists, err := serviceExists(ctx, t.Service, t.Name)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	if !exists {
+		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+	}
+	current, err := serviceExposedPortList(ctx, t.Service, t.Name)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	// dokku maps expose arguments positionally to the plugin's container
+	// ports, so the comparison must be order-sensitive: a reorder of the
+	// same ports is a real change (issue #332).
+	if slices.Equal(current, t.Ports) {
+		return observedServiceExpose(t, PlanResult{InSync: true, Status: PlanStatusOK}, finalState, current)
+	}
+	inputs := []subprocess.ExecCommandInput{}
+	mutations := []string{}
+	status := PlanStatusCreate
+	if len(current) > 0 {
+		status = PlanStatusModify
+		inputs = append(inputs, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", fmt.Sprintf("%s:unexpose", t.Service), t.Name},
+		})
+		mutations = append(mutations, fmt.Sprintf("%s:unexpose %s", t.Service, t.Name))
+	}
+	exposeArgs := []string{"--quiet", fmt.Sprintf("%s:expose", t.Service), t.Name}
+	exposeArgs = append(exposeArgs, t.Ports...)
+	inputs = append(inputs, subprocess.ExecCommandInput{Command: "dokku", Args: exposeArgs})
+	mutations = append(mutations, fmt.Sprintf("%s:expose %s %s", t.Service, t.Name, strings.Join(t.Ports, " ")))
+	return observedServiceExpose(t, PlanResult{
+		InSync:    false,
+		Status:    status,
+		Reason:    fmt.Sprintf("%s service %s not exposed on %s", t.Service, t.Name, strings.Join(t.Ports, " ")),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, finalState, inputs)
+		},
+	}, finalState, current)
+}
+
+// planServiceUnexpose reports drift for unexposing the service from every
+// port, for state absent or clear. finalState is the state the apply reports.
+func planServiceUnexpose(ctx context.Context, t ServiceExposeTask, finalState State) PlanResult {
+	exists, err := serviceExists(ctx, t.Service, t.Name)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	if !exists {
+		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+	}
+	current, err := serviceExposedPortList(ctx, t.Service, t.Name)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	if len(current) == 0 {
+		return observedServiceExpose(t, PlanResult{InSync: true, Status: PlanStatusOK}, finalState, current)
+	}
+	inputs := []subprocess.ExecCommandInput{{
+		Command: "dokku",
+		Args:    []string{"--quiet", fmt.Sprintf("%s:unexpose", t.Service), t.Name},
+	}}
+	return observedServiceExpose(t, PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("%s service %s exposed", t.Service, t.Name),
+		Mutations: []string{fmt.Sprintf("%s:unexpose %s", t.Service, t.Name)},
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, finalState, inputs)
+		},
+	}, finalState, current)
 }
 
 // serviceExposedPortList returns the ordered host ports a dokku service is
@@ -271,14 +305,23 @@ func init() {
 	RegisterTask(&ServiceExposeTask{})
 }
 
-// observedServiceExpose attaches the exposure the probe read to r. Both states own
-// the service's whole port list - absent unexposes every port - so Observed
-// carries all of it, present when any port is exposed.
-func observedServiceExpose(t ServiceExposeTask, r PlanResult, current []string) PlanResult {
+// observedServiceExpose attaches the exposure the probe read to r. Every state
+// owns the service's whole port list - absent unexposes every port - so
+// Observed carries all of it. state is the state the plan was made for:
+// present and absent report the exposure as present or absent, while set and
+// clear report it as set, or as clear when no port is exposed.
+func observedServiceExpose(t ServiceExposeTask, r PlanResult, state State, current []string) PlanResult {
+	authoritative := state == StateSet || state == StateClear
 	o := ServiceExposeTask{Service: t.Service, Name: t.Name, State: StateAbsent}
+	if authoritative {
+		o.State = StateClear
+	}
 	if len(current) > 0 {
 		o.Ports = current
 		o.State = StatePresent
+		if authoritative {
+			o.State = StateSet
+		}
 	}
 	return observed(r, o, len(current) > 0)
 }

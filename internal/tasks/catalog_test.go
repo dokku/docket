@@ -504,6 +504,9 @@ func TestCatalogSupportMatchesDeclarations(t *testing.T) {
 		if want := strings.TrimSpace(TaskDeprecation(task)); schema.Deprecation != want {
 			t.Errorf("%s Deprecation = %q; want %q", schema.Type, schema.Deprecation, want)
 		}
+		if want := TaskImperative(task); schema.Imperative != want {
+			t.Errorf("%s Imperative = %v; want %v", schema.Type, schema.Imperative, want)
+		}
 	}
 }
 

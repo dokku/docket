@@ -181,6 +181,9 @@ func (t AclServiceTask) Plan(ctx context.Context) PlanResult {
 			})
 		},
 		StateSet: func() PlanResult {
+			if len(t.Users) == 0 {
+				return planSetAsClear(planAclClear(ctx, observe, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil)))
+			}
 			return planAclSet(ctx, observe, probe, t.Users, aclSetServiceUsersInputs(t.Type, t.Service, t.Users))
 		},
 		StateClear: func() PlanResult {

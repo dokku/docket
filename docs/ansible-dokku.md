@@ -248,7 +248,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_acl_service` | `dokku_acl_service` | dokku-acl | docket also supports `state: set` (`acl:set-service-users`), which treats the declared list as the service's whole ACL and removes every user it omits, and `state: clear`. |
 | `dokku_app` | `dokku_app` | | Direct. |
 | `dokku_builder` | `dokku_builder_property` | | Direct; both wrap `builder:set`. |
-| `dokku_buildpacks` | `dokku_buildpacks` | | Direct. |
+| `dokku_buildpacks` | `dokku_buildpacks` | | Direct. docket also supports `state: set`, which replaces the whole ordered list as `state: present` does and accepts an empty list, and `state: clear` (`buildpacks:clear`). |
 | `dokku_certs` | `dokku_certs` | | docket adds `cert_content` / `key_content` for inline PEM, and replaces an installed certificate whose material differs where the module leaves it alone. |
 | `dokku_checks` | `dokku_checks_toggle` | | `checks:enable` / `checks:disable`. |
 | `dokku_clone` | `dokku_app` and `dokku_git_sync` | | The module runs core `git:sync`, and creates the app first. Emit both tasks. `version` becomes `git_ref`. |
@@ -266,8 +266,8 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_proxy` | `dokku_proxy_toggle` | | `proxy:enable` / `proxy:disable`. |
 | `dokku_ps_scale` | `dokku_ps_scale` | | docket also supports `state: set` (`ps:scale --replace`), which treats the declared map as the whole formation and scales every process type it omits to zero. |
 | `dokku_registry` | `dokku_registry_auth` and `dokku_registry_property` | | Credentials go to `dokku_registry_auth` (`registry:login`); `image` and `server` go to `dokku_registry_property` as `image-repo` and `server`. The module still declares the old third-party `dokku-registry` plugin; docket treats `registry` as core. |
-| `dokku_resource_limit` | `dokku_resource_limit` | | Direct. |
-| `dokku_resource_reserve` | `dokku_resource_reserve` | | Direct. |
+| `dokku_resource_limit` | `dokku_resource_limit` | | Direct. docket also supports `state: set`, which treats the declared map as the scope's whole set of limits and clears every limit it omits in the same `resource:limit` call, and `state: clear` (`resource:limit-clear`). |
+| `dokku_resource_reserve` | `dokku_resource_reserve` | | Direct. docket also supports `state: set`, which treats the declared map as the scope's whole set of reservations and clears every reservation it omits in the same `resource:reserve` call, and `state: clear` (`resource:reserve-clear`). |
 | `dokku_service_create` | `dokku_service_create` | datastore plugin | docket adds `state: absent`, and exposes the create-time options as task fields (`image`, `image_version`, `custom_env`, and the rest) rather than through the environment. |
 | `dokku_service_link` | `dokku_service_link` | datastore plugin | Direct. |
 | `dokku_storage` | `dokku_storage_mount`, `dokku_storage_entry`, `dokku_storage_ensure` | | The module's `mounts` list becomes one `dokku_storage_mount` with a `mounts` list, which `state: present` and `absent` apply as a single write. docket also supports `state: set`, which treats the list as the app's whole set of mounts and removes any it omits. Host directories go to `dokku_storage_entry`; see [host directories](#host-directories). |
@@ -349,14 +349,14 @@ same file, and it is the spec that Ansible enforces. Those modules are `dokku_bu
 
 | Field | ansible-dokku | docket | What a wrapper has to do |
 |-------|---------------|--------|--------------------------|
-| `users` | Required on `dokku_acl_app` and `dokku_acl_service` | Optional, but required and non-empty for `state: present`, `absent`, and `set`, and rejected for `state: clear` | A `state: absent` call with an empty list is a no-op in the module and fails `docket validate`. Drop it. |
+| `users` | Required on `dokku_acl_app` and `dokku_acl_service` | Optional, but required and non-empty for `state: present` and `absent`, rejected for `state: clear`, and planned as `state: clear` when empty under `state: set` | A `state: absent` call with an empty list is a no-op in the module and fails `docket validate`. Drop it. |
 | `buildpacks` | Required | Optional | Nothing. |
-| `config` | Required | Optional, but required and non-empty for `state: set` and rejected for `state: clear` | Nothing for the states the module has. |
+| `config` | Required | Optional, but rejected for `state: clear`, and planned as `state: clear` when empty under `state: set` | Nothing for the states the module has. |
 | `domains` | Required | Optional | Nothing. |
 | `app` on `dokku_certs` | Required | Optional, but exactly one of `app` or `global` must be set | Nothing for the app case; the global case goes through the same task. |
 | `cert` / `key` | Optional in the spec | Optional, but `state: present` requires `cert` + `key` or `cert_content` + `key_content` | A `state: present` call with no material passes Ansible's arg spec and fails `docket validate`. Validate before applying. |
 | `phase` on `dokku_docker_options` | Required in the spec, optional in the docs | Required | Nothing; docket agrees with the spec. |
-| `mappings` / `port_mappings` | Optional list of `"http:80:5000"` strings | Optional list of `{scheme, host, container}` objects, but required and non-empty for `state: present`, `absent`, and `set`, and no two may share a scheme and host port under `state: present` or `set` | Parse each string and restructure it. Omit the field entirely for `state: clear`, which rejects a list rather than ignoring one. A list carrying `"http:80:5000"` and `"http:80:6000"` passes the module's argument spec and fails `docket validate`, the same reuse dokku's `ports:add` and `ports:set` refuse. |
+| `mappings` / `port_mappings` | Optional list of `"http:80:5000"` strings | Optional list of `{scheme, host, container}` objects, but required and non-empty for `state: present` and `absent`, planned as `state: clear` when empty under `state: set`, and no two may share a scheme and host port under `state: present` or `set` | Parse each string and restructure it. Omit the field entirely for `state: clear`, which rejects a list rather than ignoring one. A list carrying `"http:80:5000"` and `"http:80:6000"` passes the module's argument spec and fails `docket validate`, the same reuse dokku's `ports:add` and `ports:set` refuse. |
 | `username` / `password` on `dokku_registry` | Both required, even for `state: absent` | Only `server` is required; credentials are required when `state: present` | A `state: absent` call carries credentials docket does not need. Drop them. |
 | `app` on `dokku_builder`, `dokku_network_property` | Required in the docs, optional in the spec | Optional, paired with `global` | Nothing. |
 | `app` on `dokku_storage` | Required | `dokku_storage_mount` requires `app`, and each `mounts` entry requires `container_dir` | Split each `host:container` string into a `mounts` entry's `host_dir` and `container_dir`. |

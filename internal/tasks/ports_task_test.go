@@ -74,9 +74,8 @@ func TestPortsTaskValidatePerItem(t *testing.T) {
 			wantErr: "'port_mappings' must not be empty for state 'absent'",
 		},
 		{
-			name:    "empty list is rejected for set",
-			task:    PortsTask{App: "web", PortMappings: []PortMapping{}, State: StateSet},
-			wantErr: "'port_mappings' must not be empty for state 'set'",
+			name: "empty list plans as clear for set",
+			task: PortsTask{App: "web", PortMappings: []PortMapping{}, State: StateSet},
 		},
 		{
 			name: "clear does not require a list",

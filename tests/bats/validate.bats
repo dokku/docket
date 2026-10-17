@@ -88,7 +88,8 @@ EOF
   assert_output --partial "'port_mappings' must not be set for state 'clear'"
 }
 
-@test "docket validate exits 1 on ports state set with an empty port_mappings" {
+@test "docket validate exits 0 on ports state set with an empty port_mappings (#619)" {
+  # An empty set declares the collection empty and plans as clear.
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -98,8 +99,8 @@ EOF
         port_mappings: []
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
-  assert_failure
-  assert_output --partial "'port_mappings' must not be empty for state 'set'"
+  assert_success
+  assert_output --partial "is valid"
 }
 
 @test "docket validate exits 0 on acl app state clear without users (#563)" {
@@ -144,7 +145,8 @@ EOF
   assert_output --partial "'users' must not be empty for state 'absent'"
 }
 
-@test "docket validate exits 1 on acl service state set with an empty users" {
+@test "docket validate exits 0 on acl service state set with an empty users (#619)" {
+  # An empty set declares the collection empty and plans as clear.
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -155,8 +157,54 @@ EOF
         users: []
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 0 on the collection tasks' new set and clear states (#619)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_buildpacks:
+        app: web
+        state: clear
+    - dokku_resource_limit:
+        app: web
+        resources:
+          memory: "256"
+        state: set
+    - dokku_resource_reserve:
+        app: web
+        state: clear
+    - dokku_service_expose:
+        service: redis
+        name: cache
+        state: set
+    - dokku_scheduler_k3s_chart:
+        chart: traefik
+        state: clear
+    - dokku_http_auth_user:
+        app: web
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on buildpacks state clear carrying buildpacks (#619)" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_buildpacks:
+        app: web
+        state: clear
+        buildpacks:
+          - https://github.com/heroku/heroku-buildpack-nodejs.git
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'users' must not be empty for state 'set'"
+  assert_output --partial "'buildpacks' must not be set for state 'clear'"
 }
 
 @test "docket validate exits 1 on an acl user name dokku-acl would refuse" {
@@ -335,7 +383,8 @@ EOF
   assert_output --partial "'annotations' must not be set for state 'clear'"
 }
 
-@test "docket validate exits 1 on scheduler-k3s state set with an empty map" {
+@test "docket validate exits 0 on scheduler-k3s state set with an empty map (#619)" {
+  # An empty set declares the collection empty and plans as clear.
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -346,8 +395,8 @@ EOF
         labels: {}
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
-  assert_failure
-  assert_output --partial "'labels' must not be empty for state 'set'"
+  assert_success
+  assert_output --partial "is valid"
 }
 
 @test "docket validate exits 1 on a scheduler-k3s set key carrying an equals sign" {
@@ -1223,7 +1272,8 @@ EOF
   assert_output --partial "is valid"
 }
 
-@test "docket validate exits 1 on config state set with an empty config" {
+@test "docket validate exits 0 on config state set with an empty config (#619)" {
+  # An empty set declares the collection empty and plans as clear.
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -1233,8 +1283,8 @@ EOF
         config: {}
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
-  assert_failure
-  assert_output --partial "'config' must not be empty for state 'set'"
+  assert_success
+  assert_output --partial "is valid"
 }
 
 @test "docket validate exits 1 on config state clear carrying config" {

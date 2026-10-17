@@ -101,7 +101,7 @@ func TestAclAppTaskValidateUsersPerState(t *testing.T) {
 		wantErr string
 	}{
 		{name: "absent without users", state: StateAbsent, wantErr: "'users' must not be empty for state 'absent'"},
-		{name: "set without users", state: StateSet, wantErr: "'users' must not be empty for state 'set'"},
+		{name: "set without users plans as clear", state: StateSet},
 		{name: "clear with users", users: []string{"alice"}, state: StateClear, wantErr: "'users' must not be set for state 'clear'"},
 		{name: "clear without users", state: StateClear},
 		{name: "set with users", users: []string{"alice"}, state: StateSet},

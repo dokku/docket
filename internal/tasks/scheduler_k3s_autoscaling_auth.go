@@ -49,7 +49,8 @@ func validateSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec, s
 		}
 		return nil
 	}
-	if len(spec.Metadata) == 0 {
+	// An empty set plans as clear; the additive states each consume a key.
+	if len(spec.Metadata) == 0 && effective != StateSet {
 		return fmt.Errorf("'metadata' must not be empty for state '%s'", effective)
 	}
 
@@ -182,7 +183,13 @@ func schedulerK3sAutoscalingAuthCurrent(spec schedulerK3sAutoscalingAuthSpec) pa
 // planSchedulerK3sAutoscalingAuthSet delegates to planPairsReplace. `:set
 // --replace` drops the trigger's stored metadata and writes the declared map in
 // one call, so the trigger is never left carrying a mixture of the two sets.
+//
+// An empty map plans as clear, since a `:set --replace` with no `--metadata`
+// flag would read as the bare wipe anyway.
 func planSchedulerK3sAutoscalingAuthSet(ctx context.Context, spec schedulerK3sAutoscalingAuthSpec) PlanResult {
+	if len(spec.Metadata) == 0 {
+		return planSetAsClear(planSchedulerK3sAutoscalingAuthClear(ctx, spec))
+	}
 	return planPairsReplace(ctx, spec.Observe,
 		"metadata key",
 		spec.Metadata,

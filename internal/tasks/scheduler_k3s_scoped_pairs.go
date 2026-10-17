@@ -46,14 +46,15 @@ func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state Sta
 	singular := singularizeSchedulerK3sKind(spec.Kind)
 
 	// :clear takes no pairs, so a map supplied alongside it would be silently
-	// discarded rather than removed. Every other state consumes one.
+	// discarded rather than removed. An empty set plans as clear, and the
+	// additive states each consume a pair.
 	if effective == StateClear {
 		if len(spec.Pairs) > 0 {
 			return fmt.Errorf("'%s' must not be set for state 'clear'", spec.Kind)
 		}
 		return nil
 	}
-	if len(spec.Pairs) == 0 {
+	if len(spec.Pairs) == 0 && effective != StateSet {
 		return fmt.Errorf("'%s' must not be empty for state '%s'", spec.Kind, effective)
 	}
 
@@ -112,8 +113,12 @@ func planSchedulerK3sScopedPairsAbsent(ctx context.Context, spec schedulerK3sSco
 
 // planSchedulerK3sScopedPairsSet delegates to planPairsReplace with a
 // whole-map command builder bound to the spec's scope, so `:set --replace`
-// removes the keys stored at the scope that the recipe does not declare.
+// removes the keys stored at the scope that the recipe does not declare. An
+// empty map plans as clear, since `:set --replace` needs a pair to write.
 func planSchedulerK3sScopedPairsSet(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
+	if len(spec.Pairs) == 0 {
+		return planSetAsClear(planSchedulerK3sScopedPairsClear(ctx, spec))
+	}
 	return planPairsReplace(ctx, spec.Observe,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,

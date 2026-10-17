@@ -26,9 +26,9 @@ Keyed by `app` and `process_type`. Fields left empty are omitted from the addres
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
 | `process_type` | string | no |  |  | Process type to set resource reservations for |
-| `resources` | dict | no |  |  | Map of resource type to quantity |
+| `resources` | dict | no |  |  | Map of resource type to quantity; omit for state 'clear' |
 | `clear_before` | bool | no | false |  | ClearBefore clears all resource reservations before applying new ones (applied only, not read back) |
-| `state` | string | no | present | present, absent | Desired state of the resource reservations |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the resource reservations |
 
 ## Examples
 
@@ -52,13 +52,22 @@ dokku_resource_reserve:
         memory: "512"
 ```
 
+### Replace the resource reservations with exactly these
+
+```yaml
+dokku_resource_reserve:
+    app: hello-world
+    resources:
+        memory: "256"
+    state: set
+```
+
 ### Clear all resource reservations
 
 ```yaml
 dokku_resource_reserve:
     app: hello-world
-    resources: {}
-    state: absent
+    state: clear
 ```
 
 ## Return Values

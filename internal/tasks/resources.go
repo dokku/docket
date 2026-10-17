@@ -122,15 +122,34 @@ func exportResourceTasks(ctx context.Context, app, kind string, factory func(app
 	return out, nil
 }
 
-// planResource is the shared Plan() implementation for resource tasks. The
-// probe runs once; the apply closure consumes the diff.
 // validateResourceInput checks a resource task's inputs without probing the
 // server. planResource and each resource task's Validate() call it so plan and
 // validate report the same error. The unknown-resource-key check stays in
-// planSetResource because it needs the live resource report.
-func validateResourceInput(state State, resources map[string]string) error {
+// planSetResource and planReplaceResource because it needs the live resource
+// report.
+func validateResourceInput(state State, resources map[string]string, clearBefore bool) error {
 	if state == StatePresent && len(resources) == 0 {
 		return errors.New("resources are required when state is present")
+	}
+	// The clear command takes no resources, so a map supplied alongside it
+	// would be silently discarded rather than removed.
+	if state == StateClear && len(resources) > 0 {
+		return errors.New("resources must not be set when state is clear")
+	}
+	// set and clear already own every resource, so clear_before would only
+	// restate them.
+	if clearBefore && (state == StateSet || state == StateClear) {
+		return fmt.Errorf("clear_before is only valid when state is present, got state %s", state)
+	}
+	// The set command marks a resource for removal with the literal value
+	// "clear", so a declared value of "clear" would remove the resource rather
+	// than store it.
+	if state == StateSet {
+		for _, k := range sortedResourceKeys(resources) {
+			if resources[k] == "clear" {
+				return fmt.Errorf("resource %s must not be set to %q when state is set; omit it to clear it", k, "clear")
+			}
+		}
 	}
 	return nil
 }
@@ -138,10 +157,10 @@ func validateResourceInput(state State, resources map[string]string) error {
 // planResource plans a resource task. observe builds the calling task's own
 // type from the resources the probe read and the state they amount to. A
 // present plan without clear_before reads only the resources it declares; a
-// clear-before-set and the absent state own every resource, so they read them
-// all.
+// clear-before-set and the absent, set and clear states own every resource, so
+// they read them all.
 func planResource(ctx context.Context, observe func(resources map[string]string, state State) Task, state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
-	if err := validateResourceInput(state, resources); err != nil {
+	if err := validateResourceInput(state, resources, clearBefore); err != nil {
 		return planErr(err)
 	}
 
@@ -154,7 +173,14 @@ func planResource(ctx context.Context, observe func(resources map[string]string,
 
 	return DispatchPlan(state, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planSetResource(ctx, observe, subcommand, rctx) },
-		StateAbsent:  func() PlanResult { return planClearResource(ctx, observe, subcommand, rctx) },
+		StateAbsent:  func() PlanResult { return planClearResource(ctx, observe, subcommand, rctx, StateAbsent) },
+		StateSet: func() PlanResult {
+			if len(resources) == 0 {
+				return planSetAsClear(planClearResource(ctx, observe, subcommand, rctx, StateClear))
+			}
+			return planReplaceResource(ctx, observe, subcommand, rctx)
+		},
+		StateClear: func() PlanResult { return planClearResource(ctx, observe, subcommand, rctx, StateClear) },
 	})
 }
 
@@ -198,7 +224,7 @@ func planSetResource(ctx context.Context, observe func(map[string]string, State)
 		declared = rctx.Resources
 	}
 	seen := func(r PlanResult) PlanResult {
-		return observedResources(r, observe, currentResources, declared)
+		return observedResources(r, observe, currentResources, declared, false)
 	}
 
 	if len(mutations) == 0 {
@@ -216,8 +242,10 @@ func planSetResource(ctx context.Context, observe func(map[string]string, State)
 }
 
 // observedResources attaches the resources the probe read to r: the set ones
-// among declared, or every set one when declared is nil.
-func observedResources(r PlanResult, observe func(map[string]string, State) Task, current, declared map[string]string) PlanResult {
+// among declared, or every set one when declared is nil. authoritative marks a
+// set or clear plan, which reports what it read as set, or as clear when
+// nothing is set; the other plans report present or absent.
+func observedResources(r PlanResult, observe func(map[string]string, State) Task, current, declared map[string]string, authoritative bool) PlanResult {
 	var held map[string]string
 	for k, v := range current {
 		if !resourceValueIsSet(v) {
@@ -234,10 +262,89 @@ func observedResources(r PlanResult, observe func(map[string]string, State) Task
 		held[k] = v
 	}
 	state := StateAbsent
-	if len(held) > 0 {
+	switch {
+	case authoritative && len(held) > 0:
+		state = StateSet
+	case authoritative:
+		state = StateClear
+	case len(held) > 0:
 		state = StatePresent
 	}
 	return observed(r, observe(held, state), len(held) > 0)
+}
+
+// planReplaceResource reports drift for a set-state resource replacement:
+// after applying, the resources set at the task's scope are exactly the
+// declared ones. It runs a single resource command, since dokku removes a
+// resource whose value is the literal "clear": every declared resource is
+// written and every other resource still set is cleared in the same call, so
+// the scope is never left carrying a mixture of the old and new maps.
+func planReplaceResource(ctx context.Context, observe func(map[string]string, State) Task, subcommand string, rctx ResourceContext) PlanResult {
+	currentResources, err := getResources(ctx, subcommand, rctx)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+
+	for _, k := range sortedResourceKeys(rctx.Resources) {
+		if _, ok := currentResources[k]; !ok {
+			return PlanResult{
+				Status: PlanStatusError,
+				Error:  fmt.Errorf("unknown resource %s, valid resources: %v", k, sortedResourceKeys(currentResources)),
+			}
+		}
+	}
+
+	mutations := []string{}
+	for _, k := range sortedResourceKeys(rctx.Resources) {
+		v := rctx.Resources[k]
+		if currentResources[k] != v {
+			mutations = append(mutations, fmt.Sprintf("set %s=%s (was %q)", k, v, currentResources[k]))
+		}
+	}
+	effective := rctx
+	effective.Resources = map[string]string{}
+	for k, v := range rctx.Resources {
+		effective.Resources[k] = v
+	}
+	for _, k := range sortedResourceKeys(currentResources) {
+		if _, ok := rctx.Resources[k]; ok || !resourceValueIsSet(currentResources[k]) {
+			continue
+		}
+		effective.Resources[k] = "clear"
+		mutations = append(mutations, fmt.Sprintf("clear %s (was %q)", k, currentResources[k]))
+	}
+
+	seen := func(r PlanResult) PlanResult {
+		return observedResources(r, observe, currentResources, nil, true)
+	}
+	if len(mutations) == 0 {
+		return seen(PlanResult{InSync: true, Status: PlanStatusOK})
+	}
+	status := PlanStatusModify
+	if !hasSetResource(currentResources) {
+		status = PlanStatusCreate
+	}
+	inputs := resourceSetInputs(subcommand, effective)
+	return seen(PlanResult{
+		InSync:    false,
+		Status:    status,
+		Reason:    fmt.Sprintf("%d resource change(s)", len(mutations)),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StateSet, inputs)
+		},
+	})
+}
+
+// hasSetResource reports whether any resource in a report holds a set value.
+func hasSetResource(current map[string]string) bool {
+	for _, v := range current {
+		if resourceValueIsSet(v) {
+			return true
+		}
+	}
+	return false
 }
 
 // resourceValueIsSet reports whether a resource report value represents an
@@ -261,23 +368,17 @@ func clearBeforeChanges(current, desired map[string]string) bool {
 	return false
 }
 
-// planClearResource reports drift for an absent-state resource clear.
-func planClearResource(ctx context.Context, observe func(map[string]string, State) Task, subcommand string, rctx ResourceContext) PlanResult {
+// planClearResource reports drift for clearing every resource at the task's
+// scope, for state absent or clear. finalState is the state the apply reports.
+func planClearResource(ctx context.Context, observe func(map[string]string, State) Task, subcommand string, rctx ResourceContext, finalState State) PlanResult {
 	currentResources, err := getResources(ctx, subcommand, rctx)
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 
-	hasResources := false
-	for _, v := range currentResources {
-		if resourceValueIsSet(v) {
-			hasResources = true
-			break
-		}
-	}
-
-	if !hasResources {
-		return observedResources(PlanResult{InSync: true, Status: PlanStatusOK}, observe, currentResources, nil)
+	authoritative := finalState == StateClear
+	if !hasSetResource(currentResources) {
+		return observedResources(PlanResult{InSync: true, Status: PlanStatusOK}, observe, currentResources, nil, authoritative)
 	}
 	inputs := []subprocess.ExecCommandInput{resourceClearInput(subcommand, rctx)}
 	return observedResources(PlanResult{
@@ -286,8 +387,8 @@ func planClearResource(ctx context.Context, observe func(map[string]string, Stat
 		Reason:    "would clear all resources",
 		Mutations: []string{fmt.Sprintf("clear resources via %s-clear", subcommand)},
 		Commands:  resolveCommands(ctx, inputs),
-		apply:     applyResourceClear(subcommand, rctx),
-	}, observe, currentResources, nil)
+		apply:     applyResourceClear(subcommand, rctx, finalState),
+	}, observe, currentResources, nil, authoritative)
 }
 
 // resourceClearInput returns the subprocess input that runs the resource
@@ -330,11 +431,11 @@ func applyResourceSet(subcommand string, rctx ResourceContext) func(ctx context.
 }
 
 // applyResourceClear returns a closure that runs the underlying resource
-// clear command (subcommand + "-clear").
-func applyResourceClear(subcommand string, rctx ResourceContext) func(ctx context.Context) TaskOutputState {
+// clear command (subcommand + "-clear"), reporting finalState.
+func applyResourceClear(subcommand string, rctx ResourceContext, finalState State) func(ctx context.Context) TaskOutputState {
 	inputs := []subprocess.ExecCommandInput{resourceClearInput(subcommand, rctx)}
 	return func(ctx context.Context) TaskOutputState {
-		return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
+		return runExecInputs(ctx, TaskOutputState{State: StatePresent}, finalState, inputs)
 	}
 }
 

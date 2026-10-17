@@ -391,6 +391,16 @@ func deprecationSection(message string) string {
 	return "> **Deprecated:** " + escapeProse(message)
 }
 
+// imperativeSection renders the note for a task that runs an operation rather
+// than declaring a resource, so a reader planning a teardown knows there is
+// nothing to undo.
+func imperativeSection(imperative bool) string {
+	if !imperative {
+		return ""
+	}
+	return "> **Imperative:** this task runs an operation rather than declaring a resource. It has nothing to undo, so it offers no `absent` or `clear` state."
+}
+
 // returnValuesSection is the shared Return Values table. Every task returns a
 // tasks.TaskOutputState, so the table is identical across pages. The keys are
 // the Go field names because that is how recipes reference them through
@@ -441,6 +451,9 @@ func renderPage(schema tasks.TaskSchema) string {
 	sections = append(sections, "## Synopsis\n\n"+escapeProse(schema.Synopsis))
 	if dep := deprecationSection(schema.Deprecation); dep != "" {
 		sections = append(sections, dep)
+	}
+	if imp := imperativeSection(schema.Imperative); imp != "" {
+		sections = append(sections, imp)
 	}
 	if req := requirementsSection(schema.MinimumDokkuVersion, schema.Requirements); req != "" {
 		sections = append(sections, strings.TrimRight(req, "\n"))

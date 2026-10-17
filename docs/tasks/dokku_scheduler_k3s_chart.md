@@ -25,8 +25,8 @@ Keyed by `chart`. Manages the whole `values` collection; entries are identified 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `chart` | string | yes |  |  | Name of the helm chart whose values to set (validated by dokku against its bundled HelmCharts list). |
-| `values` | dict | yes |  |  | Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \. so they reach Helm as a single annotation/label key. |
-| `state` | string | no | present | present, absent | Desired state of the chart values. |
+| `values` | dict | no |  |  | Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \. so they reach Helm as a single annotation/label key. Required for states 'present' and 'absent'; omit for state 'clear'. |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the chart values. 'set' and 'clear' write one value per command, so a failure partway through leaves the chart with a mixture of the old and new values. |
 
 ## Examples
 
@@ -63,6 +63,24 @@ dokku_scheduler_k3s_chart:
         service:
             annotations:
                 service.beta.kubernetes.io/aws-load-balancer-type: nlb
+```
+
+### Replace the chart's values with exactly these
+
+```yaml
+dokku_scheduler_k3s_chart:
+    chart: ingress-nginx
+    values:
+        controller.replicaCount: "2"
+    state: set
+```
+
+### Clear every value for a chart
+
+```yaml
+dokku_scheduler_k3s_chart:
+    chart: ingress-nginx
+    state: clear
 ```
 
 ### Clear specific chart values

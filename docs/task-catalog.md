@@ -57,6 +57,12 @@ One JSON object, pretty-printed, with a `version` and a `tasks` array sorted by 
 }
 ```
 
+A task that runs an operation rather than declaring a resource also carries `"imperative": true`
+after its synopsis (or its deprecation notice). It has nothing to undo, so it offers no `absent` or
+`clear` state, and a consumer that tears down what it applied can skip it. The key is absent on every
+declarative task. Today the imperative tasks are `dokku_app_clone`, `dokku_git_sync`,
+`dokku_git_from_archive` and `dokku_git_from_image`.
+
 Every name in the document is a key a recipe author types. Go type names and Go field names are
 deliberately absent - the catalog describes the recipe surface, not docket's implementation.
 

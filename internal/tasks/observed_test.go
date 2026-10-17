@@ -642,7 +642,7 @@ func TestReadTask(t *testing.T) {
 	if err != nil || exists || !reflect.DeepEqual(got, AppTask{App: "gone", State: StateAbsent}) {
 		t.Errorf("absent: got %#v, %v, %v", got, exists, err)
 	}
-	if _, _, err := ReadTask(ctx, ConfigTask{App: "web", State: StateSet}); err == nil {
+	if _, _, err := ReadTask(ctx, ConfigTask{App: "web", Config: map[string]string{"KEY": "one"}, State: StateClear}); err == nil {
 		t.Error("an invalid task read without error")
 	}
 	if _, _, err := ReadTask(ctx, nil); err == nil {

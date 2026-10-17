@@ -406,9 +406,8 @@ func TestSchedulerK3sAutoscalingAuthValidateStates(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "set rejects an empty map",
-			task:    SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", State: StateSet},
-			wantErr: "'metadata' must not be empty for state 'set'",
+			name: "set accepts an empty map, which plans as clear",
+			task: SchedulerK3sAutoscalingAuthTask{App: "a", Trigger: "datadog", State: StateSet},
 		},
 		{
 			name:    "clear rejects a map",

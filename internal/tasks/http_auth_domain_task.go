@@ -118,9 +118,6 @@ func (t HttpAuthDomainTask) Validate() error {
 	if t.State == StateAbsent && len(t.Domains) == 0 {
 		return fmt.Errorf("'domains' must not be empty for state 'absent'")
 	}
-	if t.State == StateSet && len(t.Domains) == 0 {
-		return fmt.Errorf("'domains' must not be empty for state 'set'")
-	}
 	// http-auth:set-domains is called with no domains to clear, so a list
 	// supplied alongside it would be silently discarded rather than removed.
 	if t.State == StateClear && len(t.Domains) > 0 {
@@ -140,8 +137,13 @@ func (t HttpAuthDomainTask) Plan(ctx context.Context) PlanResult {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planHttpAuthDomainsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planHttpAuthDomainsAbsent(ctx, t) },
-		StateSet:     func() PlanResult { return planHttpAuthDomainsSet(ctx, t) },
-		StateClear:   func() PlanResult { return planHttpAuthDomainsClear(ctx, t) },
+		StateSet: func() PlanResult {
+			if len(t.Domains) == 0 {
+				return planSetAsClear(planHttpAuthDomainsClear(ctx, t))
+			}
+			return planHttpAuthDomainsSet(ctx, t)
+		},
+		StateClear: func() PlanResult { return planHttpAuthDomainsClear(ctx, t) },
 	})
 }
 

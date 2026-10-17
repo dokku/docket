@@ -19,7 +19,7 @@ type HttpAuthUserTask struct {
 	// Users is the list of HTTP auth users to add or remove. The docs generator
 	// lists an item's field names but cannot express that password and hash are
 	// alternatives, nor that both are secret, so this description carries it.
-	Users []HttpAuthUser `required:"false" identity:"collection" ordered:"false" yaml:"users" description:"List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive"`
+	Users []HttpAuthUser `required:"false" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive"`
 
 	// UpdatePassword re-issues http-auth:add-user for users that already exist
 	// so their password converges. Cleartext passwords are not exposed in the
@@ -29,10 +29,9 @@ type HttpAuthUserTask struct {
 	// a *bool so the value survives decoding unchanged; nil defaults to false.
 	UpdatePassword *bool `required:"false" apply_only:"true" yaml:"update_password,omitempty" default:"false" description:"Re-issue add-user for users that already exist so their cleartext password converges. Users given by hash converge on their own and ignore this"`
 
-	// State is the desired state of the HTTP auth users. There is no `clear`
-	// state, unlike the sibling dokku_http_auth_domain: `absent` with an empty
-	// `users` already removes every user.
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set" description:"Desired state of the HTTP auth users"`
+	// State is the desired state of the HTTP auth users. `absent` with an
+	// empty `users` predates `clear` and still removes every user.
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the HTTP auth users"`
 }
 
 // HttpAuthUser represents a single HTTP auth user. Exactly one of Password and
@@ -183,7 +182,7 @@ func (t HttpAuthUserTask) examples() ([]Doc, error) {
 			Name: "Remove all HTTP auth users from an app",
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App:   "hello-world",
-				State: StateAbsent,
+				State: StateClear,
 			},
 		},
 	})
@@ -229,10 +228,16 @@ func (t HttpAuthUserTask) Validate() error {
 			}
 		}
 	}
+	// Clearing removes every user the server holds, so a list supplied
+	// alongside it would be silently discarded rather than removed.
+	if t.State == StateClear && len(t.Users) > 0 {
+		return fmt.Errorf("'users' must not be set for state 'clear'")
+	}
+	// An empty set plans as clear; present needs a user to write.
+	if t.State == StatePresent && len(t.Users) == 0 {
+		return fmt.Errorf("'users' must not be empty for state '%s'", t.State)
+	}
 	if t.State == StatePresent || t.State == StateSet {
-		if len(t.Users) == 0 {
-			return fmt.Errorf("'users' must not be empty for state '%s'", t.State)
-		}
 		for _, u := range t.Users {
 			if u.Password == "" && u.Hash == "" {
 				return fmt.Errorf("one of 'password' or 'hash' is required for user %q when state is '%s'", u.Username, t.State)
@@ -252,53 +257,70 @@ func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planHttpAuthUsersPresent(ctx, t) },
-		StateSet:     func() PlanResult { return planHttpAuthUsersSet(ctx, t) },
-		StateAbsent: func() PlanResult {
-			current, err := getHttpAuthUsers(ctx, t.App)
-			if err != nil {
-				return PlanResult{Status: PlanStatusError, Error: err}
-			}
-			hashes, hashesRead := readHttpAuthUserHashesForObserved(ctx, t.App)
-			// An absent task naming no users removes every one, so it owns the
-			// whole list; one naming users reads only those.
-			seen := func(r PlanResult) PlanResult {
-				return observedHttpAuthUsers(t, r, current, hashes, hashesRead, len(t.Users) == 0)
-			}
-			toRemove := []string{}
+		StateSet: func() PlanResult {
 			if len(t.Users) == 0 {
-				for u := range current {
-					toRemove = append(toRemove, u)
-				}
-				sort.Strings(toRemove)
-			} else {
-				for _, u := range t.Users {
-					if current[u.Username] {
-						toRemove = append(toRemove, u.Username)
-					}
-				}
+				return planSetAsClear(planHttpAuthUsersRemove(ctx, t, StateClear))
 			}
-			if len(toRemove) == 0 {
-				return seen(PlanResult{InSync: true, Status: PlanStatusOK})
+			return planHttpAuthUsersSet(ctx, t)
+		},
+		StateAbsent: func() PlanResult { return planHttpAuthUsersRemove(ctx, t, StateAbsent) },
+		StateClear:  func() PlanResult { return planHttpAuthUsersRemove(ctx, t, StateClear) },
+	})
+}
+
+// planHttpAuthUsersRemove reports drift for removing users: the ones t names,
+// or every user on the app when t names none, which is what clear always does
+// and what absent with no users has always done. finalState is the state the
+// apply reports.
+//
+// The plugin has no command that removes every user, and import-users refuses
+// an empty stream even with --replace, so emptying the list is one
+// http-auth:remove-user per user. Unlike the sibling http-auth list tasks that
+// is not atomic: a failure partway through leaves the users not yet reached.
+func planHttpAuthUsersRemove(ctx context.Context, t HttpAuthUserTask, finalState State) PlanResult {
+	current, err := getHttpAuthUsers(ctx, t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	hashes, hashesRead := readHttpAuthUserHashesForObserved(ctx, t.App)
+	// A plan naming no users removes every one, so it owns the whole list;
+	// one naming users reads only those.
+	seen := func(r PlanResult) PlanResult {
+		return observedHttpAuthUsers(t, r, current, hashes, hashesRead, len(t.Users) == 0)
+	}
+	toRemove := []string{}
+	if len(t.Users) == 0 {
+		for u := range current {
+			toRemove = append(toRemove, u)
+		}
+		sort.Strings(toRemove)
+	} else {
+		for _, u := range t.Users {
+			if current[u.Username] {
+				toRemove = append(toRemove, u.Username)
 			}
-			mutations := make([]string, 0, len(toRemove))
-			inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
-			for _, u := range toRemove {
-				mutations = append(mutations, "remove "+u)
-				inputs = append(inputs, subprocess.ExecCommandInput{
-					Command: "dokku",
-					Args:    []string{"--quiet", "http-auth:remove-user", t.App, u},
-				})
-			}
-			return seen(PlanResult{
-				InSync:    false,
-				Status:    PlanStatusDestroy,
-				Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
-				Mutations: mutations,
-				Commands:  resolveCommands(ctx, inputs),
-				apply: func(ctx context.Context) TaskOutputState {
-					return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
-				},
-			})
+		}
+	}
+	if len(toRemove) == 0 {
+		return seen(PlanResult{InSync: true, Status: PlanStatusOK})
+	}
+	mutations := make([]string, 0, len(toRemove))
+	inputs := make([]subprocess.ExecCommandInput, 0, len(toRemove))
+	for _, u := range toRemove {
+		mutations = append(mutations, "remove "+u)
+		inputs = append(inputs, subprocess.ExecCommandInput{
+			Command: "dokku",
+			Args:    []string{"--quiet", "http-auth:remove-user", t.App, u},
+		})
+	}
+	return seen(PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    fmt.Sprintf("%d user(s) to remove", len(toRemove)),
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, finalState, inputs)
 		},
 	})
 }
@@ -499,10 +521,9 @@ func readHttpAuthUserHashesForObserved(ctx context.Context, app string) (map[str
 // observedHttpAuthUsers attaches the users the probe read to r, each with the hash
 // http-auth:export-users reports for it - the form export emits, since a
 // cleartext password is never readable. An additive plan reads only the users
-// it names, as present or absent; one that owns the list (set, or absent with
-// no users) reads every user, as set, or as absent when there are none - the
-// task has no clear state, absent with no users is how it says that. Nothing
-// is attached when the hashes could not be read.
+// it names, as present or absent; one that owns the list (set, clear, or
+// absent with no users) reads every user, as set, or as clear when there are
+// none. Nothing is attached when the hashes could not be read.
 func observedHttpAuthUsers(t HttpAuthUserTask, r PlanResult, current map[string]bool, hashes map[string]string, hashesRead, whole bool) PlanResult {
 	if !hashesRead {
 		return r
@@ -530,6 +551,8 @@ func observedHttpAuthUsers(t HttpAuthUserTask, r PlanResult, current map[string]
 	switch {
 	case whole && len(users) > 0:
 		state = StateSet
+	case whole:
+		state = StateClear
 	case len(users) > 0:
 		state = StatePresent
 	}

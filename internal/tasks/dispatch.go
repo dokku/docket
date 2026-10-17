@@ -77,6 +77,28 @@ func DispatchPlan(state State, funcMap map[State]func() PlanResult) PlanResult {
 	return result
 }
 
+// planSetAsClear adapts a task's `clear` plan to stand in for a `set` that
+// declares an empty collection. Declaring "this collection is empty" is a set
+// like any other, so it plans exactly what `clear` plans, and a consumer that
+// owns a collection can map every create and update to `set` without
+// switching states when the collection happens to be empty. The apply still
+// reports `set`, the state the recipe declared, since ExecutePlan's callers
+// treat any other final state as a failed apply.
+func planSetAsClear(r PlanResult) PlanResult {
+	apply := r.apply
+	if apply == nil {
+		return r
+	}
+	r.apply = func(ctx context.Context) TaskOutputState {
+		out := apply(ctx)
+		if out.Error == nil {
+			out.State = StateSet
+		}
+		return out
+	}
+	return r
+}
+
 // ExecutePlan applies a PlanResult to the server. It is the canonical
 // implementation of Task.Execute(): each task's Execute body is
 // `return ExecutePlan(ctx, t.Plan(ctx))`. ExecutePlan ensures the existing

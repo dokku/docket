@@ -11,14 +11,14 @@ type ResourceReserveTask struct {
 	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to set resource reservations for"`
 
 	// Resources is a map of resource type to quantity
-	Resources map[string]string `identity:"collection" yaml:"resources" description:"Map of resource type to quantity"`
+	Resources map[string]string `identity:"collection" yaml:"resources,omitempty" description:"Map of resource type to quantity; omit for state 'clear'"`
 
 	// ClearBefore clears all resource reservations before applying new ones. It
 	// is a *bool so the value survives decoding unchanged; nil defaults to false.
 	ClearBefore *bool `apply_only:"true" yaml:"clear_before,omitempty" default:"false" description:"ClearBefore clears all resource reservations before applying new ones"`
 
 	// State is the desired state of the resource reservations
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the resource reservations"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the resource reservations"`
 }
 
 // ResourceReserveTaskExample contains an example of a ResourceReserveTask
@@ -80,10 +80,20 @@ func (t ResourceReserveTask) examples() ([]Doc, error) {
 			},
 		},
 		{
+			Name: "Replace the resource reservations with exactly these",
+			ResourceReserveTask: ResourceReserveTask{
+				App: "hello-world",
+				Resources: map[string]string{
+					"memory": "256",
+				},
+				State: StateSet,
+			},
+		},
+		{
 			Name: "Clear all resource reservations",
 			ResourceReserveTask: ResourceReserveTask{
 				App:   "hello-world",
-				State: StateAbsent,
+				State: StateClear,
 			},
 		},
 	})
@@ -103,7 +113,7 @@ func (t ResourceReserveTask) ExportApp(ctx context.Context, app string) ([]inter
 
 // Validate checks the ResourceReserveTask's inputs without contacting the server.
 func (t ResourceReserveTask) Validate() error {
-	return validateResourceInput(t.State, t.Resources)
+	return validateResourceInput(t.State, t.Resources, boolValue(t.ClearBefore, false))
 }
 
 // Plan reports the drift the ResourceReserveTask would produce.

@@ -161,14 +161,15 @@ func (t SchedulerK3sNodeSysctlsTask) Validate() error {
 	}
 
 	// :clear takes no sysctls, so a map supplied alongside it would be silently
-	// discarded rather than removed. Every other state consumes one.
+	// discarded rather than removed. An empty set plans as clear, and the
+	// additive states each consume a sysctl.
 	if effective == StateClear {
 		if len(t.Sysctls) > 0 {
 			return errors.New("'sysctls' must not be set for state 'clear'")
 		}
 		return nil
 	}
-	if len(t.Sysctls) == 0 {
+	if len(t.Sysctls) == 0 && effective != StateSet {
 		return fmt.Errorf("'sysctls' must not be empty for state '%s'", effective)
 	}
 
@@ -225,6 +226,9 @@ func (t SchedulerK3sNodeSysctlsTask) Plan(ctx context.Context) PlanResult {
 			return planPairsUnset(ctx, observe, "sysctl", t.Sysctls, current, t.setCommand)
 		},
 		StateSet: func() PlanResult {
+			if len(t.Sysctls) == 0 {
+				return planSetAsClear(planPairsClear(ctx, observe, "sysctl", current, t.clearCommand))
+			}
 			return planPairsReplace(ctx, observe, "sysctl", t.Sysctls, current, t.replaceCommand)
 		},
 		StateClear: func() PlanResult {

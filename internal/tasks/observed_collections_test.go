@@ -80,6 +80,17 @@ func observedCollectionFixtures() map[string]observedFixture {
 					task: ResourceLimitTask{App: "web", ProcessType: "worker", State: StateAbsent},
 					want: ResourceLimitTask{App: "web", ProcessType: "worker", State: StateAbsent},
 				},
+				{
+					name:   "set reads every resource",
+					task:   ResourceLimitTask{App: "web", Resources: map[string]string{"cpu": "100"}, State: StateSet},
+					want:   ResourceLimitTask{App: "web", Resources: map[string]string{"cpu": "100", "memory": "512"}, State: StateSet},
+					exists: true,
+				},
+				{
+					name: "clear on a process type with nothing set",
+					task: ResourceLimitTask{App: "web", ProcessType: "worker", State: StateClear},
+					want: ResourceLimitTask{App: "web", ProcessType: "worker", State: StateClear},
+				},
 			},
 		},
 		"dokku_resource_reserve": {
@@ -99,6 +110,12 @@ func observedCollectionFixtures() map[string]observedFixture {
 					name:   "absent with something set reads it all",
 					task:   ResourceReserveTask{App: "web", State: StateAbsent},
 					want:   ResourceReserveTask{App: "web", Resources: map[string]string{"memory": "256"}, State: StatePresent},
+					exists: true,
+				},
+				{
+					name:   "clear with something set reads it as set",
+					task:   ResourceReserveTask{App: "web", State: StateClear},
+					want:   ResourceReserveTask{App: "web", Resources: map[string]string{"memory": "256"}, State: StateSet},
 					exists: true,
 				},
 			},
@@ -170,6 +187,17 @@ func observedCollectionFixtures() map[string]observedFixture {
 					task: SchedulerK3sChartTask{Chart: "cert-manager", Values: map[string]any{"installCRDs": "true"}, State: StateAbsent},
 					want: SchedulerK3sChartTask{Chart: "cert-manager", State: StateAbsent},
 				},
+				{
+					name:   "set reads every value of the chart",
+					task:   SchedulerK3sChartTask{Chart: "ingress-nginx", Values: map[string]any{"controller.service.type": "NodePort"}, State: StateSet},
+					want:   SchedulerK3sChartTask{Chart: "ingress-nginx", Values: map[string]any{"controller.replicaCount": "3"}, State: StateSet},
+					exists: true,
+				},
+				{
+					name: "clear on a chart with no values",
+					task: SchedulerK3sChartTask{Chart: "cert-manager", State: StateClear},
+					want: SchedulerK3sChartTask{Chart: "cert-manager", State: StateClear},
+				},
 			},
 		},
 		"dokku_scheduler_k3s_node_sysctls": {
@@ -237,6 +265,17 @@ func observedCollectionFixtures() map[string]observedFixture {
 					task:   BuildpacksTask{App: "web", State: StateAbsent},
 					want:   BuildpacksTask{App: "web", Buildpacks: []string{"https://github.com/heroku/heroku-buildpack-nodejs.git", "https://github.com/heroku/heroku-buildpack-ruby.git"}, State: StatePresent},
 					exists: true,
+				},
+				{
+					name:   "set reads every buildpack in order",
+					task:   BuildpacksTask{App: "web", Buildpacks: []string{"https://github.com/heroku/heroku-buildpack-ruby.git"}, State: StateSet},
+					want:   BuildpacksTask{App: "web", Buildpacks: []string{"https://github.com/heroku/heroku-buildpack-nodejs.git", "https://github.com/heroku/heroku-buildpack-ruby.git"}, State: StateSet},
+					exists: true,
+				},
+				{
+					name: "clear on an app with no buildpacks",
+					task: BuildpacksTask{App: "empty", State: StateClear},
+					want: BuildpacksTask{App: "empty", State: StateClear},
 				},
 				{
 					name: "absent on an app with none",

@@ -48,6 +48,12 @@ func (t GitFromArchiveTask) Doc() string {
 	return "Deploys a git repository from an archive URL"
 }
 
+// Imperative reports that the task runs an operation rather than declaring
+// a resource: deploying an archive has nothing to undo.
+func (t GitFromArchiveTask) Imperative() bool {
+	return true
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t GitFromArchiveTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
