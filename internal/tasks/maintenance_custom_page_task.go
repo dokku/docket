@@ -147,7 +147,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 			return r
 		}
 		if current == "" {
-			return observed(r, MaintenanceCustomPageTask{App: t.App, State: StateAbsent}, false)
+			return observed(r, t, MaintenanceCustomPageTask{App: t.App, State: StateAbsent}, false)
 		}
 		content, _, err := maintenanceCustomPageExport(ctx, t.App)
 		if err != nil {
@@ -159,7 +159,7 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 			// is known to be installed but its content is not.
 			content = ""
 		}
-		return observed(r, MaintenanceCustomPageTask{App: t.App, Content: content, State: StatePresent}, true)
+		return observed(r, t, MaintenanceCustomPageTask{App: t.App, Content: content, State: StatePresent}, true)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

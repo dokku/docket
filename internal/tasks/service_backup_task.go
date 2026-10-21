@@ -446,7 +446,7 @@ func observedServiceBackup(t ServiceBackupTask, r PlanResult, info map[string]st
 	if exists {
 		o.State = StatePresent
 	}
-	return observed(r, o, exists)
+	return observed(r, t, o, exists)
 }
 
 // init registers the ServiceBackupTask with the task registry

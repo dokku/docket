@@ -41,6 +41,42 @@ func TestReadTaskReadsTheDeclaredKeys(t *testing.T) {
 	}
 }
 
+// TestReadTaskReturnsTheDeclaredTaskInSync pins #637: a formation that plans
+// in sync reads back as declared, including a process type at zero that the
+// server's report leaves out, so a consumer diffing the read against the task
+// sees no change. ReadAddress, with no declared task, reads what the server
+// reports.
+func TestReadTaskReturnsTheDeclaredTaskInSync(t *testing.T) {
+	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") == "--quiet ps:scale web" {
+			return sdk.ExecCommandResponse{Stdout: "-----> Scaling for web\nproctype: qty\n--------: ---\nweb:  2\nworker: 0"}, nil
+		}
+		return sdk.ExecCommandResponse{}, nil
+	})
+
+	task := sdk.PsScaleTask{App: "web", Scale: map[string]int{"web": 2, "worker": 0}, State: sdk.StateSet}
+	plan := task.Plan(ctx)
+	if !plan.InSync {
+		t.Fatalf("plan reports drift: %s", plan.Reason)
+	}
+	got, exists, err := sdk.ReadTask(ctx, task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, task) || !exists {
+		t.Errorf("ReadTask = %#v (exists %v), want the declared task", got, exists)
+	}
+	if !reflect.DeepEqual(plan.Observed, got) || plan.Exists != exists {
+		t.Errorf("Plan observed %#v (exists %v), ReadTask %#v (exists %v)", plan.Observed, plan.Exists, got, exists)
+	}
+
+	got, _, err = sdk.ReadAddress(ctx, "dokku_ps_scale[app=web]")
+	want := sdk.PsScaleTask{App: "web", Scale: map[string]int{"web": 2}, State: sdk.StateSet}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("ReadAddress = %#v, %v; want %#v", got, err, want)
+	}
+}
+
 func TestReadAddressReadsTheWholeResource(t *testing.T) {
 	fake := newFakeDokku("0.99.0")
 	ctx := sdk.NewSession(nil, sdk.WithVersionGate()).Context(fake.context(), sdk.Target{})

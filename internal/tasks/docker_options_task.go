@@ -169,7 +169,7 @@ func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
 		if present {
 			o.State = StatePresent
 		}
-		return observed(r, o, present)
+		return observed(r, t, o, present)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

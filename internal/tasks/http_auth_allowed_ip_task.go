@@ -430,7 +430,7 @@ func (t HttpAuthAllowedIpTask) ExportApp(ctx context.Context, app string) ([]int
 // httpAuthObservedMembers.
 func observedHttpAuthAllowedIps(t HttpAuthAllowedIpTask, r PlanResult, current map[string]bool, whole bool) PlanResult {
 	held, state := httpAuthObservedMembers(current, t.AllowedIps, whole)
-	return observed(r, HttpAuthAllowedIpTask{App: t.App, AllowedIps: held, State: state}, len(held) > 0)
+	return observed(r, t, HttpAuthAllowedIpTask{App: t.App, AllowedIps: held, State: state}, len(held) > 0)
 }
 
 // init registers the HttpAuthAllowedIpTask with the task registry

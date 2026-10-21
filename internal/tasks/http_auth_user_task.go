@@ -544,7 +544,7 @@ func observedHttpAuthUsers(t HttpAuthUserTask, r PlanResult, current map[string]
 	case len(users) > 0:
 		state = StatePresent
 	}
-	return observed(r, HttpAuthUserTask{App: t.App, Users: users, State: state}, len(users) > 0)
+	return observed(r, t, HttpAuthUserTask{App: t.App, Users: users, State: state}, len(users) > 0)
 }
 
 // httpAuthUserUpsertInputs renders the commands that add or update users. Hash

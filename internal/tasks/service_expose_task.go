@@ -314,5 +314,5 @@ func observedServiceExpose(t ServiceExposeTask, r PlanResult, state State, curre
 			o.State = StateSet
 		}
 	}
-	return observed(r, o, len(current) > 0)
+	return observed(r, t, o, len(current) > 0)
 }

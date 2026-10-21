@@ -674,11 +674,11 @@ func storageEntryTaskFrom(e storageEntry) StorageEntryTask {
 // alone, absent, when there is not.
 func observedStorageEntry(t StorageEntryTask, r PlanResult, entry *storageEntry) PlanResult {
 	if entry == nil {
-		return observed(r, StorageEntryTask{Name: t.Name, State: StateAbsent}, false)
+		return observed(r, t, StorageEntryTask{Name: t.Name, State: StateAbsent}, false)
 	}
 	o := storageEntryTaskFrom(*entry)
 	o.State = StatePresent
-	return observed(r, o, true)
+	return observed(r, t, o, true)
 }
 
 // storageEntry mirrors the JSON dokku's storage:list-entries emits.

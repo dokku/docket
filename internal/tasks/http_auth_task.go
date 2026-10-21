@@ -187,7 +187,7 @@ func observedHttpAuth(t HttpAuthTask, r PlanResult, enabled bool) PlanResult {
 	if enabled {
 		o.State = StatePresent
 	}
-	return observed(r, o, enabled)
+	return observed(r, t, o, enabled)
 }
 
 // httpAuthEnabled checks if HTTP authentication is enabled for an app by

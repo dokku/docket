@@ -267,9 +267,9 @@ func validateSchedulerK3sProfile(t SchedulerK3sProfileTask) error {
 // stored definition when found, or just its name as absent.
 func observedSchedulerK3sProfile(r PlanResult, t SchedulerK3sProfileTask, current schedulerK3sProfileEntry, found bool) PlanResult {
 	if !found {
-		return observed(r, SchedulerK3sProfileTask{Name: t.Name, State: StateAbsent}, false)
+		return observed(r, t, SchedulerK3sProfileTask{Name: t.Name, State: StateAbsent}, false)
 	}
-	return observed(r, SchedulerK3sProfileTask{
+	return observed(r, t, SchedulerK3sProfileTask{
 		Name:              t.Name,
 		Role:              current.Role,
 		KubeletArgs:       current.KubeletArgs,
@@ -290,7 +290,7 @@ func (t SchedulerK3sProfileTask) readAddress(ctx context.Context) (Task, bool, e
 	if err != nil {
 		return nil, false, err
 	}
-	return observedResult(observedSchedulerK3sProfile(PlanResult{Status: PlanStatusOK}, t, current, found))
+	return observedResult(observedSchedulerK3sProfile(PlanResult{Status: PlanStatusOK}, t, current, found), true)
 }
 
 // planSchedulerK3sProfileSet probes for the named profile and, if its

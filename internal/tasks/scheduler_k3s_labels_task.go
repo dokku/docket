@@ -177,6 +177,7 @@ func (t SchedulerK3sLabelsTask) spec() schedulerK3sScopedPairsSpec {
 		ProcessType:  t.ProcessType,
 		ResourceType: t.ResourceType,
 		Pairs:        t.Labels,
+		Planned:      t,
 		Observe: func(pairs map[string]string, state State) Task {
 			return SchedulerK3sLabelsTask{App: t.App, Global: t.Global, ProcessType: t.ProcessType, ResourceType: t.ResourceType, Labels: pairs, State: state}
 		},

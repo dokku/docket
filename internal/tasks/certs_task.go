@@ -176,7 +176,7 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 		if enabled {
 			o.State = StatePresent
 		}
-		return observed(r, o, enabled)
+		return observed(r, t, o, enabled)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

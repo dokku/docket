@@ -118,7 +118,7 @@ func (t MaintenanceTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	return planToggle(ctx, func(f ToggleFields) Task { return MaintenanceTask(f) }, t.State, t.App, "maintenance:enable", "maintenance:disable", maintenanceEnabled)
+	return planToggle(ctx, t, func(f ToggleFields) Task { return MaintenanceTask(f) }, t.State, t.App, "maintenance:enable", "maintenance:disable", maintenanceEnabled)
 }
 
 // init registers the MaintenanceTask with the task registry

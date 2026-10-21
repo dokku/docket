@@ -111,15 +111,15 @@ func (t AppCloneTask) Validate() error {
 	return nil
 }
 
-// observedAppClone attaches whether app exists to r. Only the target app's
+// observedAppClone attaches whether t's app exists to r. Only the target app's
 // existence is read; the clone source is apply-only, so Observed carries the
 // app alone.
-func observedAppClone(r PlanResult, app string, exists bool) PlanResult {
-	o := AppCloneTask{App: app, State: StateAbsent}
+func observedAppClone(r PlanResult, t AppCloneTask, exists bool) PlanResult {
+	o := AppCloneTask{App: t.App, State: StateAbsent}
 	if exists {
 		o.State = StatePresent
 	}
-	return observed(r, o, exists)
+	return observed(r, t, o, exists)
 }
 
 // readAddress reads the app an address names without a clone source, which
@@ -129,7 +129,7 @@ func (t AppCloneTask) readAddress(ctx context.Context) (Task, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return observedResult(observedAppClone(PlanResult{Status: PlanStatusOK}, t.App, exists))
+	return observedResult(observedAppClone(PlanResult{Status: PlanStatusOK}, t, exists), true)
 }
 
 // Plan reports the drift the AppCloneTask would produce.
@@ -144,7 +144,7 @@ func (t AppCloneTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			seen := func(r PlanResult) PlanResult {
-				return observedAppClone(r, t.App, exists)
+				return observedAppClone(r, t, exists)
 			}
 			if exists {
 				return seen(PlanResult{InSync: true, Status: PlanStatusOK})

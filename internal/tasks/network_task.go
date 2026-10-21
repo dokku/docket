@@ -91,7 +91,7 @@ func (t NetworkTask) Plan(ctx context.Context) PlanResult {
 		if exists {
 			o.State = StatePresent
 		}
-		return observed(r, o, exists)
+		return observed(r, t, o, exists)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

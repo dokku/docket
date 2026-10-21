@@ -326,17 +326,28 @@ type PlanResult struct {
 	// raw and masked at emit time, mirroring Reason. Empty when no diagnostic.
 	Warnings []PlanWarning
 
-	// Observed is the task as the probe found it on the server: the value
-	// type registered for the task (AppTask, never *AppTask), with the
-	// identity keys copied from the planned task and every field the server
-	// reports filled from what was read. Fields tagged write_only or
-	// apply_only are left at their zero value or default, and every other
-	// field is one a read can fill. State is the state that, declared with Observed's fields, would
-	// plan in sync, so a property read as unset carries StateAbsent.
+	// Observed is the task as the server holds it, in the value type
+	// registered for the task (AppTask, never *AppTask). Fields tagged
+	// write_only or apply_only are left at their zero value or default, since
+	// a read never fills them.
 	//
-	// A collection planned in an additive state (dokku_config's present or
-	// absent) carries only the members the planned task names; a state that
-	// owns the whole collection (set, clear) carries every member it owns.
+	// When InSync is true, every field the planned task sets is carried as
+	// declared: a plan in sync has found the server holding what the task
+	// declares, even when the probe reads it back in another form (a process
+	// type scaled to zero, a list in another order). A field the planned task
+	// leaves at its zero value, such as an image it does not pin, declares
+	// nothing and carries what the probe read. A consumer diffing Observed
+	// against the declared task then sees no change that Plan would not
+	// report either.
+	//
+	// When the plan reports drift, Observed is what the probe read: the
+	// identity keys copied from the planned task and every field the server
+	// reports filled from the read. State is the state that, declared with
+	// Observed's fields, would plan in sync, so a property read as unset
+	// carries StateAbsent. A collection planned in an additive state
+	// (dokku_config's present or absent) carries only the members the planned
+	// task names; a state that owns the whole collection (set, clear) carries
+	// every member it owns.
 	//
 	// nil when Error is set, and when the probe could not read the state:
 	// a task whose ProbeSupport is unsupported, or a probe failure the plan
@@ -344,11 +355,19 @@ type PlanResult struct {
 	// mask them before showing them.
 	Observed Task
 
-	// Exists reports whether the resource is on the server: true when
-	// Observed's State is present (or set) and, for a collection, when at
-	// least one member Observed carries is there. Meaningful only when
-	// Observed is non-nil.
+	// Exists reports whether the resource is on the server. When InSync is
+	// true it follows the declared state: true unless Observed's State is
+	// absent or clear, so a collection declared in set with no member the
+	// server reports (a formation scaled to zero, an empty map) still exists.
+	// On drift it is true when the read State is present (or set) and, for a
+	// collection, when at least one member Observed carries is there.
+	// Meaningful only when Observed is non-nil.
 	Exists bool
+
+	// read and readExists are what the probe read, whatever InSync is.
+	// ReadAddress returns them: it has no declared task to return.
+	read       Task
+	readExists bool
 
 	// apply, when non-nil, is the closure ExecutePlan invokes to mutate
 	// server state. nil when InSync. Captures any probed state needed for
@@ -376,13 +395,22 @@ func planErr(err error) PlanResult {
 // failure was treated as drift rather than as an error.
 var ErrStateUnreadable = errors.New("the task's current state cannot be read")
 
-// observed attaches the state the probe read to a plan result. It returns r
-// unchanged when r is an error, so a branch can pass every result through it.
-func observed(r PlanResult, t Task, exists bool) PlanResult {
+// observed attaches the state the probe read to a plan result. declared is the
+// planned task, which Observed carries instead of read when r is in sync. It
+// returns r unchanged when r is an error, so a branch can pass every result
+// through it.
+func observed(r PlanResult, declared, read Task, exists bool) PlanResult {
 	if r.Error != nil {
 		return r
 	}
-	r.Observed = t
+	r.read = read
+	r.readExists = exists
+	if r.InSync {
+		r.Observed = declaredObserved(declared, read)
+		r.Exists = declaresPresent(r.Observed)
+		return r
+	}
+	r.Observed = read
 	r.Exists = exists
 	return r
 }
@@ -397,13 +425,14 @@ func ReadTask(ctx context.Context, t Task) (Task, bool, error) {
 	if t == nil {
 		return nil, false, errors.New("nil task")
 	}
-	return planRead(ctx, t)
+	return planRead(ctx, t, false)
 }
 
 // observedResult is what ReadTask and ReadAddress return for a plan: its
 // error, an error wrapping ErrStateUnreadable when it observed nothing, or
-// what it observed.
-func observedResult(p PlanResult) (Task, bool, error) {
+// what it observed. raw returns what the probe read even when the plan is in
+// sync, rather than the declared task, as ReadAddress does.
+func observedResult(p PlanResult, raw bool) (Task, bool, error) {
 	if p.Error != nil {
 		return nil, false, p.Error
 	}
@@ -412,6 +441,9 @@ func observedResult(p PlanResult) (Task, bool, error) {
 			return nil, false, fmt.Errorf("%w: %s", ErrStateUnreadable, p.Reason)
 		}
 		return nil, false, ErrStateUnreadable
+	}
+	if raw {
+		return p.read, p.readExists, nil
 	}
 	return p.Observed, p.Exists, nil
 }

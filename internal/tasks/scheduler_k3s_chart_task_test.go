@@ -350,7 +350,7 @@ func TestSchedulerK3sChartTaskCommandShapeSet(t *testing.T) {
 	desired := map[string]string{"replicaCount": "3"}
 	chart := "ingress-nginx"
 	commandFn := schedulerK3sChartsCommandFor(t, chart)
-	plan := planPairsSet(testCtx(), observeChartPairs, "chart value", desired,
+	plan := planPairsSet(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", desired,
 		func(ctx context.Context) (map[string]string, error) { return current, nil },
 		commandFn,
 	)
@@ -368,7 +368,7 @@ func TestSchedulerK3sChartTaskCommandShapeClear(t *testing.T) {
 	desired := map[string]string{"replicaCount": "ignored"}
 	chart := "ingress-nginx"
 	commandFn := schedulerK3sChartsCommandFor(t, chart)
-	plan := planPairsUnset(testCtx(), observeChartPairs, "chart value", desired,
+	plan := planPairsUnset(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", desired,
 		func(ctx context.Context) (map[string]string, error) { return current, nil },
 		commandFn,
 	)

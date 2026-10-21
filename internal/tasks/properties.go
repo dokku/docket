@@ -123,6 +123,13 @@ type PropertyTableDocer interface {
 	propertyTable() PropertyTable
 }
 
+// propertyPlanTask is a property task as planProperty takes it: the task
+// itself, which an in-sync plan observes, and the table it manages.
+type propertyPlanTask interface {
+	Task
+	PropertyTableDocer
+}
+
 // TaskPropertyTable returns t's property table and whether t declared one.
 // Centralised so the catalog, the docs generator and the coverage test share
 // one read site, mirroring TaskExportSupport and TaskProbeSupport.
@@ -745,7 +752,7 @@ func validatePropertyName(task PropertyTableDocer, global bool, property string)
 	return validateProperty(table.Plugin(), property, global, table.Keys)
 }
 
-func planProperty(ctx context.Context, task PropertyTableDocer, observe func(PropertyFields) Task, state State, app string, global bool, property, value string) PlanResult {
+func planProperty(ctx context.Context, task propertyPlanTask, observe func(PropertyFields) Task, state State, app string, global bool, property, value string) PlanResult {
 	if err := validatePropertyName(task, global, property); err != nil {
 		return planErr(err)
 	}
@@ -767,7 +774,7 @@ func planProperty(ctx context.Context, task PropertyTableDocer, observe func(Pro
 		if current == "" {
 			f.State = StateAbsent
 		}
-		return observed(r, observe(f), current != "")
+		return observed(r, task, observe(f), current != "")
 	}
 
 	// A dynamic property has no static map entry. When its plugin reports the

@@ -179,6 +179,7 @@ func (t SchedulerK3sAnnotationsTask) spec() schedulerK3sScopedPairsSpec {
 		ProcessType:  t.ProcessType,
 		ResourceType: t.ResourceType,
 		Pairs:        t.Annotations,
+		Planned:      t,
 		Observe: func(pairs map[string]string, state State) Task {
 			return SchedulerK3sAnnotationsTask{App: t.App, Global: t.Global, ProcessType: t.ProcessType, ResourceType: t.ResourceType, Annotations: pairs, State: state}
 		},

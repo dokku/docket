@@ -162,7 +162,7 @@ func observedBuildpacks(r PlanResult, t BuildpacksTask, state State, current []s
 	case len(held) > 0:
 		observedState = StatePresent
 	}
-	return observed(r, BuildpacksTask{App: t.App, Buildpacks: held, State: observedState}, len(held) > 0)
+	return observed(r, t, BuildpacksTask{App: t.App, Buildpacks: held, State: observedState}, len(held) > 0)
 }
 
 // planBuildpacksAdd reports drift for replacing the app's buildpacks with the

@@ -21,6 +21,9 @@ type schedulerK3sAutoscalingAuthSpec struct {
 	Trigger  string
 	Metadata map[string]string
 
+	// Planned is the task the spec adapts, which an in-sync plan observes.
+	Planned Task
+
 	// Observe builds the task's own type from the metadata the probe read.
 	Observe pairsObserveFunc
 }
@@ -76,7 +79,7 @@ func planSchedulerK3sAutoscalingAuthPresent(ctx context.Context, spec schedulerK
 
 	drifted, allNew := driftedKeys(spec.Metadata, current)
 	if len(drifted) == 0 {
-		return observedPairs(PlanResult{InSync: true, Status: PlanStatusOK}, spec.Observe, current, spec.Metadata, false)
+		return observedPairs(PlanResult{InSync: true, Status: PlanStatusOK}, spec.Planned, spec.Observe, current, spec.Metadata, false)
 	}
 
 	status := PlanStatusModify
@@ -96,7 +99,7 @@ func planSchedulerK3sAutoscalingAuthPresent(ctx context.Context, spec schedulerK
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}, spec.Observe, current, spec.Metadata, false)
+	}, spec.Planned, spec.Observe, current, spec.Metadata, false)
 }
 
 // planSchedulerK3sAutoscalingAuthAbsent probes the trigger's current metadata
@@ -115,7 +118,7 @@ func planSchedulerK3sAutoscalingAuthAbsent(ctx context.Context, spec schedulerK3
 
 	toClear := intersectingKeys(spec.Metadata, current)
 	if len(toClear) == 0 {
-		return observedPairs(PlanResult{InSync: true, Status: PlanStatusOK}, spec.Observe, current, spec.Metadata, false)
+		return observedPairs(PlanResult{InSync: true, Status: PlanStatusOK}, spec.Planned, spec.Observe, current, spec.Metadata, false)
 	}
 
 	clearSet := make(map[string]struct{}, len(toClear))
@@ -149,7 +152,7 @@ func planSchedulerK3sAutoscalingAuthAbsent(ctx context.Context, spec schedulerK3
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
-	}, spec.Observe, current, spec.Metadata, false)
+	}, spec.Planned, spec.Observe, current, spec.Metadata, false)
 }
 
 // schedulerK3sAutoscalingAuthCurrent reads the trigger's stored metadata and
@@ -176,7 +179,7 @@ func planSchedulerK3sAutoscalingAuthSet(ctx context.Context, spec schedulerK3sAu
 	if len(spec.Metadata) == 0 {
 		return planSetAsClear(planSchedulerK3sAutoscalingAuthClear(ctx, spec))
 	}
-	return planPairsReplace(ctx, spec.Observe,
+	return planPairsReplace(ctx, spec.Planned, spec.Observe,
 		"metadata key",
 		spec.Metadata,
 		schedulerK3sAutoscalingAuthCurrent(spec),
@@ -190,7 +193,7 @@ func planSchedulerK3sAutoscalingAuthSet(ctx context.Context, spec schedulerK3sAu
 // `:set` with no `--metadata` is what dokku reads as "wipe this trigger", since
 // there is no `:autoscaling-auth:clear` subcommand.
 func planSchedulerK3sAutoscalingAuthClear(ctx context.Context, spec schedulerK3sAutoscalingAuthSpec) PlanResult {
-	return planPairsClear(ctx, spec.Observe,
+	return planPairsClear(ctx, spec.Planned, spec.Observe,
 		"metadata key",
 		schedulerK3sAutoscalingAuthCurrent(spec),
 		func() subprocess.ExecCommandInput { return schedulerK3sAutoscalingAuthClearCommand(spec) },

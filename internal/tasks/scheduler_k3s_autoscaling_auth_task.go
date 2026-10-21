@@ -179,6 +179,7 @@ func (t SchedulerK3sAutoscalingAuthTask) spec() schedulerK3sAutoscalingAuthSpec 
 		Global:   t.Global,
 		Trigger:  t.Trigger,
 		Metadata: t.Metadata,
+		Planned:  t,
 		Observe: func(metadata map[string]string, state State) Task {
 			return SchedulerK3sAutoscalingAuthTask{App: t.App, Global: t.Global, Trigger: t.Trigger, Metadata: metadata, State: state}
 		},
