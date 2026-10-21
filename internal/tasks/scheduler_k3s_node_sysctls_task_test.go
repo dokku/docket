@@ -216,12 +216,12 @@ func TestSchedulerK3sNodeSysctlsValidate(t *testing.T) {
 		{
 			name:    "a scope is required",
 			task:    SchedulerK3sNodeSysctlsTask{Sysctls: map[string]string{"vm.swappiness": "10"}},
-			wantErr: "'profile' is required when 'global' is not set to true",
+			wantErr: "exactly one of 'global' or 'profile' is required",
 		},
 		{
 			name:    "global and profile are mutually exclusive",
 			task:    SchedulerK3sNodeSysctlsTask{Global: true, Profile: "edge-workers", Sysctls: map[string]string{"vm.swappiness": "10"}},
-			wantErr: "'profile' must not be set when 'global' is set to true",
+			wantErr: "'global' and 'profile' are mutually exclusive",
 		},
 		{
 			name: "profile accepts a valid name",

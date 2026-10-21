@@ -24,6 +24,11 @@ func (t BuilderHerokuishPropertyTask) Doc() string {
 	return "Manages the builder-herokuish configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t BuilderHerokuishPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t BuilderHerokuishPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -92,7 +97,7 @@ func (t BuilderHerokuishPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the BuilderHerokuishPropertyTask's inputs without contacting the server.
 func (t BuilderHerokuishPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the BuilderHerokuishPropertyTask would produce.

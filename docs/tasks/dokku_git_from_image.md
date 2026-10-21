@@ -29,9 +29,13 @@ Keyed by `app`.
 | `app` | string | yes |  |  | Name of the app |
 | `image` | string | yes |  |  | Docker image to deploy (sensitive) |
 | `build_dir` | string | no |  |  | Directory to build the git repository (applied only, not read back) |
-| `git_username` | string | no |  |  | Username to use for the git repository (requires git_email) (applied only, not read back) |
-| `git_email` | string | no |  |  | Email to use for the git repository (requires git_username) (applied only, not read back) |
+| `git_username` | string | no |  |  | Username to use for the git repository (applied only, not read back) |
+| `git_email` | string | no |  |  | Email to use for the git repository (applied only, not read back) |
 | `state` | string | no | deployed | deployed | Desired state of the git repository |
+
+## Constraints
+
+- `git_username` and `git_email` must be set together or not at all.
 
 ## Examples
 

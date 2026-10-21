@@ -27,6 +27,11 @@ func (t SchedulerK3sPropertyTask) Doc() string {
 	return "Manages the scheduler-k3s configuration for a given dokku application. chart.* properties are managed by dokku_scheduler_k3s_chart and rejected here, since dokku's scheduler-k3s:set path is deprecated for chart values."
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t SchedulerK3sPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t SchedulerK3sPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -145,7 +150,7 @@ func (t SchedulerK3sPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the SchedulerK3sPropertyTask's inputs without contacting the server.
 func (t SchedulerK3sPropertyTask) Validate() error {
-	if err := validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value); err != nil {
+	if err := validatePropertyInput(t, t.Global, t.Property); err != nil {
 		return err
 	}
 

@@ -51,7 +51,7 @@ func TestAclServiceTaskPresentEmptyUsers(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty users and state=present should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'users' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'users' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -173,7 +173,7 @@ func TestAclServiceTaskValidateUsersPerState(t *testing.T) {
 	}{
 		{name: "set missing service", task: AclServiceTask{Type: "redis", Users: []string{"alice"}, State: StateSet}, wantErr: "'service' is required"},
 		{name: "clear missing type", task: AclServiceTask{Service: "my-redis", State: StateClear}, wantErr: "'type' is required"},
-		{name: "absent without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateAbsent}, wantErr: "'users' must not be empty for state 'absent'"},
+		{name: "absent without users", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateAbsent}, wantErr: "'users' is required for state 'absent'"},
 		{name: "set without users plans as clear", task: AclServiceTask{Service: "my-redis", Type: "redis", State: StateSet}},
 		{name: "clear with users", task: AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"alice"}, State: StateClear}, wantErr: "'users' must not be set for state 'clear'"},
 		{name: "set with invalid name", task: AclServiceTask{Service: "my-redis", Type: "redis", Users: []string{"../ENV"}, State: StateSet}, wantErr: `for users[0], got "../ENV"`},

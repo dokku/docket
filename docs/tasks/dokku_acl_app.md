@@ -26,7 +26,7 @@ Keyed by `app`. Manages the whole `users` collection; entries are identified by 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `users` | list | no |  |  | List of users to add, remove, or set on the ACL; omit for state 'clear' |
+| `users` | list | no |  |  | List of users to add, remove, or set on the ACL (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the ACL entries |
 
 ## Examples

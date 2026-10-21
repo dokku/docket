@@ -27,7 +27,7 @@ Keyed by `service` and `name`. Fields left empty are omitted from the address. M
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | yes |  |  | Type of service to expose (e.g. redis, postgres, mysql) |
 | `name` | string | yes |  |  | Name of the service instance |
-| `ports` | list | no |  |  | Host ports to expose the service on. Required when state is present; omit for state 'clear'. (order is significant) |
+| `ports` | list | no |  |  | Host ports to expose the service on (order is significant) (required when state is present) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the service exposure |
 
 ## Examples

@@ -302,17 +302,22 @@ func (e *VersionError) Unwrap() error {
 	return e.Err
 }
 
-// gatePlan is the first statement of every task's Plan: it refuses the task
+// gatePlan is the first statement of every task's Plan. It refuses the task
 // when ctx carries a version gate and the server is older than the task's
 // floor, so a caller planning a task directly gets the same refusal the CLI
-// gives, and a read never reports a resource the gate skipped as absent. ok is
-// false when the plan must stop with r. A context with no gate always passes.
+// gives, and a read never reports a resource the gate skipped as absent. A
+// context with no gate passes that check. It then refuses a task whose input
+// breaks a declared field constraint, before anything probes the server, so
+// every Plan enforces what the catalog publishes. ok is false when the plan
+// must stop with r.
 // TestEveryPlanChecksVersionGate fails the build for a Plan that skips it.
 func gatePlan(ctx context.Context, t Task) (r PlanResult, ok bool) {
-	if versionCacheFrom(ctx) == nil {
-		return PlanResult{}, true
+	if versionCacheFrom(ctx) != nil {
+		if err := CheckMinimumVersions(ctx, typeKeyOf(t), t); err != nil {
+			return planErr(err), false
+		}
 	}
-	if err := CheckMinimumVersions(ctx, typeKeyOf(t), t); err != nil {
+	if err := checkConstraints(t); err != nil {
 		return planErr(err), false
 	}
 	return PlanResult{}, true

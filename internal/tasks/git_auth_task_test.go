@@ -38,7 +38,7 @@ func TestGitAuthTaskPresentMissingUsername(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without username should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'username' and 'password' are required") {
+	if !strings.Contains(result.Error.Error(), "is required for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -49,7 +49,7 @@ func TestGitAuthTaskPresentMissingPassword(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without password should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'username' and 'password' are required") {
+	if !strings.Contains(result.Error.Error(), "is required for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

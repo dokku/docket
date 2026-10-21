@@ -30,9 +30,14 @@ Keyed by `app`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `content` | string | no |  |  | Inline HTML stored as maintenance.html on the app. Mutually exclusive with tarball; one is required when state is present. |
-| `tarball` | string | no |  |  | Path on the machine running docket to a tar archive containing at least maintenance.html. Mutually exclusive with content; one is required when state is present. (read from the machine running docket) (applied only, not read back) |
+| `content` | string | no |  |  | Inline HTML stored as maintenance.html on the app (must not be set when state is absent) |
+| `tarball` | string | no |  |  | Path on the machine running docket to a tar archive containing at least maintenance.html (must not be set when state is absent) (read from the machine running docket) (applied only, not read back) |
 | `state` | string | no | present | present, absent | Desired state of the custom maintenance page |
+
+## Constraints
+
+- `content` must not be set together with `tarball`.
+- At least one of `content` or `tarball` must be set when `state` is `present`.
 
 ## Examples
 

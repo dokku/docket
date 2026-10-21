@@ -27,16 +27,25 @@ Keyed by `service` and `name`. Fields left empty are omitted from the address.
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | yes |  |  | Type of service to back up (e.g. redis, postgres, mysql) |
 | `name` | string | yes |  |  | Name of the service instance |
-| `schedule` | string | no |  |  | Cron schedule for backups (requires bucket) |
-| `bucket` | string | no |  |  | S3 bucket backups are written to (requires schedule) |
+| `schedule` | string | no |  |  | Cron schedule for backups |
+| `bucket` | string | no |  |  | S3 bucket backups are written to |
 | `use_iam` | bool | no |  |  | Use the instance IAM profile instead of static credentials |
-| `aws_access_key_id` | string | no |  |  | AWS access key id for backup auth (requires aws_secret_access_key) (not returned when reading state) |
-| `aws_secret_access_key` | string | no |  |  | AWS secret access key for backup auth (requires aws_access_key_id) (not returned when reading state) (sensitive) |
+| `aws_access_key_id` | string | no |  |  | AWS access key id for backup auth (not returned when reading state) |
+| `aws_secret_access_key` | string | no |  |  | AWS secret access key for backup auth (not returned when reading state) (sensitive) |
 | `aws_default_region` | string | no |  |  | AWS region used for backup auth |
-| `aws_signature_version` | string | no |  |  | AWS signature version used for backup auth (requires aws_default_region) |
-| `endpoint_url` | string | no |  |  | S3-compatible endpoint url used for backup auth (requires aws_signature_version) |
+| `aws_signature_version` | string | no |  |  | AWS signature version used for backup auth |
+| `endpoint_url` | string | no |  |  | S3-compatible endpoint url used for backup auth |
 | `encryption_passphrase` | string | no |  |  | Passphrase used to encrypt future backups (not returned when reading state) (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the backup configuration. 'absent' removes whichever of the schedule, the auth settings and the encryption passphrase the service reports as stored, without needing the secrets in the recipe, and leaves the settings dokku_service_property manages alone. On a datastore that cannot be backed up, 'absent' is always in sync and 'present' fails with the plugin's own error. |
+
+## Constraints
+
+- `schedule` and `bucket` must be set together or not at all when `state` is `present`.
+- `aws_access_key_id` and `aws_secret_access_key` must be set together or not at all when `state` is `present`.
+- `aws_default_region` requires `aws_access_key_id` and `aws_secret_access_key` when `state` is `present`.
+- `aws_signature_version` requires `aws_access_key_id`, `aws_secret_access_key` and `aws_default_region` when `state` is `present`.
+- `endpoint_url` requires `aws_access_key_id`, `aws_secret_access_key` and `aws_signature_version` when `state` is `present`.
+- At least one of `schedule`, `aws_access_key_id`, `aws_secret_access_key` or `encryption_passphrase` must be set when `state` is `present`.
 
 ## Examples
 

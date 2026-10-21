@@ -1,23 +1,9 @@
 package tasks
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 )
-
-// validateAppGlobalExclusive enforces the app/global mutual-exclusion that
-// every dokku task taking either an app name or the --global flag shares:
-// exactly one of the two must be set.
-func validateAppGlobalExclusive(app string, global bool) error {
-	if !global && app == "" {
-		return errors.New("app is required when global is false")
-	}
-	if global && app != "" {
-		return fmt.Errorf("'app' must not be set when 'global' is set to true")
-	}
-	return nil
-}
 
 // sortedPairKeys returns a map's keys in sorted order, so a validation error
 // blames the same key run to run rather than whichever one Go's map iteration

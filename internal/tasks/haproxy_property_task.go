@@ -24,6 +24,11 @@ func (t HaproxyPropertyTask) Doc() string {
 	return "Manages the haproxy configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t HaproxyPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t HaproxyPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -96,7 +101,7 @@ func (t HaproxyPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the HaproxyPropertyTask's inputs without contacting the server.
 func (t HaproxyPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the HaproxyPropertyTask would produce.

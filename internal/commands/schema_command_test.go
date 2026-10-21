@@ -211,6 +211,61 @@ func TestTaskCatalogSchemaScopesOrderedToLists(t *testing.T) {
 	}
 }
 
+// TestTaskCatalogSchemaShapesConstraints is the self-check on the field
+// constraints (#620): the schema accepts what docket publishes, and refuses
+// an unknown kind, a `field` on a group kind, a directional kind without one,
+// and a group of one.
+func TestTaskCatalogSchemaShapesConstraints(t *testing.T) {
+	t.Parallel()
+	validate := func(mutate func(task map[string]interface{})) error {
+		t.Helper()
+		out, stderr, exit := runSchema(t, "--task", "dokku_certs")
+		if exit != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
+		}
+		doc := decodeCatalog(t, out)
+		task := catalogTasks(t, doc)["dokku_certs"]
+		if _, ok := task["constraints"].([]interface{}); !ok {
+			t.Fatal("dokku_certs does not publish constraints")
+		}
+		mutate(task)
+
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
+		if err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return loadSchema(t, taskCatalogSchemaPath).Validate(inst)
+	}
+	set := func(constraint map[string]interface{}) func(task map[string]interface{}) {
+		return func(task map[string]interface{}) {
+			task["constraints"] = []interface{}{constraint}
+		}
+	}
+
+	if err := validate(func(map[string]interface{}) {}); err != nil {
+		t.Errorf("the published constraints must validate: %v", err)
+	}
+	cases := []struct {
+		name       string
+		constraint map[string]interface{}
+	}{
+		{"unknown kind", map[string]interface{}{"kind": "at_most_one_of", "fields": []interface{}{"cert", "key"}}},
+		{"field on a group", map[string]interface{}{"kind": "exactly_one_of", "field": "app", "fields": []interface{}{"app", "global"}}},
+		{"directional without field", map[string]interface{}{"kind": "conflicts_with", "fields": []interface{}{"cert"}}},
+		{"group of one", map[string]interface{}{"kind": "at_least_one_of", "fields": []interface{}{"cert"}}},
+		{"empty states", map[string]interface{}{"kind": "at_least_one_of", "fields": []interface{}{"cert", "key"}, "states": []interface{}{}}},
+	}
+	for _, tc := range cases {
+		if err := validate(set(tc.constraint)); err == nil {
+			t.Errorf("%s: expected validation to fail", tc.name)
+		}
+	}
+}
+
 // TestSchemaCommandPublishesPropertyTables covers the half of the catalog the
 // reference pages could not express before: which names a property task's
 // free-form-looking `property` field actually accepts.

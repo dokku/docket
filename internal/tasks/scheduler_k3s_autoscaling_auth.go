@@ -25,33 +25,19 @@ type schedulerK3sAutoscalingAuthSpec struct {
 	Observe pairsObserveFunc
 }
 
-// validateSchedulerK3sAutoscalingAuth checks the common fields prior to any
-// subprocess call. Present, absent and set all require Metadata: present sets
-// the listed keys, absent names which keys to clear, and set declares the
-// trigger's complete map. Clear takes none.
+// validateSchedulerK3sAutoscalingAuth checks the metadata keys and values prior
+// to any subprocess call, past the scope and the per-state presence of the map
+// the task declares as constraints: present sets the listed keys and absent
+// names which keys to clear, so both need a map; the clear state wipes the
+// trigger, so a map supplied alongside it would be silently discarded rather
+// than written; and an empty set plans as clear.
 func validateSchedulerK3sAutoscalingAuth(spec schedulerK3sAutoscalingAuthSpec, state State) error {
-	if err := validateAppGlobalExclusive(spec.App, spec.Global); err != nil {
-		return err
-	}
 	if spec.Trigger == "" {
 		return errors.New("trigger is required")
 	}
 	effective := state
 	if effective == "" {
 		effective = StatePresent
-	}
-
-	// The clear state wipes the trigger, so a map supplied alongside it would
-	// be silently discarded rather than written.
-	if effective == StateClear {
-		if len(spec.Metadata) > 0 {
-			return errors.New("'metadata' must not be set for state 'clear'")
-		}
-		return nil
-	}
-	// An empty set plans as clear; the additive states each consume a key.
-	if len(spec.Metadata) == 0 && effective != StateSet {
-		return fmt.Errorf("'metadata' must not be empty for state '%s'", effective)
 	}
 
 	for _, key := range sortedPairKeys(spec.Metadata) {

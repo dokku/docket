@@ -34,7 +34,7 @@ func TestStorageMountRequiresExactlyOneSource(t *testing.T) {
 		{
 			name: "neither set",
 			task: StorageMountTask{App: "test-app", ContainerDir: "/c", State: StatePresent},
-			want: "exactly one of 'entry_name' or 'host_dir' is required",
+			want: "at least one of 'mounts', 'entry_name' or 'host_dir' is required for state 'present'",
 		},
 		{
 			name: "both set",
@@ -710,7 +710,7 @@ func TestStorageMountValidatesForms(t *testing.T) {
 		{
 			name: "nothing set",
 			task: StorageMountTask{App: "a", State: StatePresent},
-			want: "either 'mounts' or one of 'entry_name' or 'host_dir' is required",
+			want: "at least one of 'mounts', 'entry_name' or 'host_dir' is required for state 'present'",
 		},
 		{
 			name: "single form missing container_dir",
@@ -720,17 +720,17 @@ func TestStorageMountValidatesForms(t *testing.T) {
 		{
 			name: "mixed forms",
 			task: StorageMountTask{App: "a", EntryName: "data", ContainerDir: "/c", Mounts: []StorageMount{data}, State: StatePresent},
-			want: "'mounts' and the single-mount fields",
+			want: "'mounts' and 'entry_name' are mutually exclusive",
 		},
 		{
 			name: "set with the single form",
 			task: StorageMountTask{App: "a", EntryName: "data", ContainerDir: "/c", State: StateSet},
-			want: "must not be set for state 'set'; use 'mounts'",
+			want: "'entry_name' must not be set for state 'set'",
 		},
 		{
 			name: "clear with the single form",
 			task: StorageMountTask{App: "a", Readonly: true, State: StateClear},
-			want: "must not be set for state 'clear'; use 'mounts'",
+			want: "must not be set for state 'clear'",
 		},
 		{
 			name: "clear with mounts",
@@ -740,17 +740,17 @@ func TestStorageMountValidatesForms(t *testing.T) {
 		{
 			name: "mount without a source",
 			task: StorageMountTask{App: "a", Mounts: []StorageMount{{ContainerDir: "/c"}}, State: StateSet},
-			want: "mounts[0]: exactly one of 'entry_name' or 'host_dir' is required",
+			want: "exactly one of 'mounts[0].entry_name' or 'mounts[0].host_dir' is required",
 		},
 		{
 			name: "mount with both sources",
 			task: StorageMountTask{App: "a", Mounts: []StorageMount{{EntryName: "e", HostDir: "/h", ContainerDir: "/c"}}, State: StateSet},
-			want: "mounts[0]: 'entry_name' and 'host_dir' are mutually exclusive",
+			want: "'mounts[0].entry_name' and 'mounts[0].host_dir' are mutually exclusive",
 		},
 		{
 			name: "mount without container_dir",
 			task: StorageMountTask{App: "a", Mounts: []StorageMount{{EntryName: "e"}}, State: StateSet},
-			want: "mounts[0]: 'container_dir' is required",
+			want: "'mounts[0].container_dir' is required",
 		},
 		{
 			name: "relative container_dir",

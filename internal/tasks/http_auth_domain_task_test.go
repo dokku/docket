@@ -55,7 +55,7 @@ func TestHttpAuthDomainTaskPresentEmptyDomains(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty domains and state=present should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'domains' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'domains' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -66,7 +66,7 @@ func TestHttpAuthDomainTaskAbsentEmptyDomains(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty domains and state=absent should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'domains' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'domains' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

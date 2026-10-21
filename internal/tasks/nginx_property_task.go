@@ -24,6 +24,11 @@ func (t NginxPropertyTask) Doc() string {
 	return "Manages the nginx configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t NginxPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t NginxPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -144,7 +149,7 @@ func (t NginxPropertyTask) ExportGlobal(ctx context.Context) ([]interface{}, err
 
 // Validate checks the NginxPropertyTask's inputs without contacting the server.
 func (t NginxPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the NginxPropertyTask would produce.

@@ -19,7 +19,7 @@ type HttpAuthAllowedIpTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// AllowedIps is the list of IP addresses to allow or remove
-	AllowedIps []string `required:"false" identity:"collection" ordered:"false" yaml:"allowed_ips,omitempty" description:"List of IP addresses to allow or remove; omit for state 'clear'"`
+	AllowedIps []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"allowed_ips,omitempty" description:"List of IP addresses to allow or remove"`
 
 	// State is the desired state of the allowed IP entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the allowed IP entries"`
@@ -110,19 +110,14 @@ func (t HttpAuthAllowedIpTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the HttpAuthAllowedIpTask's inputs without contacting the server.
 func (t HttpAuthAllowedIpTask) Validate() error {
+	// http-auth:set-allowed-ips is called with no addresses to clear, which is
+	// why a list is forbidden alongside clear: it would be silently discarded
+	// rather than removed.
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
-	}
-	if t.State == StatePresent && len(t.AllowedIps) == 0 {
-		return fmt.Errorf("'allowed_ips' must not be empty for state 'present'")
-	}
-	if t.State == StateAbsent && len(t.AllowedIps) == 0 {
-		return fmt.Errorf("'allowed_ips' must not be empty for state 'absent'")
-	}
-	// http-auth:set-allowed-ips is called with no addresses to clear, so a list
-	// supplied alongside it would be silently discarded rather than removed.
-	if t.State == StateClear && len(t.AllowedIps) > 0 {
-		return fmt.Errorf("'allowed_ips' must not be set for state 'clear'")
 	}
 	// Only the states that write addresses are checked. The plugin validates in
 	// http-auth:add-allowed-ip and http-auth:set-allowed-ips but deliberately

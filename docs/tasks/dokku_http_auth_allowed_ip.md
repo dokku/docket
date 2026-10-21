@@ -26,7 +26,7 @@ Keyed by `app`. Manages the whole `allowed_ips` collection; entries are identifi
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `allowed_ips` | list | no |  |  | List of IP addresses to allow or remove; omit for state 'clear' |
+| `allowed_ips` | list | no |  |  | List of IP addresses to allow or remove (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the allowed IP entries |
 
 ## Examples

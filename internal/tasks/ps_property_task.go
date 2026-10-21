@@ -24,6 +24,11 @@ func (t PsPropertyTask) Doc() string {
 	return "Manages the ps configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t PsPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t PsPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -98,7 +103,7 @@ func (t PsPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the PsPropertyTask's inputs without contacting the server.
 func (t PsPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the PsPropertyTask would produce.

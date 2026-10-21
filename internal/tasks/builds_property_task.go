@@ -24,6 +24,11 @@ func (t BuildsPropertyTask) Doc() string {
 	return "Manages the builds configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t BuildsPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t BuildsPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -91,7 +96,7 @@ func (t BuildsPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the BuildsPropertyTask's inputs without contacting the server.
 func (t BuildsPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the BuildsPropertyTask would produce.

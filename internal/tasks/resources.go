@@ -122,25 +122,17 @@ func exportResourceTasks(ctx context.Context, app, kind string, factory func(app
 	return out, nil
 }
 
-// validateResourceInput checks a resource task's inputs without probing the
-// server. planResource and each resource task's Validate() call it so plan and
-// validate report the same error. The unknown-resource-key check stays in
-// planSetResource and planReplaceResource because it needs the live resource
-// report.
-func validateResourceInput(state State, resources map[string]string, clearBefore bool) error {
-	if state == StatePresent && len(resources) == 0 {
-		return errors.New("resources are required when state is present")
-	}
-	// The clear command takes no resources, so a map supplied alongside it
-	// would be silently discarded rather than removed.
-	if state == StateClear && len(resources) > 0 {
-		return errors.New("resources must not be set when state is clear")
-	}
-	// set and clear already own every resource, so clear_before would only
-	// restate them.
-	if clearBefore && (state == StateSet || state == StateClear) {
-		return fmt.Errorf("clear_before is only valid when state is present, got state %s", state)
-	}
+// validateResourceInput checks a resource task's values without probing the
+// server, past the constraints its fields declare: resources are required
+// when state is present, and forbidden when it is clear because the clear
+// command takes none, so a map supplied alongside it would be silently
+// discarded rather than removed; clear_before is forbidden with set and
+// clear, which already own every resource, so it would only restate them.
+// gatePlan checks those before planResource runs, and each resource task's
+// Validate() checks them before calling this. The unknown-resource-key check
+// stays in planSetResource and planReplaceResource because it needs the live
+// resource report.
+func validateResourceInput(state State, resources map[string]string) error {
 	// The set command marks a resource for removal with the literal value
 	// "clear", so a declared value of "clear" would remove the resource rather
 	// than store it.
@@ -160,7 +152,7 @@ func validateResourceInput(state State, resources map[string]string, clearBefore
 // clear-before-set and the absent, set and clear states own every resource, so
 // they read them all.
 func planResource(ctx context.Context, observe func(resources map[string]string, state State) Task, state State, app, processType string, resources map[string]string, clearBefore bool, subcommand string) PlanResult {
-	if err := validateResourceInput(state, resources, clearBefore); err != nil {
+	if err := validateResourceInput(state, resources); err != nil {
 		return planErr(err)
 	}
 

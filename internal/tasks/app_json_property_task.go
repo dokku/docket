@@ -24,6 +24,11 @@ func (t AppJsonPropertyTask) Doc() string {
 	return "Manages the app.json configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t AppJsonPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t AppJsonPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -91,7 +96,7 @@ func (t AppJsonPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the AppJsonPropertyTask's inputs without contacting the server.
 func (t AppJsonPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the AppJsonPropertyTask would produce.

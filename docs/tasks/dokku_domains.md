@@ -26,8 +26,12 @@ Keyed by `app` and `global`. Fields left empty are omitted from the address. Man
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | no |  |  | Name of the app |
 | `global` | bool | no |  |  | Flag indicating if the domains should be applied globally |
-| `domains` | list | no |  |  | List of domain names; omit for state 'clear' |
+| `domains` | list | no |  |  | List of domain names (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the domains |
+
+## Constraints
+
+- Exactly one of `app` or `global` must be set.
 
 ## Examples
 

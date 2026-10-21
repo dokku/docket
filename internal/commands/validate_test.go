@@ -202,6 +202,50 @@ func TestValidateJSONEventShape(t *testing.T) {
 	}
 }
 
+// TestValidateJSONReportsEveryConstraintViolation pins that validate reports
+// each declared constraint a task body breaks as its own problem, carrying the
+// key path at fault in `field`, so a recipe is fixed in one pass (#620).
+func TestValidateJSONReportsEveryConstraintViolation(t *testing.T) {
+	t.Parallel()
+	recipe := `---
+- tasks:
+    - name: two bad users
+      dokku_http_auth_user:
+        app: api
+        users:
+          - username: alice
+            password: secret
+            hash: "$apr1$abc"
+          - username: bob
+`
+	exit, out := runValidateOverStdin(t, recipe, []string{"-", "--json"})
+	if exit != 1 {
+		t.Fatalf("exit = %d, want 1; output:\n%s", exit, out)
+	}
+	assertLinesMatchSchema(t, validateSchemaPath, out)
+
+	var got [][2]string
+	for _, line := range jsonLines(out) {
+		var ev map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("invalid JSON line %q: %v", line, err)
+		}
+		if code, _ := ev["code"].(string); code != "invalid_task_input" {
+			t.Errorf("code = %q, want invalid_task_input: %s", code, line)
+		}
+		field, _ := ev["field"].(string)
+		message, _ := ev["message"].(string)
+		got = append(got, [2]string{field, message})
+	}
+	want := [][2]string{
+		{"users[0].password", "'users[0].password' and 'users[0].hash' are mutually exclusive"},
+		{"users[1]", "at least one of 'users[1].password' or 'users[1].hash' is required for state 'present'"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("problems = %q, want %q", got, want)
+	}
+}
+
 // TestValidateJSONEmitsNothingOnSuccess pins the other half of the
 // contract: a clean recipe produces an empty stdout and exit 0, so a
 // wrapper can treat "any output at all" as failure.

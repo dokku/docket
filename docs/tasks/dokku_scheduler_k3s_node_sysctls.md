@@ -24,10 +24,14 @@ Keyed by `global` and `profile`. Fields left empty are omitted from the address.
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `global` | bool | no |  |  | Scope the sysctls to every node without a node profile. Exactly one of 'global' and 'profile' must be set. |
-| `profile` | string | no |  |  | Name of the node profile to scope the sysctls to. The profile must already exist, and dokku only scopes sysctls to a lowercase name of at most 26 characters. A profile's nodes still inherit every global sysctl the profile does not set itself; this task manages only the profile's own map. Exactly one of 'global' and 'profile' must be set. |
-| `sysctls` | dict | no |  |  | Map of sysctl name to value to apply to the scope; omit for state 'clear'. Removing a sysctl stops it being applied to new nodes but does not revert it on nodes already carrying it until they reboot. Under state 'present' a value must not begin with '-', which dokku's flag parser would read as a flag; state 'set' has no such limit. |
+| `global` | bool | no |  |  | Scope the sysctls to every node without a node profile. |
+| `profile` | string | no |  |  | Name of the node profile to scope the sysctls to. The profile must already exist, and dokku only scopes sysctls to a lowercase name of at most 26 characters. A profile's nodes still inherit every global sysctl the profile does not set itself; this task manages only the profile's own map. |
+| `sysctls` | dict | no |  |  | Map of sysctl name to value to apply to the scope. Removing a sysctl stops it being applied to new nodes but does not revert it on nodes already carrying it until they reboot. Under state 'present' a value must not begin with '-', which dokku's flag parser would read as a flag; state 'set' has no such limit. (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the sysctls. 'set' declares the complete map for the scope, removing any sysctl the recipe does not name; 'clear' empties it. |
+
+## Constraints
+
+- Exactly one of `global` or `profile` must be set.
 
 ## Examples
 

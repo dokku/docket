@@ -30,12 +30,10 @@ type schedulerK3sScopedPairsSpec struct {
 }
 
 // validateSchedulerK3sScopedPairs checks the common fields prior to any
-// subprocess call. Error messages substitute the spec's noun so callers see
-// "'labels' must not be empty" / "label keys must not be empty" etc.
+// subprocess call, past the scope and the per-state presence of the map that
+// each task declares as constraints. Error messages substitute the spec's noun
+// so callers see "label keys must not be empty" etc.
 func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state State) error {
-	if err := validateAppGlobalExclusive(spec.App, spec.Global); err != nil {
-		return err
-	}
 	if spec.ResourceType == "" {
 		return errors.New("resource_type is required")
 	}
@@ -44,19 +42,6 @@ func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state Sta
 		effective = StatePresent
 	}
 	singular := singularizeSchedulerK3sKind(spec.Kind)
-
-	// :clear takes no pairs, so a map supplied alongside it would be silently
-	// discarded rather than removed. An empty set plans as clear, and the
-	// additive states each consume a pair.
-	if effective == StateClear {
-		if len(spec.Pairs) > 0 {
-			return fmt.Errorf("'%s' must not be set for state 'clear'", spec.Kind)
-		}
-		return nil
-	}
-	if len(spec.Pairs) == 0 && effective != StateSet {
-		return fmt.Errorf("'%s' must not be empty for state '%s'", spec.Kind, effective)
-	}
 
 	for _, key := range sortedPairKeys(spec.Pairs) {
 		if key == "" {

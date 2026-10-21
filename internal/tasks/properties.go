@@ -159,8 +159,8 @@ func pluginFromSubcommand(subcommand string) string {
 // copies of the field set. See TestPropertyTasksDeclareTheSharedFields for the
 // tasks whose shape genuinely differs.
 type PropertyFields struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+	// App is the name of the app. Exactly one of App and Global is set.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the property should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the property should be applied globally"`
@@ -169,7 +169,7 @@ type PropertyFields struct {
 	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the property to set"`
 
 	// Value is the value to set for the property
-	Value string `required:"false" yaml:"value,omitempty" description:"Value to set for the property"`
+	Value string `required:"false" required_when:"present" forbidden_when:"absent" yaml:"value,omitempty" description:"Value to set for the property"`
 
 	// State is the desired state of the property
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the property"`
@@ -187,8 +187,8 @@ type PropertyFields struct {
 // TestSensitivePropertyFieldsMatchesPropertyFields fails if the two drift apart
 // in anything but that one tag.
 type SensitivePropertyFields struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+	// App is the name of the app. Exactly one of App and Global is set.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the property should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the property should be applied globally"`
@@ -197,7 +197,7 @@ type SensitivePropertyFields struct {
 	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the property to set"`
 
 	// Value is the value to set for the property
-	Value string `required:"false" sensitive:"true" yaml:"value,omitempty" description:"Value to set for the property"`
+	Value string `required:"false" required_when:"present" forbidden_when:"absent" sensitive:"true" yaml:"value,omitempty" description:"Value to set for the property"`
 
 	// State is the desired state of the property
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the property"`
@@ -719,39 +719,33 @@ func dynamicPropertiesFromReport(plugin string, payload map[string]string, globa
 // other probe failures are recorded in PlanResult.Reason and the apply still
 // runs, matching pre-probe behavior.
 // validatePropertyInput checks a property task's inputs without probing the
-// server: that the property is not from a family the table rejects, app/global
-// scoping, that the property is supported for the target scope, and that a
-// value is supplied only in the state that allows it. Both planProperty and
-// each property task's Validate() call it so plan and validate report the same
-// errors.
-func validatePropertyInput(task PropertyTableDocer, state State, app string, global bool, property, value string) error {
+// server: its declared constraints - app/global scoping, and a value supplied
+// only in the state that allows it - and then that the property is supported
+// for the target scope. The constraints check reports a property from a family
+// the table rejects ahead of everything else. Each property task's Validate()
+// calls it, and gatePlan plus planProperty run the same two checks, so plan and
+// validate report the same errors.
+func validatePropertyInput(task PropertyTableDocer, global bool, property string) error {
+	if err := checkConstraints(task); err != nil {
+		return err
+	}
+	return validatePropertyName(task, global, property)
+}
+
+// validatePropertyName checks that the property is one the task's table
+// manages for the target scope, answering a member of a rejected family with
+// the task that owns it. planProperty calls it on its own, since the task's
+// Plan has already checked the declared constraints through gatePlan.
+func validatePropertyName(task PropertyTableDocer, global bool, property string) error {
 	table := task.propertyTable()
-	// A rejected family is checked before anything else, including scoping:
-	// the user wrote a name this task will never manage, so naming the task
-	// that does is more use than telling them the app field is missing too.
 	if family, ok := table.rejectedFamilyFor(property); ok {
 		return family.err()
 	}
-	if !global && app == "" {
-		return errors.New("app is required when global is false")
-	}
-	if global && app != "" {
-		return fmt.Errorf("'app' must not be set when 'global' is set to true")
-	}
-	if err := validateProperty(table.Plugin(), property, global, table.Keys); err != nil {
-		return err
-	}
-	if state == StatePresent && value == "" {
-		return fmt.Errorf("setting a state of 'present' is invalid without a value for 'value'")
-	}
-	if state == StateAbsent && value != "" {
-		return fmt.Errorf("setting a state of 'absent' is invalid with a value for 'value'")
-	}
-	return nil
+	return validateProperty(table.Plugin(), property, global, table.Keys)
 }
 
 func planProperty(ctx context.Context, task PropertyTableDocer, observe func(PropertyFields) Task, state State, app string, global bool, property, value string) PlanResult {
-	if err := validatePropertyInput(task, state, app, global, property, value); err != nil {
+	if err := validatePropertyName(task, global, property); err != nil {
 		return planErr(err)
 	}
 

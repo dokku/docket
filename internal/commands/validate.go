@@ -312,6 +312,10 @@ func (c *ValidateCommand) emitJSONProblem(p tasks.Problem) {
 	if p.Hint != "" {
 		event["hint"] = c.masker.String(p.Hint)
 	}
+	// A recipe key path, never a value, so there is nothing to mask.
+	if p.Field != "" {
+		event["field"] = p.Field
+	}
 	b, err := json.Marshal(event)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("json marshal error: %v", err))

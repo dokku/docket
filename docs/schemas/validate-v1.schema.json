@@ -72,6 +72,11 @@
     "hint": {
       "type": "string",
       "description": "Optional remediation hint, e.g. a did-you-mean suggestion for a misspelled task type."
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "description": "On an invalid_task_input problem from a declared field constraint, the recipe key path the constraint names, e.g. `password` or `users[1].hash`, or the element path such as `users[1]` for a rule over several of an element's keys. Absent on every other problem, including a constraint over several of the task's own keys."
     }
   }
 }

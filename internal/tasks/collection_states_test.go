@@ -37,8 +37,8 @@ func TestCollectionClearRejectsEntries(t *testing.T) {
 		want string
 	}{
 		{BuildpacksTask{App: "web", Buildpacks: []string{"https://example.com/bp.git"}, State: StateClear}, "'buildpacks' must not be set for state 'clear'"},
-		{ResourceLimitTask{App: "web", Resources: map[string]string{"cpu": "1"}, State: StateClear}, "resources must not be set when state is clear"},
-		{ResourceReserveTask{App: "web", Resources: map[string]string{"cpu": "1"}, State: StateClear}, "resources must not be set when state is clear"},
+		{ResourceLimitTask{App: "web", Resources: map[string]string{"cpu": "1"}, State: StateClear}, "'resources' must not be set for state 'clear'"},
+		{ResourceReserveTask{App: "web", Resources: map[string]string{"cpu": "1"}, State: StateClear}, "'resources' must not be set for state 'clear'"},
 		{ServiceExposeTask{Service: "redis", Name: "cache", Ports: []string{"6379"}, State: StateClear}, "'ports' must not be set for state 'clear'"},
 		{SchedulerK3sChartTask{Chart: "traefik", Values: map[string]any{"a": "b"}, State: StateClear}, "'values' must not be set for state 'clear'"},
 		{HttpAuthUserTask{App: "web", Users: []HttpAuthUser{{Username: "admin"}}, State: StateClear}, "'users' must not be set for state 'clear'"},
@@ -150,8 +150,8 @@ func TestResourceSetValidation(t *testing.T) {
 		task ResourceLimitTask
 		want string
 	}{
-		{ResourceLimitTask{App: "web", Resources: map[string]string{"cpu": "1"}, ClearBefore: boolPtr(true), State: StateSet}, "clear_before is only valid when state is present, got state set"},
-		{ResourceLimitTask{App: "web", ClearBefore: boolPtr(true), State: StateClear}, "clear_before is only valid when state is present, got state clear"},
+		{ResourceLimitTask{App: "web", Resources: map[string]string{"cpu": "1"}, ClearBefore: boolPtr(true), State: StateSet}, "'clear_before' must not be set for state 'set'"},
+		{ResourceLimitTask{App: "web", ClearBefore: boolPtr(true), State: StateClear}, "'clear_before' must not be set for state 'clear'"},
 		{ResourceLimitTask{App: "web", Resources: map[string]string{"cpu": "clear"}, State: StateSet}, `resource cpu must not be set to "clear" when state is set`},
 	}
 	for _, tc := range cases {

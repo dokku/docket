@@ -275,7 +275,7 @@ func TestServiceCreateTaskValidate(t *testing.T) {
 		{
 			name:    "create options rejected under absent",
 			task:    ServiceCreateTask{Service: "redis", Name: "cache", Image: "redis", Memory: 512, State: StateAbsent},
-			wantErr: "'image', 'memory' must not be set for state 'absent'",
+			wantErr: "'image' must not be set for state 'absent'",
 		},
 		{
 			name:    "negative memory",

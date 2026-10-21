@@ -14,7 +14,7 @@ type AclAppTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Users is the list of users to add, remove, or set on the ACL
-	Users []string `required:"false" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL; omit for state 'clear'"`
+	Users []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL"`
 
 	// State is the desired state of the ACL entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ACL entries"`
@@ -106,6 +106,9 @@ func (t AclAppTask) Execute(ctx context.Context) TaskOutputState {
 // Validate checks the AclAppTask's inputs without contacting the server, so
 // `docket validate` and Plan() surface the same errors.
 func (t AclAppTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
 	}
@@ -147,28 +150,21 @@ func (t AclAppTask) Plan(ctx context.Context) PlanResult {
 	})
 }
 
-// validateAclUsers checks the users list against the state it is used with.
-// present and absent each need at least one user, a set with none plans as
-// clear, and clear takes none: acl:set-users is called with no users to clear,
-// so a list supplied alongside it would be silently discarded rather than
-// removed. Every user is held to
+// validateAclUsers checks each user in the list. Which states need a list is
+// declared on the field: present and absent each need at least one user, a set
+// with none plans as clear, and clear takes none, since acl:set-users is
+// called with no users to clear and a list supplied alongside it would be
+// silently discarded rather than removed. Every user is held to
 // fn-acl-validate-user in dokku-acl, which acl:add, acl:remove and
 // acl:set-users (and their service variants) all apply, since the name is used
 // as a file name inside the acl directory.
 func validateAclUsers(state State, users []string) error {
 	switch state {
 	case StatePresent, StateAbsent, StateSet:
-		if len(users) == 0 && state != StateSet {
-			return fmt.Errorf("'users' must not be empty for state '%s'", state)
-		}
 		for i, u := range users {
 			if !validAclUser(u) {
 				return fmt.Errorf("'users' must be a valid user name for users[%d], got %q", i, u)
 			}
-		}
-	case StateClear:
-		if len(users) > 0 {
-			return fmt.Errorf("'users' must not be set for state 'clear'")
 		}
 	}
 	return nil

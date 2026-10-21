@@ -25,17 +25,26 @@ Keyed by `app`, `container_dir`, and `process_type`. Fields left empty are omitt
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `entry_name` | string | no |  |  | Named storage registry entry to attach (mutually exclusive with host_dir and mounts) |
-| `host_dir` | string | no |  |  | Host directory to mount in the legacy bind-mount form (mutually exclusive with entry_name and mounts) |
-| `container_dir` | string | no |  |  | Container directory to mount; required unless mounts is used |
-| `phases` | list | no |  |  | Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default. |
+| `entry_name` | string | no |  |  | Named storage registry entry to attach (must not be set when state is set or clear) |
+| `host_dir` | string | no |  |  | Host directory to mount in the legacy bind-mount form (must not be set when state is set or clear) |
+| `container_dir` | string | no |  |  | Container directory to mount (must not be set when state is set or clear) |
+| `phases` | list | no |  |  | Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default. (must not be set when state is set or clear) |
 | `process_type` | string | no |  |  | Process type the attachment applies to. With mounts, the process type whose mounts the list describes; mounts of other process types are left alone. Empty means dokku's _default_ scope. |
-| `subpath` | string | no |  |  | Subpath within the entry to mount |
-| `readonly` | bool | no |  |  | Mount the attachment as read-only |
-| `volume_chown` | string | no |  |  | Chown option applied to the volume at mount time |
-| `volume_options` | string | no |  |  | Comma-separated mount options applied to the attachment (e.g. 'Z' for SELinux, 'noexec,nosuid', NFS opts) |
-| `mounts` | list | no |  |  | Attachments of the process_type scope, instead of the single-mount fields. Under state 'set' the list is the scope's complete set of mounts; 'present' adds or updates the listed mounts and 'absent' removes them, leaving the rest of the scope in place; omit for state 'clear'. Each item has: entry_name, host_dir, container_dir, phases, subpath, readonly, volume_chown, volume_options. |
-| `state` | string | no | present | present, absent, set, clear | Desired state of the storage. 'set' and 'clear' require the mounts list form. |
+| `subpath` | string | no |  |  | Subpath within the entry to mount (must not be set when state is set or clear) |
+| `readonly` | bool | no |  |  | Mount the attachment as read-only (must not be set when state is set or clear) |
+| `volume_chown` | string | no |  |  | Chown option applied to the volume at mount time (must not be set when state is set or clear) |
+| `volume_options` | string | no |  |  | Comma-separated mount options applied to the attachment (e.g. 'Z' for SELinux, 'noexec,nosuid', NFS opts) (must not be set when state is set or clear) |
+| `mounts` | list | no |  |  | Attachments of the process_type scope, instead of the single-mount fields. Under state 'set' the list is the scope's complete set of mounts; 'present' adds or updates the listed mounts and 'absent' removes them, leaving the rest of the scope in place. Each item has: entry_name, host_dir, container_dir, phases, subpath, readonly, volume_chown, volume_options. (must not be set when state is clear) |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the storage |
+
+## Constraints
+
+- `mounts` must not be set together with `entry_name`, `host_dir`, `container_dir`, `phases`, `subpath`, `readonly`, `volume_chown` or `volume_options`.
+- At least one of `mounts`, `entry_name` or `host_dir` must be set when `state` is `present` or `absent`.
+- `entry_name` must not be set together with `host_dir`.
+- `entry_name` requires `container_dir`.
+- `host_dir` requires `container_dir`.
+- Each `mounts` item: exactly one of `entry_name` or `host_dir` must be set.
 
 ## Examples
 

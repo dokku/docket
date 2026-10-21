@@ -35,28 +35,28 @@ type ServiceBackupTask struct {
 	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Schedule is the cron schedule for backups. Requires bucket.
-	Schedule string `required:"false" yaml:"schedule,omitempty" description:"Cron schedule for backups (requires bucket)"`
+	Schedule string `required:"false" yaml:"schedule,omitempty" description:"Cron schedule for backups"`
 
 	// Bucket is the S3 bucket backups are written to. Requires schedule.
-	Bucket string `required:"false" yaml:"bucket,omitempty" description:"S3 bucket backups are written to (requires schedule)"`
+	Bucket string `required:"false" yaml:"bucket,omitempty" description:"S3 bucket backups are written to"`
 
 	// UseIam configures the schedule to use the instance IAM profile instead of static credentials.
 	UseIam bool `required:"false" yaml:"use_iam,omitempty" description:"Use the instance IAM profile instead of static credentials"`
 
 	// AwsAccessKeyID is the AWS access key id used for backup auth. Requires aws_secret_access_key.
-	AwsAccessKeyID string `required:"false" write_only:"true" yaml:"aws_access_key_id,omitempty" description:"AWS access key id for backup auth (requires aws_secret_access_key)"`
+	AwsAccessKeyID string `required:"false" write_only:"true" yaml:"aws_access_key_id,omitempty" description:"AWS access key id for backup auth"`
 
 	// AwsSecretAccessKey is the AWS secret access key used for backup auth. Requires aws_access_key_id.
-	AwsSecretAccessKey string `required:"false" sensitive:"true" write_only:"true" yaml:"aws_secret_access_key,omitempty" description:"AWS secret access key for backup auth (requires aws_access_key_id)"`
+	AwsSecretAccessKey string `required:"false" sensitive:"true" write_only:"true" yaml:"aws_secret_access_key,omitempty" description:"AWS secret access key for backup auth"`
 
 	// AwsDefaultRegion is the AWS region used for backup auth.
 	AwsDefaultRegion string `required:"false" yaml:"aws_default_region,omitempty" description:"AWS region used for backup auth"`
 
 	// AwsSignatureVersion is the AWS signature version used for backup auth.
-	AwsSignatureVersion string `required:"false" yaml:"aws_signature_version,omitempty" description:"AWS signature version used for backup auth (requires aws_default_region)"`
+	AwsSignatureVersion string `required:"false" yaml:"aws_signature_version,omitempty" description:"AWS signature version used for backup auth"`
 
 	// EndpointURL is the S3-compatible endpoint url used for backup auth.
-	EndpointURL string `required:"false" yaml:"endpoint_url,omitempty" description:"S3-compatible endpoint url used for backup auth (requires aws_signature_version)"`
+	EndpointURL string `required:"false" yaml:"endpoint_url,omitempty" description:"S3-compatible endpoint url used for backup auth"`
 
 	// EncryptionPassphrase is the passphrase used to encrypt future backups.
 	EncryptionPassphrase string `required:"false" sensitive:"true" write_only:"true" yaml:"encryption_passphrase,omitempty" description:"Passphrase used to encrypt future backups"`
@@ -191,38 +191,32 @@ func (t ServiceBackupTask) hasAuth() bool {
 	return t.AwsAccessKeyID != "" || t.AwsSecretAccessKey != ""
 }
 
+// Constraints declares what a present backup configuration needs. A schedule
+// writes to a bucket, and backup auth takes both halves of the key pair.
+// backup-auth is a fixed positional argv:
+//
+//	<access-key> <secret> <region> <signature-version> <endpoint>
+//
+// dokku cannot receive a later positional without every earlier one, and the
+// argv builder stops at the first empty field, so each trailing value requires
+// the ones before it rather than being silently dropped. And present has to
+// configure something.
+func (t ServiceBackupTask) Constraints() []Constraint {
+	present := []State{StatePresent}
+	keys := []string{"aws_access_key_id", "aws_secret_access_key"}
+	return []Constraint{
+		{Kind: ConstraintAllOrNoneOf, Fields: []string{"schedule", "bucket"}, States: present},
+		{Kind: ConstraintAllOrNoneOf, Fields: keys, States: present},
+		{Kind: ConstraintRequiredWith, Field: "aws_default_region", Fields: keys, States: present},
+		{Kind: ConstraintRequiredWith, Field: "aws_signature_version", Fields: append(append([]string{}, keys...), "aws_default_region"), States: present},
+		{Kind: ConstraintRequiredWith, Field: "endpoint_url", Fields: append(append([]string{}, keys...), "aws_signature_version"), States: present},
+		{Kind: ConstraintAtLeastOneOf, Fields: []string{"schedule", "aws_access_key_id", "aws_secret_access_key", "encryption_passphrase"}, States: present},
+	}
+}
+
 // Validate checks the ServiceBackupTask's inputs without contacting the server.
 func (t ServiceBackupTask) Validate() error {
-	if t.State == StatePresent {
-		if t.Schedule != "" && t.Bucket == "" {
-			return fmt.Errorf("'bucket' is required when 'schedule' is set")
-		}
-		if t.Bucket != "" && t.Schedule == "" {
-			return fmt.Errorf("'schedule' is required when 'bucket' is set")
-		}
-		if t.hasAuth() && (t.AwsAccessKeyID == "" || t.AwsSecretAccessKey == "") {
-			return fmt.Errorf("'aws_access_key_id' and 'aws_secret_access_key' are both required to configure backup auth")
-		}
-		// backup-auth is a fixed positional argv:
-		//   <access-key> <secret> <region> <signature-version> <endpoint>
-		// dokku cannot receive a later positional without every earlier
-		// one, and the argv builder stops at the first empty field, so
-		// reject the combinations that would silently drop a trailing
-		// value rather than passing it.
-		if (t.AwsDefaultRegion != "" || t.AwsSignatureVersion != "" || t.EndpointURL != "") && !t.hasAuth() {
-			return fmt.Errorf("'aws_access_key_id' and 'aws_secret_access_key' are required when 'aws_default_region', 'aws_signature_version', or 'endpoint_url' is set")
-		}
-		if t.EndpointURL != "" && t.AwsSignatureVersion == "" {
-			return fmt.Errorf("'aws_signature_version' is required when 'endpoint_url' is set")
-		}
-		if t.AwsSignatureVersion != "" && t.AwsDefaultRegion == "" {
-			return fmt.Errorf("'aws_default_region' is required when 'aws_signature_version' is set")
-		}
-		if t.Schedule == "" && !t.hasAuth() && t.EncryptionPassphrase == "" {
-			return fmt.Errorf("at least one of 'schedule', aws credentials, or 'encryption_passphrase' is required when state is 'present'")
-		}
-	}
-	return nil
+	return checkConstraints(t)
 }
 
 // Plan reports the drift the ServiceBackupTask would produce, comparing each

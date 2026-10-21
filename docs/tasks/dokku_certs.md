@@ -25,13 +25,22 @@ Keyed by `app` and `global`. Fields left empty are omitted from the address.
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `app` | string | no |  |  | Name of the app |
 | `global` | bool | no |  |  | Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin |
-| `cert` | string | no |  |  | Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content. (applied only, not read back) (sensitive) |
-| `key` | string | no |  |  | Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content. (applied only, not read back) (sensitive) |
-| `cert_content` | string | no |  |  | PEM-encoded certificate contents. Mutually exclusive with cert. Export reads it back with certs:show or global-cert:show. (not returned when reading state) (sensitive) |
-| `key_content` | string | no |  |  | PEM-encoded private key contents. Mutually exclusive with key. Export reads it back with certs:show or global-cert:show. (not returned when reading state) (sensitive) |
+| `cert` | string | no |  |  | Path on the dokku server to the SSL certificate file (applied only, not read back) (sensitive) |
+| `key` | string | no |  |  | Path on the dokku server to the SSL certificate key file (applied only, not read back) (sensitive) |
+| `cert_content` | string | no |  |  | PEM-encoded certificate contents. Export reads it back with certs:show or global-cert:show. (not returned when reading state) (sensitive) |
+| `key_content` | string | no |  |  | PEM-encoded private key contents. Export reads it back with certs:show or global-cert:show. (not returned when reading state) (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the SSL configuration |
+
+## Constraints
+
+- Exactly one of `app` or `global` must be set.
+- `cert` must not be set together with `cert_content` or `key_content`.
+- `key` must not be set together with `key_content` or `cert_content`.
+- At least one of `cert` or `cert_content` must be set when `state` is `present`.
+- `cert` and `key` must be set together or not at all when `state` is `present`.
+- `cert_content` and `key_content` must be set together or not at all when `state` is `present`.
 
 ## Examples
 

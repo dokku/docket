@@ -123,7 +123,8 @@ The checks cover: the file parses; the recipe shape is a list of plays; each tas
 right envelope keys plus exactly one task-type key; the task type is registered (with a "did you
 mean" for typos); required fields decode; a task's conditional/semantic input rules hold (for
 example a list that must be non-empty when `state: present`, or mutually-exclusive fields) - the same
-checks `plan` and `apply` run, surfaced offline as `invalid_task_input`; each input name is a valid
+checks `plan` and `apply` run, surfaced offline as `invalid_task_input`, one problem per
+[declared field constraint](task-catalog.md#constraints) the task breaks; each input name is a valid
 `{{ .name }}` template variable (a hyphenated name is rejected as `invalid_input_name`); each input
 declares a `type:` docket implements and a `default:` readable as that type (`invalid_input_type` and
 `invalid_input_default` - an omitted default is the zero value and is fine); sigil

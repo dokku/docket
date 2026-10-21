@@ -43,54 +43,54 @@ type StorageMountTask struct {
 
 	// EntryName is the named storage registry entry to attach. Mutually
 	// exclusive with host_dir.
-	EntryName string `required:"false" yaml:"entry_name,omitempty" description:"Named storage registry entry to attach (mutually exclusive with host_dir and mounts)"`
+	EntryName string `required:"false" forbidden_when:"set,clear" yaml:"entry_name,omitempty" description:"Named storage registry entry to attach"`
 
 	// HostDir is the host directory to mount (legacy bind-mount form).
 	// Mutually exclusive with entry_name.
-	HostDir string `required:"false" yaml:"host_dir,omitempty" description:"Host directory to mount in the legacy bind-mount form (mutually exclusive with entry_name and mounts)"`
+	HostDir string `required:"false" forbidden_when:"set,clear" yaml:"host_dir,omitempty" description:"Host directory to mount in the legacy bind-mount form"`
 
 	// ContainerDir is the container directory to mount
-	ContainerDir string `required:"false" identity:"key" yaml:"container_dir,omitempty" description:"Container directory to mount; required unless mounts is used"`
+	ContainerDir string `required:"false" forbidden_when:"set,clear" identity:"key" yaml:"container_dir,omitempty" description:"Container directory to mount"`
 
 	// Phases is the deployment phases the attachment applies to (deploy, run).
 	// Empty defers to the dokku default (both phases).
-	Phases []string `required:"false" ordered:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
+	Phases []string `required:"false" forbidden_when:"set,clear" ordered:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
 
 	// ProcessType limits the attachment to a specific process type. For the
 	// mounts list it is the scope the list describes.
 	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type the attachment applies to. With mounts, the process type whose mounts the list describes; mounts of other process types are left alone. Empty means dokku's _default_ scope."`
 
 	// Subpath is the subpath within the entry to mount
-	Subpath string `required:"false" yaml:"subpath,omitempty" description:"Subpath within the entry to mount"`
+	Subpath string `required:"false" forbidden_when:"set,clear" yaml:"subpath,omitempty" description:"Subpath within the entry to mount"`
 
 	// Readonly mounts the attachment as read-only when true
-	Readonly bool `required:"false" yaml:"readonly,omitempty" description:"Mount the attachment as read-only"`
+	Readonly bool `required:"false" forbidden_when:"set,clear" yaml:"readonly,omitempty" description:"Mount the attachment as read-only"`
 
 	// VolumeChown is the chown option applied to the volume at mount time
-	VolumeChown string `required:"false" yaml:"volume_chown,omitempty" description:"Chown option applied to the volume at mount time"`
+	VolumeChown string `required:"false" forbidden_when:"set,clear" yaml:"volume_chown,omitempty" description:"Chown option applied to the volume at mount time"`
 
 	// VolumeOptions is the comma-separated mount options applied to the
 	// attachment (e.g. "Z" for SELinux relabeling, "noexec,nosuid", NFS
 	// opts). On the legacy form it is appended as the third colon segment;
 	// on the named-entry form it is passed via --volume-options.
-	VolumeOptions string `required:"false" yaml:"volume_options,omitempty" description:"Comma-separated mount options applied to the attachment (e.g. 'Z' for SELinux, 'noexec,nosuid', NFS opts)"`
+	VolumeOptions string `required:"false" forbidden_when:"set,clear" yaml:"volume_options,omitempty" description:"Comma-separated mount options applied to the attachment (e.g. 'Z' for SELinux, 'noexec,nosuid', NFS opts)"`
 
 	// Mounts is the list form: the attachments of one process-type scope.
-	Mounts []StorageMount `required:"false" identity:"collection" ordered:"false" yaml:"mounts,omitempty" description:"Attachments of the process_type scope, instead of the single-mount fields. Under state 'set' the list is the scope's complete set of mounts; 'present' adds or updates the listed mounts and 'absent' removes them, leaving the rest of the scope in place; omit for state 'clear'."`
+	Mounts []StorageMount `required:"false" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"mounts,omitempty" description:"Attachments of the process_type scope, instead of the single-mount fields. Under state 'set' the list is the scope's complete set of mounts; 'present' adds or updates the listed mounts and 'absent' removes them, leaving the rest of the scope in place."`
 
 	// State is the desired state of the storage
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the storage. 'set' and 'clear' require the mounts list form."`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the storage"`
 }
 
 // StorageMount is one attachment in a StorageMountTask mounts list.
 type StorageMount struct {
 	// EntryName is the named storage registry entry to attach. Mutually
 	// exclusive with host_dir.
-	EntryName string `required:"false" yaml:"entry_name,omitempty" description:"Named storage registry entry to attach (mutually exclusive with host_dir)"`
+	EntryName string `required:"false" yaml:"entry_name,omitempty" description:"Named storage registry entry to attach"`
 
 	// HostDir is the host directory to mount (legacy bind-mount form).
 	// Mutually exclusive with entry_name.
-	HostDir string `required:"false" yaml:"host_dir,omitempty" description:"Host directory to mount in the legacy bind-mount form, docker-local apps only (mutually exclusive with entry_name)"`
+	HostDir string `required:"false" yaml:"host_dir,omitempty" description:"Host directory to mount in the legacy bind-mount form, docker-local apps only"`
 
 	// ContainerDir is the container directory to mount. It identifies the
 	// mount within its scope: dokku holds at most one attachment per
@@ -472,53 +472,44 @@ func (t StorageMountTask) hasSingleMount() bool {
 		t.Subpath != "" || t.Readonly || t.VolumeChown != "" || t.VolumeOptions != ""
 }
 
-// validate enforces the cross-field rules that the docs generator's
-// required-field check cannot express: which form each state accepts, exactly
-// one of entry_name / host_dir per mount, every phases entry is one of deploy /
-// run, and - for the mounts list - that every mount can be written in the
-// `storage:mount --replace` spec grammar.
-func (t StorageMountTask) validate() error {
-	single := t.hasSingleMount()
-	switch t.State {
-	case StateSet, StateClear:
-		if single {
-			return fmt.Errorf("the single-mount fields (entry_name, host_dir, container_dir, phases, subpath, readonly, volume_chown, volume_options) must not be set for state '%s'; use 'mounts'", t.State)
-		}
-		// storage:unmount --all takes no mounts, so a list supplied alongside
-		// clear would be silently discarded rather than removed.
-		if t.State == StateClear && len(t.Mounts) > 0 {
-			return fmt.Errorf("'mounts' must not be set for state '%s'", t.State)
-		}
-	default:
-		if single && len(t.Mounts) > 0 {
-			return errors.New("'mounts' and the single-mount fields (entry_name, host_dir, container_dir, phases, subpath, readonly, volume_chown, volume_options) are mutually exclusive")
-		}
-		if !single && len(t.Mounts) == 0 {
-			return errors.New("either 'mounts' or one of 'entry_name' or 'host_dir' is required")
-		}
-	}
+// storageMountSingleFields are the recipe keys of the single-mount form,
+// which the mounts list replaces.
+var storageMountSingleFields = []string{"entry_name", "host_dir", "container_dir", "phases", "subpath", "readonly", "volume_chown", "volume_options"}
 
-	if single {
-		if err := validateStorageMountSource(t.EntryName, t.HostDir); err != nil {
-			return err
-		}
-		if t.ContainerDir == "" {
-			return errors.New("'container_dir' is required")
-		}
+// Constraints declares which form each state accepts. present and absent take
+// either the mounts list or the single-mount fields, never both; set and
+// clear take only the list, and clear not even that, because
+// storage:unmount --all takes no mounts and a list supplied alongside it would
+// be silently discarded rather than removed. A single mount names exactly one
+// source and the container directory it is mounted at.
+func (t StorageMountTask) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintConflictsWith, Field: "mounts", Fields: storageMountSingleFields},
+		{Kind: ConstraintAtLeastOneOf, Fields: []string{"mounts", "entry_name", "host_dir"}, States: []State{StatePresent, StateAbsent}},
+		{Kind: ConstraintConflictsWith, Field: "entry_name", Fields: []string{"host_dir"}},
+		{Kind: ConstraintRequiredWith, Field: "entry_name", Fields: []string{"container_dir"}},
+		{Kind: ConstraintRequiredWith, Field: "host_dir", Fields: []string{"container_dir"}},
+	}
+}
+
+// Constraints declares that a mount names exactly one source.
+func (m StorageMount) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintExactlyOneOf, Fields: []string{"entry_name", "host_dir"}},
+	}
+}
+
+// validate enforces the rules past the declared constraints: every phases
+// entry is one of deploy / run, and - for the mounts list - that every mount
+// can be written in the `storage:mount --replace` spec grammar.
+func (t StorageMountTask) validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
+	if t.hasSingleMount() {
 		return validateStoragePhases(t.Phases)
 	}
 	return validateStorageMounts(t.Mounts, t.State)
-}
-
-// validateStorageMountSource enforces exactly one of entry_name / host_dir.
-func validateStorageMountSource(entryName, hostDir string) error {
-	if entryName == "" && hostDir == "" {
-		return errors.New("exactly one of 'entry_name' or 'host_dir' is required")
-	}
-	if entryName != "" && hostDir != "" {
-		return errors.New("'entry_name' and 'host_dir' are mutually exclusive")
-	}
-	return nil
 }
 
 // validateStoragePhases rejects any phase other than deploy / run.
@@ -552,17 +543,11 @@ func validateStorageMounts(mounts []StorageMount, state State) error {
 // grammar, `<entry-or-/host>:<container>[:<tokens>]`: the spec is split on its
 // first two colons and the tokens on commas, with no escaping.
 func (m StorageMount) validate(state State) error {
-	if err := validateStorageMountSource(m.EntryName, m.HostDir); err != nil {
-		return err
-	}
 	if m.EntryName != "" && (strings.HasPrefix(m.EntryName, "/") || strings.Contains(m.EntryName, ":")) {
 		return fmt.Errorf("entry_name %q must not start with '/' or contain ':'", m.EntryName)
 	}
 	if m.HostDir != "" && (!strings.HasPrefix(m.HostDir, "/") || strings.Contains(m.HostDir, ":")) {
 		return fmt.Errorf("host_dir %q must start with '/' and must not contain ':'", m.HostDir)
-	}
-	if m.ContainerDir == "" {
-		return errors.New("'container_dir' is required")
 	}
 	if !strings.HasPrefix(m.ContainerDir, "/") || strings.Contains(m.ContainerDir, ":") {
 		return fmt.Errorf("container_dir %q must start with '/' and must not contain ':'", m.ContainerDir)

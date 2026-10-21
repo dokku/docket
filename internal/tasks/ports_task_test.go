@@ -46,17 +46,17 @@ func TestPortsTaskValidatePerItem(t *testing.T) {
 		{
 			name:    "missing scheme is rejected",
 			task:    PortsTask{App: "web", PortMappings: []PortMapping{{Host: 80, Container: 5000}}},
-			wantErr: "'scheme' is required for port_mappings[0]",
+			wantErr: "'port_mappings[0].scheme' is required",
 		},
 		{
 			name:    "missing host is rejected",
 			task:    PortsTask{App: "web", PortMappings: []PortMapping{{Scheme: "http", Container: 5000}}},
-			wantErr: "'host' must be a port",
+			wantErr: "'port_mappings[0].host' is required",
 		},
 		{
 			name:    "missing container is rejected",
 			task:    PortsTask{App: "web", PortMappings: []PortMapping{{Scheme: "http", Host: 80}}},
-			wantErr: "'container' must be a port",
+			wantErr: "'port_mappings[0].container' is required",
 		},
 		{
 			name:    "missing app is rejected",
@@ -66,12 +66,12 @@ func TestPortsTaskValidatePerItem(t *testing.T) {
 		{
 			name:    "empty list is rejected for present",
 			task:    PortsTask{App: "web", PortMappings: []PortMapping{}, State: StatePresent},
-			wantErr: "'port_mappings' must not be empty for state 'present'",
+			wantErr: "'port_mappings' is required for state 'present'",
 		},
 		{
 			name:    "empty list is rejected for absent",
 			task:    PortsTask{App: "web", PortMappings: []PortMapping{}, State: StateAbsent},
-			wantErr: "'port_mappings' must not be empty for state 'absent'",
+			wantErr: "'port_mappings' is required for state 'absent'",
 		},
 		{
 			name: "empty list plans as clear for set",

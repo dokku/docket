@@ -351,7 +351,7 @@ func TestStorageEntryValidateRejectsCreateOptionsWhenAbsent(t *testing.T) {
 		{
 			"several at once",
 			StorageEntryTask{Name: "app-data", Size: "2Gi", Chown: "root", Mode: "0777"},
-			"'size', 'chown', 'mode' must not be set for state 'absent'",
+			"'size' must not be set for state 'absent'",
 		},
 	}
 

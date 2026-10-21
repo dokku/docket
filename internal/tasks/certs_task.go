@@ -18,26 +18,24 @@ import (
 
 // CertsTask manages SSL certificates for a dokku app or globally
 type CertsTask struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+	// App is the name of the app. Exactly one of App and Global is set.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the certificate should be applied globally
 	// via the dokku-global-cert plugin
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the certificate should be applied globally via the dokku-global-cert plugin"`
 
 	// Cert is the path on the dokku server to the SSL certificate file
-	Cert string `required:"false" sensitive:"true" apply_only:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file. Mutually exclusive with cert_content."`
+	Cert string `required:"false" sensitive:"true" apply_only:"true" yaml:"cert,omitempty" description:"Path on the dokku server to the SSL certificate file"`
 
 	// Key is the path on the dokku server to the SSL certificate key file
-	Key string `required:"false" sensitive:"true" apply_only:"true" yaml:"key,omitempty" description:"Path on the dokku server to the SSL certificate key file. Mutually exclusive with key_content."`
+	Key string `required:"false" sensitive:"true" apply_only:"true" yaml:"key,omitempty" description:"Path on the dokku server to the SSL certificate key file"`
 
-	// CertContent is the PEM-encoded certificate contents. Mutually
-	// exclusive with Cert.
-	CertContent string `required:"false" sensitive:"true" write_only:"true" yaml:"cert_content,omitempty" description:"PEM-encoded certificate contents. Mutually exclusive with cert. Export reads it back with certs:show or global-cert:show."`
+	// CertContent is the PEM-encoded certificate contents.
+	CertContent string `required:"false" sensitive:"true" write_only:"true" yaml:"cert_content,omitempty" description:"PEM-encoded certificate contents. Export reads it back with certs:show or global-cert:show."`
 
-	// KeyContent is the PEM-encoded private key contents. Mutually
-	// exclusive with Key.
-	KeyContent string `required:"false" sensitive:"true" write_only:"true" yaml:"key_content,omitempty" description:"PEM-encoded private key contents. Mutually exclusive with key. Export reads it back with certs:show or global-cert:show."`
+	// KeyContent is the PEM-encoded private key contents.
+	KeyContent string `required:"false" sensitive:"true" write_only:"true" yaml:"key_content,omitempty" description:"PEM-encoded private key contents. Export reads it back with certs:show or global-cert:show."`
 
 	// State is the desired state of the SSL configuration
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the SSL configuration"`
@@ -145,19 +143,23 @@ func (t CertsTask) Execute(ctx context.Context) TaskOutputState {
 	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
+// Constraints declares the certificate's scope and where its certificate and
+// key come from: both from paths or both from content, never mixed, and one or
+// the other when state is present.
+func (t CertsTask) Constraints() []Constraint {
+	return []Constraint{
+		appOrGlobalConstraints[0],
+		{Kind: ConstraintConflictsWith, Field: "cert", Fields: []string{"cert_content", "key_content"}},
+		{Kind: ConstraintConflictsWith, Field: "key", Fields: []string{"key_content", "cert_content"}},
+		{Kind: ConstraintAtLeastOneOf, Fields: []string{"cert", "cert_content"}, States: []State{StatePresent}},
+		{Kind: ConstraintAllOrNoneOf, Fields: []string{"cert", "key"}, States: []State{StatePresent}},
+		{Kind: ConstraintAllOrNoneOf, Fields: []string{"cert_content", "key_content"}, States: []State{StatePresent}},
+	}
+}
+
 // Validate checks the CertsTask's inputs without contacting the server.
 func (t CertsTask) Validate() error {
-	if err := validateCertsTask(t); err != nil {
-		return err
-	}
-	if t.State == StatePresent {
-		hasPaths := t.Cert != "" && t.Key != ""
-		hasContent := t.CertContent != "" && t.KeyContent != ""
-		if !hasPaths && !hasContent {
-			return fmt.Errorf("'cert' (or 'cert_content') and 'key' (or 'key_content') are required when state is 'present'")
-		}
-	}
-	return nil
+	return checkConstraints(t)
 }
 
 // Plan reports the drift the CertsTask would produce.
@@ -275,26 +277,6 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 			}, enabled)
 		},
 	})
-}
-
-// validateCertsTask validates the certs task parameters
-func validateCertsTask(t CertsTask) error {
-	if t.Global && t.App != "" {
-		return fmt.Errorf("'app' must not be set when 'global' is set to true")
-	}
-	if !t.Global && t.App == "" {
-		return fmt.Errorf("'app' is required when 'global' is not set to true")
-	}
-	if t.Cert != "" && t.CertContent != "" {
-		return fmt.Errorf("'cert' and 'cert_content' are mutually exclusive")
-	}
-	if t.Key != "" && t.KeyContent != "" {
-		return fmt.Errorf("'key' and 'key_content' are mutually exclusive")
-	}
-	if (t.Cert != "" && t.KeyContent != "") || (t.CertContent != "" && t.Key != "") {
-		return fmt.Errorf("'cert'/'key' and 'cert_content'/'key_content' cannot be mixed; supply both from the same source")
-	}
-	return nil
 }
 
 // buildCertTarball produces an uncompressed tar archive containing

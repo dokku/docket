@@ -27,11 +27,11 @@ type MaintenanceCustomPageTask struct {
 
 	// Content is inline HTML stored as maintenance.html. Mutually exclusive
 	// with Tarball.
-	Content string `required:"false" yaml:"content,omitempty" description:"Inline HTML stored as maintenance.html on the app. Mutually exclusive with tarball; one is required when state is present."`
+	Content string `required:"false" forbidden_when:"absent" yaml:"content,omitempty" description:"Inline HTML stored as maintenance.html on the app"`
 
 	// Tarball is the path on the machine running docket to a tar archive
 	// containing at least maintenance.html. Mutually exclusive with Content.
-	Tarball string `required:"false" runner_file:"true" apply_only:"true" yaml:"tarball,omitempty" description:"Path on the machine running docket to a tar archive containing at least maintenance.html. Mutually exclusive with content; one is required when state is present."`
+	Tarball string `required:"false" forbidden_when:"absent" runner_file:"true" apply_only:"true" yaml:"tarball,omitempty" description:"Path on the machine running docket to a tar archive containing at least maintenance.html"`
 
 	// State is the desired state of the custom maintenance page
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the custom maintenance page"`
@@ -115,16 +115,22 @@ func (t MaintenanceCustomPageTask) Execute(ctx context.Context) TaskOutputState 
 
 // Validate checks the MaintenanceCustomPageTask's inputs without contacting the server.
 func (t MaintenanceCustomPageTask) Validate() error {
-	if err := validateMaintenanceCustomPageTask(t); err != nil {
+	if err := checkConstraints(t); err != nil {
 		return err
 	}
-	if t.State == StatePresent && t.Content == "" && t.Tarball == "" {
-		return fmt.Errorf("one of 'content' or 'tarball' is required when state is 'present'")
-	}
-	if t.State == StateAbsent && (t.Content != "" || t.Tarball != "") {
-		return fmt.Errorf("'content' and 'tarball' must not be set when state is 'absent'")
+	if t.App == "" {
+		return fmt.Errorf("'app' is required")
 	}
 	return nil
+}
+
+// Constraints declares that the page comes from inline content or a tarball,
+// never both, and from one of them when state is present.
+func (t MaintenanceCustomPageTask) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintConflictsWith, Field: "content", Fields: []string{"tarball"}},
+		{Kind: ConstraintAtLeastOneOf, Fields: []string{"content", "tarball"}, States: []State{StatePresent}},
+	}
 }
 
 // Plan reports the drift the MaintenanceCustomPageTask would produce.
@@ -244,18 +250,6 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 			}, current, reported, err)
 		},
 	})
-}
-
-// validateMaintenanceCustomPageTask validates the task parameters shared by
-// both states.
-func validateMaintenanceCustomPageTask(t MaintenanceCustomPageTask) error {
-	if t.App == "" {
-		return fmt.Errorf("'app' is required")
-	}
-	if t.Content != "" && t.Tarball != "" {
-		return fmt.Errorf("'content' and 'tarball' are mutually exclusive")
-	}
-	return nil
 }
 
 // maintenanceCustomPageTarball resolves the tar bytes that will be streamed to

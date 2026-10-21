@@ -42,12 +42,16 @@ One JSON object, pretty-printed, with a `version` and a `tasks` array sorted by 
           "description": "Name of the app" },
         { "name": "global", "type": "bool", "required": false, "identity": "key",
           "description": "Flag indicating if the domains should be applied globally" },
-        { "name": "domains", "type": "list", "required": false, "identity": "collection",
-          "ordered": false, "description": "List of domain names; omit for state 'clear'",
+        { "name": "domains", "type": "list", "required": false,
+          "required_when": ["present", "absent"], "forbidden_when": ["clear"],
+          "identity": "collection", "ordered": false, "description": "List of domain names",
           "item": { "type": "string", "identity": "value" } },
         { "name": "state", "type": "string", "required": false, "default": "present",
           "choices": ["present", "absent", "set", "clear"],
           "description": "Desired state of the domains" }
+      ],
+      "constraints": [
+        { "kind": "exactly_one_of", "fields": ["app", "global"] }
       ],
       "examples": [
         { "name": "Add a domain to an app", "yaml": "dokku_domains:\n    app: node-js-app\n..." }
@@ -123,6 +127,8 @@ the reference page lists them in.
 | `name` | The recipe key. |
 | `type` | `string`, `bool`, `int`, `float`, `list`, `dict`, or `any`. |
 | `required` | Whether a recipe must supply it. |
+| `required_when` | The states in which a recipe must supply it. Absent when the field is never conditionally required. |
+| `forbidden_when` | The states in which a recipe must not supply it. Absent when the field is allowed in every state. |
 | `default` | The default, as a literal string to be read according to `type`. Absent when there is none. |
 | `choices` | The permitted values. Absent when the field is not an enum. |
 | `description` | Prose for a human. |
@@ -215,9 +221,50 @@ dict, `fields` (plus `keys`) for structured entries. It is present only on a fie
 collection: an untagged list is an attribute of the resource rather than the set of items the task
 manages, so it has no item identity to declare.
 
-The catalog cannot express every rule a task enforces. Mutually exclusive fields, per-item
-requirements and conditional requirements live in each task's own validation and in the field
-descriptions; `docket validate` is the authority.
+An object item can carry `item.constraints` as well, read the same way as a task's
+[constraints](#constraints). Its `states` are still the task's.
+
+## Constraints
+
+`required` only says a field is always needed. The rest of what a task needs is declared, and the
+declarations are what docket enforces, so a consumer that attaches them to its own schema refuses
+exactly what `plan`, `apply` and `docket validate` would.
+
+`required_when` and `forbidden_when` on a field list the states in which it must, or must not, be
+set. The states are values of the task's `state` field, so they apply only to a task that has one.
+
+`constraints` on a task, and `item.constraints` on an object item, are the rules over several
+fields, in declaration order:
+
+| `kind` | Meaning |
+|--------|---------|
+| `exactly_one_of` | Exactly one of `fields` is set. |
+| `at_least_one_of` | One or more of `fields` is set. |
+| `all_or_none_of` | `fields` are set together or not at all. |
+| `conflicts_with` | None of `fields` is set while `field` is. |
+| `required_with` | Every one of `fields` is set while `field` is. |
+
+`field` is present only on `conflicts_with` and `required_with`. `states` lists the states the rule
+applies in, and is absent when it applies in every state. Every name is a key of the same task or
+item.
+
+```json
+{ "kind": "at_least_one_of", "fields": ["cert", "cert_content"], "states": ["present"] }
+```
+
+A field is set when it differs from its zero value and from its `default`. An empty list or map, a
+`false` bool, and a value equal to the default all count as unset. A whitespace-only string counts
+as set.
+
+The kinds map onto Terraform's validators: `exactly_one_of` onto `ExactlyOneOf`,
+`at_least_one_of` onto `AtLeastOneOf`, `conflicts_with` onto `ConflictsWith`, `required_with` onto
+`RequiredWith`, and `all_or_none_of` onto `RequiredWith` from each field to the others. A rule
+with `states`, and every `required_when` and `forbidden_when`, depends on the configured `state`,
+which those validators cannot express.
+
+Rules that depend on a value rather than on whether a field is set - an enum, a format, a port
+range, a property name - are not declared. They stay in each task's own validation and in the field
+descriptions, and `docket validate` reports them. Adding these keys does not bump `version`.
 
 ## Identity
 

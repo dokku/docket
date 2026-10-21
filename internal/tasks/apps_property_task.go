@@ -24,6 +24,11 @@ func (t AppsPropertyTask) Doc() string {
 	return "Manages the apps plugin configuration for a given dokku application or globally"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t AppsPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t AppsPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -107,7 +112,7 @@ func (t AppsPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the AppsPropertyTask's inputs without contacting the server.
 func (t AppsPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the AppsPropertyTask would produce.

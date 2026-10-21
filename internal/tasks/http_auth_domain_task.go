@@ -18,7 +18,7 @@ type HttpAuthDomainTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Domains is the list of domains to restrict HTTP auth to
-	Domains []string `required:"false" identity:"collection" ordered:"false" yaml:"domains,omitempty" description:"List of domains to restrict HTTP auth to; omit for state 'clear'"`
+	Domains []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"domains,omitempty" description:"List of domains to restrict HTTP auth to"`
 
 	// State is the desired state of the HTTP auth domain entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the HTTP auth domain entries"`
@@ -109,19 +109,14 @@ func (t HttpAuthDomainTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the HttpAuthDomainTask's inputs without contacting the server.
 func (t HttpAuthDomainTask) Validate() error {
+	// http-auth:set-domains is called with no domains to clear, which is why a
+	// list is forbidden alongside clear: it would be silently discarded rather
+	// than removed.
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
-	}
-	if t.State == StatePresent && len(t.Domains) == 0 {
-		return fmt.Errorf("'domains' must not be empty for state 'present'")
-	}
-	if t.State == StateAbsent && len(t.Domains) == 0 {
-		return fmt.Errorf("'domains' must not be empty for state 'absent'")
-	}
-	// http-auth:set-domains is called with no domains to clear, so a list
-	// supplied alongside it would be silently discarded rather than removed.
-	if t.State == StateClear && len(t.Domains) > 0 {
-		return fmt.Errorf("'domains' must not be set for state 'clear'")
 	}
 	return nil
 }

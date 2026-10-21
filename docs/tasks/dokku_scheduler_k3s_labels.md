@@ -24,12 +24,16 @@ Keyed by `app`, `global`, `process_type`, and `resource_type`. Fields left empty
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `app` | string | no |  |  | Name of the app |
 | `global` | bool | no |  |  | Flag indicating if the labels should be applied globally |
 | `process_type` | string | no |  |  | Process type to scope the labels to. Defaults to the global process type when empty. |
 | `resource_type` | string | yes |  |  | Kubernetes resource type to scope the labels to (e.g. deployment, ingress). |
-| `labels` | dict | no |  |  | Map of label key to value to apply at the scope; omit for state 'clear'. Under state 'set' a key must not contain '=', and an empty value is stored rather than clearing the key. |
+| `labels` | dict | no |  |  | Map of label key to value to apply at the scope. Under state 'set' a key must not contain '=', and an empty value is stored rather than clearing the key. (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the labels. 'set' declares the complete map for this (process_type, resource_type) scope, removing any label the recipe does not name; 'clear' empties that scope alone, leaving other scopes on the app untouched. |
+
+## Constraints
+
+- Exactly one of `app` or `global` must be set.
 
 ## Examples
 

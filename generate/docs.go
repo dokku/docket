@@ -113,6 +113,12 @@ func paramDescription(field tasks.FieldSchema) string {
 	if field.Ordered != nil && *field.Ordered {
 		desc = strings.TrimSpace(desc + " (order is significant)")
 	}
+	if len(field.RequiredWhen) > 0 {
+		desc = strings.TrimSpace(desc + " (required when state is " + joinWords(field.RequiredWhen, "or", "") + ")")
+	}
+	if len(field.ForbiddenWhen) > 0 {
+		desc = strings.TrimSpace(desc + " (must not be set when state is " + joinWords(field.ForbiddenWhen, "or", "") + ")")
+	}
 	if field.RunnerFile {
 		desc = strings.TrimSpace(desc + " (read from the machine running docket)")
 	}
@@ -126,6 +132,73 @@ func paramDescription(field tasks.FieldSchema) string {
 		desc = strings.TrimSpace(desc + " (sensitive)")
 	}
 	return desc
+}
+
+// joinWords renders words as `a`, `a or b`, or `a, b or c`, each wrapped in
+// quote - a backtick for code, or nothing for prose.
+func joinWords(words []string, conjunction, quote string) string {
+	quoted := make([]string, len(words))
+	for i, word := range words {
+		quoted[i] = quote + word + quote
+	}
+	if len(quoted) <= 1 {
+		return strings.Join(quoted, "")
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " " + conjunction + " " + quoted[len(quoted)-1]
+}
+
+// constraintSentence renders one multi-field rule as a sentence.
+func constraintSentence(c tasks.Constraint) string {
+	var sentence string
+	switch c.Kind {
+	case tasks.ConstraintExactlyOneOf:
+		sentence = "Exactly one of " + joinWords(c.Fields, "or", "`") + " must be set"
+	case tasks.ConstraintAtLeastOneOf:
+		sentence = "At least one of " + joinWords(c.Fields, "or", "`") + " must be set"
+	case tasks.ConstraintAllOrNoneOf:
+		sentence = joinWords(c.Fields, "and", "`") + " must be set together or not at all"
+	case tasks.ConstraintConflictsWith:
+		sentence = "`" + c.Field + "` must not be set together with " + joinWords(c.Fields, "or", "`")
+	case tasks.ConstraintRequiredWith:
+		sentence = "`" + c.Field + "` requires " + joinWords(c.Fields, "and", "`")
+	default:
+		sentence = string(c.Kind) + " " + joinWords(c.Fields, "and", "`")
+	}
+	if len(c.States) > 0 {
+		states := make([]string, len(c.States))
+		for i, state := range c.States {
+			states[i] = string(state)
+		}
+		sentence += " when `state` is " + joinWords(states, "or", "`")
+	}
+	return sentence + "."
+}
+
+// constraintsSection renders the rules over several fields that the task, and
+// the elements of its structured lists, declare. Returns "" when there are
+// none. Rules about one field and the state - required in some states,
+// forbidden in others - are noted in that field's Parameters row instead.
+func constraintsSection(schema tasks.TaskSchema) string {
+	var lines []string
+	for _, c := range schema.Constraints {
+		lines = append(lines, "- "+constraintSentence(c))
+	}
+	for _, field := range schema.Fields {
+		if field.Item == nil {
+			continue
+		}
+		for _, c := range field.Item.Constraints {
+			sentence := constraintSentence(c)
+			if !strings.HasPrefix(sentence, "`") {
+				sentence = strings.ToLower(sentence[:1]) + sentence[1:]
+			}
+			lines = append(lines, fmt.Sprintf("- Each `%s` item: %s", field.Name, sentence))
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "## Constraints\n\n" + strings.Join(lines, "\n") + "\n"
 }
 
 // parametersSection renders the Parameters table for a task. Returns "" when
@@ -472,6 +545,9 @@ func renderPage(schema tasks.TaskSchema) string {
 	}
 	if pt := parametersSection(schema.Fields); pt != "" {
 		sections = append(sections, strings.TrimRight(pt, "\n"))
+	}
+	if cs := constraintsSection(schema); cs != "" {
+		sections = append(sections, strings.TrimRight(cs, "\n"))
 	}
 	if props := propertiesSection(schema.PropertySchema); props != "" {
 		sections = append(sections, strings.TrimRight(props, "\n"))

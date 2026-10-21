@@ -55,7 +55,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'scheme' is required"
+  assert_output --partial "'port_mappings[0].scheme' is required"
 }
 
 @test "docket validate exits 0 on ports state clear without port_mappings (#415)" {
@@ -142,7 +142,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'users' must not be empty for state 'absent'"
+  assert_output --partial "'users' is required for state 'absent'"
 }
 
 @test "docket validate exits 0 on acl service state set with an empty users (#619)" {
@@ -262,7 +262,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'allowed_ips' must not be empty for state 'absent'"
+  assert_output --partial "'allowed_ips' is required for state 'absent'"
 }
 
 @test "docket validate exits 1 on an http auth allowed ip that is not an address" {
@@ -425,7 +425,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'profile' is required when 'global' is not set to true"
+  assert_output --partial "exactly one of 'global' or 'profile' is required"
 }
 
 @test "docket validate exits 1 on node sysctls naming both scopes" {
@@ -440,7 +440,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'profile' must not be set when 'global' is set to true"
+  assert_output --partial "'global' and 'profile' are mutually exclusive"
 }
 
 # dokku refuses to write or clear sysctls for a profile it cannot derive a helm
@@ -673,7 +673,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'users' must not be empty"
+  assert_output --partial "'users' is required for state"
 }
 
 @test "docket validate exits 1 on a present-state empty pair value" {
@@ -802,7 +802,8 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "must not be set for state 'set'; use 'mounts'"
+  assert_output --partial "'entry_name' must not be set for state 'set'"
+  assert_output --partial "'container_dir' must not be set for state 'set'"
 }
 
 @test "docket validate exits 1 on storage mounts alongside the single-mount fields" {
@@ -819,7 +820,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'mounts' and the single-mount fields"
+  assert_output --partial "'mounts' and 'container_dir' are mutually exclusive"
 }
 
 @test "docket validate exits 1 on a storage mount with a key=value volume option" {
@@ -936,6 +937,26 @@ EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
   assert_failure
   assert_output --partial '"code":"invalid_task_input"'
+}
+
+@test "docket validate --json reports every constraint violation with its field" {
+  write_tasks_file <<'EOF'
+---
+- tasks:
+    - dokku_http_auth_user:
+        app: docket-test-validate
+        users:
+          - username: alice
+            password: secret
+            hash: "$apr1$abc"
+          - username: bob
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE" --json
+  assert_failure
+  assert_equal "$(echo "$output" | grep -c '"code":"invalid_task_input"')" 2
+  assert_output --partial '"field":"users[0].password"'
+  assert_output --partial '"field":"users[1]"'
+  refute_output --partial "secret"
 }
 
 @test "docket validate exits 1 on an input named after a built-in flag" {
@@ -1315,7 +1336,7 @@ EOF
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'preserve' is only valid for state 'set' or 'clear', got state 'present'"
+  assert_output --partial "'preserve' must not be set for state 'present'"
 }
 
 @test "docket validate exits 1 on a key in both config and preserve" {

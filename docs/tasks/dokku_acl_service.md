@@ -27,7 +27,7 @@ Keyed by `service` and `type`. Fields left empty are omitted from the address. M
 | --- | --- | --- | --- | --- | --- |
 | `service` | string | yes |  |  | Name of the service instance |
 | `type` | string | yes |  |  | Type of service (e.g. redis, postgres) |
-| `users` | list | no |  |  | List of users to add, remove, or set on the ACL; omit for state 'clear' |
+| `users` | list | no |  |  | List of users to add, remove, or set on the ACL (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the ACL entries |
 
 ## Examples

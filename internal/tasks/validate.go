@@ -40,6 +40,11 @@ type Problem struct {
 	Column  int
 	Message string
 	Hint    string
+
+	// Field is the recipe key path a declared constraint names, such as
+	// `password` or `users[1].hash`, or the element path for a rule over
+	// several of an element's keys. Empty for every other problem.
+	Field string
 }
 
 // ValidateOptions controls optional checks. Strict turns on the input-resolution
@@ -603,6 +608,25 @@ func validateTaskBody(registered reflect.Type, typeName string, body *yaml.Node,
 	// depend on it) or if a required-no-default input rendered to the
 	// validatePlaceholder sentinel, whose real value is unknown offline and
 	// could otherwise trip a "must not be set" check into a false positive.
+	//
+	// Every declared constraint the body breaks is reported, one problem
+	// each, so a recipe is fixed in one pass rather than one error at a time.
+	// The task's own Validate() starts with the same check and stops at the
+	// first, so it runs only once the declared constraints hold, for the
+	// value rules no declaration covers.
+	if len(problems) == 0 && !strings.Contains(string(marshaled), validatePlaceholder) {
+		for _, violation := range ConstraintViolations(v.Interface()) {
+			problems = append(problems, Problem{
+				Code:    "invalid_task_input",
+				Play:    playLabel,
+				Task:    taskLabel,
+				Line:    body.Line,
+				Column:  body.Column,
+				Message: violation.Message,
+				Field:   violation.Field,
+			})
+		}
+	}
 	if len(problems) == 0 && !strings.Contains(string(marshaled), validatePlaceholder) {
 		if validator, ok := v.Interface().(InputValidator); ok {
 			if err := validator.Validate(); err != nil {

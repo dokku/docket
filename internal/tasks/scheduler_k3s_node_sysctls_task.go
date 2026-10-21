@@ -28,13 +28,13 @@ const schedulerK3sNodeSysctlsGlobalScope = "--global"
 // forever. `--stored` arrived in dokku 0.38.30 (dokku/dokku#9075).
 type SchedulerK3sNodeSysctlsTask struct {
 	// Global scopes the sysctls to every node without a node profile.
-	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Scope the sysctls to every node without a node profile. Exactly one of 'global' and 'profile' must be set."`
+	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Scope the sysctls to every node without a node profile."`
 
 	// Profile scopes the sysctls to the nodes of a single node profile.
-	Profile string `required:"false" identity:"key" yaml:"profile,omitempty" description:"Name of the node profile to scope the sysctls to. The profile must already exist, and dokku only scopes sysctls to a lowercase name of at most 26 characters. A profile's nodes still inherit every global sysctl the profile does not set itself; this task manages only the profile's own map. Exactly one of 'global' and 'profile' must be set."`
+	Profile string `required:"false" identity:"key" yaml:"profile,omitempty" description:"Name of the node profile to scope the sysctls to. The profile must already exist, and dokku only scopes sysctls to a lowercase name of at most 26 characters. A profile's nodes still inherit every global sysctl the profile does not set itself; this task manages only the profile's own map."`
 
 	// Sysctls is the desired set of sysctl name/value pairs for the scope.
-	Sysctls map[string]string `required:"false" identity:"collection" yaml:"sysctls,omitempty" description:"Map of sysctl name to value to apply to the scope; omit for state 'clear'. Removing a sysctl stops it being applied to new nodes but does not revert it on nodes already carrying it until they reboot. Under state 'present' a value must not begin with '-', which dokku's flag parser would read as a flag; state 'set' has no such limit."`
+	Sysctls map[string]string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" yaml:"sysctls,omitempty" description:"Map of sysctl name to value to apply to the scope. Removing a sysctl stops it being applied to new nodes but does not revert it on nodes already carrying it until they reboot. Under state 'present' a value must not begin with '-', which dokku's flag parser would read as a flag; state 'set' has no such limit."`
 
 	// State is the desired state of the sysctls. 'present' and 'absent' are
 	// additive, naming sysctls to write or clear; 'set' declares the complete
@@ -135,13 +135,20 @@ func (t SchedulerK3sNodeSysctlsTask) Execute(ctx context.Context) TaskOutputStat
 	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
+// Constraints declares that the sysctls are scoped to a profile or are
+// global. :clear takes no sysctls, so a map supplied alongside it would be
+// silently discarded rather than removed; an empty set plans as clear, and the
+// additive states each consume a sysctl.
+func (t SchedulerK3sNodeSysctlsTask) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintExactlyOneOf, Fields: []string{"global", "profile"}},
+	}
+}
+
 // Validate checks the SchedulerK3sNodeSysctlsTask's inputs without contacting the server.
 func (t SchedulerK3sNodeSysctlsTask) Validate() error {
-	if t.Global && t.Profile != "" {
-		return errors.New("'profile' must not be set when 'global' is set to true")
-	}
-	if !t.Global && t.Profile == "" {
-		return errors.New("'profile' is required when 'global' is not set to true")
+	if err := checkConstraints(t); err != nil {
+		return err
 	}
 	if t.Profile != "" {
 		// dokku refuses a profile it cannot derive a helm release name from on
@@ -158,19 +165,6 @@ func (t SchedulerK3sNodeSysctlsTask) Validate() error {
 	effective := t.State
 	if effective == "" {
 		effective = StatePresent
-	}
-
-	// :clear takes no sysctls, so a map supplied alongside it would be silently
-	// discarded rather than removed. An empty set plans as clear, and the
-	// additive states each consume a sysctl.
-	if effective == StateClear {
-		if len(t.Sysctls) > 0 {
-			return errors.New("'sysctls' must not be set for state 'clear'")
-		}
-		return nil
-	}
-	if len(t.Sysctls) == 0 && effective != StateSet {
-		return fmt.Errorf("'sysctls' must not be empty for state '%s'", effective)
 	}
 
 	for _, name := range sortedPairKeys(t.Sysctls) {

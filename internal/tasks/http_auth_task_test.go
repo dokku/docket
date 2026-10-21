@@ -23,7 +23,7 @@ func TestHttpAuthTaskPresentWithoutUsername(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no username")
 	}
-	if !strings.Contains(result.Error.Error(), "username is required") {
+	if !strings.Contains(result.Error.Error(), "'username' and 'password' must be set together") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -35,7 +35,7 @@ func TestHttpAuthTaskPresentWithoutPassword(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no password")
 	}
-	if !strings.Contains(result.Error.Error(), "password is required") {
+	if !strings.Contains(result.Error.Error(), "'username' and 'password' must be set together") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

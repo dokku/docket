@@ -44,7 +44,7 @@ func TestSchedulerK3sChartTaskPresentWithoutValues(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no values")
 	}
-	if !strings.Contains(result.Error.Error(), "'values' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'values' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -58,7 +58,7 @@ func TestSchedulerK3sChartTaskAbsentWithoutValues(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has no values")
 	}
-	if !strings.Contains(result.Error.Error(), "'values' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'values' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

@@ -24,11 +24,15 @@ Keyed by `app`, `global`, and `trigger`. Fields left empty are omitted from the 
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `app` | string | no |  |  | Name of the app |
 | `global` | bool | no |  |  | Flag indicating if the trigger authentication should be applied globally |
 | `trigger` | string | yes |  |  | Name of the KEDA trigger authentication resource |
-| `metadata` | dict | no |  |  | Map of metadata key to value for the trigger authentication; omit for state 'clear'. On absent, only the keys are read. A key must not contain '='. |
+| `metadata` | dict | no |  |  | Map of metadata key to value for the trigger authentication. On absent, only the keys are read. A key must not contain '='. (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the trigger authentication metadata. 'set' declares the complete map for the trigger, removing any key the recipe does not name; 'clear' removes every key stored under it. |
+
+## Constraints
+
+- Exactly one of `app` or `global` must be set.
 
 ## Examples
 

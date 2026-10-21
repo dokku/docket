@@ -24,12 +24,16 @@ Keyed by `app`, `global`, and `server`. Fields left empty are omitted from the a
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `app` | string | no |  |  | Name of the app |
 | `global` | bool | no |  |  | Flag indicating if the registry credential should be applied globally |
 | `server` | string | yes |  |  | Docker registry hostname (e.g. docker.io, ghcr.io) |
 | `username` | string | no |  |  | Registry username (required when state is present) (not returned when reading state) |
 | `password` | string | no |  |  | Registry password (required when state is present) (not returned when reading state) (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the registry credential |
+
+## Constraints
+
+- Exactly one of `app` or `global` must be set.
 
 ## Examples
 

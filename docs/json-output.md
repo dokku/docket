@@ -134,6 +134,12 @@ treat any output as failure without parsing it. Every problem carries `version`,
 `message`; `play`, `task`, `line`, `column`, and `hint` appear when they are known. `message` and
 `hint` are masked.
 
+A task body that breaks several of its [declared field constraints](task-catalog.md#constraints)
+yields one `invalid_task_input` problem per constraint, so a recipe is fixed in one pass. Each
+carries `field`, the recipe key path at fault (`password`, `users[1].hash`), or for a rule over
+several of an item's keys the item's path (`users[1]`). `field` is absent on a rule over several of
+the task's own keys and on every other problem. It names a key, never a value, so it is not masked.
+
 ```jsonl
 {"code":"unknown_task_type","column":7,"hint":"did you mean \"dokku_app\"?","line":4,"message":"unknown task type \"dokku_appp\"","play":"play #1","task":"task #1 \"typo\"","type":"validate_problem","version":1}
 {"code":"missing_required_field","column":9,"line":8,"message":"missing required field \"app\" on dokku_config","play":"play #1","task":"task #2 \"configure\"","type":"validate_problem","version":1}
@@ -163,7 +169,7 @@ reworded:
 | `envelope_key_unsupported` | An envelope key is reserved for a future release but not yet implemented. `hint` names the tracking issue. |
 | `task_body_decode` | The task body does not decode into the task's struct. |
 | `missing_required_field` | A field tagged `required:"true"` is absent or zero. |
-| `invalid_task_input` | A task's own `Validate()` rejected the combination of fields - conditional requirements, mutually-exclusive fields, enum values. |
+| `invalid_task_input` | The task body breaks one of its declared field constraints - a field required or refused in its state, mutually-exclusive fields, fields set together - or its own `Validate()` rejected a value, such as an enum or a format. |
 | `template_render` | A `{{ ... }}` template failed to render. |
 | `unsafe_input_value` | An input value would break the scalar it is substituted into. See [special characters in values](inputs.md#special-characters-in-values). |
 | `input_missing` | (`--strict`) A `required: true` input has no default and no supplied value. |

@@ -37,48 +37,48 @@ type ServiceCreateTask struct {
 	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Image is the image the service container is started from.
-	Image string `required:"false" yaml:"image,omitempty" description:"Image to start the service with, e.g. postgis/postgis. Applied when the service is created; image_drift decides what happens when an existing service is running something else."`
+	Image string `required:"false" forbidden_when:"absent" yaml:"image,omitempty" description:"Image to start the service with, e.g. postgis/postgis. Applied when the service is created; image_drift decides what happens when an existing service is running something else."`
 
 	// ImageVersion is the tag of the image the service container is started from.
-	ImageVersion string `required:"false" yaml:"image_version,omitempty" description:"Image tag to start the service with. Applied when the service is created; image_drift decides what happens when an existing service is running something else."`
+	ImageVersion string `required:"false" forbidden_when:"absent" yaml:"image_version,omitempty" description:"Image tag to start the service with. Applied when the service is created; image_drift decides what happens when an existing service is running something else."`
 
 	// ConfigOptions are extra arguments passed to the container create command.
-	ConfigOptions string `required:"false" yaml:"config_options,omitempty" description:"Extra arguments to pass to the container create command. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	ConfigOptions string `required:"false" forbidden_when:"absent" yaml:"config_options,omitempty" description:"Extra arguments to pass to the container create command. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// CustomEnv is the environment the service container is started with.
-	CustomEnv map[string]string `required:"false" sensitive:"true" yaml:"custom_env,omitempty" description:"Map of environment variables to start the service with. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	CustomEnv map[string]string `required:"false" forbidden_when:"absent" sensitive:"true" yaml:"custom_env,omitempty" description:"Map of environment variables to start the service with. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// Memory is the container memory limit in megabytes.
-	Memory int `required:"false" yaml:"memory,omitempty" description:"Container memory limit in megabytes. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	Memory int `required:"false" forbidden_when:"absent" yaml:"memory,omitempty" description:"Container memory limit in megabytes. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// ShmSize is the shared memory size of the service container.
-	ShmSize string `required:"false" yaml:"shm_size,omitempty" description:"Shared memory size for the service container. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	ShmSize string `required:"false" forbidden_when:"absent" yaml:"shm_size,omitempty" description:"Shared memory size for the service container. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// InitialNetwork is the network the service is attached to on creation.
-	InitialNetwork string `required:"false" yaml:"initial_network,omitempty" description:"Network to attach the service to initially. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	InitialNetwork string `required:"false" forbidden_when:"absent" yaml:"initial_network,omitempty" description:"Network to attach the service to initially. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// PostCreateNetwork are the networks attached after service creation.
-	PostCreateNetwork []string `required:"false" ordered:"true" yaml:"post_create_network,omitempty" description:"Networks to attach the service container to after creation. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	PostCreateNetwork []string `required:"false" forbidden_when:"absent" ordered:"true" yaml:"post_create_network,omitempty" description:"Networks to attach the service container to after creation. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// PostStartNetwork are the networks attached after service start.
-	PostStartNetwork []string `required:"false" ordered:"true" yaml:"post_start_network,omitempty" description:"Networks to attach the service container to after start. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
+	PostStartNetwork []string `required:"false" forbidden_when:"absent" ordered:"true" yaml:"post_start_network,omitempty" description:"Networks to attach the service container to after start. Applied when the service is created; image_drift decides what happens when an existing service has a different value."`
 
 	// Password overrides the user-level service password.
-	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Override the user-level service password. Applied only when the service is created."`
+	Password string `required:"false" forbidden_when:"absent" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Override the user-level service password. Applied only when the service is created."`
 
 	// RootPassword overrides the root-level service password.
-	RootPassword string `required:"false" sensitive:"true" write_only:"true" yaml:"root_password,omitempty" description:"Override the root-level service password. Applied only when the service is created."`
+	RootPassword string `required:"false" forbidden_when:"absent" sensitive:"true" write_only:"true" yaml:"root_password,omitempty" description:"Override the root-level service password. Applied only when the service is created."`
 
 	// ImageDrift is what the task does when the service already exists with an
 	// image or a create-time option other than the one the recipe declares.
 	// Read through imageDriftMode, never directly: the `default:` tag is only
 	// applied to a decoded recipe, so a task built in Go carries the empty
 	// string.
-	ImageDrift string `required:"false" apply_only:"true" yaml:"image_drift,omitempty" default:"warn" options:"ignore,warn,error,upgrade" description:"What to do when the service already exists on an image other than the one pinned, or with a create-time option other than the one declared: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. An image is reconciled with <service>:upgrade, which recreates the container with no data migration across major versions; any other option with <service>:set followed by a stop and a start. Both mean downtime. Options the recipe does not declare are left as the server has them."`
+	ImageDrift string `required:"false" forbidden_when:"absent" apply_only:"true" yaml:"image_drift,omitempty" default:"warn" options:"ignore,warn,error,upgrade" description:"What to do when the service already exists on an image other than the one pinned, or with a create-time option other than the one declared: 'ignore' it, 'warn' and leave it alone, 'error' out, or 'upgrade' the service to reconcile it. An image is reconciled with <service>:upgrade, which recreates the container with no data migration across major versions; any other option with <service>:set followed by a stop and a start. Both mean downtime. Options the recipe does not declare are left as the server has them."`
 
 	// RestartApps forces the apps linked to the service to restart after an
 	// image_drift upgrade has recreated its container.
-	RestartApps bool `required:"false" apply_only:"true" yaml:"restart_apps,omitempty" description:"Restart the apps linked to the service after an image_drift 'upgrade' runs <service>:upgrade, so they reconnect to the new container. Only valid with image_drift 'upgrade', and only acted on when the image drifted and the service has linked apps: reconciling the other options with a stop and a start leaves linked apps alone."`
+	RestartApps bool `required:"false" forbidden_when:"absent" apply_only:"true" yaml:"restart_apps,omitempty" description:"Restart the apps linked to the service after an image_drift 'upgrade' runs <service>:upgrade, so they reconnect to the new container. Only valid with image_drift 'upgrade', and only acted on when the image drifted and the service has linked apps: reconciling the other options with a stop and a start leaves linked apps alone."`
 
 	// State is the desired state of the service
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service"`
@@ -266,39 +266,6 @@ func (t ServiceCreateTask) examples() ([]Doc, error) {
 // Execute creates or destroys a dokku service
 func (t ServiceCreateTask) Execute(ctx context.Context) TaskOutputState {
 	return ExecutePlan(ctx, t.Plan(ctx))
-}
-
-// setCreateOptions returns the recipe keys of every create-time option the
-// task supplied, in field order. Keep it in step with createFlags: an option
-// that renders a flag but is missing here would be silently accepted under
-// state 'absent', where dokku has nowhere to put it.
-//
-// image_drift and restart_apps are deliberately absent: they render no flag on
-// any subcommand, so createFlags is not the list they belong to. Validate
-// rejects them under state 'absent' on their own terms.
-func (t ServiceCreateTask) setCreateOptions() []string {
-	var set []string
-	for _, opt := range []struct {
-		name string
-		used bool
-	}{
-		{"image", t.Image != ""},
-		{"image_version", t.ImageVersion != ""},
-		{"config_options", t.ConfigOptions != ""},
-		{"custom_env", len(t.CustomEnv) > 0},
-		{"memory", t.Memory != 0},
-		{"shm_size", t.ShmSize != ""},
-		{"initial_network", t.InitialNetwork != ""},
-		{"post_create_network", len(t.PostCreateNetwork) > 0},
-		{"post_start_network", len(t.PostStartNetwork) > 0},
-		{"password", t.Password != ""},
-		{"root_password", t.RootPassword != ""},
-	} {
-		if opt.used {
-			set = append(set, opt.name)
-		}
-	}
-	return set
 }
 
 // createFlags renders the create-time options as the flags every datastore
@@ -623,23 +590,16 @@ func (t ServiceCreateTask) imageSuffix() string {
 }
 
 // Validate checks the ServiceCreateTask's inputs without contacting the server.
+//
+// `<service>:destroy` takes none of the create-time options, which is why each
+// is forbidden alongside state 'absent': it would be silently discarded rather
+// than applied. A service being destroyed has no pin to drift from either, so
+// image_drift and restart_apps are forbidden there too.
 func (t ServiceCreateTask) Validate() error {
-	// `<service>:destroy` takes none of the create-time options, so any
-	// supplied alongside state 'absent' would be silently discarded rather
-	// than applied. Every other state consumes them.
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.State == StateAbsent {
-		if set := t.setCreateOptions(); len(set) > 0 {
-			return fmt.Errorf("'%s' must not be set for state 'absent'", strings.Join(set, "', '"))
-		}
-		// Neither drift field renders a flag, so setCreateOptions does not
-		// carry them. A service being destroyed has no pin to drift from, so
-		// either one is a mistake worth naming rather than ignoring.
-		if t.imageDriftMode() != imageDriftWarn {
-			return fmt.Errorf("'image_drift' must not be set for state 'absent'")
-		}
-		if t.RestartApps {
-			return fmt.Errorf("'restart_apps' must not be set for state 'absent'")
-		}
 		return nil
 	}
 

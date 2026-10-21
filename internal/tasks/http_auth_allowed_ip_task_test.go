@@ -28,7 +28,7 @@ func TestHttpAuthAllowedIpTaskPresentMissingApp(t *testing.T) {
 }
 
 func TestHttpAuthAllowedIpTaskAbsentMissingApp(t *testing.T) {
-	task := HttpAuthAllowedIpTask{State: StateAbsent}
+	task := HttpAuthAllowedIpTask{AllowedIps: []string{"10.0.0.1"}, State: StateAbsent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
@@ -55,7 +55,7 @@ func TestHttpAuthAllowedIpTaskPresentEmptyAllowedIps(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty allowed_ips and state=present should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'allowed_ips' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'allowed_ips' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -69,7 +69,7 @@ func TestHttpAuthAllowedIpTaskAbsentEmptyAllowedIps(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty allowed_ips and state=absent should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'allowed_ips' must not be empty for state 'absent'") {
+	if !strings.Contains(result.Error.Error(), "'allowed_ips' is required for state 'absent'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

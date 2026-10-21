@@ -41,43 +41,43 @@ type StorageEntryTask struct {
 
 	// Path is the host path for the entry. Optional; on docker-local it
 	// defaults to the dokku storage root + name.
-	Path string `required:"false" yaml:"path,omitempty" description:"Host path for the entry: an absolute path, or a docker named volume on docker-local. Defaults to the dokku storage root joined with the entry name. Cannot be changed on an entry that exists; a recipe that disagrees with the recorded path is reported as an error"`
+	Path string `required:"false" forbidden_when:"absent" yaml:"path,omitempty" description:"Host path for the entry: an absolute path, or a docker named volume on docker-local. Defaults to the dokku storage root joined with the entry name. Cannot be changed on an entry that exists; a recipe that disagrees with the recorded path is reported as an error"`
 
 	// Scheduler is the scheduler that backs the entry
 	Scheduler string `required:"false" yaml:"scheduler,omitempty" default:"docker-local" options:"docker-local,k3s" description:"Scheduler that backs the entry. Cannot be changed on an entry that exists; a recipe that disagrees with the recorded scheduler is reported as an error"`
 
 	// Size is the volume size (k3s scheduler; required there, rejected on docker-local)
-	Size string `required:"false" yaml:"size,omitempty" description:"Volume size (k3s scheduler; required there and rejected on docker-local). Converged on an entry that exists"`
+	Size string `required:"false" forbidden_when:"absent" yaml:"size,omitempty" description:"Volume size (k3s scheduler; required there and rejected on docker-local). Converged on an entry that exists"`
 
 	// AccessMode is the volume access mode (k3s scheduler)
-	AccessMode string `required:"false" yaml:"access_mode,omitempty" options:"ReadWriteOnce,ReadOnlyMany,ReadWriteMany,ReadWriteOncePod" description:"Volume access mode (k3s scheduler; rejected on docker-local). Cannot be changed on an entry that exists, since kubernetes cannot rebind a bound claim; a recipe that disagrees with the recorded value is reported as an error"`
+	AccessMode string `required:"false" forbidden_when:"absent" yaml:"access_mode,omitempty" options:"ReadWriteOnce,ReadOnlyMany,ReadWriteMany,ReadWriteOncePod" description:"Volume access mode (k3s scheduler; rejected on docker-local). Cannot be changed on an entry that exists, since kubernetes cannot rebind a bound claim; a recipe that disagrees with the recorded value is reported as an error"`
 
 	// StorageClass is the storage class name (k3s scheduler)
-	StorageClass string `required:"false" yaml:"storage_class,omitempty" description:"Storage class name (k3s scheduler; rejected on docker-local, and mutually exclusive with path). Cannot be changed on an entry that exists; a recipe that disagrees with the recorded value is reported as an error"`
+	StorageClass string `required:"false" forbidden_when:"absent" yaml:"storage_class,omitempty" description:"Storage class name (k3s scheduler; rejected on docker-local, and mutually exclusive with path). Cannot be changed on an entry that exists; a recipe that disagrees with the recorded value is reported as an error"`
 
 	// Namespace is the namespace (scheduler-dependent)
-	Namespace string `required:"false" yaml:"namespace,omitempty" description:"Namespace (scheduler-dependent). Converged on an entry that exists"`
+	Namespace string `required:"false" forbidden_when:"absent" yaml:"namespace,omitempty" description:"Namespace (scheduler-dependent). Converged on an entry that exists"`
 
 	// Chown is the ownership applied to the entry's host directory, on
 	// creation and again whenever the recipe changes it.
-	Chown string `required:"false" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Ownership applied to the entry's host directory: an ownership preset or a numeric uid (0-65535). dokku sets the owner and the group to the same id, and refuses the value unless the entry sits at its default host path. Converged on an entry that exists, which re-runs the chown on a docker-local directory"`
+	Chown string `required:"false" forbidden_when:"absent" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Ownership applied to the entry's host directory: an ownership preset or a numeric uid (0-65535). dokku sets the owner and the group to the same id, and refuses the value unless the entry sits at its default host path. Converged on an entry that exists, which re-runs the chown on a docker-local directory"`
 
 	// Mode is the octal permission set applied to the entry's host
 	// directory, on creation and again whenever the recipe changes it.
-	Mode string `required:"false" yaml:"mode,omitempty" description:"Octal permissions applied to the entry's host directory: a 3 or 4 digit mode, recorded in its 4 digit form so 755 and 0755 are the same value (docker-local scheduler; rejected on k3s). dokku refuses the value unless the entry sits at its default host path, and applies it non-recursively. Converged on an entry that exists, which re-runs the chmod on a docker-local directory. Omit it to leave the directory at the 0755 dokku creates it with"`
+	Mode string `required:"false" forbidden_when:"absent" yaml:"mode,omitempty" description:"Octal permissions applied to the entry's host directory: a 3 or 4 digit mode, recorded in its 4 digit form so 755 and 0755 are the same value (docker-local scheduler; rejected on k3s). dokku refuses the value unless the entry sits at its default host path, and applies it non-recursively. Converged on an entry that exists, which re-runs the chmod on a docker-local directory. Omit it to leave the directory at the 0755 dokku creates it with"`
 
 	// ReclaimPolicy is the reclaim policy (k3s scheduler)
-	ReclaimPolicy string `required:"false" yaml:"reclaim_policy,omitempty" options:"Retain,Delete" description:"Reclaim policy applied to the underlying volume (k3s scheduler). Converged on an entry that exists"`
+	ReclaimPolicy string `required:"false" forbidden_when:"absent" yaml:"reclaim_policy,omitempty" options:"Retain,Delete" description:"Reclaim policy applied to the underlying volume (k3s scheduler). Converged on an entry that exists"`
 
 	// Annotations are the volume annotations (k3s scheduler)
-	Annotations map[string]string `required:"false" yaml:"annotations,omitempty" description:"Map of annotations set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone"`
+	Annotations map[string]string `required:"false" forbidden_when:"absent" yaml:"annotations,omitempty" description:"Map of annotations set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone"`
 
 	// Labels are the volume labels (k3s scheduler)
-	Labels map[string]string `required:"false" yaml:"labels,omitempty" description:"Map of labels set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone"`
+	Labels map[string]string `required:"false" forbidden_when:"absent" yaml:"labels,omitempty" description:"Map of labels set on the underlying volume (k3s scheduler). Converged one key at a time on an entry that exists, so a key the recipe omits is left alone"`
 
 	// DestroyHostDir removes the host directory alongside the entry, and
 	// is only meaningful under state 'absent'.
-	DestroyHostDir bool `required:"false" apply_only:"true" yaml:"destroy_host_dir,omitempty" description:"Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set"`
+	DestroyHostDir bool `required:"false" forbidden_when:"present" apply_only:"true" yaml:"destroy_host_dir,omitempty" description:"Remove the entry's host directory and its contents alongside deregistering the entry (docker-local scheduler). Only valid with state 'absent', and only where the entry sits at its default host path. An entry recording reclaim_policy 'Delete' loses its host directory whether or not this is set"`
 
 	// State is the desired state of the storage entry
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the storage entry"`
@@ -227,39 +227,6 @@ func kvFlags(flag string, values map[string]string) []string {
 	return args
 }
 
-// setEntryOptions returns the recipe keys of every create-time option the
-// task supplied, in field order. Keep it in step with createArgs: an option
-// that renders a flag but is missing here would be silently accepted under
-// state 'absent', where storage:destroy has nowhere to put it. 'scheduler'
-// is deliberately absent - it carries a default, so it is never empty by
-// the time Validate runs. So is 'destroy_host_dir', which renders a flag on
-// storage:destroy rather than storage:create and is therefore the one field
-// state 'absent' wants rather than refuses; Validate rejects it from the
-// other direction instead.
-func (t StorageEntryTask) setEntryOptions() []string {
-	var set []string
-	for _, opt := range []struct {
-		name string
-		used bool
-	}{
-		{"path", t.Path != ""},
-		{"size", t.Size != ""},
-		{"access_mode", t.AccessMode != ""},
-		{"storage_class", t.StorageClass != ""},
-		{"namespace", t.Namespace != ""},
-		{"chown", t.Chown != ""},
-		{"mode", t.Mode != ""},
-		{"reclaim_policy", t.ReclaimPolicy != ""},
-		{"annotations", len(t.Annotations) > 0},
-		{"labels", len(t.Labels) > 0},
-	} {
-		if opt.used {
-			set = append(set, opt.name)
-		}
-	}
-	return set
-}
-
 // dockerNamedVolume matches the docker named-volume token dokku accepts in
 // place of an absolute path on a docker-local entry. Mirrors the regexp in
 // dokku's plugins/storage/entry.go.
@@ -299,21 +266,19 @@ var storageAccessModes = map[string]bool{
 // dokku ignores rather than rejects namespace, reclaim_policy,
 // annotations, and labels on a docker-local entry, and a stricter docket
 // would refuse recipes the server accepts.
+//
+// storage:destroy takes only the entry name, which is why every create-time
+// option is forbidden alongside state 'absent': it would be silently
+// discarded. 'scheduler' is the exception, since it carries a default and is
+// never empty by the time Validate runs. destroy_host_dir is the mirror:
+// storage:destroy is the only command that takes the flag, so a recipe asking
+// for it under any other state is asking for a removal that will never happen.
 func (t StorageEntryTask) Validate() error {
-	// storage:destroy takes only the entry name, so any create-time option
-	// supplied alongside state 'absent' would be silently discarded.
-	if t.State == StateAbsent {
-		if set := t.setEntryOptions(); len(set) > 0 {
-			return fmt.Errorf("'%s' must not be set for state 'absent'", strings.Join(set, "', '"))
-		}
-		return nil
+	if err := checkConstraints(t); err != nil {
+		return err
 	}
-
-	// The mirror of the check above: storage:destroy is the only command
-	// that takes the flag, so a recipe asking for it under any other state
-	// is asking for a removal that will never happen.
-	if t.DestroyHostDir {
-		return errors.New("'destroy_host_dir' must not be set for state 'present'")
+	if t.State == StateAbsent {
+		return nil
 	}
 
 	// An omitted scheduler is docker-local: createArgs drops the flag so

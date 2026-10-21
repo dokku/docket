@@ -5,8 +5,8 @@ import "context"
 // SchedulerK3sLabelsTask manages a group of scheduler-k3s labels scoped to a
 // (process_type, resource_type) pair on a dokku application or globally.
 type SchedulerK3sLabelsTask struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+	// App is the name of the app. Exactly one of App and Global is set.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the labels should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the labels should be applied globally"`
@@ -22,7 +22,7 @@ type SchedulerK3sLabelsTask struct {
 
 	// Labels is the desired set of label key/value pairs to apply at the
 	// (process_type, resource_type) scope.
-	Labels map[string]string `required:"false" identity:"collection" yaml:"labels,omitempty" description:"Map of label key to value to apply at the scope; omit for state 'clear'. Under state 'set' a key must not contain '=', and an empty value is stored rather than clearing the key."`
+	Labels map[string]string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" yaml:"labels,omitempty" description:"Map of label key to value to apply at the scope. Under state 'set' a key must not contain '=', and an empty value is stored rather than clearing the key."`
 
 	// State is the desired state of the labels. 'present' and 'absent' are
 	// additive, naming keys to write or clear; 'set' declares the complete map
@@ -142,7 +142,15 @@ func (t SchedulerK3sLabelsTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the SchedulerK3sLabelsTask's inputs without contacting the server.
 func (t SchedulerK3sLabelsTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	return validateSchedulerK3sScopedPairs(t.spec(), t.State)
+}
+
+// Constraints declares that the labels belong to an app or are global.
+func (t SchedulerK3sLabelsTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
 }
 
 // Plan reports the drift the SchedulerK3sLabelsTask would produce.

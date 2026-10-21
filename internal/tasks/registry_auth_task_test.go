@@ -24,7 +24,7 @@ func TestRegistryAuthTaskMissingApp(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'app' is required") {
+	if !strings.Contains(result.Error.Error(), "exactly one of 'app' or 'global' is required") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -35,7 +35,7 @@ func TestRegistryAuthTaskGlobalWithApp(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be set when 'global' is set to true") {
+	if !strings.Contains(result.Error.Error(), "'app' and 'global' are mutually exclusive") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -59,7 +59,7 @@ func TestRegistryAuthTaskPresentMissingUsername(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without username should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'username' and 'password' are required") {
+	if !strings.Contains(result.Error.Error(), "is required for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -70,7 +70,7 @@ func TestRegistryAuthTaskPresentMissingPassword(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without password should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'username' and 'password' are required") {
+	if !strings.Contains(result.Error.Error(), "is required for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

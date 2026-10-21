@@ -410,8 +410,8 @@ func TestConfigTaskValidate(t *testing.T) {
 		{"clear ok", ConfigTask{App: "web", Preserve: []string{"P"}, State: StateClear}, ""},
 		{"set empty plans as clear", ConfigTask{App: "web", Preserve: []string{"P"}, State: StateSet}, ""},
 		{"clear with config", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, State: StateClear}, "'config' must not be set for state 'clear'"},
-		{"preserve under present", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"P"}}, "'preserve' is only valid for state 'set' or 'clear', got state 'present'"},
-		{"preserve under absent", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"P"}, State: StateAbsent}, "'preserve' is only valid for state 'set' or 'clear', got state 'absent'"},
+		{"preserve under present", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"P"}}, "'preserve' must not be set for state 'present'"},
+		{"preserve under absent", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"P"}, State: StateAbsent}, "'preserve' must not be set for state 'absent'"},
 		{"preserve overlaps config", ConfigTask{App: "web", Config: map[string]string{"K": "v"}, Preserve: []string{"K"}, State: StateSet}, `key "K" must not be in both 'config' and 'preserve'`},
 	}
 	for _, tc := range cases {

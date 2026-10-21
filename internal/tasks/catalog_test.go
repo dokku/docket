@@ -3,6 +3,7 @@ package tasks
 import (
 	"bytes"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -349,6 +350,64 @@ func TestCatalogApplyOnlyMatchesTags(t *testing.T) {
 	}
 	if fieldFor(t, schemaFor(t, catalog, "dokku_certs").Fields, "cert_content").ApplyOnly {
 		t.Error("dokku_certs.cert_content is server state and must not be apply_only")
+	}
+}
+
+// TestCatalogConditionalRequirementsMatchTags checks required_when and
+// forbidden_when against the tags, element fields included (#620).
+func TestCatalogConditionalRequirementsMatchTags(t *testing.T) {
+	catalog := wholeCatalog(t)
+	var check func(where string, rt reflect.Type, fields []FieldSchema)
+	check = func(where string, rt reflect.Type, fields []FieldSchema) {
+		for _, field := range fields {
+			structField, ok := structFieldByYAMLName(rt, field.Name)
+			if !ok {
+				continue
+			}
+			if want := conditionalStates(structField.Tag.Get("required_when")); !slices.Equal(field.RequiredWhen, want) {
+				t.Errorf("%s.%s required_when = %q; want %q", where, field.Name, field.RequiredWhen, want)
+			}
+			if want := conditionalStates(structField.Tag.Get("forbidden_when")); !slices.Equal(field.ForbiddenWhen, want) {
+				t.Errorf("%s.%s forbidden_when = %q; want %q", where, field.Name, field.ForbiddenWhen, want)
+			}
+			if field.Item != nil && field.Item.Type == TypeObject {
+				check(where+"."+field.Name+"[]", structElem(sliceOrMapElem(structField.Type)), field.Item.Fields)
+			}
+		}
+	}
+	for _, schema := range catalog.Tasks {
+		check(schema.Type, taskStructType(lookupTask(schema.Type)), schema.Fields)
+	}
+
+	domains := fieldFor(t, schemaFor(t, catalog, "dokku_domains").Fields, "domains")
+	if !slices.Equal(domains.RequiredWhen, []string{"present", "absent"}) || !slices.Equal(domains.ForbiddenWhen, []string{"clear"}) {
+		t.Errorf("dokku_domains.domains = required_when %q, forbidden_when %q; want [present absent], [clear]", domains.RequiredWhen, domains.ForbiddenWhen)
+	}
+}
+
+// TestCatalogConstraintsMatchDeclarations checks the published constraints
+// against each task's, and each element's, Constraints() (#620).
+func TestCatalogConstraintsMatchDeclarations(t *testing.T) {
+	catalog := wholeCatalog(t)
+	for _, schema := range catalog.Tasks {
+		task := lookupTask(schema.Type)
+		if want := TaskConstraints(task); !reflect.DeepEqual(schema.Constraints, cloneConstraints(want)) {
+			t.Errorf("%s constraints = %+v; want %+v", schema.Type, schema.Constraints, want)
+		}
+		rt := taskStructType(task)
+		for _, field := range schema.Fields {
+			if field.Item == nil || field.Item.Type != TypeObject {
+				if field.Item != nil && field.Item.Constraints != nil {
+					t.Errorf("%s.%s: constraints on a non-object item", schema.Type, field.Name)
+				}
+				continue
+			}
+			structField, _ := structFieldByYAMLName(rt, field.Name)
+			want := structConstraints(structElem(sliceOrMapElem(structField.Type)))
+			if !reflect.DeepEqual(field.Item.Constraints, cloneConstraints(want)) {
+				t.Errorf("%s.%s[] constraints = %+v; want %+v", schema.Type, field.Name, field.Item.Constraints, want)
+			}
+		}
 	}
 }
 

@@ -28,7 +28,7 @@ func TestSchedulerK3sAnnotationsTaskMissingApp(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "app is required") {
+	if !strings.Contains(result.Error.Error(), "exactly one of 'app' or 'global' is required") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -45,7 +45,7 @@ func TestSchedulerK3sAnnotationsTaskGlobalWithAppSet(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be set when 'global' is set to true") {
+	if !strings.Contains(result.Error.Error(), "'app' and 'global' are mutually exclusive") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -75,7 +75,7 @@ func TestSchedulerK3sAnnotationsTaskPresentWithoutAnnotations(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no annotations")
 	}
-	if !strings.Contains(result.Error.Error(), "'annotations' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'annotations' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -90,7 +90,7 @@ func TestSchedulerK3sAnnotationsTaskAbsentWithoutAnnotations(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has no annotations")
 	}
-	if !strings.Contains(result.Error.Error(), "'annotations' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'annotations' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
