@@ -297,9 +297,17 @@ func getSchedulerK3sChartValues(ctx context.Context, chart string) (map[string]s
 //   - Two source paths that flatten to the same key produce a typed error
 //     so the caller (and the user) can fix the recipe rather than relying
 //     on map-iteration order.
+//   - Top-level keys are walked sorted, like nested ones, so values with
+//     several problems report the same one, worded the same way, every run.
 func flattenChartValues(in map[string]any) (map[string]string, error) {
 	out := map[string]string{}
-	for key, value := range in {
+	keys := make([]string, 0, len(in))
+	for key := range in {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := in[key]
 		if err := flattenInto(out, key, value); err != nil {
 			return nil, err
 		}
@@ -361,13 +369,12 @@ func flattenNestedMap(out map[string]string, path string, nested map[string]any)
 // mappings) to map[string]any. Non-string keys produce a typed error
 // rather than silently coercing.
 func convertLegacyMap(path string, in map[any]any) (map[string]any, error) {
+	if k, ok := firstNonStringKey(in); ok {
+		return nil, fmt.Errorf("chart value %q: nested map keys must be strings, got %T", path, k)
+	}
 	out := make(map[string]any, len(in))
 	for k, v := range in {
-		ks, ok := k.(string)
-		if !ok {
-			return nil, fmt.Errorf("chart value %q: nested map keys must be strings, got %T", path, k)
-		}
-		out[ks] = v
+		out[k.(string)] = v
 	}
 	return out, nil
 }

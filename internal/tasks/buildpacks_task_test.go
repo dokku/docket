@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -143,6 +144,27 @@ func TestBuildpacksCreateWhenEmpty(t *testing.T) {
 	}
 	if plan.Status != PlanStatusCreate {
 		t.Errorf("expected Create status on a fresh app, got %q", plan.Status)
+	}
+}
+
+func TestBuildpacksClearListsRemovalsInPrecedenceOrder(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet buildpacks:list test-app": "nginx\nnodejs\nruby\ngo\napt\n",
+	}))
+
+	want := []string{"remove nginx", "remove nodejs", "remove ruby", "remove go", "remove apt"}
+	for i := 0; i < 20; i++ {
+		plan := BuildpacksTask{App: "test-app", State: StateClear}.Plan(ctx)
+		if plan.Error != nil {
+			t.Fatalf("unexpected plan error: %v", plan.Error)
+		}
+		if !reflect.DeepEqual(plan.Mutations, want) {
+			t.Fatalf("mutations = %v, want %v in precedence order", plan.Mutations, want)
+		}
+		if len(plan.Commands) != 1 || !strings.Contains(plan.Commands[0], "buildpacks:clear") {
+			t.Fatalf("expected one buildpacks:clear command, got %v", plan.Commands)
+		}
 	}
 }
 

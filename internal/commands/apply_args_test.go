@@ -828,6 +828,32 @@ func TestApplyVarsFilesUnknownKey(t *testing.T) {
 	}
 }
 
+// TestApplyVarsFilesUnknownKeyTiedSuggestion checks that when several inputs
+// are equally close to the unknown key, the hint names the same one every run:
+// the first in sorted order.
+func TestApplyVarsFilesUnknownKeyTiedSuggestion(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := writeTempFile(t, dir, "vars.yml", "app: typo\n")
+
+	args := map[string]*Argument{
+		"app4": argFor(t, "string", ""),
+		"app2": argFor(t, "string", ""),
+		"app1": argFor(t, "string", ""),
+		"app3": argFor(t, "string", ""),
+	}
+	for i := 0; i < 20; i++ {
+		flags := flag.NewFlagSet("t", flag.ContinueOnError)
+		_, _, err := applyVarsFiles(args, flags, []string{path})
+		if err == nil {
+			t.Fatal("expected error for unknown key")
+		}
+		if !strings.Contains(err.Error(), `did you mean "app1"`) {
+			t.Fatalf("error = %v, want the hint to name app1", err)
+		}
+	}
+}
+
 func TestApplyVarsFilesUnknownKeyNoSuggestionWhenFar(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

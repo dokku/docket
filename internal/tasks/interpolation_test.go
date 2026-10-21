@@ -293,6 +293,32 @@ func TestHCLQuotingSites(t *testing.T) {
 	}
 }
 
+// TestHCLQuotingSitesInSourceOrder checks the heredoc sites come back in the
+// order the recipe spells them, attributes after a nested block included, so
+// the refusal names the same sites in the same order every run.
+func TestHCLQuotingSitesInSourceOrder(t *testing.T) {
+	t.Parallel()
+	heredoc := func(name string) string {
+		return "  " + name + " = <<EOT\nhello {{ ." + name + " }}\nEOT\n"
+	}
+	src := "play {\n" + heredoc("a") + "  dokku_app {\n" + heredoc("b") + "  }\n" +
+		heredoc("c") + heredoc("d") + heredoc("e") + "}\n"
+	for i := 0; i < 20; i++ {
+		sites, err := hclQuotingSites([]byte(src))
+		if err != nil {
+			t.Fatalf("hclQuotingSites: %v", err)
+		}
+		if len(sites) != 5 {
+			t.Fatalf("hclQuotingSites = %d sites, want 5: %+v", len(sites), sites)
+		}
+		for j := 1; j < len(sites); j++ {
+			if sites[j].Line <= sites[j-1].Line {
+				t.Fatalf("sites out of source order: %+v", sites)
+			}
+		}
+	}
+}
+
 // TestSubstitutesAnyValue covers the predicate the heredoc rule asks, which
 // differs from riskyInterpolations on exactly one case: a `| dq` action. In a
 // quoted scalar `dq` is the fix; in a heredoc, which processes no backslash

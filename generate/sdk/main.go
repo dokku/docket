@@ -117,6 +117,30 @@ func surface() (map[reflect.Type]bool, error) {
 	return seen, nil
 }
 
+// typesByName indexes the aliased types by name, refusing two that share one,
+// since the sdk can alias only one of them. Types are walked by package path
+// then name, so the refusal names the pair in the same order every run.
+func typesByName(seen map[reflect.Type]bool) (map[string]reflect.Type, error) {
+	ordered := make([]reflect.Type, 0, len(seen))
+	for t := range seen {
+		ordered = append(ordered, t)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].PkgPath() != ordered[j].PkgPath() {
+			return ordered[i].PkgPath() < ordered[j].PkgPath()
+		}
+		return ordered[i].Name() < ordered[j].Name()
+	})
+	names := map[string]reflect.Type{}
+	for _, t := range ordered {
+		if other, ok := names[t.Name()]; ok {
+			return nil, fmt.Errorf("type name %s is declared in both %s and %s", t.Name(), other.PkgPath(), t.PkgPath())
+		}
+		names[t.Name()] = t
+	}
+	return names, nil
+}
+
 // render returns the formatted contents of sdk/types_gen.go.
 func render() ([]byte, error) {
 	seen, err := surface()
@@ -124,12 +148,9 @@ func render() ([]byte, error) {
 		return nil, err
 	}
 
-	names := map[string]reflect.Type{}
-	for t := range seen {
-		if other, ok := names[t.Name()]; ok {
-			return nil, fmt.Errorf("type name %s is declared in both %s and %s", t.Name(), other.PkgPath(), t.PkgPath())
-		}
-		names[t.Name()] = t
+	names, err := typesByName(seen)
+	if err != nil {
+		return nil, err
 	}
 	sorted := make([]string, 0, len(names))
 	for name := range names {

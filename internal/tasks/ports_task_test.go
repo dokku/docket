@@ -339,6 +339,31 @@ func TestPortsPresentRejectsCollisionWithAnExistingMapping(t *testing.T) {
 	}
 }
 
+// TestPortsPresentCollisionNamesTheSameMapping checks that when the server
+// already holds several mappings on the scheme:host pair, the refusal names
+// the same one every run: the first in sorted order.
+func TestPortsPresentCollisionNamesTheSameMapping(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		portsReportKey: `[{"container_port":7000,"host_port":80,"scheme":"http"},` +
+			`{"container_port":5000,"host_port":80,"scheme":"http"},` +
+			`{"container_port":9000,"host_port":80,"scheme":"http"},` +
+			`{"container_port":8000,"host_port":80,"scheme":"http"}]`,
+	}))
+
+	task := PortsTask{
+		App:          "web",
+		PortMappings: []PortMapping{{Scheme: "http", Host: 80, Container: 6000}},
+		State:        StatePresent,
+	}
+	for i := 0; i < 20; i++ {
+		plan := task.Plan(ctx)
+		if plan.Error == nil || !strings.Contains(plan.Error.Error(), "conflicts with the existing mapping http:80:5000;") {
+			t.Fatalf("error = %v, want it to name http:80:5000", plan.Error)
+		}
+	}
+}
+
 func TestPortsPresentAllowsTheSameHostPortUnderAnotherScheme(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{

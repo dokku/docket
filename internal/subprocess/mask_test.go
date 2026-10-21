@@ -130,6 +130,23 @@ func TestMaskerAddKeepsLengthDescOrder(t *testing.T) {
 	}
 }
 
+func TestMaskerEqualLengthOrderIgnoresRegistration(t *testing.T) {
+	t.Parallel()
+	// "abcd" and "bcde" overlap in "abcde" and are the same length, so which
+	// masks first decides the output. It must not depend on the order they
+	// were registered in, which for map-held secrets varies run to run.
+	forward := NewMasker("abcd", "bcde")
+	backward := NewMasker("bcde")
+	backward.Add("abcd")
+
+	if got, want := backward.String("xabcdey"), forward.String("xabcdey"); got != want {
+		t.Errorf("MaskString = %q registering bcde first, %q registering abcd first", got, want)
+	}
+	if got, want := backward.Values(), forward.Values(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Values = %v registering bcde first, %v registering abcd first", got, want)
+	}
+}
+
 func TestMaskerAddOnEmptyRegistry(t *testing.T) {
 	t.Parallel()
 	m := NewMasker()

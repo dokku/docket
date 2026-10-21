@@ -719,6 +719,24 @@ func TestSavedPlanArgumentsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSavedPlanArgumentsNamesFirstBadInput checks that a saved plan holding
+// several bad inputs reports the same one every run: the first by name.
+func TestSavedPlanArgumentsNamesFirstBadInput(t *testing.T) {
+	t.Parallel()
+	p := &savedPlan{Inputs: map[string]savedPlanInput{
+		"d": {Type: "int", Value: "four"},
+		"b": {Type: "int", Value: "two"},
+		"a": {Type: "int", Value: "one"},
+		"c": {Type: "int", Value: "three"},
+	}}
+	for i := 0; i < 20; i++ {
+		_, _, err := p.arguments()
+		if err == nil || !strings.Contains(err.Error(), `saved plan input "a"`) {
+			t.Fatalf("error = %v, want it to name input a", err)
+		}
+	}
+}
+
 // TestPlanFlagFromArgs pins the pre-parse sniff apply uses to skip reading a
 // recipe for input flags.
 func TestPlanFlagFromArgs(t *testing.T) {

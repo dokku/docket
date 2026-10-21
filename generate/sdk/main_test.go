@@ -1,7 +1,9 @@
 package main
 
 import (
+	"net/url"
 	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -35,6 +37,24 @@ func TestGeneratedSDKIsCurrent(t *testing.T) {
 		t.Fatalf("%s is out of date and the diff could not be rendered: %v", generatedFile, err)
 	}
 	t.Errorf("%s is out of date; run make generate\n%s", generatedFile, diff)
+}
+
+// TestTypesByNameRefusesASharedName asserts that two aliased types sharing a
+// name are refused, naming both packages in the same order every run.
+func TestTypesByNameRefusesASharedName(t *testing.T) {
+	seen := map[reflect.Type]bool{
+		reflect.TypeOf(exec.Error{}): true,
+		reflect.TypeOf(url.Error{}):  true,
+		reflect.TypeOf(url.URL{}):    true,
+		reflect.TypeOf(exec.Cmd{}):   true,
+	}
+	want := "type name Error is declared in both net/url and os/exec"
+	for i := 0; i < 20; i++ {
+		_, err := typesByName(seen)
+		if err == nil || err.Error() != want {
+			t.Fatalf("error = %v, want %q", err, want)
+		}
+	}
 }
 
 // TestRenderAliasesEveryTask asserts that every registered task type gets an

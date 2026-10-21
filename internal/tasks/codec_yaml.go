@@ -97,15 +97,30 @@ func (yamlCodec) UnmarshalVars(data []byte) (map[string]interface{}, error) {
 // normaliseYAMLMap converts an interface-keyed YAML mapping to a
 // string-keyed one, rejecting a key that is not a string.
 func normaliseYAMLMap(in map[interface{}]interface{}) (map[string]interface{}, error) {
+	if k, ok := firstNonStringKey(in); ok {
+		return nil, fmt.Errorf("non-string key %v", k)
+	}
 	out := make(map[string]interface{}, len(in))
 	for k, v := range in {
-		ks, ok := k.(string)
-		if !ok {
-			return nil, fmt.Errorf("non-string key %v", k)
-		}
-		out[ks] = v
+		out[k.(string)] = v
 	}
 	return out, nil
+}
+
+// firstNonStringKey returns the key of m that is not a string and prints
+// first, so an error naming one of several names the same one every run.
+func firstNonStringKey(m map[interface{}]interface{}) (interface{}, bool) {
+	var first interface{}
+	found := false
+	for k := range m {
+		if _, ok := k.(string); ok {
+			continue
+		}
+		if !found || fmt.Sprint(k) < fmt.Sprint(first) {
+			first, found = k, true
+		}
+	}
+	return first, found
 }
 
 // EscapeDoubleQuoted is the plain JSON-style escaping a double-quoted YAML

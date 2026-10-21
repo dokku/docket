@@ -3,6 +3,7 @@ package tasks
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -335,6 +336,11 @@ func hclQuotingSites(src []byte) ([]quotingSite, error) {
 			Action: risky[0],
 			Style:  "in a heredoc",
 		})
+	})
+	// The walk visits a body's attributes, held in a map, before its blocks,
+	// so its order is neither stable nor the recipe's; source order is both.
+	sort.SliceStable(sites, func(i, j int) bool {
+		return sites[i].Line < sites[j].Line
 	})
 	return sites, nil
 }

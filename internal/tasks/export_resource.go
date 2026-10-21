@@ -58,7 +58,9 @@ func ParseResourceSelectors(addresses []string) ([]ResourceSelector, error) {
 		for _, key := range TaskIdentity(task) {
 			declared[key.YAMLName] = true
 		}
-		for name := range keys {
+		// Checked by name, so an address with several undeclared keys always
+		// reports the same one.
+		for _, name := range sortedPairKeys(keys) {
 			if !declared[name] {
 				return nil, fmt.Errorf("resource address %q: %q is not an identity key of %s (keys: %s)",
 					address, name, typeKey, strings.Join(sortedIdentityKeyNames(task), ", "))

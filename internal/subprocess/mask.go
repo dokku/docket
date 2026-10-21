@@ -62,7 +62,8 @@ func (m *Masker) Add(values ...string) {
 	m.values = cleanSensitive(append(m.values, values...))
 }
 
-// Values returns a snapshot of the registered spellings, longest first.
+// Values returns a snapshot of the registered spellings, longest first, then
+// by value.
 func (m *Masker) Values() []string {
 	if m == nil {
 		return nil
@@ -242,8 +243,14 @@ func cleanSensitive(values []string) []string {
 		addSpellings(v)
 		addSpellings(strings.TrimSpace(v))
 	}
-	sort.SliceStable(cleaned, func(i, j int) bool {
-		return len(cleaned[i]) > len(cleaned[j])
+	// Longest first, so a secret containing another masks whole; equal
+	// lengths by value, so overlapping secrets mask the same way whatever
+	// order they were registered in.
+	sort.Slice(cleaned, func(i, j int) bool {
+		if len(cleaned[i]) != len(cleaned[j]) {
+			return len(cleaned[i]) > len(cleaned[j])
+		}
+		return cleaned[i] < cleaned[j]
 	})
 	return cleaned
 }
