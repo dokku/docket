@@ -1,7 +1,13 @@
 package tasks
 
 import (
+	"context"
+	"errors"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/dokku/docket/internal/subprocess"
 )
 
 func TestServiceLinkTaskInvalidState(t *testing.T) {
@@ -98,5 +104,38 @@ func TestGetTasksServiceLinkWithTemplateContext(t *testing.T) {
 	}
 	if slTask.Name != "my-db" {
 		t.Errorf("Name = %q, want %q", slTask.Name, "my-db")
+	}
+}
+
+func TestServiceLinkTaskMissingObjectIsAnError(t *testing.T) {
+	t.Parallel()
+	appMissing := func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+		if strings.Join(in.Args, " ") == "--quiet apps:exists api" {
+			return subprocess.ExecCommandResponse{ExitCode: 1}, nil
+		}
+		return subprocess.ExecCommandResponse{}, nil
+	}
+	cases := []struct {
+		name   string
+		runner func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error)
+		kind   ObjectKind
+		values []string
+	}{
+		{"service", serviceMissing(), ObjectService, []string{"postgres", "db"}},
+		{"app", appMissing, ObjectApp, []string{"api"}},
+	}
+	for _, c := range cases {
+		for _, state := range []State{StatePresent, StateAbsent} {
+			task := ServiceLinkTask{App: "api", Service: "postgres", Name: "db", State: state}
+			plan := task.Plan(subprocess.ContextWithRunner(testCtx(), c.runner))
+			var missing *ObjectMissingError
+			if !errors.As(plan.Error, &missing) {
+				t.Errorf("%s %s: expected an *ObjectMissingError, got %v", c.name, state, plan.Error)
+				continue
+			}
+			if missing.Object.Kind != c.kind || !slices.Equal(missing.Object.Values, c.values) {
+				t.Errorf("%s %s: missing object = %#v", c.name, state, missing.Object)
+			}
+		}
 	}
 }

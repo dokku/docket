@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -304,6 +305,9 @@ func TestServicePropertyTaskMissingServiceIsAnError(t *testing.T) {
 	plan := task.Plan(subprocess.ContextWithRunner(testCtx(), serviceMissing()))
 	if plan.Error == nil || !strings.Contains(plan.Error.Error(), "does not exist") {
 		t.Errorf("expected a missing-service error, got %v", plan.Error)
+	}
+	if !errors.Is(plan.Error, ErrObjectMissing) {
+		t.Errorf("expected an error matching ErrObjectMissing, got %v", plan.Error)
 	}
 }
 

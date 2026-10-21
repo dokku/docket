@@ -27,8 +27,9 @@ type addressReader interface {
 // own it, so dokku_config leaves out the keys docket keeps (linked-service
 // DSNs, NO_VHOST, the git rev env var) and dokku_ps_scale leaves out process
 // types scaled to zero. The result and errors are ReadTask's: the value type
-// registered for the task, a *VersionError when the gate on ctx refuses it, and
-// an error wrapping ErrStateUnreadable when its probe cannot read anything.
+// registered for the task, a *VersionError when the gate on ctx refuses it, an
+// *ObjectMissingError when the app or service it depends on does not exist,
+// and an error wrapping ErrStateUnreadable when its probe cannot read anything.
 //
 // The address must name one resource: a bare type, a key the task does not
 // declare, or a missing required key is an error, raised before the server is
@@ -46,10 +47,11 @@ func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
 	}
 
 	if reader, ok := task.(addressReader); ok {
-		return reader.readAddress(ctx)
+		got, exists, err := reader.readAddress(ctx)
+		return readResult(ctx, task, got, exists, err)
 	}
 	setReadState(task)
-	return observedResult(task.Plan(ctx))
+	return planRead(ctx, task)
 }
 
 // taskFromAddress parses address and builds the task it names: a new task of

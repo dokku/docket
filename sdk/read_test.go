@@ -1,8 +1,10 @@
 package sdk_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dokku/docket/sdk"
@@ -117,5 +119,33 @@ func TestReadTaskUnreadable(t *testing.T) {
 
 	if _, _, err := sdk.ReadTask(fake.context(), task); !errors.Is(err, sdk.ErrStateUnreadable) {
 		t.Errorf("error = %v, want sdk.ErrStateUnreadable", err)
+	}
+}
+
+func TestReadAddressReportsAMissingApp(t *testing.T) {
+	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
+		if strings.HasSuffix(strings.Join(in.Args, " "), " gone") {
+			return sdk.ExecCommandResponse{ExitCode: 1, Stderr: "App gone does not exist"}, nil
+		}
+		return sdk.ExecCommandResponse{}, nil
+	})
+
+	_, exists, err := sdk.ReadAddress(ctx, "dokku_config[app=gone]")
+	if !errors.Is(err, sdk.ErrObjectMissing) {
+		t.Fatalf("error = %v, want sdk.ErrObjectMissing", err)
+	}
+	if exists {
+		t.Error("exists = true, want false")
+	}
+	var missing *sdk.ObjectMissingError
+	if !errors.As(err, &missing) {
+		t.Fatalf("error = %T, want *sdk.ObjectMissingError", err)
+	}
+	if missing.Object.Kind != sdk.ObjectApp || !reflect.DeepEqual(missing.Object.Keys, []string{"app"}) || !reflect.DeepEqual(missing.Object.Values, []string{"gone"}) {
+		t.Errorf("Object = %#v, want app gone", missing.Object)
+	}
+
+	if _, exists, err := sdk.ReadAddress(ctx, "dokku_app[app=gone]"); err != nil || exists {
+		t.Errorf("dokku_app: exists = %v, error = %v; want an absent app", exists, err)
 	}
 }

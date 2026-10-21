@@ -211,6 +211,9 @@ type ObjectEffects = tasks.ObjectEffects
 // ObjectKind is tasks.ObjectKind.
 type ObjectKind = tasks.ObjectKind
 
+// ObjectMissingError is tasks.ObjectMissingError.
+type ObjectMissingError = tasks.ObjectMissingError
+
 // ObjectRestart is tasks.ObjectRestart.
 type ObjectRestart = tasks.ObjectRestart
 

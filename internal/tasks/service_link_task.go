@@ -147,14 +147,14 @@ func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !svcExists {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+				return PlanResult{Status: PlanStatusError, Error: objectMissing(t, ObjectService)}
 			}
 			appOK, err := appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !appOK {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("app %s does not exist", t.App)}
+				return PlanResult{Status: PlanStatusError, Error: objectMissing(t, ObjectApp)}
 			}
 			linked, err := serviceLinked(ctx, t.Service, t.Name, t.App)
 			if err != nil {
@@ -184,14 +184,14 @@ func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !svcExists {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+				return PlanResult{Status: PlanStatusError, Error: objectMissing(t, ObjectService)}
 			}
 			appOK, err := appExists(ctx, t.App)
 			if err != nil {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			if !appOK {
-				return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("app %s does not exist", t.App)}
+				return PlanResult{Status: PlanStatusError, Error: objectMissing(t, ObjectApp)}
 			}
 			linked, err := serviceLinked(ctx, t.Service, t.Name, t.App)
 			if err != nil {

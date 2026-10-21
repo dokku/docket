@@ -388,9 +388,27 @@ on every plan that read the server, in sync or not. `ReadTask` is `Plan` plus th
 
 - the plan's own error, including the `*sdk.VersionError` when a gate on the context refuses the
   task, so a resource the gate skipped is never reported as absent;
+- an `*sdk.ObjectMissingError` when the app or datastore service the task depends on does not
+  exist on the server, whatever the task's own probe made of that - an error, an absent resource, or
+  drift. It matches `sdk.ErrObjectMissing` under `errors.Is`, and its `Object` names the missing
+  object by kind, recipe keys and values. A task that creates its own app or service
+  (`dokku_app`, `dokku_app_clone`, `dokku_service_create`) reports `exists` false instead;
 - an error wrapping `sdk.ErrStateUnreadable` when the plan carries no observed state. That is a task
   whose probe cannot read anything (`dokku_storage_ensure`), or a probe failure the plan treated as
   drift rather than as an error.
+
+A missing parent is checked only when the read does not find the resource, so a present read costs
+no extra call. A task whose input is invalid returns its own validation error, and a check that
+cannot reach the server leaves the read's own error in place, so `ErrObjectMissing` always means
+the server answered that the object is gone:
+
+```go
+_, exists, err := sdk.ReadAddress(ctx, "dokku_service_link[app=api,service=postgres,name=db]")
+var missing *sdk.ObjectMissingError
+if errors.As(err, &missing) {
+    // missing.Object.Kind is sdk.ObjectApp or sdk.ObjectService; drop the resource from state
+}
+```
 
 A probe registers the server values it treats as secrets with the context's masker, as it does for
 any plan, but the returned task carries them raw. Mask what you show, the same way you mask a plan's
@@ -423,16 +441,16 @@ resource imported from the read plans in sync:
   set.
 - A `dokku_service_property` whose value dokku reports only as a fingerprint, such as
   `backup-secret-access-key`, comes back `present` with an empty `Value`.
-- The service tasks (`dokku_service_backup`, `dokku_service_expose`, `dokku_service_link`,
-  `dokku_service_property`) return an error rather than `exists` false when the service or app they
-  name is missing, as their plans do.
+- A resource whose app or service is missing returns the `*sdk.ObjectMissingError`, not `exists`
+  false, the same as `sdk.ReadTask`.
 
 The address must name one resource. A bare type such as `dokku_config`, a key the task does not
 declare, or a missing required key is an error, raised before the server is contacted. Keys the
 task treats as mutually exclusive, such as `app` and `global`, are refused by the task's own
 validation. A task whose probe cannot read anything (`dokku_storage_ensure`) returns an error wrapping
-`sdk.ErrStateUnreadable`, and a gate on the context refuses a server that is too old with the
-`*sdk.VersionError` before anything else is read.
+`sdk.ErrStateUnreadable`, a gate on the context refuses a server that is too old with the
+`*sdk.VersionError` before anything else is read, and a missing app or service returns the
+`*sdk.ObjectMissingError`.
 
 ## Running tasks concurrently
 

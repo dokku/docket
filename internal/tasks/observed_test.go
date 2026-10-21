@@ -108,7 +108,50 @@ func observedFixtures() map[string]observedFixture {
 			out[name] = fixture
 		}
 	}
+	for name, fixture := range out {
+		out[name] = withParentProbes(fixture)
+	}
 	return out
+}
+
+// withParentProbes answers, as existing, the probe a read makes for each app or
+// service an address case's task depends on, unless the fixture already
+// answers it. A read that does not find its resource asks whether the parent
+// exists, so every absent address case makes that probe.
+func withParentProbes(f observedFixture) observedFixture {
+	responses := make(map[string]string, len(f.responses))
+	for key, out := range f.responses {
+		responses[key] = out
+	}
+	for _, c := range f.addressCases {
+		_, task, err := taskFromAddress(c.address)
+		if err != nil {
+			continue
+		}
+		for _, object := range TaskObjects(task) {
+			if !object.Set || object.Creates {
+				continue
+			}
+			key := objectExistsKey(object)
+			if _, ok := f.exitCodes[key]; ok {
+				continue
+			}
+			if _, ok := responses[key]; !ok {
+				responses[key] = ""
+			}
+		}
+	}
+	f.responses = responses
+	return f
+}
+
+// objectExistsKey is the joined arguments of the probe objectExists runs for
+// object.
+func objectExistsKey(object TaskObject) string {
+	if object.Kind == ObjectApp {
+		return "--quiet apps:exists " + object.Values[0]
+	}
+	return fmt.Sprintf("--quiet %s:exists %s", object.Values[0], object.Values[1])
 }
 
 // TestObservedFixtureSetsAreDisjoint catches two files fixturing one task,

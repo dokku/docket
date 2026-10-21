@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -139,6 +140,18 @@ func TestServiceExposeCreatesWhenNotExposed(t *testing.T) {
 	for _, m := range plan.Mutations {
 		if strings.Contains(m, "unexpose") {
 			t.Errorf("did not expect an unexpose when nothing is exposed, got %v", plan.Mutations)
+		}
+	}
+}
+
+func TestServiceExposeTaskMissingServiceIsAnError(t *testing.T) {
+	t.Parallel()
+	for _, state := range []State{StatePresent, StateAbsent} {
+		task := ServiceExposeTask{Service: "redis", Name: "cache", Ports: []string{"6379"}, State: state}
+		plan := task.Plan(subprocess.ContextWithRunner(testCtx(), serviceMissing()))
+		var missing *ObjectMissingError
+		if !errors.As(plan.Error, &missing) || missing.Object.Kind != ObjectService {
+			t.Errorf("%s: expected an *ObjectMissingError naming the service, got %v", state, plan.Error)
 		}
 	}
 }

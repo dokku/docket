@@ -131,6 +131,14 @@ A few conventions to follow:
   `TestReadAddressReadsEveryResource` reads every exported body back from its address and needs an
   address read of a present and an absent resource for every task that can read its state; add the
   missing ones to `observedAddressCases` in `observed_address_test.go`.
+- A read that does not find the resource asks whether each app or service the task depends on - its
+  `serialize` objects, less the ones `ObjectEffects` says it creates - exists, and reports a missing
+  one as an `*ObjectMissingError`, so a probe need not check its parent. A `Plan` that checks its
+  parent anyway returns `objectMissing(t, ObjectApp)` or `objectMissing(t, ObjectService)` as its
+  error, not a plain one. `TestReadReportsAMissingObject` reads every fixture address from a server
+  where every command fails and fails the build for a task that does not report its missing parent;
+  each absent address case's parent probe is answered as existing by the fixture unless it lists the
+  probe itself.
 - `init()` registers the task with `RegisterTask`, which makes it usable in a recipe.
 - Every task must implement `MinimumVersions() VersionSupport`. `Dokku` is the oldest release
   whose command and output shape the current probe parses, as `major.minor.patch`. Where the

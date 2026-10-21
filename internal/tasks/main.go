@@ -390,12 +390,14 @@ func observed(r PlanResult, t Task, exists bool) PlanResult {
 // ReadTask returns the task as it exists on the server and whether the
 // resource exists, from one Plan. It never applies anything. The task's State
 // picks which members a collection reads, so the task must still pass its own
-// validation. A *VersionError from the gate comes back as is.
+// validation. A *VersionError from the gate comes back as is. A read that does
+// not find the resource, when the app or service it depends on is missing,
+// returns an *ObjectMissingError.
 func ReadTask(ctx context.Context, t Task) (Task, bool, error) {
 	if t == nil {
 		return nil, false, errors.New("nil task")
 	}
-	return observedResult(t.Plan(ctx))
+	return planRead(ctx, t)
 }
 
 // observedResult is what ReadTask and ReadAddress return for a plan: its

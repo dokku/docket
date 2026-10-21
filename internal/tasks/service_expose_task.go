@@ -177,7 +177,7 @@ func planServiceExpose(ctx context.Context, t ServiceExposeTask, finalState Stat
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if !exists {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+		return PlanResult{Status: PlanStatusError, Error: objectMissing(t, ObjectService)}
 	}
 	current, err := serviceExposedPortList(ctx, t.Service, t.Name)
 	if err != nil {
@@ -224,7 +224,7 @@ func planServiceUnexpose(ctx context.Context, t ServiceExposeTask, finalState St
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if !exists {
-		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+		return PlanResult{Status: PlanStatusError, Error: objectMissing(t, ObjectService)}
 	}
 	current, err := serviceExposedPortList(ctx, t.Service, t.Name)
 	if err != nil {
