@@ -25,8 +25,8 @@ Keyed by `host`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `host` | string | yes |  |  | Git server hostname (e.g. github.com) |
-| `username` | string | no |  |  | Netrc username. Required when state is present. (not returned when reading state) |
-| `password` | string | no |  |  | Netrc password. Required when state is present. Must not contain a newline. (not returned when reading state) (sensitive) |
+| `username` | string | no |  |  | Netrc username (required when state is present) (not returned when reading state) |
+| `password` | string | no |  |  | Netrc password. Must not contain a newline. (required when state is present) (not returned when reading state) (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the netrc entry |
 
 ## Examples

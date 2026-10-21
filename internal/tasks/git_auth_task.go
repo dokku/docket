@@ -25,10 +25,10 @@ type GitAuthTask struct {
 	Host string `required:"true" identity:"key" yaml:"host" description:"Git server hostname (e.g. github.com)"`
 
 	// Username is the netrc username. Required when state is present.
-	Username string `required:"false" write_only:"true" yaml:"username,omitempty" description:"Netrc username. Required when state is present."`
+	Username string `required:"false" required_when:"present" write_only:"true" yaml:"username,omitempty" description:"Netrc username"`
 
 	// Password is the netrc password. Required when state is present.
-	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Netrc password. Required when state is present. Must not contain a newline."`
+	Password string `required:"false" required_when:"present" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Netrc password. Must not contain a newline."`
 
 	// State is the desired state of the netrc entry
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the netrc entry"`
@@ -102,11 +102,11 @@ func (t GitAuthTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the GitAuthTask's inputs without contacting the server.
 func (t GitAuthTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.Host == "" {
 		return fmt.Errorf("'host' is required")
-	}
-	if t.State == StatePresent && (t.Username == "" || t.Password == "") {
-		return fmt.Errorf("'username' and 'password' are required when state is 'present'")
 	}
 	// dokku reads the password with `read -r`, which stops at the first
 	// newline, and a .netrc entry is a single line either way. Rejecting it

@@ -16,10 +16,11 @@ type HttpAuthUserTask struct {
 	// App is the name of the app
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
-	// Users is the list of HTTP auth users to add or remove. The docs generator
-	// lists an item's field names but cannot express that password and hash are
-	// alternatives, nor that both are secret, so this description carries it.
-	Users []HttpAuthUser `required:"false" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive"`
+	// Users is the list of HTTP auth users to add or remove. Clearing removes
+	// every user the server holds, so a list supplied alongside it would be
+	// silently discarded rather than removed. An empty set plans as clear;
+	// present needs a user to write.
+	Users []HttpAuthUser `required:"false" required_when:"present" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of HTTP auth users to add or remove"`
 
 	// UpdatePassword re-issues http-auth:add-user for users that already exist
 	// so their password converges. Cleartext passwords are not exposed in the
@@ -45,14 +46,14 @@ type HttpAuthUser struct {
 
 	// Password is the cleartext HTTP auth password, applied with
 	// http-auth:add-user. Mutually exclusive with Hash.
-	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Cleartext HTTP auth password. Mutually exclusive with hash"`
+	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Cleartext HTTP auth password, applied with http-auth:add-user"`
 
 	// Hash is the user's htpasswd entry, as emitted by
 	// http-auth:export-users. Applied with http-auth:import-users over stdin,
 	// so the value never reaches argv. Mutually exclusive with Password; this
 	// is the form `docket export` emits, since the plugin can read hashes back
 	// but never the passwords behind them.
-	Hash string `required:"false" sensitive:"true" yaml:"hash,omitempty" description:"htpasswd hash for the user, as emitted by http-auth:export-users. Mutually exclusive with password; applied over stdin with http-auth:import-users so it never reaches argv"`
+	Hash string `required:"false" sensitive:"true" yaml:"hash,omitempty" description:"htpasswd hash for the user, as emitted by http-auth:export-users; applied over stdin with http-auth:import-users so it never reaches argv"`
 }
 
 // exampleHttpAuthHash is the htpasswd entry the hash-form examples use. It is
@@ -195,14 +196,14 @@ func (t HttpAuthUserTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the HttpAuthUserTask's inputs without contacting the server.
 func (t HttpAuthUserTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
 	}
 	seen := map[string]bool{}
 	for _, u := range t.Users {
-		if u.Username == "" {
-			return fmt.Errorf("'username' is required for each user")
-		}
 		// Two entries for one username used to be harmless (two add-user calls,
 		// last wins). Now that the credential forms dispatch to different
 		// commands, the winner would depend on nothing but list order, and two
@@ -212,9 +213,6 @@ func (t HttpAuthUserTask) Validate() error {
 			return fmt.Errorf("user %q is listed more than once", u.Username)
 		}
 		seen[u.Username] = true
-		if u.Password != "" && u.Hash != "" {
-			return fmt.Errorf("'password' and 'hash' are mutually exclusive for user %q", u.Username)
-		}
 		if u.Hash != "" {
 			// docket frames the `username:hash` stream itself, so a colon in
 			// the username or a newline in either half would write a corrupt
@@ -228,23 +226,16 @@ func (t HttpAuthUserTask) Validate() error {
 			}
 		}
 	}
-	// Clearing removes every user the server holds, so a list supplied
-	// alongside it would be silently discarded rather than removed.
-	if t.State == StateClear && len(t.Users) > 0 {
-		return fmt.Errorf("'users' must not be set for state 'clear'")
-	}
-	// An empty set plans as clear; present needs a user to write.
-	if t.State == StatePresent && len(t.Users) == 0 {
-		return fmt.Errorf("'users' must not be empty for state '%s'", t.State)
-	}
-	if t.State == StatePresent || t.State == StateSet {
-		for _, u := range t.Users {
-			if u.Password == "" && u.Hash == "" {
-				return fmt.Errorf("one of 'password' or 'hash' is required for user %q when state is '%s'", u.Username, t.State)
-			}
-		}
-	}
 	return nil
+}
+
+// Constraints declares that a user's credential is a password or a hash,
+// never both, and that a user written by present or set carries one.
+func (u HttpAuthUser) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintConflictsWith, Field: "password", Fields: []string{"hash"}},
+		{Kind: ConstraintAtLeastOneOf, Fields: []string{"password", "hash"}, States: []State{StatePresent, StateSet}},
+	}
 }
 
 // Plan reports the drift the HttpAuthUserTask would produce.

@@ -11,11 +11,11 @@ type ResourceLimitTask struct {
 	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to set resource limits for"`
 
 	// Resources is a map of resource type to quantity
-	Resources map[string]string `identity:"collection" yaml:"resources,omitempty" description:"Map of resource type to quantity; omit for state 'clear'"`
+	Resources map[string]string `required_when:"present" forbidden_when:"clear" identity:"collection" yaml:"resources,omitempty" description:"Map of resource type to quantity"`
 
 	// ClearBefore clears all resource limits before applying new ones. It is a
 	// *bool so the value survives decoding unchanged; nil defaults to false.
-	ClearBefore *bool `apply_only:"true" yaml:"clear_before,omitempty" default:"false" description:"ClearBefore clears all resource limits before applying new ones"`
+	ClearBefore *bool `forbidden_when:"set,clear" apply_only:"true" yaml:"clear_before,omitempty" default:"false" description:"ClearBefore clears all resource limits before applying new ones"`
 
 	// State is the desired state of the resource limits
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the resource limits"`
@@ -113,7 +113,10 @@ func (t ResourceLimitTask) ExportApp(ctx context.Context, app string) ([]interfa
 
 // Validate checks the ResourceLimitTask's inputs without contacting the server.
 func (t ResourceLimitTask) Validate() error {
-	return validateResourceInput(t.State, t.Resources, boolValue(t.ClearBefore, false))
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
+	return validateResourceInput(t.State, t.Resources)
 }
 
 // Plan reports the drift the ResourceLimitTask would produce.

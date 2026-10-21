@@ -17,7 +17,7 @@ type AclServiceTask struct {
 	Type string `required:"true" identity:"key" yaml:"type" description:"Type of service (e.g. redis, postgres)"`
 
 	// Users is the list of users to add, remove, or set on the ACL
-	Users []string `required:"false" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL; omit for state 'clear'"`
+	Users []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL"`
 
 	// State is the desired state of the ACL entries
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ACL entries"`
@@ -151,6 +151,9 @@ func (t AclServiceTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the AclServiceTask's inputs without contacting the server.
 func (t AclServiceTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if err := validateAclServiceTask(t); err != nil {
 		return err
 	}

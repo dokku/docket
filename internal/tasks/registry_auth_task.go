@@ -66,8 +66,8 @@ const (
 // What it does reject is a password that trims away to nothing, which dokku
 // would answer with an invalid-arguments exit rather than a comparison.
 type RegistryAuthTask struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+	// App is the name of the app. Exactly one of App and Global is set.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the registry credential should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the registry credential should be applied globally"`
@@ -78,12 +78,12 @@ type RegistryAuthTask struct {
 	// the status path - so the value is passed through exactly as written.
 	Server string `required:"true" identity:"key" yaml:"server" description:"Docker registry hostname (e.g. docker.io, ghcr.io)"`
 
-	// Username is the registry username (required when state is present)
-	Username string `required:"false" write_only:"true" yaml:"username,omitempty" description:"Registry username (required when state is present)"`
+	// Username is the registry username
+	Username string `required:"false" required_when:"present" write_only:"true" yaml:"username,omitempty" description:"Registry username"`
 
-	// Password is the registry password (required when state is present)
+	// Password is the registry password
 	// The value is fed to dokku via --password-stdin and never appears on argv
-	Password string `required:"false" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Registry password (required when state is present)"`
+	Password string `required:"false" required_when:"present" sensitive:"true" write_only:"true" yaml:"password,omitempty" description:"Registry password"`
 
 	// State is the desired state of the registry credential
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the registry credential"`
@@ -175,13 +175,18 @@ func (t RegistryAuthTask) Execute(ctx context.Context) TaskOutputState {
 	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
+// Constraints declares that the credential belongs to an app or is global.
+func (t RegistryAuthTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // Validate checks the RegistryAuthTask's inputs without contacting the server.
 func (t RegistryAuthTask) Validate() error {
-	if err := validateRegistryAuthTask(t); err != nil {
+	if err := checkConstraints(t); err != nil {
 		return err
 	}
-	if t.State == StatePresent && (t.Username == "" || t.Password == "") {
-		return fmt.Errorf("'username' and 'password' are required when state is 'present'")
+	if t.Server == "" {
+		return fmt.Errorf("'server' is required")
 	}
 	// dokku trims the password it reads from stdin, so one that is all
 	// whitespace arrives empty and is answered with an invalid-arguments exit
@@ -488,20 +493,6 @@ func exportRegistryAuth(ctx context.Context, app string, global bool, build func
 		out = append(out, build(server))
 	}
 	return out, nil
-}
-
-// validateRegistryAuthTask validates the registry auth task parameters
-func validateRegistryAuthTask(t RegistryAuthTask) error {
-	if t.Global && t.App != "" {
-		return fmt.Errorf("'app' must not be set when 'global' is set to true")
-	}
-	if !t.Global && t.App == "" {
-		return fmt.Errorf("'app' is required when 'global' is not set to true")
-	}
-	if t.Server == "" {
-		return fmt.Errorf("'server' is required")
-	}
-	return nil
 }
 
 // init registers the RegistryAuthTask with the task registry

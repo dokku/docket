@@ -26,9 +26,14 @@ Keyed by `app`. Manages the whole `users` collection; entries are identified by 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `users` | list | no |  |  | List of HTTP auth users to add or remove. Each item gives the credential as exactly one of password (cleartext, applied with http-auth:add-user) or hash (an htpasswd entry, applied with http-auth:import-users); both are sensitive. Each item has: username, password, hash. |
+| `users` | list | no |  |  | List of HTTP auth users to add or remove. Each item has: username, password, hash. (required when state is present) (must not be set when state is clear) |
 | `update_password` | bool | no | false |  | Re-issue add-user for users that already exist so their cleartext password converges. Users given by hash converge on their own and ignore this (applied only, not read back) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the HTTP auth users |
+
+## Constraints
+
+- Each `users` item: `password` must not be set together with `hash`.
+- Each `users` item: at least one of `password` or `hash` must be set when `state` is `present` or `set`.
 
 ## Examples
 

@@ -73,6 +73,12 @@ type ChecksToggleTask = tasks.ChecksToggleTask
 // ConfigTask is tasks.ConfigTask.
 type ConfigTask = tasks.ConfigTask
 
+// Constraint is tasks.Constraint.
+type Constraint = tasks.Constraint
+
+// ConstraintKind is tasks.ConstraintKind.
+type ConstraintKind = tasks.ConstraintKind
+
 // CronPropertyTask is tasks.CronPropertyTask.
 type CronPropertyTask = tasks.CronPropertyTask
 

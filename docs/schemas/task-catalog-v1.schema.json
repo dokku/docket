@@ -67,6 +67,12 @@
           "items": { "$ref": "#/$defs/field" },
           "description": "The recipe keys the task accepts, in declaration order."
         },
+        "constraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/constraint" },
+          "minItems": 1,
+          "description": "The rules over several of the task's fields, in declaration order. Absent when the task declares none."
+        },
         "property_schema": {
           "$ref": "#/$defs/property_schema",
           "description": "Present only for a task that manages an enumerable dokku property table. Its absence on a task that has a `property` field means the legal names are not enumerable from docket, not that there are none."
@@ -167,6 +173,18 @@
           "type": "boolean",
           "description": "Whether a recipe must supply the field. A field carrying a `default` is never required, because the default is filled in before the missing-field check runs."
         },
+        "required_when": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "The states in which the field must be set, as values of the task's `state` field. On an element's field they are still the task's states. Absent when the field is never conditionally required."
+        },
+        "forbidden_when": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "The states in which the field must not be set, as values of the task's `state` field. Absent when the field is allowed in every state."
+        },
         "default": {
           "type": "string",
           "description": "The literal default, to be read according to `type`. On a pointer field it documents what the task coerces an omitted key to, not a value written into the recipe."
@@ -235,6 +253,48 @@
           "type": "array",
           "items": { "$ref": "#/$defs/field" },
           "description": "The element's own fields, in declaration order. Present only when `type` is `object`. An element declares the same tags a task does, which is where a consumer learns that a nested value is a secret."
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/constraint" },
+          "minItems": 1,
+          "description": "The rules over several of the element's fields, in declaration order. Their `states` are the task's. Present only when `type` is `object` and the element declares any."
+        }
+      }
+    },
+
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "fields"],
+      "if": { "properties": { "kind": { "enum": ["conflicts_with", "required_with"] } } },
+      "then": {
+        "required": ["field"],
+        "properties": { "fields": { "minItems": 1 } }
+      },
+      "else": {
+        "not": { "required": ["field"] },
+        "properties": { "fields": { "minItems": 2 } }
+      },
+      "properties": {
+        "kind": {
+          "enum": ["exactly_one_of", "at_least_one_of", "all_or_none_of", "conflicts_with", "required_with"],
+          "description": "What the rule requires. `exactly_one_of`: exactly one of `fields` is set. `at_least_one_of`: one or more of `fields` is set. `all_or_none_of`: `fields` are set together or not at all. `conflicts_with`: none of `fields` is set while `field` is. `required_with`: every one of `fields` is set while `field` is."
+        },
+        "field": {
+          "type": "string",
+          "description": "The key a `conflicts_with` or `required_with` rule hangs off. Absent on every other kind."
+        },
+        "fields": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The group, or the keys `field` conflicts with or requires. Every name is a key of the same task or element."
+        },
+        "states": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "The task states the rule applies in, as values of the task's `state` field. Absent means every state."
         }
       }
     },

@@ -17,7 +17,7 @@ type BuildpacksTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Buildpacks is the list of buildpack URLs
-	Buildpacks []string `required:"false" identity:"collection" ordered:"true" yaml:"buildpacks,omitempty" description:"List of buildpack URLs; omit for state 'clear'"`
+	Buildpacks []string `required:"false" required_when:"present" forbidden_when:"clear" identity:"collection" ordered:"true" yaml:"buildpacks,omitempty" description:"List of buildpack URLs"`
 
 	// State is the desired state of the buildpacks. present and set both
 	// replace the whole ordered list, since buildpack order is build
@@ -109,17 +109,14 @@ func (t BuildpacksTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Validate checks the BuildpacksTask's inputs without contacting the server.
+// buildpacks:clear takes no buildpacks, which is why a list is forbidden
+// alongside it: it would be silently discarded rather than removed.
 func (t BuildpacksTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
-	}
-	if t.State == StatePresent && len(t.Buildpacks) == 0 {
-		return fmt.Errorf("'buildpacks' must not be empty for state 'present'")
-	}
-	// buildpacks:clear takes no buildpacks, so a list supplied alongside it
-	// would be silently discarded rather than removed.
-	if t.State == StateClear && len(t.Buildpacks) > 0 {
-		return fmt.Errorf("'buildpacks' must not be set for state 'clear'")
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ type SchedulerK3sChartTask struct {
 	// flattenChartValues for the exact coalescing rules, including the
 	// nested-segment escaping that lets dotted leaf keys survive Helm's
 	// strvals parser.
-	Values map[string]any `required:"false" identity:"collection" yaml:"values,omitempty" description:"Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \\. so they reach Helm as a single annotation/label key. Required for states 'present' and 'absent'; omit for state 'clear'."`
+	Values map[string]any `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" yaml:"values,omitempty" description:"Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \\. so they reach Helm as a single annotation/label key."`
 
 	// State is the desired state of the chart values. dokku writes chart
 	// values one key at a time, so set and clear issue one
@@ -150,24 +150,19 @@ func (t SchedulerK3sChartTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the SchedulerK3sChartTask's inputs without contacting the server.
 func (t SchedulerK3sChartTask) Validate() error {
+	// Clearing removes every value the chart holds, which is why a map is
+	// forbidden alongside clear: it would be silently discarded rather than
+	// removed. An empty set plans as clear; the additive states each need a
+	// value.
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.Chart == "" {
 		return errors.New("chart is required")
 	}
 	state := t.State
 	if state == "" {
 		state = StatePresent
-	}
-	// Clearing removes every value the chart holds, so a map supplied
-	// alongside it would be silently discarded rather than removed.
-	if state == StateClear {
-		if len(t.Values) > 0 {
-			return fmt.Errorf("'values' must not be set for state 'clear'")
-		}
-		return nil
-	}
-	// An empty set plans as clear; the additive states each need a value.
-	if len(t.Values) == 0 && state != StateSet {
-		return fmt.Errorf("'values' must not be empty for state '%s'", state)
 	}
 	flattened, err := flattenChartValues(t.Values)
 	if err != nil {

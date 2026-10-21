@@ -174,6 +174,60 @@ func TestParamDescriptionMarksOrdered(t *testing.T) {
 	}
 }
 
+// TestParamDescriptionMarksConditionalStates pins the required_when and
+// forbidden_when suffixes and their place after the ordered one (#620).
+func TestParamDescriptionMarksConditionalStates(t *testing.T) {
+	ordered := true
+	cases := []struct {
+		field tasks.FieldSchema
+		want  string
+	}{
+		{tasks.FieldSchema{Description: "Netrc username", RequiredWhen: []string{"present"}}, "Netrc username (required when state is present)"},
+		{tasks.FieldSchema{Description: "Domains", RequiredWhen: []string{"present", "absent"}, ForbiddenWhen: []string{"clear"}}, "Domains (required when state is present or absent) (must not be set when state is clear)"},
+		{tasks.FieldSchema{Description: "Buildpacks", Ordered: &ordered, RequiredWhen: []string{"present"}}, "Buildpacks (order is significant) (required when state is present)"},
+		{tasks.FieldSchema{Description: "Password", ForbiddenWhen: []string{"absent", "set", "clear"}, Sensitive: true}, "Password (must not be set when state is absent, set or clear) (sensitive)"},
+	}
+	for _, tc := range cases {
+		if got := paramDescription(tc.field); got != tc.want {
+			t.Errorf("paramDescription = %q; want %q", got, tc.want)
+		}
+	}
+}
+
+// TestConstraintsSection pins the sentence each constraint kind renders, task
+// constraints first and then each structured list's (#620).
+func TestConstraintsSection(t *testing.T) {
+	schema := tasks.TaskSchema{
+		Constraints: []tasks.Constraint{
+			{Kind: tasks.ConstraintExactlyOneOf, Fields: []string{"app", "global"}},
+			{Kind: tasks.ConstraintAtLeastOneOf, Fields: []string{"cert", "cert_content"}, States: []tasks.State{tasks.StatePresent}},
+			{Kind: tasks.ConstraintAllOrNoneOf, Fields: []string{"git_username", "git_email"}},
+			{Kind: tasks.ConstraintConflictsWith, Field: "mounts", Fields: []string{"entry_name", "host_dir", "container_dir"}},
+			{Kind: tasks.ConstraintRequiredWith, Field: "endpoint_url", Fields: []string{"aws_signature_version"}, States: []tasks.State{tasks.StatePresent, tasks.StateSet}},
+		},
+		Fields: []tasks.FieldSchema{
+			{Name: "users", Item: &tasks.ItemSchema{Type: tasks.TypeObject, Constraints: []tasks.Constraint{
+				{Kind: tasks.ConstraintAtLeastOneOf, Fields: []string{"password", "hash"}},
+				{Kind: tasks.ConstraintConflictsWith, Field: "password", Fields: []string{"hash"}},
+			}}},
+		},
+	}
+	want := "## Constraints\n\n" +
+		"- Exactly one of `app` or `global` must be set.\n" +
+		"- At least one of `cert` or `cert_content` must be set when `state` is `present`.\n" +
+		"- `git_username` and `git_email` must be set together or not at all.\n" +
+		"- `mounts` must not be set together with `entry_name`, `host_dir` or `container_dir`.\n" +
+		"- `endpoint_url` requires `aws_signature_version` when `state` is `present` or `set`.\n" +
+		"- Each `users` item: at least one of `password` or `hash` must be set.\n" +
+		"- Each `users` item: `password` must not be set together with `hash`.\n"
+	if got := constraintsSection(schema); got != want {
+		t.Errorf("constraintsSection =\n%s\nwant\n%s", got, want)
+	}
+	if got := constraintsSection(tasks.TaskSchema{}); got != "" {
+		t.Errorf("constraintsSection with no constraints = %q, want empty", got)
+	}
+}
+
 func TestEscapeProseEscapesBareAngleBrackets(t *testing.T) {
 	cases := []struct {
 		in, want string

@@ -25,7 +25,7 @@ Keyed by `name`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `name` | string | yes |  |  | Name that identifies the key in dokku |
-| `key` | string | no |  |  | Public key contents. Required when state is present. |
+| `key` | string | no |  |  | Public key contents (required when state is present) |
 | `state` | string | no | present | present, absent | Desired state of the SSH key |
 
 ## Examples

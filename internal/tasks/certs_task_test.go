@@ -35,7 +35,7 @@ func TestCertsTaskMissingApp(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'app' is required") {
+	if !strings.Contains(result.Error.Error(), "exactly one of 'app' or 'global' is required") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -47,7 +47,7 @@ func TestCertsTaskGlobalWithApp(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be set when 'global' is set to true") {
+	if !strings.Contains(result.Error.Error(), "'app' and 'global' are mutually exclusive") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -59,7 +59,7 @@ func TestCertsTaskPresentMissingCert(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without cert should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'cert' (or 'cert_content') and 'key' (or 'key_content') are required") {
+	if !strings.Contains(result.Error.Error(), "at least one of 'cert' or 'cert_content' is required for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -71,7 +71,7 @@ func TestCertsTaskPresentMissingKey(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without key should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'cert' (or 'cert_content') and 'key' (or 'key_content') are required") {
+	if !strings.Contains(result.Error.Error(), "'cert' and 'key' must be set together for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -83,7 +83,7 @@ func TestCertsTaskInlineMissingKeyContent(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with cert_content but no key should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'cert' (or 'cert_content') and 'key' (or 'key_content') are required") {
+	if !strings.Contains(result.Error.Error(), "'cert_content' and 'key_content' must be set together for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -95,7 +95,7 @@ func TestCertsTaskInlineMixedSources(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with cert + key_content should return a validation error")
 	}
-	if !strings.Contains(result.Error.Error(), "cannot be mixed") {
+	if !strings.Contains(result.Error.Error(), "'cert' and 'key_content' are mutually exclusive") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

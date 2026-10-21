@@ -24,6 +24,11 @@ func (t OpenrestyPropertyTask) Doc() string {
 	return "Manages the openresty configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t OpenrestyPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t OpenrestyPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -133,7 +138,7 @@ func (t OpenrestyPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the OpenrestyPropertyTask's inputs without contacting the server.
 func (t OpenrestyPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the OpenrestyPropertyTask would produce.

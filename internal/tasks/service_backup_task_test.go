@@ -77,7 +77,7 @@ func TestServiceBackupTaskValidateAuthChain(t *testing.T) {
 				b.AwsSecretAccessKey = ""
 				b.EndpointURL = "https://s3.example.com"
 			},
-			wantErr: "are required when 'aws_default_region', 'aws_signature_version', or 'endpoint_url' is set",
+			wantErr: "'aws_access_key_id' is required when 'endpoint_url' is set",
 		},
 	}
 	for _, tt := range tests {

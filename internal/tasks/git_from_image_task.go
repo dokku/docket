@@ -23,10 +23,10 @@ type GitFromImageTask struct {
 	BuildDir string `required:"false" apply_only:"true" yaml:"build_dir,omitempty" description:"Directory to build the git repository"`
 
 	// GitUsername is the username to use for the git repository
-	GitUsername string `required:"false" apply_only:"true" yaml:"git_username,omitempty" description:"Username to use for the git repository (requires git_email)"`
+	GitUsername string `required:"false" apply_only:"true" yaml:"git_username,omitempty" description:"Username to use for the git repository"`
 
 	// GitEmail is the email to use for the git repository
-	GitEmail string `required:"false" apply_only:"true" yaml:"git_email,omitempty" description:"Email to use for the git repository (requires git_username)"`
+	GitEmail string `required:"false" apply_only:"true" yaml:"git_email,omitempty" description:"Email to use for the git repository"`
 
 	// State is the desired state of the git repository
 	State State `required:"false" yaml:"state,omitempty" default:"deployed" options:"deployed" description:"Desired state of the git repository"`
@@ -101,19 +101,25 @@ func (t GitFromImageTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Validate checks the GitFromImageTask's inputs without contacting the server.
+// Constraints declares that the commit author is given in full or not at all.
+// git:from-image takes <git-username> and <git-email> as an adjacent
+// positional pair, so an email supplied without a username would be passed in
+// the username slot.
+func (t GitFromImageTask) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintAllOrNoneOf, Fields: []string{"git_username", "git_email"}},
+	}
+}
+
 func (t GitFromImageTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
 	}
 	if t.Image == "" {
 		return fmt.Errorf("'image' is required")
-	}
-	// git:from-image takes <git-username> and <git-email> as an adjacent
-	// positional pair, so an email supplied without a username would be
-	// passed in the username slot. Require them together, matching
-	// GitFromArchiveTask.
-	if (t.GitUsername == "") != (t.GitEmail == "") {
-		return fmt.Errorf("'git_username' and 'git_email' must be set together")
 	}
 	return nil
 }

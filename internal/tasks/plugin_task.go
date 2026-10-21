@@ -22,7 +22,7 @@ type PluginTask struct {
 	Name string `required:"true" identity:"key" yaml:"name" description:"Plugin name as it appears in plugin:list"`
 
 	// URL is the git URL to install from. Required when state is present.
-	URL string `required:"false" yaml:"url,omitempty" description:"Git URL to install the plugin from. Required when state is present."`
+	URL string `required:"false" required_when:"present" yaml:"url,omitempty" description:"Git URL to install the plugin from"`
 
 	// Committish is an optional git ref (branch, tag, or commit) to install
 	Committish string `required:"false" yaml:"committish,omitempty" description:"Optional git ref (branch, tag, or commit) to install"`
@@ -106,11 +106,11 @@ func (t PluginTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the PluginTask's inputs without contacting the server.
 func (t PluginTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.Name == "" {
 		return fmt.Errorf("'name' is required")
-	}
-	if t.State == StatePresent && t.URL == "" {
-		return fmt.Errorf("'url' is required when state is 'present'")
 	}
 	return nil
 }

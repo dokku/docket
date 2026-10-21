@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/dokku/docket/internal/subprocess"
@@ -16,10 +15,10 @@ type HttpAuthTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Username is the HTTP auth username seeded when auth is enabled
-	Username string `required:"false" apply_only:"true" yaml:"username,omitempty" description:"HTTP auth username to seed when enabling; supplied together with password"`
+	Username string `required:"false" apply_only:"true" yaml:"username,omitempty" description:"HTTP auth username to seed when enabling"`
 
 	// Password is the HTTP auth password seeded when auth is enabled
-	Password string `required:"false" sensitive:"true" apply_only:"true" yaml:"password,omitempty" description:"HTTP auth password for the seeded username; supplied together with username"`
+	Password string `required:"false" sensitive:"true" apply_only:"true" yaml:"password,omitempty" description:"HTTP auth password for the seeded username"`
 
 	// State is the state of the HTTP auth
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"State of the HTTP auth"`
@@ -107,16 +106,15 @@ func (t HttpAuthTask) Execute(ctx context.Context) TaskOutputState {
 // turns auth on. What is not valid is half a credential, so the pair is
 // required together.
 func (t HttpAuthTask) Validate() error {
-	if t.State != StatePresent {
-		return nil
+	return checkConstraints(t)
+}
+
+// Constraints declares that a seeded user is given in full or not at all when
+// enabling.
+func (t HttpAuthTask) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintAllOrNoneOf, Fields: []string{"username", "password"}, States: []State{StatePresent}},
 	}
-	if t.Username == "" && t.Password != "" {
-		return fmt.Errorf("username is required when a password is set")
-	}
-	if t.Password == "" && t.Username != "" {
-		return fmt.Errorf("password is required when a username is set")
-	}
-	return nil
 }
 
 // Plan reports the drift the HttpAuthTask would produce.

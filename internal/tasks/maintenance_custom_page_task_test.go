@@ -169,7 +169,7 @@ func TestMaintenanceCustomPageTaskAbsentWithContent(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute absent with content should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be set when state is 'absent'") {
+	if !strings.Contains(result.Error.Error(), "must not be set for state 'absent'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -181,7 +181,7 @@ func TestMaintenanceCustomPageTaskAbsentWithTarball(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute absent with tarball should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be set when state is 'absent'") {
+	if !strings.Contains(result.Error.Error(), "must not be set for state 'absent'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

@@ -52,7 +52,7 @@ func TestHttpAuthUserTaskPresentEmptyUsers(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty users and state=present should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'users' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'users' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -64,7 +64,7 @@ func TestHttpAuthUserTaskPresentWithoutCredential(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when a present user has neither password nor hash")
 	}
-	if !strings.Contains(result.Error.Error(), "one of 'password' or 'hash' is required") {
+	if !strings.Contains(result.Error.Error(), "at least one of 'users[0].password' or 'users[0].hash' is required") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -76,7 +76,7 @@ func TestHttpAuthUserTaskSetWithoutCredential(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when a set user has neither password nor hash")
 	}
-	if !strings.Contains(result.Error.Error(), "one of 'password' or 'hash' is required") {
+	if !strings.Contains(result.Error.Error(), "at least one of 'users[0].password' or 'users[0].hash' is required") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -196,7 +196,7 @@ func TestHttpAuthUserTaskMissingUsername(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when a user has no username")
 	}
-	if !strings.Contains(result.Error.Error(), "'username' is required") {
+	if !strings.Contains(result.Error.Error(), "'users[0].username' is required") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

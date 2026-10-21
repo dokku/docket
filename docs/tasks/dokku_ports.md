@@ -25,7 +25,7 @@ Keyed by `app`. Manages the whole `port_mappings` collection; entries are identi
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `port_mappings` | list | no |  |  | Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port. Each item has: scheme, host, container. |
+| `port_mappings` | list | no |  |  | Port mappings to set; under state 'present' and 'set' no two may share a scheme and host port. Each item has: scheme, host, container. (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the ports |
 
 ## Examples

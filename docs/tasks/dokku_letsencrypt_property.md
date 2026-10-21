@@ -25,11 +25,15 @@ Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the
 
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
-| `app` | string | no |  |  | Name of the app. Required if Global is false. |
+| `app` | string | no |  |  | Name of the app |
 | `global` | bool | no |  |  | Flag indicating if the property should be applied globally |
 | `property` | string | yes |  |  | Name of the property to set |
-| `value` | string | no |  |  | Value to set for the property (sensitive) |
+| `value` | string | no |  |  | Value to set for the property (required when state is present) (must not be set when state is absent) (sensitive) |
 | `state` | string | no | present | present, absent | Desired state of the property |
+
+## Constraints
+
+- Exactly one of `app` or `global` must be set.
 
 ## Properties
 

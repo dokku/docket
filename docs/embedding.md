@@ -221,6 +221,23 @@ state := sdk.ExecutePlan(ctx, plan)  // applies that plan without probing again
 `app.Execute(ctx)` plans and applies in one call. `sdk.DecodeTask` is the same thing as `NewTask`
 from a YAML task body, for a caller that already holds a recipe fragment.
 
+### Checking a task's input
+
+`sdk.ConstraintViolations` returns every [declared field constraint](task-catalog.md#constraints) a
+task breaks, without contacting a server: a field required or refused in its state, fields that
+exclude or need each other, and the same for each item of its structured lists. Each `sdk.Violation`
+carries the recipe key path at fault in `Field` and a `Message`. `Plan` refuses a task over the first
+of them; this reports them all at once, as `docket validate` does:
+
+```go
+for _, v := range sdk.ConstraintViolations(task) {
+    fmt.Printf("%s: %s\n", v.Field, v.Message)
+}
+```
+
+A task's `Validate()` checks the same constraints first, then the rules that depend on a value, such
+as an enum or a format. `sdk.TaskConstraints` returns a task's declared multi-field rules.
+
 ### Masking a task
 
 `sdk.TaskSensitiveValues` returns the values the CLI masks for a task before a run: its
@@ -310,11 +327,11 @@ for _, typeKey := range sdk.TaskTypes() {
 
 Each `Lookup` call returns a new zero-value instance, so changing it affects nothing else. It has no
 defaults applied; use `sdk.NewTask` for a task to run. `sdk.TaskDeprecation`,
-`sdk.TaskImperative`, `sdk.TaskProbeSupport`, `sdk.TaskExportSupport` and
-`sdk.TaskMinimumVersions` read the rest of a task's metadata.
+`sdk.TaskImperative`, `sdk.TaskProbeSupport`, `sdk.TaskExportSupport`,
+`sdk.TaskMinimumVersions` and `sdk.TaskConstraints` read the rest of a task's metadata.
 
 `sdk.Catalog()` describes every task type in one value - synopsis, deprecation, requirements,
-probe and export support, identity and fields - and is what `docket schema` emits.
+probe and export support, identity, fields and constraints - and is what `docket schema` emits.
 `sdk.CatalogFor` narrows it to the types you name. See [Task catalog](task-catalog.md).
 
 ## Reading one resource

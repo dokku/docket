@@ -534,7 +534,7 @@ func TestValidateInvalidTaskInput(t *testing.T) {
 	if p == nil {
 		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
 	}
-	if !strings.Contains(p.Message, "'users' must not be empty") {
+	if !strings.Contains(p.Message, "'users' is required for state") {
 		t.Errorf("expected message to mention empty users, got: %q", p.Message)
 	}
 	if p.Line == 0 {
@@ -895,7 +895,7 @@ func TestValidateInvalidTaskInputNestedItem(t *testing.T) {
 	if p == nil {
 		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
 	}
-	if !strings.Contains(p.Message, "one of 'password' or 'hash' is required") {
+	if !strings.Contains(p.Message, "at least one of 'users[0].password' or 'users[0].hash' is required") {
 		t.Errorf("expected message to mention the required credential, got: %q", p.Message)
 	}
 }
@@ -963,7 +963,7 @@ func TestValidateInvalidTaskInputPropertyScope(t *testing.T) {
 	if p == nil {
 		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
 	}
-	if !strings.Contains(p.Message, "must not be set when 'global'") {
+	if !strings.Contains(p.Message, "'app' and 'global' are mutually exclusive") {
 		t.Errorf("expected message to mention global/app conflict, got: %q", p.Message)
 	}
 }
@@ -1922,7 +1922,7 @@ func TestValidateInvalidTaskInputSchedulerK3sNodeSysctlsWithoutScope(t *testing.
 	if p == nil {
 		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
 	}
-	if !strings.Contains(p.Message, "'profile' is required when 'global' is not set to true") {
+	if !strings.Contains(p.Message, "exactly one of 'global' or 'profile' is required") {
 		t.Errorf("expected message to name the rule, got: %q", p.Message)
 	}
 }
@@ -1941,7 +1941,7 @@ func TestValidateInvalidTaskInputSchedulerK3sNodeSysctlsWithBothScopes(t *testin
 	if p == nil {
 		t.Fatalf("expected invalid_task_input problem, got: %+v", problems)
 	}
-	if !strings.Contains(p.Message, "'profile' must not be set when 'global' is set to true") {
+	if !strings.Contains(p.Message, "'global' and 'profile' are mutually exclusive") {
 		t.Errorf("expected message to name the rule, got: %q", p.Message)
 	}
 }

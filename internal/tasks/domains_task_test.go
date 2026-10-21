@@ -33,7 +33,7 @@ func TestDomainsTaskGlobalWithApp(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be set when 'global' is set to true") {
+	if !strings.Contains(result.Error.Error(), "'app' and 'global' are mutually exclusive") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

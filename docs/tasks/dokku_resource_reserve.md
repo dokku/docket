@@ -26,8 +26,8 @@ Keyed by `app` and `process_type`. Fields left empty are omitted from the addres
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
 | `process_type` | string | no |  |  | Process type to set resource reservations for |
-| `resources` | dict | no |  |  | Map of resource type to quantity; omit for state 'clear' |
-| `clear_before` | bool | no | false |  | ClearBefore clears all resource reservations before applying new ones (applied only, not read back) |
+| `resources` | dict | no |  |  | Map of resource type to quantity (required when state is present) (must not be set when state is clear) |
+| `clear_before` | bool | no | false |  | ClearBefore clears all resource reservations before applying new ones (must not be set when state is set or clear) (applied only, not read back) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the resource reservations |
 
 ## Examples

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 
@@ -25,10 +24,10 @@ type ConfigTask struct {
 	Restart *bool `apply_only:"true" yaml:"restart,omitempty" default:"true" description:"Flag indicating if the app should be restarted"`
 
 	// Config is a map of configuration key-value pairs
-	Config map[string]string `identity:"collection" yaml:"config,omitempty" description:"Map of configuration key-value pairs; omit for state 'clear'"`
+	Config map[string]string `forbidden_when:"clear" identity:"collection" yaml:"config,omitempty" description:"Map of configuration key-value pairs"`
 
 	// Preserve lists keys that state 'set' and 'clear' leave in place
-	Preserve []string `required:"false" apply_only:"true" ordered:"false" yaml:"preserve,omitempty" description:"Keys that state 'set' and 'clear' leave untouched, on top of the service-link keys, NO_VHOST, and the git rev-env-var key they always keep; only valid for state 'set' or 'clear'"`
+	Preserve []string `required:"false" forbidden_when:"present,absent" apply_only:"true" ordered:"false" yaml:"preserve,omitempty" description:"Keys that state 'set' and 'clear' leave untouched, on top of the service-link keys, NO_VHOST, and the git rev-env-var key they always keep"`
 
 	// State is the desired state of the configuration
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the configuration: 'present' sets the named keys and 'absent' unsets them, leaving every other key alone; 'set' declares the app's entire config, unsetting every key it does not name; 'clear' unsets every key. Both 'set' and 'clear' keep keys a service link wrote, NO_VHOST, the git rev-env-var key, and any key listed in 'preserve'"`
@@ -121,30 +120,20 @@ func (t ConfigTask) examples() ([]Doc, error) {
 }
 
 // Validate checks the config map and preserve list against the state before
-// any subprocess call.
+// any subprocess call. The additive states never touch an undeclared key, so
+// a preserve list would do nothing there, which is why it is forbidden
+// alongside them.
 func (t ConfigTask) Validate() error {
-	state := t.State
-	if state == "" {
-		state = StatePresent
+	if err := checkConstraints(t); err != nil {
+		return err
 	}
-	switch state {
-	case StateSet:
+	if t.State == StateSet {
 		// An empty map plans as clear, since config:import refuses an empty
 		// payload; the preserve check below has nothing to collide with then.
 		for _, k := range t.Preserve {
 			if _, ok := t.Config[k]; ok {
 				return fmt.Errorf("key %q must not be in both 'config' and 'preserve'", k)
 			}
-		}
-	case StateClear:
-		if len(t.Config) > 0 {
-			return errors.New("'config' must not be set for state 'clear'")
-		}
-	case StatePresent, StateAbsent:
-		// The additive states never touch an undeclared key, so a preserve
-		// list would do nothing.
-		if len(t.Preserve) > 0 {
-			return fmt.Errorf("'preserve' is only valid for state 'set' or 'clear', got state '%s'", state)
 		}
 	}
 	return nil

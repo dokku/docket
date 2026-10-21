@@ -24,6 +24,11 @@ func (t NetworkPropertyTask) Doc() string {
 	return "Manages the network property for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t NetworkPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t NetworkPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -105,7 +110,7 @@ func (t NetworkPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the NetworkPropertyTask's inputs without contacting the server.
 func (t NetworkPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the NetworkPropertyTask would produce.

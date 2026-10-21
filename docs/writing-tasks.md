@@ -92,8 +92,8 @@ A few conventions to follow:
 - The struct holds the fields the task needs. The only required field is `State`, the desired state;
   everything else is specific to the task.
 - Give every field a `description:"..."` tag. The docs generator reads it (along with `required`,
-  `default`, `options`, `sensitive`, `runner_file`, `write_only`, `apply_only`, and `ordered`) to build the
-  task's Parameters table, so a field without one renders an empty description cell. Those same tags are what
+  `required_when`, `forbidden_when`, `default`, `options`, `sensitive`, `runner_file`, `write_only`,
+  `apply_only`, and `ordered`) to build the task's Parameters table, so a field without one renders an empty description cell. Those same tags are what
   [`docket schema`](task-catalog.md) publishes, so a missing description is a hole in the
   machine-readable catalog as well as in the docs. Add `,omitempty` to the `yaml` tag of optional
   fields so example YAML stays clean, and use `required:"false"` whenever a field has a `default`
@@ -207,10 +207,13 @@ A few conventions to follow:
 - Every task must tag the fields that identify the resource it manages with `identity:"key"`. See
   [declaring identity](#declaring-identity) below; a coverage test fails the build if a task ships
   without one.
-- When a task has conditional or semantic input rules that a `required:"true"` tag cannot express -
-  a list that must be non-empty only when `state: present`, mutually-exclusive fields, an enum, a
-  per-item requirement on a slice field - put them in the optional `Validate() error` method (the
-  `InputValidator` interface) and call it as the first line of `Plan()`. See below.
+- When a field is needed in some states and refused in others, or fields depend on each other -
+  a list that must be non-empty only when `state: present`, mutually-exclusive fields, a pair set
+  together - declare it rather than checking it by hand. See
+  [declaring field constraints](#declaring-field-constraints) below. Rules a declaration cannot
+  express, such as an enum or a value format, go in the optional `Validate() error` method (the
+  `InputValidator` interface), which `Plan()` calls after `gatePlan`. See
+  [validating inputs](#validating-inputs).
 
 ## Declaring identity
 
@@ -248,18 +251,78 @@ Leave a collection untagged when it is an *attribute* of the resource rather tha
 the task manages: `dokku_storage_mount`'s `phases` narrows one mount, it is not a set of mounts. Its
 `mounts` list is the set of mounts, and it carries the tag.
 
+## Declaring field constraints
+
+`required:"true"` says a field is always needed. Two more field tags say when a field is needed or
+refused, as a comma-separated list of the task's `state` choices:
+
+- `required_when:"present,absent"` - the field must be set in these states.
+- `forbidden_when:"clear"` - the field must not be set in these states.
+
+Rules over several fields go in the optional `Constraints() []Constraint` method, on the task or on
+an element struct such as `HttpAuthUser`. Each `Constraint` has a `Kind`, the `Fields` it covers, and
+optionally the `States` it applies in (every state when empty; an element's rules use the task's
+states):
+
+- `ConstraintExactlyOneOf` - exactly one of `Fields` is set, such as `app` or `global`.
+  `appOrGlobalConstraints` holds that one.
+- `ConstraintAtLeastOneOf` - one or more of `Fields` is set.
+- `ConstraintAllOrNoneOf` - `Fields` are set together or not at all.
+- `ConstraintConflictsWith` - none of `Fields` is set while `Field` is.
+- `ConstraintRequiredWith` - every one of `Fields` is set while `Field` is.
+
+A field is set when it differs from its zero value and from its `default`: a nil pointer, an empty
+list or map, and a value equal to the default all count as unset. Every name is a recipe key.
+
+```go
+type LollipopTask struct {
+  App     string   `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+  Flavors []string `required:"false" required_when:"present" identity:"collection" ordered:"false" yaml:"flavors,omitempty" description:"Flavors to apply"`
+  Wrapper string   `required:"false" yaml:"wrapper,omitempty" description:"Wrapper to use"`
+  Stick   string   `required:"false" yaml:"stick,omitempty" description:"Stick to use"`
+  State   State    `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the lollipop"`
+}
+
+// Constraints declares that a wrapper and a stick come as a pair.
+func (t LollipopTask) Constraints() []Constraint {
+  return []Constraint{
+    {Kind: ConstraintAllOrNoneOf, Fields: []string{"wrapper", "stick"}, States: []State{StatePresent}},
+  }
+}
+```
+
+The declarations are what enforces them. `gatePlan` checks them before any probe, and a task's
+`Validate()` starts with `checkConstraints(t)`, so `plan`, `apply` and `validate` all refuse the same
+input. `docket validate` reports every constraint a body breaks, one `invalid_task_input` problem
+each, rather than stopping at the first. [`docket schema`](task-catalog.md#constraints) publishes the
+declarations, and the generator renders them on the task's page - a field note in the Parameters
+table and a Constraints section - so do not repeat them in the `description`. The messages are
+uniform: `'flavors' is required for state 'present'`, `'wrapper' and 'stick' must be set together
+for state 'present'`.
+
+`TestConstraintDeclarationsAreWellFormed` fails the build for a declaration naming a key the struct
+does not have, a state the task does not offer, or a `required_when` on a field that is already
+required or has a default. `TestEveryDeclaredConstraintIsEnforced` breaks every declaration of every
+task and fails unless both `Validate()` and `Plan()` refuse it.
+
 ## Validating inputs
 
 `required:"true"` field tags are enforced offline by `docket validate` (it reports
-`missing_required_field`), but they can only express "this scalar field must be present". Anything
-conditional - non-empty-when-present, mutually-exclusive fields, enums, per-item checks on a slice -
-has to live in code. Put it in `Validate() error` rather than inline in `Plan()`:
+`missing_required_field`), and [field constraints](#declaring-field-constraints) by the declarations
+themselves. A rule that depends on a value rather than on whether a field is set - an enum, a format,
+a per-item check on a slice - has to live in code. Put it in `Validate() error` rather than inline in
+`Plan()`, after the declared constraints:
 
 ```go
 // Validate checks inputs without contacting the server.
 func (t LollipopTask) Validate() error {
-  if t.State == StatePresent && len(t.Flavors) == 0 {
-    return fmt.Errorf("'flavors' must not be empty for state 'present'")
+  if err := checkConstraints(t); err != nil {
+    return err
+  }
+  for i, flavor := range t.Flavors {
+    if strings.TrimSpace(flavor) == "" {
+      return fmt.Errorf("'flavors' must not contain an empty flavor, got flavors[%d]", i)
+    }
   }
   return nil
 }
@@ -278,9 +341,10 @@ func (t LollipopTask) Plan(ctx context.Context) PlanResult {
 `Validate()` takes no context, and that is the point: it never contacts a server, so there is
 nothing to cancel. `Plan()` calls it before it probes, so `plan` and `apply` still report the error.
 Because it is a pure function of the struct - it must never call a probing or mutating dokku
-command - `docket validate` calls the same method offline and surfaces any error as
-`invalid_task_input`, catching the mistake before a server is ever contacted. Keep the error strings
-identical to what `Plan()` used to return so `plan`, `apply`, and `validate` all read the same.
+command - `docket validate` calls the same method offline, once the declared constraints hold, and
+surfaces any error as `invalid_task_input`, catching the mistake before a server is ever contacted.
+Keep the error strings identical to what `Plan()` used to return so `plan`, `apply`, and `validate`
+all read the same.
 
 ## Exporting a task
 
@@ -419,8 +483,13 @@ func (t NginxPropertyTask) propertyTable() PropertyTable {
   return nginxPropertyTable
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t NginxPropertyTask) Constraints() []Constraint {
+  return appOrGlobalConstraints
+}
+
 func (t NginxPropertyTask) Validate() error {
-  return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+  return validatePropertyInput(t, t.Global, t.Property)
 }
 
 func (t NginxPropertyTask) Plan(ctx context.Context) PlanResult {
@@ -504,9 +573,10 @@ who wrote `chart.traefik.replicas` meant it, and answering with the list of name
 supported sends them looking for something that will never be on it. All three fields are required,
 and `Replacement` has to name a registered task.
 
-Declaring it on the table rather than in `Plan()` is what keeps the message honest.
-`validatePropertyInput` is the one function `planProperty` and every property task's `Validate()`
-both call, so `plan`, `apply` and `validate` cannot drift apart - which is exactly what happened
+Declaring it on the table rather than in `Plan()` is what keeps the message honest. The constraint
+check reports a rejected member alone, ahead of every declared constraint, and
+`validatePropertyName` - which `planProperty` calls and every property task's `Validate()` reaches
+through `validatePropertyInput` - checks it again, so `plan`, `apply` and `validate` cannot drift apart - which is exactly what happened
 while the `chart.*` guard lived in `Plan()` alone and `docket validate` reported the generic
 unsupported-name error instead (#458). The family is published as `property_schema.rejected` too, so
 a consumer validating a recipe offline can give the same answer.

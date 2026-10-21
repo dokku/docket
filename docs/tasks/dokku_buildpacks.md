@@ -25,7 +25,7 @@ Keyed by `app`. Manages the whole `buildpacks` collection; entries are identifie
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `buildpacks` | list | no |  |  | List of buildpack URLs; omit for state 'clear' (order is significant) |
+| `buildpacks` | list | no |  |  | List of buildpack URLs (order is significant) (required when state is present) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the buildpacks |
 
 ## Examples

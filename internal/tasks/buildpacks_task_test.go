@@ -72,7 +72,7 @@ func TestBuildpacksTaskPresentEmptyBuildpacks(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty buildpacks and state=present should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'buildpacks' is required for state 'present'") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

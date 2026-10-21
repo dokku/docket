@@ -35,7 +35,7 @@ type ServicePropertyTask struct {
 	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the property to set. Which properties a service accepts depends on its datastore - the backup settings only on one that can be backed up, for example - and <service>:set refuses the rest when the task applies."`
 
 	// Value is the value to set the property to. Required when state is present.
-	Value string `required:"false" yaml:"value,omitempty" description:"Value to set the property to. Required when state is present. Masked in output for the backup credentials and custom-env."`
+	Value string `required:"false" required_when:"present" forbidden_when:"absent" yaml:"value,omitempty" description:"Value to set the property to. Masked in output for the backup credentials and custom-env."`
 
 	// State is the desired state of the property
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the property"`
@@ -249,14 +249,11 @@ func (t ServicePropertyTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the ServicePropertyTask's inputs without contacting the server.
 func (t ServicePropertyTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.Property == "" {
 		return fmt.Errorf("'property' is required")
-	}
-	if t.State == StatePresent && t.Value == "" {
-		return fmt.Errorf("'value' is required when state is 'present'")
-	}
-	if t.State == StateAbsent && t.Value != "" {
-		return fmt.Errorf("'value' must not be set when state is 'absent'")
 	}
 	return nil
 }

@@ -26,7 +26,7 @@ Keyed by `app`. Manages the whole `domains` collection; entries are identified b
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `domains` | list | no |  |  | List of domains to restrict HTTP auth to; omit for state 'clear' |
+| `domains` | list | no |  |  | List of domains to restrict HTTP auth to (required when state is present or absent) (must not be set when state is clear) |
 | `state` | string | no | present | present, absent, set, clear | Desired state of the HTTP auth domain entries |
 
 ## Examples

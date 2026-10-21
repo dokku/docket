@@ -154,6 +154,13 @@ type TaskSchema struct {
 	// which is the order the reference page lists them in.
 	Fields []FieldSchema `json:"fields"`
 
+	// Constraints are the rules over several of Fields, in declaration
+	// order: which must be set together, which exclude each other, which
+	// need one another. Absent when the task declares none. Docket enforces
+	// every one of them, so a consumer that attaches them to its own schema
+	// rejects exactly what docket would.
+	Constraints []Constraint `json:"constraints,omitempty"`
+
 	// PropertySchema is present only for a task that manages an enumerable
 	// dokku property table. Its absence on a task that has a `property` field
 	// means the legal names are not enumerable from docket, not that there are
@@ -221,6 +228,17 @@ type FieldSchema struct {
 	// default. A field carrying a default is never actually required, because
 	// defaults.SetDefaults fills it in before the loader's zero-check runs.
 	Required bool `json:"required"`
+
+	// RequiredWhen are the states in which the field must be set, from its
+	// `required_when:` tag, in tag order. Absent when the field is never
+	// conditionally required. The states are values of the task's `state`
+	// field, and on an element's field they are still the task's states.
+	RequiredWhen []string `json:"required_when,omitempty"`
+
+	// ForbiddenWhen are the states in which the field must not be set, from
+	// its `forbidden_when:` tag, in tag order. Absent when the field is
+	// allowed in every state.
+	ForbiddenWhen []string `json:"forbidden_when,omitempty"`
 
 	// Default is the literal `default:` tag text, to be read according to
 	// Type. It is not pre-parsed, so it cannot diverge from what go-defaults
@@ -311,6 +329,11 @@ type ItemSchema struct {
 	// tags a task does, so this is where a consumer learns that a
 	// HttpAuthUser's `password` is sensitive.
 	Fields []FieldSchema `json:"fields,omitempty"`
+
+	// Constraints are the rules over several of the element's Fields, read
+	// the same way as TaskSchema.Constraints; their states are the task's.
+	// Present only when Type is "object" and the element declares any.
+	Constraints []Constraint `json:"constraints,omitempty"`
 }
 
 // ExampleSchema is one documented example: the heading its reference page
@@ -501,10 +524,11 @@ func CatalogFor(typeKeys []string) (TaskCatalog, error) {
 // prototype does not have to build all of them.
 func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 	schema := TaskSchema{
-		Type:     typeKey,
-		Synopsis: strings.TrimSpace(TaskSynopsis(task)),
-		Fields:   buildFields(taskStructOf(task)),
-		Identity: IdentitySchema{Keys: IdentityKeyNames(task)},
+		Type:        typeKey,
+		Synopsis:    strings.TrimSpace(TaskSynopsis(task)),
+		Fields:      buildFields(taskStructOf(task)),
+		Identity:    IdentitySchema{Keys: IdentityKeyNames(task)},
+		Constraints: cloneConstraints(TaskConstraints(task)),
 	}
 
 	schema.Deprecation = strings.TrimSpace(TaskDeprecation(task))
@@ -605,13 +629,15 @@ func buildFields(rt reflect.Type) []FieldSchema {
 			Type: catalogFieldType(field.Type),
 			// A field with a default is effectively optional even if it is
 			// tagged required:"true".
-			Required:    field.Tag.Get("required") == "true" && def == "",
-			Default:     def,
-			Description: field.Tag.Get("description"),
-			Sensitive:   field.Tag.Get("sensitive") == "true",
-			RunnerFile:  field.Tag.Get("runner_file") == "true",
-			WriteOnly:   field.Tag.Get("write_only") == "true",
-			ApplyOnly:   field.Tag.Get("apply_only") == "true",
+			Required:      field.Tag.Get("required") == "true" && def == "",
+			RequiredWhen:  conditionalStates(field.Tag.Get(requiredWhenTag)),
+			ForbiddenWhen: conditionalStates(field.Tag.Get(forbiddenWhenTag)),
+			Default:       def,
+			Description:   field.Tag.Get("description"),
+			Sensitive:     field.Tag.Get("sensitive") == "true",
+			RunnerFile:    field.Tag.Get("runner_file") == "true",
+			WriteOnly:     field.Tag.Get("write_only") == "true",
+			ApplyOnly:     field.Tag.Get("apply_only") == "true",
 		}
 		if opts := field.Tag.Get("options"); opts != "" {
 			schema.Choices = strings.Split(opts, ",")
@@ -672,6 +698,7 @@ func buildItem(t reflect.Type, collection bool) *ItemSchema {
 
 	if item.Type == TypeObject {
 		item.Fields = buildFields(structElem(t.Elem()))
+		item.Constraints = cloneConstraints(structConstraints(structElem(t.Elem())))
 	}
 	if collection {
 		item.Identity, item.Keys = collectionItemIdentity(t)

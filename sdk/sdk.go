@@ -76,6 +76,27 @@ func TaskMinimumVersions(t Task) (VersionSupport, bool) {
 	return tasks.TaskMinimumVersions(t)
 }
 
+// TaskConstraints returns the rules over several of t's fields, the same
+// ones TaskSchema.Constraints publishes. Nil when t declares none.
+func TaskConstraints(t Task) []Constraint {
+	return tasks.TaskConstraints(t)
+}
+
+// Violation is one declared field constraint a task breaks. Field is the
+// recipe key path at fault, such as `users[1].hash`; for a rule over several
+// keys it is the path of the element the rule sits on, empty for the task
+// itself.
+type Violation = tasks.Violation
+
+// ConstraintViolations returns every declared field constraint t breaks - the
+// required_when and forbidden_when of each field, the task's Constraints, and
+// those of each element of its structured lists - or nil when it satisfies
+// them all. A task's Validate and Plan reject the first of these; this
+// reports them all at once, as `docket validate` does.
+func ConstraintViolations(t Task) []Violation {
+	return tasks.ConstraintViolations(t)
+}
+
 // Catalog describes every registered task type. It is what `docket schema`
 // emits.
 func Catalog() (TaskCatalog, error) {
@@ -116,6 +137,15 @@ const (
 	ItemIdentityValue  = tasks.ItemIdentityValue
 	ItemIdentityMapKey = tasks.ItemIdentityMapKey
 	ItemIdentityFields = tasks.ItemIdentityFields
+)
+
+// Kinds of Constraint.
+const (
+	ConstraintExactlyOneOf  = tasks.ConstraintExactlyOneOf
+	ConstraintAtLeastOneOf  = tasks.ConstraintAtLeastOneOf
+	ConstraintAllOrNoneOf   = tasks.ConstraintAllOrNoneOf
+	ConstraintConflictsWith = tasks.ConstraintConflictsWith
+	ConstraintRequiredWith  = tasks.ConstraintRequiredWith
 )
 
 // Scopes a property can be set in.

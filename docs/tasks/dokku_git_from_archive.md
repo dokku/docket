@@ -33,6 +33,10 @@ Keyed by `app`.
 | `git_email` | string | no |  |  | Git author email for the synthetic commit (applied only, not read back) |
 | `state` | string | no | deployed | deployed | Desired state of the deployment |
 
+## Constraints
+
+- `git_username` and `git_email` must be set together or not at all.
+
 ## Examples
 
 ### Deploy a tar.gz archive

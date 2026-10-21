@@ -116,7 +116,7 @@ func TestSchedulerK3sAutoscalingAuthTaskMissingApp(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute without app and global=false should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "app is required") {
+	if !strings.Contains(result.Error.Error(), "exactly one of 'app' or 'global' is required") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -134,7 +134,7 @@ func TestSchedulerK3sAutoscalingAuthTaskGlobalWithAppSet(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when both global and app are set")
 	}
-	if !strings.Contains(result.Error.Error(), "must not be set when 'global' is set to true") {
+	if !strings.Contains(result.Error.Error(), "'app' and 'global' are mutually exclusive") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -166,7 +166,7 @@ func TestSchedulerK3sAutoscalingAuthTaskPresentWithoutMetadata(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when present state has no metadata")
 	}
-	if !strings.Contains(result.Error.Error(), "'metadata' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'metadata' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -182,7 +182,7 @@ func TestSchedulerK3sAutoscalingAuthTaskAbsentWithoutMetadata(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("expected error when absent state has no metadata")
 	}
-	if !strings.Contains(result.Error.Error(), "'metadata' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'metadata' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }

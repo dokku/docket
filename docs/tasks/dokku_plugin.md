@@ -25,7 +25,7 @@ Keyed by `name`.
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `name` | string | yes |  |  | Plugin name as it appears in plugin:list |
-| `url` | string | no |  |  | Git URL to install the plugin from. Required when state is present. |
+| `url` | string | no |  |  | Git URL to install the plugin from (required when state is present) |
 | `committish` | string | no |  |  | Optional git ref (branch, tag, or commit) to install |
 | `state` | string | no | present | present, absent | Desired state of the plugin |
 

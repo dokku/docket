@@ -16,7 +16,7 @@ type DomainsTask struct {
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the domains should be applied globally"`
 
 	// Domains is the list of domain names
-	Domains []string `required:"false" identity:"collection" ordered:"false" yaml:"domains,omitempty" description:"List of domain names; omit for state 'clear'"`
+	Domains []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"domains,omitempty" description:"List of domain names"`
 
 	// State is the desired state of the domains
 	State State `required:"false" yaml:"state" default:"present" options:"present,absent,set,clear" description:"Desired state of the domains"`
@@ -98,14 +98,17 @@ func (t DomainsTask) Execute(ctx context.Context) TaskOutputState {
 	return ExecutePlan(ctx, t.Plan(ctx))
 }
 
+// Constraints declares that the domains belong to an app or are global.
+func (t DomainsTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // Validate checks the DomainsTask's inputs without contacting the server.
+// domains:clear takes no domains, which is why a list is forbidden alongside
+// it: it would be silently discarded rather than removed. An empty set plans
+// as clear, so it needs none either.
 func (t DomainsTask) Validate() error {
-	// An empty set plans as clear, so it is held to clear's rule.
-	requireDomains := t.State != StateClear && (t.State != StateSet || len(t.Domains) != 0)
-	if err := validateDomainsTask(t, requireDomains); err != nil {
-		return err
-	}
-	return nil
+	return checkConstraints(t)
 }
 
 // Plan reports the drift the DomainsTask would produce.
@@ -325,25 +328,6 @@ func applyDokkuArgs(subcommand, target string, extra []string, finalState State,
 	return func(ctx context.Context) TaskOutputState {
 		return runExecInputs(ctx, TaskOutputState{State: errState}, finalState, inputs)
 	}
-}
-
-// validateDomainsTask validates the domains task parameters
-func validateDomainsTask(t DomainsTask, requireDomains bool) error {
-	if t.Global && t.App != "" {
-		return fmt.Errorf("'app' must not be set when 'global' is set to true")
-	}
-	if !t.Global && t.App == "" {
-		return fmt.Errorf("'app' is required when 'global' is not set to true")
-	}
-	if requireDomains && len(t.Domains) == 0 {
-		return fmt.Errorf("'domains' must not be empty for state '%s'", t.State)
-	}
-	// domains:clear takes no domains, so a list supplied alongside it would be
-	// silently discarded rather than removed.
-	if !requireDomains && len(t.Domains) > 0 {
-		return fmt.Errorf("'domains' must not be set for state '%s'", t.State)
-	}
-	return nil
 }
 
 // ExportApp reads the app's vhosts and returns a dokku_domains task that sets

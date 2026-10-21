@@ -28,7 +28,7 @@ Keyed by `service`, `name`, and `property`. Fields left empty are omitted from t
 | `service` | string | yes |  |  | Type of service to configure (e.g. redis, postgres, mysql) |
 | `name` | string | yes |  |  | Name of the service instance |
 | `property` | string | yes |  |  | Name of the property to set. Which properties a service accepts depends on its datastore - the backup settings only on one that can be backed up, for example - and &lt;service>:set refuses the rest when the task applies. |
-| `value` | string | no |  |  | Value to set the property to. Required when state is present. Masked in output for the backup credentials and custom-env. |
+| `value` | string | no |  |  | Value to set the property to. Masked in output for the backup credentials and custom-env. (required when state is present) (must not be set when state is absent) |
 | `state` | string | no | present | present, absent | Desired state of the property |
 
 ## Examples

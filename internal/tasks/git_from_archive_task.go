@@ -102,7 +102,17 @@ func (t GitFromArchiveTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Validate checks the GitFromArchiveTask's inputs without contacting the server.
+// Constraints declares that the commit author is given in full or not at all.
+func (t GitFromArchiveTask) Constraints() []Constraint {
+	return []Constraint{
+		{Kind: ConstraintAllOrNoneOf, Fields: []string{"git_username", "git_email"}},
+	}
+}
+
 func (t GitFromArchiveTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
 	}
@@ -115,9 +125,6 @@ func (t GitFromArchiveTask) Validate() error {
 	}
 	if !validGitFromArchiveTypes[archiveType] {
 		return fmt.Errorf("'archive_type' must be one of tar, tar.gz, zip")
-	}
-	if (t.GitUsername == "") != (t.GitEmail == "") {
-		return fmt.Errorf("'git_username' and 'git_email' must be set together")
 	}
 	return nil
 }

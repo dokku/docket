@@ -917,6 +917,15 @@ func rejectedFamilyTable() propertyTableTask {
 	}}
 }
 
+// rejectedFamilyTask is a property task over rejectedFamilyTable, carrying the
+// same fields and constraints every real property task declares, so
+// validatePropertyInput checks it exactly as it checks one of those.
+type rejectedFamilyTask PropertyFields
+
+func (t rejectedFamilyTask) propertyTable() PropertyTable { return rejectedFamilyTable().table }
+
+func (t rejectedFamilyTask) Constraints() []Constraint { return appOrGlobalConstraints }
+
 func TestRejectedFamilyFor(t *testing.T) {
 	t.Parallel()
 	table := rejectedFamilyTable().table
@@ -950,7 +959,6 @@ func TestRejectedFamilyFor(t *testing.T) {
 // user would fix only to hit the refusal anyway (#458).
 func TestValidatePropertyInputRejectedFamily(t *testing.T) {
 	t.Parallel()
-	task := rejectedFamilyTable()
 	cases := []struct {
 		name     string
 		app      string
@@ -969,7 +977,8 @@ func TestValidatePropertyInputRejectedFamily(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validatePropertyInput(task, tc.state, tc.app, tc.global, tc.property, tc.value)
+			task := rejectedFamilyTask{App: tc.app, Global: tc.global, Property: tc.property, Value: tc.value, State: tc.state}
+			err := validatePropertyInput(task, task.Global, task.Property)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("got error %v; want nil", err)

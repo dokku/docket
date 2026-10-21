@@ -30,7 +30,7 @@ func TestAclAppTaskPresentMissingApp(t *testing.T) {
 }
 
 func TestAclAppTaskAbsentMissingApp(t *testing.T) {
-	task := AclAppTask{State: StateAbsent}
+	task := AclAppTask{Users: []string{"alice"}, State: StateAbsent}
 	result := task.Execute(testCtx())
 	if result.Error == nil {
 		t.Fatal("Execute without app should return an error")
@@ -46,7 +46,7 @@ func TestAclAppTaskPresentEmptyUsers(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Execute with empty users and state=present should return an error")
 	}
-	if !strings.Contains(result.Error.Error(), "'users' must not be empty") {
+	if !strings.Contains(result.Error.Error(), "'users' is required for state") {
 		t.Errorf("unexpected error: %v", result.Error)
 	}
 }
@@ -100,7 +100,7 @@ func TestAclAppTaskValidateUsersPerState(t *testing.T) {
 		state   State
 		wantErr string
 	}{
-		{name: "absent without users", state: StateAbsent, wantErr: "'users' must not be empty for state 'absent'"},
+		{name: "absent without users", state: StateAbsent, wantErr: "'users' is required for state 'absent'"},
 		{name: "set without users plans as clear", state: StateSet},
 		{name: "clear with users", users: []string{"alice"}, state: StateClear, wantErr: "'users' must not be set for state 'clear'"},
 		{name: "clear without users", state: StateClear},

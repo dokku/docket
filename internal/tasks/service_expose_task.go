@@ -19,7 +19,7 @@ type ServiceExposeTask struct {
 	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
 
 	// Ports are the host ports to expose the service on. Required when state is present.
-	Ports []string `required:"false" identity:"collection" ordered:"true" yaml:"ports,omitempty" description:"Host ports to expose the service on. Required when state is present; omit for state 'clear'."`
+	Ports []string `required:"false" required_when:"present" forbidden_when:"clear" identity:"collection" ordered:"true" yaml:"ports,omitempty" description:"Host ports to expose the service on"`
 
 	// State is the desired state of the service exposure. present and set
 	// both replace the whole port list; set also accepts an empty list, which
@@ -140,16 +140,10 @@ func (t ServiceExposeTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Validate checks the ServiceExposeTask's inputs without contacting the server.
+// unexpose takes no ports, which is why a list is forbidden alongside clear:
+// it would be silently discarded rather than removed.
 func (t ServiceExposeTask) Validate() error {
-	if t.State == StatePresent && len(t.Ports) == 0 {
-		return fmt.Errorf("'ports' is required when state is 'present'")
-	}
-	// unexpose takes no ports, so a list supplied alongside clear would be
-	// silently discarded rather than removed.
-	if t.State == StateClear && len(t.Ports) > 0 {
-		return fmt.Errorf("'ports' must not be set for state 'clear'")
-	}
-	return nil
+	return checkConstraints(t)
 }
 
 // Plan reports the drift the ServiceExposeTask would produce.

@@ -15,7 +15,7 @@ type PortsTask struct {
 	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// PortMappings are the port mappings to set
-	PortMappings []PortMapping `required:"false" identity:"collection" ordered:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; omit for state 'clear'; under state 'present' and 'set' no two may share a scheme and host port"`
+	PortMappings []PortMapping `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; under state 'present' and 'set' no two may share a scheme and host port"`
 
 	// State is the desired state of the ports
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the ports"`
@@ -139,30 +139,19 @@ func (t PortsTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the PortsTask's inputs without contacting the server.
 func (t PortsTask) Validate() error {
+	// ports:clear takes no mappings, which is why a list is forbidden
+	// alongside it: it would be silently discarded rather than removed. An
+	// empty set plans as clear; the present and absent states each need a
+	// mapping to act on. Each mapping renders as scheme:host:container, so a
+	// missing field, which the constraints check reports, would otherwise
+	// reach dokku as a malformed argument.
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return errors.New("'app' is required")
 	}
-	// ports:clear takes no mappings, so a list supplied alongside it would be
-	// silently discarded rather than removed. Every other state consumes one.
-	if t.State == StateClear {
-		if len(t.PortMappings) > 0 {
-			return errors.New("'port_mappings' must not be set for state 'clear'")
-		}
-		return nil
-	}
-	// An empty set plans as clear; the present and absent states each need a
-	// mapping to act on.
-	if len(t.PortMappings) == 0 && t.State != StateSet {
-		return fmt.Errorf("'port_mappings' must not be empty for state '%s'", t.State)
-	}
-	// Each mapping renders as scheme:host:container, so an unknown or
-	// misspelled key (silently ignored by the YAML decode) or a missing
-	// port would otherwise reach dokku as a malformed argument. Enforce
-	// the per-item required fields the docs mark required.
 	for i, m := range t.PortMappings {
-		if m.Scheme == "" {
-			return fmt.Errorf("'scheme' is required for port_mappings[%d]", i)
-		}
 		if m.Host < 1 || m.Host > 65535 {
 			return fmt.Errorf("'host' must be a port between 1 and 65535 for port_mappings[%d]", i)
 		}

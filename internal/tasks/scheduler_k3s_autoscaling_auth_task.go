@@ -5,8 +5,8 @@ import "context"
 // SchedulerK3sAutoscalingAuthTask manages the KEDA TriggerAuthentication
 // metadata stored under a single trigger for a dokku application or globally.
 type SchedulerK3sAutoscalingAuthTask struct {
-	// App is the name of the app. Required if Global is false.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app. Required if Global is false."`
+	// App is the name of the app. Exactly one of App and Global is set.
+	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the trigger authentication should be
 	// applied globally instead of on a single app.
@@ -20,7 +20,7 @@ type SchedulerK3sAutoscalingAuthTask struct {
 	// trigger. On present, these keys are written and merged with any other
 	// keys dokku already stores under the trigger. On absent, only the listed
 	// keys are cleared; their values are ignored.
-	Metadata map[string]string `required:"false" identity:"collection" yaml:"metadata,omitempty" description:"Map of metadata key to value for the trigger authentication; omit for state 'clear'. On absent, only the keys are read. A key must not contain '='."`
+	Metadata map[string]string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" yaml:"metadata,omitempty" description:"Map of metadata key to value for the trigger authentication. On absent, only the keys are read. A key must not contain '='."`
 
 	// State is the desired state of the trigger authentication metadata.
 	// 'present' and 'absent' are additive, naming keys to write or clear;
@@ -146,7 +146,16 @@ func (t SchedulerK3sAutoscalingAuthTask) Execute(ctx context.Context) TaskOutput
 
 // Validate checks the SchedulerK3sAutoscalingAuthTask's inputs without contacting the server.
 func (t SchedulerK3sAutoscalingAuthTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	return validateSchedulerK3sAutoscalingAuth(t.spec(), t.State)
+}
+
+// Constraints declares that the trigger authentication belongs to an app or
+// is global.
+func (t SchedulerK3sAutoscalingAuthTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
 }
 
 // Plan reports the drift the SchedulerK3sAutoscalingAuthTask would produce.

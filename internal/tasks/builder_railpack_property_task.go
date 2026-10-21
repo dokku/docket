@@ -24,6 +24,11 @@ func (t BuilderRailpackPropertyTask) Doc() string {
 	return "Manages the builder-railpack configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t BuilderRailpackPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t BuilderRailpackPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -92,7 +97,7 @@ func (t BuilderRailpackPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the BuilderRailpackPropertyTask's inputs without contacting the server.
 func (t BuilderRailpackPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the BuilderRailpackPropertyTask would produce.

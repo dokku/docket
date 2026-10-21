@@ -19,7 +19,7 @@ type SshKeyTask struct {
 	Name string `required:"true" identity:"key" yaml:"name" description:"Name that identifies the key in dokku"`
 
 	// Key is the public key contents. Required when state is present.
-	Key string `required:"false" yaml:"key,omitempty" description:"Public key contents. Required when state is present."`
+	Key string `required:"false" required_when:"present" yaml:"key,omitempty" description:"Public key contents"`
 
 	// State is the desired state of the SSH key
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the SSH key"`
@@ -87,13 +87,13 @@ func (t SshKeyTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the SshKeyTask's inputs without contacting the server.
 func (t SshKeyTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.Name == "" {
 		return fmt.Errorf("'name' is required")
 	}
 	if t.State == StatePresent {
-		if t.Key == "" {
-			return fmt.Errorf("'key' is required when state is 'present'")
-		}
 		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(t.Key)); err != nil {
 			return fmt.Errorf("invalid public key: %v", err)
 		}

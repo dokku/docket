@@ -24,6 +24,11 @@ func (t CaddyPropertyTask) Doc() string {
 	return "Manages the caddy configuration for a given dokku application"
 }
 
+// Constraints declares that the property is set for an app or globally.
+func (t CaddyPropertyTask) Constraints() []Constraint {
+	return appOrGlobalConstraints
+}
+
 // ExportSupport reports how docket export handles this task.
 func (t CaddyPropertyTask) ExportSupport() ExportSupport {
 	return ExportSupport{Status: ExportSupported}
@@ -97,7 +102,7 @@ func (t CaddyPropertyTask) propertyTable() PropertyTable {
 
 // Validate checks the CaddyPropertyTask's inputs without contacting the server.
 func (t CaddyPropertyTask) Validate() error {
-	return validatePropertyInput(t, t.State, t.App, t.Global, t.Property, t.Value)
+	return validatePropertyInput(t, t.Global, t.Property)
 }
 
 // Plan reports the drift the CaddyPropertyTask would produce.
