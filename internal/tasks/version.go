@@ -307,9 +307,10 @@ func (e *VersionError) Unwrap() error {
 // floor, so a caller planning a task directly gets the same refusal the CLI
 // gives, and a read never reports a resource the gate skipped as absent. A
 // context with no gate passes that check. It then refuses a task whose input
-// breaks a declared field constraint, before anything probes the server, so
-// every Plan enforces what the catalog publishes. ok is false when the plan
-// must stop with r.
+// breaks a declared field constraint, and then one the task's own Validate()
+// rejects, before anything probes the server, so every Plan enforces what the
+// catalog publishes and refuses whatever `docket validate` refuses. ok is
+// false when the plan must stop with r.
 // TestEveryPlanChecksVersionGate fails the build for a Plan that skips it.
 func gatePlan(ctx context.Context, t Task) (r PlanResult, ok bool) {
 	if versionCacheFrom(ctx) != nil {
@@ -319,6 +320,11 @@ func gatePlan(ctx context.Context, t Task) (r PlanResult, ok bool) {
 	}
 	if err := checkConstraints(t); err != nil {
 		return planErr(err), false
+	}
+	if v, isValidator := t.(InputValidator); isValidator {
+		if err := v.Validate(); err != nil {
+			return planErr(err), false
+		}
 	}
 	return PlanResult{}, true
 }

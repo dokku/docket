@@ -236,7 +236,8 @@ for _, v := range sdk.ConstraintViolations(task) {
 ```
 
 A task's `Validate()` checks the same constraints first, then the rules that depend on a value, such
-as an enum or a format. `sdk.TaskConstraints` returns a task's declared multi-field rules.
+as an enum or a format. A task's `Plan()` runs the same `Validate()` before it probes, so a plan
+refuses whatever validation refuses. `sdk.TaskConstraints` returns a task's declared multi-field rules.
 
 ### Masking a task
 

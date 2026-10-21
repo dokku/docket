@@ -165,9 +165,6 @@ func (t AclServiceTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	probe := func() (map[string]bool, error) { return getAclServiceUsers(ctx, t.Type, t.Service) }
 	observe := func(users []string, state State) Task {
 		return AclServiceTask{Service: t.Service, Type: t.Type, Users: users, State: state}

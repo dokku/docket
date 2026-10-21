@@ -203,9 +203,6 @@ func (t SchedulerK3sNodeSysctlsTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	current := func(ctx context.Context) (map[string]string, error) {
 		return getSchedulerK3sNodeSysctls(ctx, t)
 	}

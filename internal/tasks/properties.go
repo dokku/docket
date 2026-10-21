@@ -723,8 +723,9 @@ func dynamicPropertiesFromReport(plugin string, payload map[string]string, globa
 // only in the state that allows it - and then that the property is supported
 // for the target scope. The constraints check reports a property from a family
 // the table rejects ahead of everything else. Each property task's Validate()
-// calls it, and gatePlan plus planProperty run the same two checks, so plan and
-// validate report the same errors.
+// calls it, and gatePlan runs that Validate() ahead of planProperty, so plan
+// and validate report the same errors, including any value rule a task's
+// Validate() adds on top.
 func validatePropertyInput(task PropertyTableDocer, global bool, property string) error {
 	if err := checkConstraints(task); err != nil {
 		return err

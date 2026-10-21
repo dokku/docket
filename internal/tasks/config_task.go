@@ -166,9 +166,6 @@ func (t ConfigTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planConfigSet(ctx, t) },
 		StateAbsent:  func() PlanResult { return planConfigUnset(ctx, t) },

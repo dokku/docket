@@ -99,9 +99,6 @@ func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	// seen attaches whether the resource exists; its identity is all there is
 	// to read.
 	seen := func(r PlanResult, exists bool) PlanResult {

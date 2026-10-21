@@ -163,9 +163,6 @@ func (t SchedulerK3sAutoscalingAuthTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planSchedulerK3sAutoscalingAuthPresent(ctx, spec) },

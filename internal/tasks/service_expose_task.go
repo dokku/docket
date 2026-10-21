@@ -151,9 +151,6 @@ func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planServiceExpose(ctx, t, StatePresent) },
 		StateAbsent:  func() PlanResult { return planServiceUnexpose(ctx, t, StateAbsent) },

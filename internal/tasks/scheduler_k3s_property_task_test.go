@@ -1,8 +1,11 @@
 package tasks
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/dokku/docket/internal/subprocess"
 )
 
 func TestSchedulerK3sPropertyTaskInvalidState(t *testing.T) {
@@ -184,6 +187,19 @@ func TestSchedulerK3sPropertyTaskCertIssuerKind(t *testing.T) {
 				}
 				if !strings.Contains(err.Error(), "must be one of Issuer, ClusterIssuer") {
 					t.Errorf("unexpected error: %v", err)
+				}
+
+				// #628: plan and apply refuse the value too, before any probe.
+				runner := func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+					t.Errorf("the refused plan ran %q", strings.Join(in.Args, " "))
+					return subprocess.ExecCommandResponse{}, nil
+				}
+				plan := task.Plan(subprocess.ContextWithRunner(testCtx(), runner))
+				if plan.Status != PlanStatusError || plan.Error == nil {
+					t.Fatalf("Plan should reject %q, got status %q error %v", tc.value, plan.Status, plan.Error)
+				}
+				if plan.Error.Error() != err.Error() {
+					t.Errorf("validate and plan disagree:\n  validate: %v\n  plan:     %v", err, plan.Error)
 				}
 				return
 			}

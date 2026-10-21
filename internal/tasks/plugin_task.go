@@ -120,9 +120,6 @@ func (t PluginTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	// seen attaches the plugin as plugin:list reports it. Drift is decided by
 	// name alone; the source and committish are what export would emit.
 	seen := func(r PlanResult, entry pluginListEntry, installed bool) PlanResult {

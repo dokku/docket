@@ -200,9 +200,6 @@ func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 
 	// Validate() already flattened the values (and returned any error), so
 	// the flattened map is reused here for the apply; the error is

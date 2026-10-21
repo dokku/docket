@@ -167,9 +167,6 @@ func (t CertsTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	// seen attaches whether the scope has a certificate installed. The
 	// certificate and key are not carried: the probe compares fingerprints
 	// and never moves the private key off the server, which is why

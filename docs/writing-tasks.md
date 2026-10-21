@@ -212,7 +212,7 @@ A few conventions to follow:
   together - declare it rather than checking it by hand. See
   [declaring field constraints](#declaring-field-constraints) below. Rules a declaration cannot
   express, such as an enum or a value format, go in the optional `Validate() error` method (the
-  `InputValidator` interface), which `Plan()` calls after `gatePlan`. See
+  `InputValidator` interface), which `gatePlan` calls at the start of `Plan()`. See
   [validating inputs](#validating-inputs).
 
 ## Declaring identity
@@ -328,18 +328,20 @@ func (t LollipopTask) Validate() error {
 }
 
 func (t LollipopTask) Plan(ctx context.Context) PlanResult {
-  if r, ok := gatePlan(ctx, t); !ok {
+  if r, ok := gatePlan(ctx, t); !ok { // checks the constraints, then runs Validate()
     return r
-  }
-  if err := t.Validate(); err != nil {
-    return planErr(err)
   }
   // ... probe and DispatchPlan
 }
 ```
 
 `Validate()` takes no context, and that is the point: it never contacts a server, so there is
-nothing to cancel. `Plan()` calls it before it probes, so `plan` and `apply` still report the error.
+nothing to cancel. `gatePlan` calls it once the declared constraints hold and before anything
+probes, so `plan` and `apply` still report the error. Do not call it again from `Plan()`:
+`TestEveryPlanChecksVersionGate` fails the build for a Plan that does. Because every Plan goes
+through `gatePlan`, a rule added to a property task's `Validate()` - such as the
+`cert-issuer-kind` enum on `dokku_scheduler_k3s_property` - is enforced by `planProperty` tasks too,
+which call no `Validate()` of their own (#628).
 Because it is a pure function of the struct - it must never call a probing or mutating dokku
 command - `docket validate` calls the same method offline, once the declared constraints hold, and
 surfaces any error as `invalid_task_input`, catching the mistake before a server is ever contacted.
@@ -575,8 +577,8 @@ and `Replacement` has to name a registered task.
 
 Declaring it on the table rather than in `Plan()` is what keeps the message honest. The constraint
 check reports a rejected member alone, ahead of every declared constraint, and
-`validatePropertyName` - which `planProperty` calls and every property task's `Validate()` reaches
-through `validatePropertyInput` - checks it again, so `plan`, `apply` and `validate` cannot drift apart - which is exactly what happened
+`validatePropertyName` - which every property task's `Validate()` reaches through
+`validatePropertyInput`, and which `gatePlan` and `planProperty` therefore both run - checks it again, so `plan`, `apply` and `validate` cannot drift apart - which is exactly what happened
 while the `chart.*` guard lived in `Plan()` alone and `docket validate` reported the generic
 unsupported-name error instead (#458). The family is published as `property_schema.rejected` too, so
 a consumer validating a recipe offline can give the same answer.

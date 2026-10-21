@@ -696,8 +696,9 @@ func TestPlanRefusesBelowTheVersionGate(t *testing.T) {
 
 // TestEveryPlanChecksVersionGate asserts the Plan of every registered task
 // starts with the gatePlan check, so a task planned outside the CLI honours a
-// gate on its context. TestPlanRefusesBelowTheVersionGate proves the check
-// works; this one keeps a new task from skipping it.
+// gate on its context, and that no Plan calls Validate itself, since gatePlan
+// does. TestPlanRefusesBelowTheVersionGate proves the check works; this one
+// keeps a new task from skipping it.
 func TestEveryPlanChecksVersionGate(t *testing.T) {
 	t.Parallel()
 	registered := map[string]bool{}
@@ -736,6 +737,9 @@ func TestEveryPlanChecksVersionGate(t *testing.T) {
 			if !startsWithGatePlan(fn.Body) {
 				t.Errorf("%s.Plan does not start with the gatePlan check", ident.Name)
 			}
+			if callsValidate(fn.Body) {
+				t.Errorf("%s.Plan calls Validate itself; gatePlan already runs it", ident.Name)
+			}
 		}
 	}
 	for name := range registered {
@@ -743,6 +747,25 @@ func TestEveryPlanChecksVersionGate(t *testing.T) {
 			t.Errorf("no Plan method found for registered task %s", name)
 		}
 	}
+}
+
+// callsValidate reports whether body calls a Validate method. gatePlan runs a
+// task's Validate() for every Plan (#628), so a Plan calling it again only
+// repeats the check, and a property task that skipped it once let `plan` and
+// `apply` accept what `docket validate` refused.
+func callsValidate(body *ast.BlockStmt) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Validate" {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // startsWithGatePlan reports whether body opens with

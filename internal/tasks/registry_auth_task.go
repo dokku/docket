@@ -203,9 +203,6 @@ func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	target := t.App
 	if t.Global {
 		target = "(global)"

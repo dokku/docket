@@ -36,7 +36,6 @@ func observedPropertyFixtures() map[string]observedFixture {
 func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixture {
 	table := docer.propertyTable()
 	plugin := table.Plugin()
-	appProps, globalProps := propertiesByScopeForTest(table)
 
 	report := func(target string, payload map[string]string) (string, string) {
 		body, err := json.Marshal(payload)
@@ -49,6 +48,31 @@ func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixtu
 	rt := registeredTypeOrNil(typeKey)
 	build := func(f PropertyFields) Task {
 		return reflect.ValueOf(f).Convert(rt).Interface().(Task)
+	}
+
+	// Plan runs the task's Validate(), so a property whose value the task
+	// restricts - scheduler-k3s's cert-issuer-kind - cannot carry the
+	// placeholder values below. Skip it for one that takes any value.
+	accepts := func(f PropertyFields, values ...string) bool {
+		for _, value := range values {
+			f.Value, f.State = value, StatePresent
+			if v, ok := build(f).(InputValidator); ok && v.Validate() != nil {
+				return false
+			}
+		}
+		return true
+	}
+	allAppProps, allGlobalProps := propertiesByScopeForTest(table)
+	var appProps, globalProps []string
+	for _, prop := range allAppProps {
+		if accepts(PropertyFields{App: "web", Property: prop}, "wanted", "app-value") {
+			appProps = append(appProps, prop)
+		}
+	}
+	for _, prop := range allGlobalProps {
+		if accepts(PropertyFields{Global: true, Property: prop}, "wanted", "other", "global-value") {
+			globalProps = append(globalProps, prop)
+		}
 	}
 
 	appPayload := map[string]string{}
