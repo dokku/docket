@@ -123,9 +123,6 @@ func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	// seen attaches whether the host has a netrc entry. The username and
 	// password are write-only: git:auth-status compares them but never
 	// returns them, so Observed carries the host alone.

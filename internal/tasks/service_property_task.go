@@ -265,9 +265,6 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	rb, key := t.readback()
 	target := fmt.Sprintf("%s service %s", t.Service, t.Name)
 	if rb.sensitive {

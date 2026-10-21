@@ -138,9 +138,6 @@ func (t MaintenanceCustomPageTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	// seen attaches the page the report says is installed. A checksum the
 	// plugin does not report, or a report that could not be read, says
 	// nothing either way and leaves the plan with no observed state. An

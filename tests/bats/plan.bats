@@ -453,3 +453,28 @@ generate_chain() {
   assert_output --partial "[ok]"
   assert_output --partial "0 would change"
 }
+
+@test "docket plan and apply refuse an invalid scheduler-k3s cert-issuer-kind" {
+  # dokku stores any casing as the canonical Issuer/ClusterIssuer, so a
+  # recipe saying "issuer" would read as drift forever; plan and apply must
+  # refuse it the same way docket validate does (#628).
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_scheduler_k3s_property:
+        global: true
+        property: cert-issuer-kind
+        value: issuer
+EOF
+  run "$(docket_bin)" plan --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "must be one of Issuer, ClusterIssuer"
+
+  run "$(docket_bin)" apply --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "must be one of Issuer, ClusterIssuer"
+
+  run dokku scheduler-k3s:report --global --format json
+  assert_success
+  refute_output --partial '"global-cert-issuer-kind":"Issuer"'
+}

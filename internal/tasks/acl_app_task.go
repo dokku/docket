@@ -120,9 +120,6 @@ func (t AclAppTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	probe := func() (map[string]bool, error) { return getAclAppUsers(ctx, t.App) }
 	observe := func(users []string, state State) Task {
 		return AclAppTask{App: t.App, Users: users, State: state}

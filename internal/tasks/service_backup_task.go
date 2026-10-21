@@ -226,9 +226,6 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	target := fmt.Sprintf("%s service %s", t.Service, t.Name)
 	probe := func() (map[string]string, *PlanResult) {
 		exists, err := serviceExists(ctx, t.Service, t.Name)

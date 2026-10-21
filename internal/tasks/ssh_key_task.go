@@ -106,9 +106,6 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	// seen attaches the key installed under the task's name, as
 	// ssh-keys:list reports it. A list dokku could not produce reads as no
 	// keys, the same answer the probe acts on.

@@ -162,9 +162,6 @@ func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	if err := t.Validate(); err != nil {
-		return planErr(err)
-	}
 	// seen attaches whether the option is stored in its scope; the option is
 	// the identity, so presence is all there is to read.
 	seen := func(r PlanResult, present bool) PlanResult {

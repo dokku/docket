@@ -362,8 +362,9 @@ type PlanResult struct {
 	apply func(ctx context.Context) TaskOutputState
 }
 
-// planErr wraps an input-validation error in a PlanResult. Tasks return it
-// from Plan() when their Validate() (or another pure input check) fails, so
+// planErr wraps an input-validation error in a PlanResult. gatePlan returns
+// it when a task's Validate() fails, and tasks return it from Plan() when
+// another pure input check does, so
 // the error surfaces uniformly as a PlanStatusError without contacting the
 // server.
 func planErr(err error) PlanResult {
@@ -436,8 +437,8 @@ type Task interface {
 // fields and require no server probing (empty-list-when-present, per-item
 // required fields, enum values, mutually-exclusive fields, and so on).
 //
-// A task's Plan() calls Validate() before it probes, so plan and apply
-// surface these errors. `docket validate` calls the same Validate() offline
+// gatePlan, the first statement of every task's Plan(), calls Validate()
+// before anything probes, so plan and apply surface these errors. `docket validate` calls the same Validate() offline
 // (see validateTaskBody) so the identical conditional/semantic errors are
 // caught without contacting a server. Implementations must never call a
 // mutating or probing dokku command; that is what keeps validate offline.
