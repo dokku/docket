@@ -77,7 +77,7 @@ func (t BuilderLambdaPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the builder-lambda property
 func (t BuilderLambdaPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // builderLambdaPropertyTable maps builder-lambda property names to the JSON

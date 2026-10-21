@@ -21,6 +21,12 @@ Partial - an existing user's htpasswd hash is probed; a cleartext password is no
 
 Keyed by `app`. Manages the whole `users` collection; entries are identified by `username`.
 
+## Objects
+
+- The app named by `app`.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

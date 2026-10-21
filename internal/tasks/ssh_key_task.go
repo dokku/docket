@@ -82,7 +82,7 @@ func (t SshKeyTask) examples() ([]Doc, error) {
 
 // Execute adds or removes the SSH key
 func (t SshKeyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the SshKeyTask's inputs without contacting the server.

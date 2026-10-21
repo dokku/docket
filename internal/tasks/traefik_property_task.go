@@ -89,7 +89,7 @@ func (t TraefikPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the traefik property
 func (t TraefikPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // traefikPropertyTable maps traefik property names to the JSON keys emitted

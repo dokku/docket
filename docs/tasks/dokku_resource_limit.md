@@ -20,6 +20,12 @@ Supported.
 
 Keyed by `app` and `process_type`. Fields left empty are omitted from the address. Manages the whole `resources` collection; entries are identified by their key.
 
+## Objects
+
+- The app named by `app`.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -48,6 +48,10 @@ fails with `sdk.ErrSessionClosed`.
 
 `NewSession(nil)` installs no masker, leaving any masker already on the parent context in place.
 
+Every context a session hands out also shares one lock table, so tasks executed under it at once
+take turns on the same app or datastore service instead of colliding on dokku's deploy lock. See
+[Running tasks concurrently](#running-tasks-concurrently).
+
 A session can also own the [version gate](#version-floors): `sdk.NewSession(masker,
 sdk.WithVersionGate())` installs it on every context the session hands out. That is the shape for a
 long-lived embedder that gets a new context for every call it serves - each call keeps its own
@@ -429,6 +433,63 @@ task treats as mutually exclusive, such as `app` and `global`, are refused by th
 validation. A task whose probe cannot read anything (`dokku_storage_ensure`) returns an error wrapping
 `sdk.ErrStateUnreadable`, and a gate on the context refuses a server that is too old with the
 `*sdk.VersionError` before anything else is read.
+
+## Running tasks concurrently
+
+The CLI runs one task at a time. An embedder need not: a Terraform provider applies up to ten
+resources at once, so a `dokku_config` that restarts `api` and a `dokku_ps_scale` on `api` can arrive
+together. Against the server, the second can fail on dokku's deploy lock (`api currently has a deploy
+lock in place`), or have its change overwritten by the first one's restart.
+
+A session serializes them. Every context `sdk.NewSession` hands out carries one lock table, and a
+task's `Execute` takes the locks for the objects it changes before it plans and releases them once it
+has applied, so no other task on the same object runs between its plan and its apply:
+
+- An app task locks the app named by `app`.
+- A datastore task locks the service named by its datastore type and its name, so a
+  `dokku_service_create`, `dokku_service_property`, `dokku_service_expose` and
+  `dokku_service_backup` on one service take turns.
+- `dokku_service_link` changes both the app's config and the service's links, so it locks both.
+  Locks are always taken app first, then service, so two tasks can never each hold one and wait on
+  the other.
+
+Tasks on different objects, or on the same name on two servers, still run at once. A task naming
+neither - a server-level task such as `dokku_plugin`, or an app-or-global task with `global: true` -
+locks nothing. `sdk.TaskObjects` returns what a task locks, and the catalog publishes the same as
+[`objects`](task-catalog.md#objects).
+
+A caller still waiting when its context ends gets an error wrapping the context's, and holds
+nothing. A context built without a session gets the same table from `sdk.ContextWithTaskLocks`.
+
+Only `Execute` locks. `Plan`, `ReadTask` and `ReadAddress` take nothing, so refreshing many
+resources still runs in parallel, and neither does `sdk.ExecutePlan`. A caller that plans and
+applies in separate steps holds the locks across both with `sdk.LockTask`:
+
+```go
+ctx, unlock, err := sdk.LockTask(ctx, task)
+if err != nil {
+    return err
+}
+defer unlock()
+
+plan := task.Plan(ctx)
+// ... show or check the plan ...
+state := sdk.ExecutePlan(ctx, plan)
+```
+
+An `Execute` under the returned context does not wait on the locks it already holds. One that needs
+a lock ordered before a held one - executing a `dokku_service_link` while holding only its service -
+returns an error instead of risking a deadlock, so lock the task that changes both first.
+
+Locks order tasks that overlap; they do not order tasks that depend on each other. A
+`dokku_service_property` started alongside the `dokku_service_create` for its service may still run
+first and find no service. The catalog says which task creates each object and which tasks restart
+it, so a caller can order them - see [Ordering tasks](task-catalog.md#ordering-tasks).
+
+docket does not retry a command dokku refused over its deploy lock. `dokku_app_lock` holds the same
+lock on purpose, and dokku reports both the same way, so a retry could wait on a lock a person
+placed deliberately. A lock held by something outside the session - a `git push`, or another docket
+process - still fails the task.
 
 ## Testing without a server
 

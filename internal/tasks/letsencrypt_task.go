@@ -11,7 +11,7 @@ import (
 // LetsencryptTask enables or disables the dokku-letsencrypt plugin for a dokku app
 type LetsencryptTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// State is the desired state of the letsencrypt integration
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the letsencrypt integration"`
@@ -83,7 +83,7 @@ func (t LetsencryptTask) examples() ([]Doc, error) {
 
 // Execute enables or disables letsencrypt
 func (t LetsencryptTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the LetsencryptTask's inputs without contacting the server.

@@ -92,7 +92,15 @@ func (t ProxyToggleTask) examples() ([]Doc, error) {
 
 // Execute enables or disables the proxy
 func (t ProxyToggleTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task can restart the app: on the nginx proxy,
+// proxy:enable and proxy:disable both restart it.
+func (t ProxyToggleTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp}},
+	}
 }
 
 // Plan reports the drift the ProxyToggleTask would produce.

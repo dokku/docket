@@ -82,6 +82,20 @@ func TaskConstraints(t Task) []Constraint {
 	return tasks.TaskConstraints(t)
 }
 
+// TaskObjects returns the app and the datastore service t changes, app first:
+// the recipe keys naming each and the values t holds for them, whether t
+// creates it, and when t restarts or redeploys it. The catalog publishes the
+// same data as TaskSchema.Objects. Nil when t changes neither.
+func TaskObjects(t Task) []TaskObject {
+	return tasks.TaskObjects(t)
+}
+
+// Object kinds, as TaskObject.Kind.
+const (
+	ObjectApp     = tasks.ObjectApp
+	ObjectService = tasks.ObjectService
+)
+
 // Violation is one declared field constraint a task breaks. Field is the
 // recipe key path at fault, such as `users[1].hash`; for a rule over several
 // keys it is the path of the element the rule sits on, empty for the task
@@ -242,6 +256,33 @@ func WithVersionGate() SessionOption {
 	return tasks.SessionVersionGate()
 }
 
+// ContextWithTaskLocks returns a copy of ctx on which Execute serializes the
+// tasks that change the same app or datastore service, on the same server. A
+// context that already carries a lock table is returned as-is. Every context
+// a NewSession session hands out already carries one, so this is only for a
+// context built without a session.
+func ContextWithTaskLocks(ctx context.Context) context.Context {
+	return tasks.ContextWithTaskLocks(ctx)
+}
+
+// LockTask takes the locks task needs: one for each app or datastore service
+// it changes, on the server ctx targets, waiting while another task holds
+// them. It returns a context recording them and a function that releases
+// them, safe to call more than once. Execute takes the same locks itself, and
+// one under the returned context does not wait on them again; Plan, ReadTask
+// and ExecutePlan take none. Hold them across a Plan and its ExecutePlan so
+// no other task on the same object runs in between.
+//
+// A context with no lock table locks nothing. A caller whose ctx ends while
+// it waits gets an error wrapping ctx's and holds nothing. Locks are always
+// taken app first, then service, so a nested call needing a lock ordered
+// before one already held - executing a dokku_service_link while holding only
+// its service - returns an error rather than risk a deadlock: lock the task
+// that changes both first.
+func LockTask(ctx context.Context, task Task) (context.Context, func(), error) {
+	return tasks.LockTask(ctx, task)
+}
+
 // CheckMinimumVersions returns a *VersionError when the server ctx targets,
 // or an installed plugin task needs, is older than the floor task declares.
 // A task's Plan and Execute already refuse through it when ctx carries a
@@ -332,8 +373,13 @@ const (
 // NewSession returns a session whose contexts carry masker and whatever opts,
 // such as WithVersionGate, install. A nil masker leaves any masker already on
 // the parent context in place.
+//
+// Every context the session hands out also carries one lock table, so
+// Execute calls made under the session - from any goroutine - take turns on
+// the same app or datastore service rather than colliding on dokku's deploy
+// lock. See LockTask.
 func NewSession(masker *Masker, opts ...SessionOption) *Session {
-	return subprocess.NewSession(masker, opts...)
+	return subprocess.NewSession(masker, append([]SessionOption{tasks.SessionTaskLocks()}, opts...)...)
 }
 
 // ErrSessionClosed is the error a call made under a closed session fails

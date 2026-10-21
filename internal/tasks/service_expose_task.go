@@ -13,10 +13,10 @@ import (
 // ServiceExposeTask exposes or unexposes a dokku service on host ports
 type ServiceExposeTask struct {
 	// Service is the type of service to expose (e.g. redis, postgres, mysql)
-	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to expose (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" serialize:"service.type" yaml:"service" description:"Type of service to expose (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" serialize:"service.name" yaml:"name" description:"Name of the service instance"`
 
 	// Ports are the host ports to expose the service on. Required when state is present.
 	Ports []string `required:"false" required_when:"present" forbidden_when:"clear" identity:"collection" ordered:"true" yaml:"ports,omitempty" description:"Host ports to expose the service on"`
@@ -136,7 +136,7 @@ func (t ServiceExposeTask) examples() ([]Doc, error) {
 
 // Execute exposes or unexposes a dokku service
 func (t ServiceExposeTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the ServiceExposeTask's inputs without contacting the server.

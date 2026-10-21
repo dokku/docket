@@ -160,7 +160,7 @@ func pluginFromSubcommand(subcommand string) string {
 // tasks whose shape genuinely differs.
 type PropertyFields struct {
 	// App is the name of the app. Exactly one of App and Global is set.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"false" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the property should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the property should be applied globally"`
@@ -188,7 +188,7 @@ type PropertyFields struct {
 // in anything but that one tag.
 type SensitivePropertyFields struct {
 	// App is the name of the app. Exactly one of App and Global is set.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"false" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the property should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the property should be applied globally"`

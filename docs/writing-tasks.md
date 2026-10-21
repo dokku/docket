@@ -14,9 +14,10 @@ an execution context that maps to a single module; its fields can be templated f
 Every task implements two methods. `Plan(ctx)` is the canonical one: it probes the live server once,
 computes the difference between the current and desired state, and returns a `PlanResult`. When the
 server is not already in the desired state, `Plan()` embeds an `apply` closure that performs the
-mutation. `Execute(ctx)` is always just `ExecutePlan(ctx, t.Plan(ctx))` - the shared `ExecutePlan`
-helper handles the in-sync, error, and apply cases uniformly, so the mutation logic lives in exactly
-one place per task.
+mutation. `Execute(ctx)` is always just `executeTask(ctx, t)`, which takes the locks on the app or
+service the task changes (see [declaring objects](#declaring-objects)) and runs
+`ExecutePlan(ctx, t.Plan(ctx))` under them - the shared `ExecutePlan` helper handles the in-sync,
+error, and apply cases uniformly, so the mutation logic lives in exactly one place per task.
 
 This split is why `plan` and `apply` agree: both call the same `Plan()`. `apply` reuses the probe
 to decide whether to mutate, which is what makes back-to-back applies no-ops.
@@ -39,7 +40,7 @@ package tasks
 import "context"
 
 type LollipopTask struct {
-  App     string   `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+  App     string   `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
   Flavors []string `required:"false" identity:"collection" yaml:"flavors,omitempty" description:"Flavors to apply"`
   State   State    `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the lollipop"`
 }
@@ -79,7 +80,7 @@ func (t LollipopTask) Plan(ctx context.Context) PlanResult {
 }
 
 func (t LollipopTask) Execute(ctx context.Context) TaskOutputState {
-  return ExecutePlan(ctx, t.Plan(ctx))
+  return executeTask(ctx, t)
 }
 
 func init() {
@@ -104,6 +105,9 @@ A few conventions to follow:
 - `Plan()` starts with the `gatePlan` check, before validation and before any probe, so a task
   planned outside the CLI honours a version gate on its context.
   `TestEveryPlanChecksVersionGate` fails the build for a `Plan()` that does not.
+- `Execute()` is exactly `return executeTask(ctx, t)`, so it holds the task's locks across its plan
+  and its apply. `TestEveryExecuteTakesTaskLocks` fails the build for an `Execute()` that plans and
+  applies itself.
 - Every result built from a probe goes through `observed(result, task, exists)`, which sets
   `PlanResult.Observed` and `PlanResult.Exists` - what `sdk.ReadTask` returns (see
   [Reading one resource](embedding.md#reading-one-resource)). The task is the value type, with
@@ -251,6 +255,50 @@ Leave a collection untagged when it is an *attribute* of the resource rather tha
 the task manages: `dokku_storage_mount`'s `phases` narrows one mount, it is not a set of mounts. Its
 `mounts` list is the set of mounts, and it carries the tag.
 
+## Declaring objects
+
+A task changes at most one app and one datastore service. Tag the fields that name them with
+`serialize`, so tasks an [sdk caller](embedding.md#running-tasks-concurrently) applies at once on
+the same object take turns:
+
+- `serialize:"app"` on the `app` identity key. Every task with one carries it; a property or toggle
+  task gets it from the shared `PropertyFields` or `ToggleFields`.
+- `serialize:"service.type"` on the field holding the datastore type and `serialize:"service.name"`
+  on the one holding the service's name. The role, not declaration order, decides which is which:
+  `dokku_acl_service` names the instance `service` and the datastore `type`, and still shares its
+  lock with `dokku_service_property` on the same service.
+
+A server-level task (`dokku_plugin`, `dokku_network`) tags nothing. An object whose fields are all
+empty - the app of an app-or-global task with `global: true` - names nothing and takes no lock.
+
+When applying the task creates its object or can restart it, implement the optional
+`ObjectEffects() ObjectEffects` method:
+
+- `Creates` lists the kinds the task creates, and destroys in its `absent` state (`dokku_app`,
+  `dokku_service_create`). Every other task on the object depends on it.
+- `Restarts` lists the kinds the task can restart or redeploy, each with the conditions it does so
+  under: `When` the recipe keys of bool fields any of which must be true (`dokku_config`'s
+  `restart`), `Unless` the bool keys that stop it (`dokku_ps_scale`'s `skip_deploy`), and `States`
+  the states it restarts in (`dokku_domains_toggle` restarts only on `present`). Leave them empty
+  for a task that restarts whenever it applies. Count a deploy, a rebuild, a `ps:restart` and a
+  container stop and start; a proxy reload is not a restart.
+
+```go
+// ObjectEffects reports that the task restarts the app when restart is true.
+func (t LollipopTask) ObjectEffects() ObjectEffects {
+  return ObjectEffects{
+    Restarts: []ObjectRestart{{Kind: ObjectApp, Restart: Restart{When: []string{"restart"}}}},
+  }
+}
+```
+
+Check what the underlying command does in dokku's or the plugin's source, and name the command in
+the method's comment. [`docket schema`](task-catalog.md#objects) publishes the declaration and the
+generator renders it in an Objects section on the task's page. `TestSerializeTagsCoverEveryObject`
+fails the build for an `app` key without the tag or a datastore task missing a role,
+`TestObjectEffectsNameRealFields` for a condition naming a field the task does not have, and
+`TestObjectEffectsPinned` for a declaration that differs from its pinned table.
+
 ## Declaring field constraints
 
 `required:"true"` says a field is always needed. Two more field tags say when a field is needed or
@@ -276,7 +324,7 @@ list or map, and a value equal to the default all count as unset. Every name is 
 
 ```go
 type LollipopTask struct {
-  App     string   `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+  App     string   `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
   Flavors []string `required:"false" required_when:"present" identity:"collection" ordered:"false" yaml:"flavors,omitempty" description:"Flavors to apply"`
   Wrapper string   `required:"false" yaml:"wrapper,omitempty" description:"Wrapper to use"`
   Stick   string   `required:"false" yaml:"stick,omitempty" description:"Stick to use"`

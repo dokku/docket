@@ -10,7 +10,7 @@ import (
 // GitFromArchiveTask deploys a git repository from an archive URL
 type GitFromArchiveTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// ArchiveURL is the URL of the archive to deploy. Tagged sensitive
 	// because URLs can embed credentials (e.g. https://user:token@host/path).
@@ -98,7 +98,14 @@ var validGitFromArchiveTypes = map[string]bool{"tar": true, "tar.gz": true, "zip
 
 // Execute deploys a git repository from an archive URL
 func (t GitFromArchiveTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task builds and deploys the app.
+func (t GitFromArchiveTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp}},
+	}
 }
 
 // Validate checks the GitFromArchiveTask's inputs without contacting the server.

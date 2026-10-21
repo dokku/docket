@@ -77,7 +77,7 @@ func (t LogsPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the logs property
 func (t LogsPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // logsPropertyTable maps logs property names to the JSON keys emitted by

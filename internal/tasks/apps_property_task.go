@@ -85,7 +85,7 @@ func (t AppsPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the apps property
 func (t AppsPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // appsPropertyTable maps apps property names to the JSON keys emitted by

@@ -14,7 +14,7 @@ import (
 // ConfigTask manages the configuration for a given dokku application
 type ConfigTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Restart is a flag indicating if the app should be restarted. It is a
 	// *bool so an explicit `restart: false` is distinguishable from an omitted
@@ -141,7 +141,16 @@ func (t ConfigTask) Validate() error {
 
 // Execute sets or unsets the configuration for a given dokku application
 func (t ConfigTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task restarts the app when restart is true:
+// config:set, config:unset and config:clear restart unless passed --no-
+// restart.
+func (t ConfigTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp, Restart: Restart{When: []string{"restart"}}}},
+	}
 }
 
 // SensitiveValues returns every non-empty value in the Config map together

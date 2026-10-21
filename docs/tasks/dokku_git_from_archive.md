@@ -22,6 +22,12 @@ Partial - the recorded archive source is probed; the archive contents are not ha
 
 Keyed by `app`.
 
+## Objects
+
+- The app named by `app`. Can restart or redeploy it.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

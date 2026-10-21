@@ -19,7 +19,7 @@ import (
 // CertsTask manages SSL certificates for a dokku app or globally
 type CertsTask struct {
 	// App is the name of the app. Exactly one of App and Global is set.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"false" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the certificate should be applied globally
 	// via the dokku-global-cert plugin
@@ -140,7 +140,7 @@ func (t CertsTask) examples() ([]Doc, error) {
 
 // Execute manages the SSL certificate
 func (t CertsTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Constraints declares the certificate's scope and where its certificate and

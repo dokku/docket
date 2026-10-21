@@ -21,6 +21,12 @@ Supported.
 
 Keyed by `service` and `name`. Fields left empty are omitted from the address.
 
+## Objects
+
+- The datastore service named by `service` and `name`.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

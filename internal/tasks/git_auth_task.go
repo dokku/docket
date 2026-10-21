@@ -97,7 +97,7 @@ func (t GitAuthTask) examples() ([]Doc, error) {
 
 // Execute manages the netrc entry for a host
 func (t GitAuthTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the GitAuthTask's inputs without contacting the server.

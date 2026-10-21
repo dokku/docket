@@ -10,7 +10,7 @@ import (
 // DomainsTask manages the domains for a given dokku application or globally
 type DomainsTask struct {
 	// App is the name of the app
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"false" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the domains should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the domains should be applied globally"`
@@ -95,7 +95,7 @@ func (t DomainsTask) examples() ([]Doc, error) {
 
 // Execute manages the domains
 func (t DomainsTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Constraints declares that the domains belong to an app or are global.

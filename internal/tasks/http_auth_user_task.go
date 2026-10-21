@@ -14,7 +14,7 @@ import (
 // HttpAuthUserTask manages the set of HTTP auth users for a dokku application
 type HttpAuthUserTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Users is the list of HTTP auth users to add or remove. Clearing removes
 	// every user the server holds, so a list supplied alongside it would be
@@ -191,7 +191,7 @@ func (t HttpAuthUserTask) examples() ([]Doc, error) {
 
 // Execute manages the app's HTTP auth users
 func (t HttpAuthUserTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the HttpAuthUserTask's inputs without contacting the server.

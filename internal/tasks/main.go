@@ -426,9 +426,10 @@ type Task interface {
 	// rather than reaching for context.Background().
 	Plan(ctx context.Context) PlanResult
 
-	// Execute executes the task. Conventionally implemented as
-	// ExecutePlan(ctx, t.Plan(ctx)) so probing happens once and the per-state
-	// mutation logic lives only in Plan().
+	// Execute executes the task. Implemented as executeTask(ctx, t), which
+	// takes the locks on the app or service the task changes and runs
+	// ExecutePlan(ctx, t.Plan(ctx)) under them, so probing happens once and
+	// the per-state mutation logic lives only in Plan().
 	Execute(ctx context.Context) TaskOutputState
 }
 

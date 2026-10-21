@@ -6,7 +6,7 @@ import "context"
 // metadata stored under a single trigger for a dokku application or globally.
 type SchedulerK3sAutoscalingAuthTask struct {
 	// App is the name of the app. Exactly one of App and Global is set.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"false" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the trigger authentication should be
 	// applied globally instead of on a single app.
@@ -141,7 +141,7 @@ func (t SchedulerK3sAutoscalingAuthTask) SensitiveValues() []string {
 
 // Execute sets or clears the scheduler-k3s autoscaling trigger authentication metadata
 func (t SchedulerK3sAutoscalingAuthTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the SchedulerK3sAutoscalingAuthTask's inputs without contacting the server.

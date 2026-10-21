@@ -85,7 +85,7 @@ func (t ProxyPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the proxy property
 func (t ProxyPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // proxyPropertyTable maps proxy property names to the JSON keys emitted by

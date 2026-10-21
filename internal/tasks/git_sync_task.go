@@ -13,7 +13,7 @@ import (
 // GitSyncTask syncs a git repository to a dokku application
 type GitSyncTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Remote is the git remote url to sync
 	Remote string `required:"true" yaml:"remote" description:"Git remote url to sync"`
@@ -99,7 +99,15 @@ func (t GitSyncTask) examples() ([]Doc, error) {
 
 // Execute syncs a git repository to a dokku application
 func (t GitSyncTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task builds and deploys the app when build or
+// build_if_changes is set.
+func (t GitSyncTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp, Restart: Restart{When: []string{"build", "build_if_changes"}}}},
+	}
 }
 
 // Plan reports the drift the GitSyncTask would produce.

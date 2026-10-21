@@ -20,6 +20,12 @@ Supported.
 
 Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the address.
 
+## Objects
+
+- The app named by `app`.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

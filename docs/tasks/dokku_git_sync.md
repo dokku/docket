@@ -22,6 +22,12 @@ Partial - dokku records the resolved commit as `<remote>#<sha>`, which cannot be
 
 Keyed by `app`.
 
+## Objects
+
+- The app named by `app`. Can restart or redeploy it when `build` or `build_if_changes` is true.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

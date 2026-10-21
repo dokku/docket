@@ -100,7 +100,7 @@ func (t LetsencryptPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the letsencrypt property
 func (t LetsencryptPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // letsencryptPropertyTable maps letsencrypt property names to the JSON keys

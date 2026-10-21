@@ -21,6 +21,12 @@ Partial - the service's existence is probed, along with the image it is running 
 
 Keyed by `service` and `name`. Fields left empty are omitted from the address.
 
+## Objects
+
+- The datastore service named by `service` and `name`. Creates it, and destroys it in state `absent`. Can restart or redeploy it.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

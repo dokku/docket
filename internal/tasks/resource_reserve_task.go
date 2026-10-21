@@ -5,7 +5,7 @@ import "context"
 // ResourceReserveTask manages the resource reservations for a given dokku application
 type ResourceReserveTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// ProcessType is the process type to set resource reservations for
 	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to set resource reservations for"`
@@ -101,7 +101,7 @@ func (t ResourceReserveTask) examples() ([]Doc, error) {
 
 // Execute sets or clears the resource reservations for a given dokku application
 func (t ResourceReserveTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // ExportApp reconstructs the app's resource reservations, one task per process type.

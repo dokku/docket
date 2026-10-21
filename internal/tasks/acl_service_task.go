@@ -11,10 +11,10 @@ import (
 // AclServiceTask manages the dokku-acl access list for a dokku service
 type AclServiceTask struct {
 	// Service is the name of the service instance
-	Service string `required:"true" identity:"key" yaml:"service" description:"Name of the service instance"`
+	Service string `required:"true" identity:"key" serialize:"service.name" yaml:"service" description:"Name of the service instance"`
 
 	// Type is the type of service (e.g. redis, postgres)
-	Type string `required:"true" identity:"key" yaml:"type" description:"Type of service (e.g. redis, postgres)"`
+	Type string `required:"true" identity:"key" serialize:"service.type" yaml:"type" description:"Type of service (e.g. redis, postgres)"`
 
 	// Users is the list of users to add, remove, or set on the ACL
 	Users []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL"`
@@ -146,7 +146,7 @@ func (t AclServiceTask) examples() ([]Doc, error) {
 
 // Execute manages the service ACL
 func (t AclServiceTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the AclServiceTask's inputs without contacting the server.

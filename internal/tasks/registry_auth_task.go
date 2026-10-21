@@ -67,7 +67,7 @@ const (
 // would answer with an invalid-arguments exit rather than a comparison.
 type RegistryAuthTask struct {
 	// App is the name of the app. Exactly one of App and Global is set.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"false" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the registry credential should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the registry credential should be applied globally"`
@@ -172,7 +172,7 @@ func (t RegistryAuthTask) examples() ([]Doc, error) {
 
 // Execute manages the registry authentication
 func (t RegistryAuthTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Constraints declares that the credential belongs to an app or is global.

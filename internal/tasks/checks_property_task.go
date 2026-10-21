@@ -77,7 +77,7 @@ func (t ChecksPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the checks property
 func (t ChecksPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // checksPropertyTable maps checks property names to the JSON keys emitted by

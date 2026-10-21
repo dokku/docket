@@ -75,7 +75,7 @@ func (t NetworkTask) examples() ([]Doc, error) {
 
 // Execute creates or destroys a Docker network
 func (t NetworkTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Plan reports the drift the NetworkTask would produce.

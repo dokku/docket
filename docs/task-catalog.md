@@ -2,7 +2,8 @@
 
 `docket schema` prints a machine-readable description of every task type docket registers: the
 recipe keys each one accepts, their types, defaults, choices and descriptions, which values are
-secrets, what resource the task addresses, whether it can be exported and probed, and - for a
+secrets, what resource the task addresses, which app or service it changes, whether it can be
+exported and probed, and - for a
 property task - the exact set of property names it accepts.
 
 It is the same data the [task reference](tasks/README.md) pages are rendered from, so the two can
@@ -37,6 +38,7 @@ One JSON object, pretty-printed, with a `version` and a `tasks` array sorted by 
         "keys": ["app", "global"],
         "collections": [{ "name": "domains", "item": "value" }]
       },
+      "objects": [{ "kind": "app", "keys": ["app"] }],
       "fields": [
         { "name": "app", "type": "string", "required": false, "identity": "key",
           "description": "Name of the app" },
@@ -279,6 +281,57 @@ repeated at the top level because building an address is the main thing a consum
 `identity.collections` names the collections the task manages wholesale, and how one entry in each
 is identified.
 
+## Objects
+
+`objects` names the app and the datastore service a task changes, app first. A server-level task
+such as `dokku_plugin` changes neither and carries no `objects` key.
+
+```json
+"objects": [
+  { "kind": "app", "keys": ["app"], "restarts": {} },
+  { "kind": "service", "keys": ["service", "name"] }
+]
+```
+
+| Key | Meaning |
+|-----|---------|
+| `kind` | `app` or `service`. |
+| `keys` | The recipe keys naming the object: the app's key, or the datastore type's key then the service name's key. |
+| `creates` | Present and `true` on the task that creates the object, and destroys it in its `absent` state. |
+| `restarts` | Present when applying the task can restart or redeploy the object. An empty object means whenever it applies. |
+
+`keys` follow the object, not the task's declaration order: `dokku_acl_service` names the instance
+`service` and the datastore `type`, so its keys are `["type", "service"]`, the same service
+`dokku_service_property`'s `["service", "name"]` names. An object applies only when every one of
+its keys is set, so an app-or-global task with `global: true` changes no app.
+
+`restarts` narrows when the restart happens. Every condition present must hold:
+
+| Key | Meaning |
+|-----|---------|
+| `when` | Recipe keys of bool fields. The task restarts the object only when at least one is true. An omitted key takes its `default`, so `dokku_config`'s `restart` restarts the app unless a recipe sets it to `false`. |
+| `unless` | Recipe keys of bool fields. A true value for any of them stops the restart, as `dokku_ps_scale`'s `skip_deploy` does. |
+| `states` | The `state` values the task restarts it in. `dokku_domains_toggle` restarts the app when enabling, not when disabling. |
+
+A proxy reload is not a restart, so `dokku_domains`, `dokku_ports` and `dokku_letsencrypt` carry no
+`restarts`. `dokku_service_create` with `restart_apps` also restarts the apps linked to the service,
+but their names are not keys of the task, so that is not declared.
+
+### Ordering tasks
+
+docket's sdk serializes tasks on the same object (see
+[Running tasks concurrently](embedding.md#running-tasks-concurrently)), but it never reorders
+them. A consumer that applies tasks in its own order, such as a Terraform provider, orders them
+from `objects`:
+
+- Apply the task that `creates` an object before every other task naming the same object, and tear
+  it down after them. A `dokku_service_backup` or a `dokku_service_property` needs its
+  `dokku_service_create`; a `dokku_service_link` needs both its `dokku_app` and its
+  `dokku_service_create`.
+- Expect a task with `restarts` to interrupt the object while it applies. Its effect on a running
+  app is the restart; a task that changes a setting without one, such as `dokku_resource_limit`,
+  takes effect on the next deploy.
+
 ## Property tasks
 
 A `*_property` task looks like it takes a free-form `property: string`. It does not: each one
@@ -349,6 +402,8 @@ is what validates a name.
   `prefix`.
 - Fields, identity keys, requirements and choices keep declaration order, because that order is
   meaningful.
+- Objects are always the app, then the service, and an object's keys follow its kind rather than
+  declaration order.
 - Two runs of the same binary produce byte-identical output, for the whole catalog and for any
   `--task` selection.
 

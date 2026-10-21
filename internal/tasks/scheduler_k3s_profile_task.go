@@ -116,7 +116,7 @@ func (t SchedulerK3sProfileTask) examples() ([]Doc, error) {
 
 // Execute drives the profile to the configured state.
 func (t SchedulerK3sProfileTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the SchedulerK3sProfileTask's inputs without contacting the server.

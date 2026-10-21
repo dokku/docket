@@ -77,7 +77,7 @@ func (t PsPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the ps property
 func (t PsPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // psPropertyTable maps ps property names to the JSON keys emitted by

@@ -39,7 +39,7 @@ const storageDefaultProcessType = "_default_"
 // process type with state set.
 type StorageMountTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// EntryName is the named storage registry entry to attach. Mutually
 	// exclusive with host_dir.
@@ -268,7 +268,7 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 
 // Execute attaches or detaches storage for a given app
 func (t StorageMountTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the StorageMountTask's inputs without contacting the server.

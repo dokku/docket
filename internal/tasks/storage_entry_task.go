@@ -169,7 +169,7 @@ func (t StorageEntryTask) examples() ([]Doc, error) {
 
 // Execute creates or destroys the storage entry
 func (t StorageEntryTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // createArgs builds the storage:create command arguments. Every flag is

@@ -16,7 +16,7 @@ import (
 // auth for a dokku application
 type HttpAuthAllowedIpTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// AllowedIps is the list of IP addresses to allow or remove
 	AllowedIps []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"allowed_ips,omitempty" description:"List of IP addresses to allow or remove"`
@@ -105,7 +105,7 @@ func (t HttpAuthAllowedIpTask) examples() ([]Doc, error) {
 
 // Execute manages the app's HTTP auth allowed IPs
 func (t HttpAuthAllowedIpTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the HttpAuthAllowedIpTask's inputs without contacting the server.

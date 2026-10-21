@@ -85,7 +85,7 @@ func (t NginxPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the nginx property
 func (t NginxPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // nginxPropertyTable maps nginx property names to the JSON keys emitted by

@@ -77,7 +77,7 @@ func (t BuilderNixpacksPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the builder-nixpacks property
 func (t BuilderNixpacksPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // builderNixpacksPropertyTable maps builder-nixpacks property names to the
