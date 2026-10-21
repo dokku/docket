@@ -42,6 +42,28 @@ func TestReadAddressRefusesABadAddress(t *testing.T) {
 	}
 }
 
+// TestReadAddressNamesTheSameBadKey pins that an address with several bad
+// keys reports the same one every run: the first unknown key by name, and the
+// first missing key in the order the task declares its keys.
+func TestReadAddressNamesTheSameBadKey(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		address string
+		want    string
+	}{
+		{"dokku_app[app=a,dd=1,bb=1,ee=1,cc=1]", `"bb" is not an identity key of dokku_app`},
+		{"dokku_service_link[app=a]", `missing required key "service"`},
+	}
+	for _, tc := range cases {
+		for i := 0; i < 20; i++ {
+			_, _, err := ReadAddress(noServer(t), tc.address)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%s: error = %v, want it to mention %q", tc.address, err, tc.want)
+			}
+		}
+	}
+}
+
 // TestReadAddressUnreadableTask pins that a task whose probe reads nothing
 // says so, without reporting the resource absent and without asking.
 func TestReadAddressUnreadableTask(t *testing.T) {

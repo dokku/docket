@@ -223,9 +223,15 @@ func planBuildpacksRemove(ctx context.Context, t BuildpacksTask, finalState Stat
 		if len(current) == 0 {
 			return observedBuildpacks(PlanResult{InSync: true, Status: PlanStatusOK}, t, finalState, ordered, whole)
 		}
+		// Removals are listed in precedence order, so every plan of the same
+		// list reads the same.
 		mutations := make([]string, 0, len(current))
-		for bp := range current {
-			mutations = append(mutations, "remove "+bp)
+		listed := make(map[string]bool, len(current))
+		for _, bp := range ordered {
+			if !listed[bp] {
+				listed[bp] = true
+				mutations = append(mutations, "remove "+bp)
+			}
 		}
 		inputs := []subprocess.ExecCommandInput{{
 			Command: "dokku",

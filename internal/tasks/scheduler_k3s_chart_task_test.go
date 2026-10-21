@@ -232,6 +232,51 @@ func TestFlattenChartValuesDuplicateKeyConflict(t *testing.T) {
 	}
 }
 
+// TestFlattenChartValuesErrorsAreStable checks that values with several
+// problems report the same one, worded the same way, every run.
+func TestFlattenChartValuesErrorsAreStable(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   map[string]any
+		want string
+	}{
+		{
+			name: "duplicate key names the nested value first",
+			in: map[string]any{
+				"resources.limits.cpu": "200m",
+				"resources":            map[string]any{"limits": map[string]any{"cpu": "500m"}},
+			},
+			want: `"500m" vs "200m"`,
+		},
+		{
+			name: "several unsupported values report the first key",
+			in: map[string]any{
+				"dd": []any{"x"},
+				"bb": []any{"x"},
+				"ee": []any{"x"},
+				"cc": []any{"x"},
+			},
+			want: `chart value "bb"`,
+		},
+		{
+			name: "several non-string nested keys report the first",
+			in: map[string]any{
+				"resources": map[any]any{true: "x", 2.5: "y", 1: "z", "ok": "w"},
+			},
+			want: "got int",
+		},
+	}
+	for _, tc := range cases {
+		for i := 0; i < 20; i++ {
+			_, err := flattenChartValues(tc.in)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%s: error = %v, want it to contain %q", tc.name, err, tc.want)
+			}
+		}
+	}
+}
+
 func TestFlattenChartValuesIdenticalDuplicateAllowed(t *testing.T) {
 	// Two paths producing the same key with the same value is harmless;
 	// the helper should fold them rather than rejecting.

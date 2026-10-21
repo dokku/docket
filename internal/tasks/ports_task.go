@@ -233,9 +233,14 @@ func planPortsPresent(ctx context.Context, t PortsTask) PlanResult {
 	// refused. Mappings the server already has are skipped below, which leaves
 	// a collision with an existing mapping as the only way the combined list
 	// can reuse a pair; Validate() covers a collision within the recipe.
+	// Should the server hold several mappings on one pair, the first in
+	// sorted order is the one named, so the refusal reads the same every run.
 	currentBySchemeHost := map[string]PortMapping{}
-	for _, pm := range currentPorts {
-		currentBySchemeHost[pm.schemeHost()] = pm
+	for _, key := range sortedPortMappings(currentPorts) {
+		pm := currentPorts[key]
+		if _, ok := currentBySchemeHost[pm.schemeHost()]; !ok {
+			currentBySchemeHost[pm.schemeHost()] = pm
+		}
 	}
 	toAdd := []string{}
 	mutations := []string{}

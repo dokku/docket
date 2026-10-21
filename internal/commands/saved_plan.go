@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -257,7 +258,15 @@ func nonNilStrings(s []string) []string {
 func (p *savedPlan) arguments() (map[string]*Argument, map[string]bool, error) {
 	arguments := make(map[string]*Argument, len(p.Inputs))
 	userSet := make(map[string]bool, len(p.Inputs))
-	for name, in := range p.Inputs {
+	// Walked in name order, so a plan with several bad inputs always reports
+	// the same one.
+	names := make([]string, 0, len(p.Inputs))
+	for name := range p.Inputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		in := p.Inputs[name]
 		arg := &Argument{Sensitive: in.Sensitive, HasDefault: in.HasDefault, Type: in.Type}
 		switch in.Type {
 		case "int":

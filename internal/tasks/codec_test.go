@@ -388,6 +388,19 @@ func TestYAMLCodecUnmarshalVarsShapes(t *testing.T) {
 // a vars-file with JSON5 syntax used to reach the YAML parser and fail.
 // Plain JSON still decodes to the same Go values, since json5.Unmarshal is
 // a superset of encoding/json.
+// TestNormaliseYAMLMapNamesTheFirstBadKey checks that a mapping with several
+// non-string keys reports the same one every run.
+func TestNormaliseYAMLMapNamesTheFirstBadKey(t *testing.T) {
+	t.Parallel()
+	in := map[interface{}]interface{}{4: "d", 2: "b", true: "t", 3: "c", "ok": "x"}
+	for i := 0; i < 20; i++ {
+		_, err := normaliseYAMLMap(in)
+		if err == nil || err.Error() != "non-string key 2" {
+			t.Fatalf("error = %v, want non-string key 2", err)
+		}
+	}
+}
+
 func TestJSON5CodecUnmarshalVarsAcceptsJSON5(t *testing.T) {
 	t.Parallel()
 	codec := json5Codec{}

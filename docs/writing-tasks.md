@@ -648,6 +648,11 @@ Sort both sides of the diff, the entries being added as well as the ones being r
 because the command carries the recipe's list verbatim whatever the mutation lines say - which
 is not true of the additive `present` and `absent` states, where the itemized list and the
 command are built from the same slice and the declared order is the order the work happens in.
+An ordered collection is the exception to sorting: `dokku_buildpacks` lists its removals in the
+precedence order the server reported, which is already stable and is the order that means
+something. The same rule holds beyond `Mutations`: anything a map range builds that reaches the
+user - a reason, an error naming one of several bad keys, an observed value - walks sorted keys
+or an already-ordered source, never the map itself.
 
 `docket export` emits an authoritative collection as `state: set`, so re-applying an export
 reproduces the exact collection rather than merging into whatever the target already holds. The

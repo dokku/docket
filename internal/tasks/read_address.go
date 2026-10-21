@@ -82,7 +82,11 @@ func taskFromAddress(address string) (string, Task, error) {
 		field, _ := v.Type().FieldByName(key.Field)
 		declared[key.YAMLName] = field
 	}
-	for name, raw := range keys {
+	// Keys are checked in a fixed order - the address's by name, the task's
+	// in declaration order - so an address with several bad keys always
+	// reports the same one.
+	for _, name := range sortedPairKeys(keys) {
+		raw := keys[name]
 		field, ok := declared[name]
 		if !ok {
 			return "", nil, fmt.Errorf("resource address %q: %q is not an identity key of %s (keys: %s)",
@@ -92,9 +96,9 @@ func taskFromAddress(address string) (string, Task, error) {
 			return "", nil, fmt.Errorf("resource address %q: %s: %w", address, name, err)
 		}
 	}
-	for name, field := range declared {
-		if _, ok := keys[name]; !ok && field.Tag.Get("required") == "true" {
-			return "", nil, fmt.Errorf("resource address %q: missing required key %q of %s", address, name, typeKey)
+	for _, key := range TaskIdentity(task) {
+		if _, ok := keys[key.YAMLName]; !ok && declared[key.YAMLName].Tag.Get("required") == "true" {
+			return "", nil, fmt.Errorf("resource address %q: missing required key %q of %s", address, key.YAMLName, typeKey)
 		}
 	}
 	return typeKey, task, nil

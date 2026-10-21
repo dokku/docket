@@ -667,6 +667,9 @@ func applyVarsFiles(arguments map[string]*Argument, flags *flag.FlagSet, paths [
 	for name := range arguments {
 		knownNames = append(knownNames, name)
 	}
+	// nearestInputName keeps the first of equally close names, so a sorted
+	// list makes the hint the same every run.
+	sort.Strings(knownNames)
 
 	applied := map[string]bool{}
 	for _, key := range keys {

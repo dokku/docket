@@ -173,6 +173,19 @@ func TestParseResourceSelectorsRejectsBadAddresses(t *testing.T) {
 	}
 }
 
+// TestParseResourceSelectorsNamesTheFirstUnknownKey pins that an address with
+// several keys the task does not declare reports the same one every run: the
+// first by name.
+func TestParseResourceSelectorsNamesTheFirstUnknownKey(t *testing.T) {
+	t.Parallel()
+	for i := 0; i < 20; i++ {
+		_, err := ParseResourceSelectors([]string{"dokku_config[app=api,dd=1,bb=1,ee=1,cc=1]"})
+		if err == nil || !strings.Contains(err.Error(), `"bb" is not an identity key of dokku_config`) {
+			t.Fatalf("error = %v, want it to name bb", err)
+		}
+	}
+}
+
 // TestParseResourceSelectorsAcceptsValidAddresses is the positive half: every
 // exportable form parses, including a bare type key and a global scope.
 func TestParseResourceSelectorsAcceptsValidAddresses(t *testing.T) {
