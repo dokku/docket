@@ -264,7 +264,7 @@ dokku plugin the row needs; blank means dokku core.
 | `dokku_network_property` | `dokku_network_property` | | docket adds `state`. |
 | `dokku_ports` | `dokku_ports` | | `mappings` strings become structured `port_mappings`. |
 | `dokku_proxy` | `dokku_proxy_toggle` | | `proxy:enable` / `proxy:disable`. |
-| `dokku_ps_scale` | `dokku_ps_scale` | | docket also supports `state: set` (`ps:scale --replace`), which treats the declared map as the whole formation and scales every process type it omits to zero. |
+| `dokku_ps_scale` | `dokku_ps_scale` | | docket also supports `state: set` (`ps:scale --replace`), which treats the declared map as the whole formation and scales every process type it omits to zero, and `state: clear` (`ps:scale --clear`), which resets the app to its default formation. |
 | `dokku_registry` | `dokku_registry_auth` and `dokku_registry_property` | | Credentials go to `dokku_registry_auth` (`registry:login`); `image` and `server` go to `dokku_registry_property` as `image-repo` and `server`. The module still declares the old third-party `dokku-registry` plugin; docket treats `registry` as core. |
 | `dokku_resource_limit` | `dokku_resource_limit` | | Direct. docket also supports `state: set`, which treats the declared map as the scope's whole set of limits and clears every limit it omits in the same `resource:limit` call, and `state: clear` (`resource:limit-clear`). |
 | `dokku_resource_reserve` | `dokku_resource_reserve` | | Direct. docket also supports `state: set`, which treats the declared map as the scope's whole set of reservations and clears every reservation it omits in the same `resource:reserve` call, and `state: clear` (`resource:reserve-clear`). |
@@ -362,7 +362,7 @@ same file, and it is the spec that Ansible enforces. Those modules are `dokku_bu
 | `app` on `dokku_storage` | Required | `dokku_storage_mount` requires `app`, and each `mounts` entry requires `container_dir` | Split each `host:container` string into a `mounts` entry's `host_dir` and `container_dir`. |
 | `user` / `group` on `dokku_storage` | Two options, both defaulting to `"32767"` | `dokku_storage_entry.chown` is one value, and rejects anything that is not an ownership preset or a uid in 0-65535 | Collapse the pair into one value, and fail the module call when they differ - dokku chowns the owner and the group to the same id. |
 | `build` on `dokku_clone` | Defaults to `true` | `dokku_git_sync.build` has no default, so it is off | Send `build: true` explicitly to preserve module behavior. |
-| `state` on `dokku_image`, `dokku_service_create`, `dokku_network_property`, `dokku_ps_scale` | No `state` option at all | Present on all four | Nothing; each docket default matches the module's only behavior. Note that `dokku_git_from_image.state` defaults to `deployed`, not `present`, so do not send `present`, and that `dokku_ps_scale.state: set` has no module equivalent - the module is always additive. |
+| `state` on `dokku_image`, `dokku_service_create`, `dokku_network_property`, `dokku_ps_scale` | No `state` option at all | Present on all four | Nothing; each docket default matches the module's only behavior. Note that `dokku_git_from_image.state` defaults to `deployed`, not `present`, so do not send `present`, and that `dokku_ps_scale.state: set` and `state: clear` have no module equivalent - the module is always additive. |
 
 Two module-side defaults are worth knowing because they are not in the argument spec at all:
 `dokku_config.restart` and `dokku_ps_scale.skip_deploy` have no declared default and are driven by

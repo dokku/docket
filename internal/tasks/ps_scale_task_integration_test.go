@@ -248,3 +248,86 @@ func TestIntegrationPsScaleSet(t *testing.T) {
 		t.Error("expected changed=false for an unchanged formation")
 	}
 }
+
+func TestIntegrationPsScaleClear(t *testing.T) {
+	skipIfNoDokkuT(t)
+
+	appName := "docket-test-psscale-clear"
+
+	destroyApp(testCtx(), appName)
+	createApp(testCtx(), appName)
+	defer destroyApp(testCtx(), appName)
+
+	// The app has no Procfile, so the formation dokku resets it to is web=1.
+	// skip_deploy keeps this cheap; the app is never deployed either way.
+	seedTask := PsScaleTask{
+		App:        appName,
+		Scale:      map[string]int{"web": 2, "worker": 1},
+		SkipDeploy: boolPtr(true),
+		State:      StatePresent,
+	}
+	if result := seedTask.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to seed the formation: %v", result.Error)
+	}
+
+	clearTask := PsScaleTask{
+		App:        appName,
+		SkipDeploy: boolPtr(true),
+		State:      StateClear,
+	}
+	result := clearTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to clear the formation: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true when the formation is not the default")
+	}
+	if result.State != StateClear {
+		t.Errorf("expected state 'clear', got '%s'", result.State)
+	}
+	assertPsScale(t, appName, map[string]int{"web": 1, "worker": 0})
+
+	result = clearTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("idempotent clear failed: %v", result.Error)
+	}
+	if result.Changed {
+		t.Error("expected changed=false for a formation already at the default")
+	}
+
+	// An empty set is the same reset, but reports the set the recipe declared.
+	if result := seedTask.Execute(testCtx()); result.Error != nil {
+		t.Fatalf("failed to re-seed the formation: %v", result.Error)
+	}
+	emptySetTask := PsScaleTask{
+		App:        appName,
+		Scale:      map[string]int{},
+		SkipDeploy: boolPtr(true),
+		State:      StateSet,
+	}
+	result = emptySetTask.Execute(testCtx())
+	if result.Error != nil {
+		t.Fatalf("failed to set an empty formation: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Error("expected changed=true when the formation is not the default")
+	}
+	if result.State != StateSet {
+		t.Errorf("expected state 'set', got '%s'", result.State)
+	}
+	assertPsScale(t, appName, map[string]int{"web": 1, "worker": 0})
+}
+
+// assertPsScale fails t unless each process type in want reports its quantity.
+func assertPsScale(t *testing.T, appName string, want map[string]int) {
+	t.Helper()
+	scale, err := getPsScale(testCtx(), appName)
+	if err != nil {
+		t.Fatalf("failed to get ps scale: %v", err)
+	}
+	for _, proctype := range sortedScaleKeys(want) {
+		if scale[proctype] != want[proctype] {
+			t.Errorf("expected %s=%d, got %s=%d", proctype, want[proctype], proctype, scale[proctype])
+		}
+	}
+}

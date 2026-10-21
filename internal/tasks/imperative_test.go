@@ -9,14 +9,11 @@ import (
 
 // TestImperativeTasksOfferNoTeardown pins which tasks declare themselves
 // imperative, and holds the declaration to what it promises: an imperative
-// task has no absent or clear state, and every task with neither is either
-// imperative or listed here as declarative without a teardown.
+// task has no absent or clear state, and every task with neither is
+// imperative.
 func TestImperativeTasksOfferNoTeardown(t *testing.T) {
 	t.Parallel()
 	want := []string{"dokku_app_clone", "dokku_git_from_archive", "dokku_git_from_image", "dokku_git_sync"}
-	// dokku_ps_scale declares the app's process counts, but has nothing to
-	// remove: an app always runs some count of each process type.
-	declarativeWithoutTeardown := map[string]bool{"dokku_ps_scale": true}
 
 	var got []string
 	for _, name := range TaskTypes() {
@@ -35,7 +32,7 @@ func TestImperativeTasksOfferNoTeardown(t *testing.T) {
 			}
 			continue
 		}
-		if !teardown && len(options) > 0 && !declarativeWithoutTeardown[name] {
+		if !teardown && len(options) > 0 {
 			t.Errorf("%s offers no absent or clear state (%v) but does not declare itself imperative", name, options)
 		}
 	}

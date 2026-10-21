@@ -376,7 +376,18 @@ func observedCollectionFixtures() map[string]observedFixture {
 				{
 					name: "nothing running",
 					task: PsScaleTask{App: "idle", Scale: map[string]int{"web": 1}, State: StateSet},
-					want: PsScaleTask{App: "idle", State: StateSet},
+					want: PsScaleTask{App: "idle", State: StateClear},
+				},
+				{
+					name:   "clear reads the whole formation",
+					task:   PsScaleTask{App: "web", State: StateClear},
+					want:   PsScaleTask{App: "web", Scale: map[string]int{"clock": 1, "web": 2}, State: StateSet},
+					exists: true,
+				},
+				{
+					name: "clear on an app running nothing",
+					task: PsScaleTask{App: "idle", State: StateClear},
+					want: PsScaleTask{App: "idle", State: StateClear},
 				},
 			},
 		},

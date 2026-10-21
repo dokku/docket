@@ -13,29 +13,37 @@ import (
 
 // PsScaleTask manages the process scale for a given dokku application.
 //
-// The two states differ in what happens to a process type the recipe does not
-// name. `present` leaves it alone, merging the declared quantities into
+// `present` and `set` differ in what happens to a process type the recipe does
+// not name. `present` leaves it alone, merging the declared quantities into
 // whatever formation the app already runs. `set` declares the whole formation
-// and scales every undeclared process type to zero.
+// and scales every undeclared process type to zero. `clear` takes no formation
+// and resets the app to the one dokku gives a new app - `web=1` when the app
+// has no Procfile or its Procfile names web, and every other process type at
+// zero - as if the task had never run.
 //
-// Two dokku behaviours bound what `set` can promise, and neither is detectable
-// offline. An app whose app.json carries a `formations` key refuses manual
-// scaling outright, and `skip_deploy` writes the formation without touching any
-// containers, so an undeclared process type keeps running until the next
-// deploy.
+// Two dokku behaviours bound what `set` and `clear` can promise, and neither is
+// detectable offline. An app whose app.json carries a `formations` key refuses
+// manual scaling outright, and `skip_deploy` writes the formation without
+// touching any containers, so an undeclared process type keeps running until
+// the next deploy.
+//
+// `clear` cannot see the Procfile its reset depends on, so it reads an app
+// running nothing but web, at one or zero, as already reset. An app scaled to
+// nothing whose Procfile names web is therefore left at zero rather than given
+// back its web process.
 type PsScaleTask struct {
 	// App is the name of the app
 	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Scale is a map of process types to quantities
-	Scale map[string]int `required:"true" identity:"collection" yaml:"scale" description:"Map of process types to quantities"`
+	Scale map[string]int `required:"false" required_when:"present" forbidden_when:"clear" identity:"collection" yaml:"scale,omitempty" description:"Map of process types to quantities"`
 
 	// SkipDeploy skips the corresponding deploy. It is a *bool so the value
 	// survives decoding unchanged; nil defaults to false.
 	SkipDeploy *bool `apply_only:"true" yaml:"skip_deploy,omitempty" default:"false" description:"Skip the corresponding deploy"`
 
 	// State is the desired state of the process scale
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,set" description:"Desired state of the process scale; 'set' declares the whole formation"`
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,set,clear" description:"Desired state of the process scale; 'set' declares the whole formation, 'clear' resets it to dokku's default"`
 }
 
 // PsScaleTaskExample contains an example of a PsScaleTask
@@ -107,6 +115,13 @@ func (t PsScaleTask) examples() ([]Doc, error) {
 				State: StateSet,
 			},
 		},
+		{
+			Name: "Reset the process formation to its defaults",
+			PsScaleTask: PsScaleTask{
+				App:   "hello-world",
+				State: StateClear,
+			},
+		},
 	})
 }
 
@@ -125,16 +140,11 @@ func (t PsScaleTask) ObjectEffects() ObjectEffects {
 
 // Validate checks the PsScaleTask's inputs without contacting the server.
 func (t PsScaleTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if t.App == "" {
 		return fmt.Errorf("'app' is required")
-	}
-	if t.State == StatePresent && len(t.Scale) == 0 {
-		return fmt.Errorf("'scale' must not be empty for state 'present'")
-	}
-	// ps:scale --replace refuses a call carrying no process tuples, so state
-	// 'set' needs a formation to declare just as much as state 'present' does.
-	if t.State == StateSet && len(t.Scale) == 0 {
-		return fmt.Errorf("'scale' must not be empty for state 'set'")
 	}
 	for _, proctype := range sortedScaleKeys(t.Scale) {
 		if proctype == "" {
@@ -168,14 +178,23 @@ func (t PsScaleTask) Plan(ctx context.Context) PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planPsScalePresent(ctx, t) },
-		StateSet:     func() PlanResult { return planPsScaleSet(ctx, t) },
+		StateSet: func() PlanResult {
+			// ps:scale --replace refuses a call carrying no process tuples, and
+			// an empty formation declares nothing but the default anyway.
+			if len(t.Scale) == 0 {
+				return planSetAsClear(planPsScaleClear(ctx, t))
+			}
+			return planPsScaleSet(ctx, t)
+		},
+		StateClear: func() PlanResult { return planPsScaleClear(ctx, t) },
 	})
 }
 
 // observedPsScale attaches the formation the probe read to r. The additive
 // present state reads the process types t names, a missing one at zero, which
-// is what dokku's report means by leaving it out; set owns the formation, so
-// it reads every process type scaled above zero, the same way export does.
+// is what dokku's report means by leaving it out; set and clear own the
+// formation, so they read every process type scaled above zero, the same way
+// export does, and a formation with nothing scaled above zero reads as clear.
 // The resource exists when any process it read is scaled above zero.
 func observedPsScale(r PlanResult, t PsScaleTask, existing map[string]int, whole bool) PlanResult {
 	held := map[string]int{}
@@ -197,21 +216,14 @@ func observedPsScale(r PlanResult, t PsScaleTask, existing map[string]int, whole
 		}
 	}
 	state := StatePresent
-	if whole {
+	switch {
+	case whole && running:
 		state = StateSet
+	case whole:
+		state = StateClear
+		held = nil
 	}
 	return observed(r, PsScaleTask{App: t.App, Scale: held, State: state}, running)
-}
-
-// readAddress reads every process type the app an address names runs. Both of
-// the task's states demand a scale, so the formation is read the way set
-// reads it: every process type scaled above zero.
-func (t PsScaleTask) readAddress(ctx context.Context) (Task, bool, error) {
-	existing, err := getPsScale(ctx, t.App)
-	if err != nil {
-		return nil, false, err
-	}
-	return observedResult(observedPsScale(PlanResult{Status: PlanStatusOK}, t, existing, true))
 }
 
 // planPsScalePresent reports drift for the present-state additive scale. Only
@@ -246,7 +258,7 @@ func planPsScalePresent(ctx context.Context, t PsScaleTask) PlanResult {
 	if len(toScale) == 0 {
 		return observedPsScale(PlanResult{InSync: true, Status: PlanStatusOK}, t, existing, false)
 	}
-	inputs := psScaleInputs(t.App, false, boolValue(t.SkipDeploy, false), toScale)
+	inputs := psScaleInputs(t.App, "", boolValue(t.SkipDeploy, false), toScale)
 	return observedPsScale(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
@@ -309,7 +321,7 @@ func planPsScaleSet(ctx context.Context, t PsScaleTask) PlanResult {
 	if len(mutations) == 0 {
 		return observedPsScale(PlanResult{InSync: true, Status: PlanStatusOK}, t, existing, true)
 	}
-	inputs := psScaleInputs(t.App, true, boolValue(t.SkipDeploy, false), tuples)
+	inputs := psScaleInputs(t.App, "--replace", boolValue(t.SkipDeploy, false), tuples)
 	return observedPsScale(PlanResult{
 		InSync:    false,
 		Status:    PlanStatusModify,
@@ -322,15 +334,55 @@ func planPsScaleSet(ctx context.Context, t PsScaleTask) PlanResult {
 	}, t, existing, true)
 }
 
-// psScaleInputs builds the ps:scale call a plan applies. Flags precede the app
-// name because ps:scale parses with Go's flag package, which stops at the first
-// positional argument - `ps:scale <app> --replace` would be read as a process
-// tuple rather than as a flag. Unlike the probe the call omits --quiet, since
-// ps:scale streams the deploy it triggers.
-func psScaleInputs(app string, replace bool, skipDeploy bool, tuples []string) []subprocess.ExecCommandInput {
+// planPsScaleClear reports drift for the clear-state reset to dokku's default
+// formation, which `ps:scale --clear` writes: web at one when the app has no
+// Procfile or its Procfile names web, every other process type at zero.
+//
+// The default depends on a Procfile no report exposes, so the plan reads the
+// app as reset when nothing but web runs, at one or zero. Every other process
+// type above zero is drift, as is web above one. Whether a web at zero comes
+// back up is the Procfile's call, so it is never listed as a mutation.
+func planPsScaleClear(ctx context.Context, t PsScaleTask) PlanResult {
+	existing, err := getPsScale(ctx, t.App)
+	if err != nil {
+		return PlanResult{Status: PlanStatusError, Error: err}
+	}
+	mutations := []string{}
+	for _, proctype := range sortedScaleKeys(existing) {
+		cur := existing[proctype]
+		switch {
+		case proctype == "web" && cur > 1:
+			mutations = append(mutations, fmt.Sprintf("scale web=1 (was %d)", cur))
+		case proctype != "web" && cur > 0:
+			mutations = append(mutations, fmt.Sprintf("scale %s=0 (was %d)", proctype, cur))
+		}
+	}
+	if len(mutations) == 0 {
+		return observedPsScale(PlanResult{InSync: true, Status: PlanStatusOK}, t, existing, true)
+	}
+	inputs := psScaleInputs(t.App, "--clear", boolValue(t.SkipDeploy, false), nil)
+	return observedPsScale(PlanResult{
+		InSync:    false,
+		Status:    PlanStatusDestroy,
+		Reason:    "reset to the default formation",
+		Mutations: mutations,
+		Commands:  resolveCommands(ctx, inputs),
+		apply: func(ctx context.Context) TaskOutputState {
+			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateClear, inputs)
+		},
+	}, t, existing, true)
+}
+
+// psScaleInputs builds the ps:scale call a plan applies, with mode the
+// --replace or --clear flag, or empty for an additive scale. Flags precede the
+// app name because ps:scale parses with Go's flag package, which stops at the
+// first positional argument - `ps:scale <app> --replace` would be read as a
+// process tuple rather than as a flag. Unlike the probe the call omits
+// --quiet, since ps:scale streams the deploy it triggers.
+func psScaleInputs(app string, mode string, skipDeploy bool, tuples []string) []subprocess.ExecCommandInput {
 	args := []string{"ps:scale"}
-	if replace {
-		args = append(args, "--replace")
+	if mode != "" {
+		args = append(args, mode)
 	}
 	if skipDeploy {
 		args = append(args, "--skip-deploy")

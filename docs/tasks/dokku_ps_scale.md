@@ -31,9 +31,9 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 | Parameter | Type | Required | Default | Choices | Description |
 | --- | --- | --- | --- | --- | --- |
 | `app` | string | yes |  |  | Name of the app |
-| `scale` | dict | yes |  |  | Map of process types to quantities |
+| `scale` | dict | no |  |  | Map of process types to quantities (required when state is present) (must not be set when state is clear) |
 | `skip_deploy` | bool | no | false |  | Skip the corresponding deploy (applied only, not read back) |
-| `state` | string | no | present | present, set | Desired state of the process scale; 'set' declares the whole formation |
+| `state` | string | no | present | present, set, clear | Desired state of the process scale; 'set' declares the whole formation, 'clear' resets it to dokku's default |
 
 ## Examples
 
@@ -66,6 +66,14 @@ dokku_ps_scale:
     scale:
         web: 2
     state: set
+```
+
+### Reset the process formation to its defaults
+
+```yaml
+dokku_ps_scale:
+    app: hello-world
+    state: clear
 ```
 
 ## Return Values
