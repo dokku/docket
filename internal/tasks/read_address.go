@@ -51,7 +51,7 @@ func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
 		return readResult(ctx, task, got, exists, err)
 	}
 	setReadState(task)
-	return planRead(ctx, task)
+	return planRead(ctx, task, true)
 }
 
 // taskFromAddress parses address and builds the task it names: a new task of

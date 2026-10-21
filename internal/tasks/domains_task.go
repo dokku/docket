@@ -153,7 +153,7 @@ func observedDomains(r PlanResult, t DomainsTask, current map[string]bool, whole
 	case len(held) > 0:
 		state = StatePresent
 	}
-	return observed(r, DomainsTask{App: t.App, Global: t.Global, Domains: held, State: state}, len(held) > 0)
+	return observed(r, t, DomainsTask{App: t.App, Global: t.Global, Domains: held, State: state}, len(held) > 0)
 }
 
 // planDomainsPresent reports drift for the present-state domain add.

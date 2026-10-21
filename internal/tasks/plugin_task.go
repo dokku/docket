@@ -124,9 +124,9 @@ func (t PluginTask) Plan(ctx context.Context) PlanResult {
 	// name alone; the source and committish are what export would emit.
 	seen := func(r PlanResult, entry pluginListEntry, installed bool) PlanResult {
 		if !installed {
-			return observed(r, PluginTask{Name: t.Name, State: StateAbsent}, false)
+			return observed(r, t, PluginTask{Name: t.Name, State: StateAbsent}, false)
 		}
-		return observed(r, entry.task(), true)
+		return observed(r, t, entry.task(), true)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

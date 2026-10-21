@@ -74,10 +74,11 @@ func missingObject(ctx context.Context, t Task) error {
 	return nil
 }
 
-// planRead reads t from one Plan, as ReadTask does. A task whose inputs are
-// invalid returns the plan's refusal, never a missing object.
-func planRead(ctx context.Context, t Task) (Task, bool, error) {
-	got, exists, err := observedResult(t.Plan(ctx))
+// planRead reads t from one Plan, as ReadTask does, or as ReadAddress does
+// when raw is set. A task whose inputs are invalid returns the plan's
+// refusal, never a missing object.
+func planRead(ctx context.Context, t Task, raw bool) (Task, bool, error) {
+	got, exists, err := observedResult(t.Plan(ctx), raw)
 	if err != nil && checkTaskInputs(t) != nil {
 		return got, exists, err
 	}

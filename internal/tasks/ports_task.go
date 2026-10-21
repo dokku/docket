@@ -219,7 +219,7 @@ func observedPorts(r PlanResult, t PortsTask, current map[string]PortMapping, wh
 	case len(held) > 0:
 		state = StatePresent
 	}
-	return observed(r, PortsTask{App: t.App, PortMappings: held, State: state}, len(held) > 0)
+	return observed(r, t, PortsTask{App: t.App, PortMappings: held, State: state}, len(held) > 0)
 }
 
 // planPortsPresent reports drift for the present-state mapping add.

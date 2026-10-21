@@ -311,13 +311,13 @@ func (t StorageMountTask) Plan(ctx context.Context) PlanResult {
 func (t StorageMountTask) readAddress(ctx context.Context) (Task, bool, error) {
 	if t.ContainerDir == "" {
 		t.State = StateClear
-		return observedResult(t.Plan(ctx))
+		return observedResult(t.Plan(ctx), true)
 	}
 	attachments, err := readStorageAttachments(ctx, t.App)
 	if err != nil {
 		return nil, false, err
 	}
-	return observedResult(observedStorageMount(t, PlanResult{Status: PlanStatusOK}, attachments))
+	return observedResult(observedStorageMount(t, PlanResult{Status: PlanStatusOK}, attachments), true)
 }
 
 // planStorageMountPresent reports drift for the single-mount present state. A
@@ -1206,7 +1206,7 @@ func observedStorageMount(t StorageMountTask, r PlanResult, attachments []report
 			continue
 		}
 		m := storageMountFrom(a)
-		return observed(r, StorageMountTask{
+		return observed(r, t, StorageMountTask{
 			App:           t.App,
 			EntryName:     m.EntryName,
 			HostDir:       m.HostDir,
@@ -1220,7 +1220,7 @@ func observedStorageMount(t StorageMountTask, r PlanResult, attachments []report
 			State:         StatePresent,
 		}, true)
 	}
-	return observed(r, StorageMountTask{App: t.App, ContainerDir: t.ContainerDir, ProcessType: t.ProcessType, State: StateAbsent}, false)
+	return observed(r, t, StorageMountTask{App: t.App, ContainerDir: t.ContainerDir, ProcessType: t.ProcessType, State: StateAbsent}, false)
 }
 
 // observedStorageMounts attaches what the mounts-list form's probe read to r, from the
@@ -1249,7 +1249,7 @@ func observedStorageMounts(t StorageMountTask, r PlanResult, current []reportAtt
 	case len(mounts) > 0:
 		state = StatePresent
 	}
-	return observed(r, StorageMountTask{App: t.App, ProcessType: t.ProcessType, Mounts: mounts, State: state}, len(mounts) > 0)
+	return observed(r, t, StorageMountTask{App: t.App, ProcessType: t.ProcessType, Mounts: mounts, State: state}, len(mounts) > 0)
 }
 
 // reportAttachment is one storage attachment reconstructed from

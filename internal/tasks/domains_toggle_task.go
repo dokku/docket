@@ -109,7 +109,7 @@ func (t DomainsToggleTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	return planToggle(ctx, func(f ToggleFields) Task { return DomainsToggleTask(f) }, t.State, t.App, "domains:enable", "domains:disable", domainsEnabled)
+	return planToggle(ctx, t, func(f ToggleFields) Task { return DomainsToggleTask(f) }, t.State, t.App, "domains:enable", "domains:disable", domainsEnabled)
 }
 
 // init registers the DomainsToggleTask with the task registry

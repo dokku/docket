@@ -126,23 +126,23 @@ func (t AclAppTask) Plan(ctx context.Context) PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			return planAclPresent(ctx, observe, probe, t.Users, func(u string) []string {
+			return planAclPresent(ctx, t, observe, probe, t.Users, func(u string) []string {
 				return []string{"--quiet", "acl:add", t.App, u}
 			})
 		},
 		StateAbsent: func() PlanResult {
-			return planAclAbsent(ctx, observe, probe, t.Users, func(u string) []string {
+			return planAclAbsent(ctx, t, observe, probe, t.Users, func(u string) []string {
 				return []string{"--quiet", "acl:remove", t.App, u}
 			})
 		},
 		StateSet: func() PlanResult {
 			if len(t.Users) == 0 {
-				return planSetAsClear(planAclClear(ctx, observe, probe, dokkuArgsInputs("acl:set-users", t.App, nil)))
+				return planSetAsClear(planAclClear(ctx, t, observe, probe, dokkuArgsInputs("acl:set-users", t.App, nil)))
 			}
-			return planAclSet(ctx, observe, probe, t.Users, dokkuArgsInputs("acl:set-users", t.App, t.Users))
+			return planAclSet(ctx, t, observe, probe, t.Users, dokkuArgsInputs("acl:set-users", t.App, t.Users))
 		},
 		StateClear: func() PlanResult {
-			return planAclClear(ctx, observe, probe, dokkuArgsInputs("acl:set-users", t.App, nil))
+			return planAclClear(ctx, t, observe, probe, dokkuArgsInputs("acl:set-users", t.App, nil))
 		},
 	})
 }
@@ -181,7 +181,7 @@ type aclObserveFunc func(users []string, state State) Task
 // (present, absent) reads only the users it names, reported as present or
 // absent; a plan that owns the list (set, clear) reads every user, reported
 // as set, or as clear when there are none.
-func observedAcl(r PlanResult, observe aclObserveFunc, current map[string]bool, declared []string, whole bool) PlanResult {
+func observedAcl(r PlanResult, planned Task, observe aclObserveFunc, current map[string]bool, declared []string, whole bool) PlanResult {
 	held := map[string]bool{}
 	if whole {
 		for u := range current {
@@ -207,12 +207,12 @@ func observedAcl(r PlanResult, observe aclObserveFunc, current map[string]bool, 
 	case len(users) > 0:
 		state = StatePresent
 	}
-	return observed(r, observe(users, state), len(users) > 0)
+	return observed(r, planned, observe(users, state), len(users) > 0)
 }
 
 // planAclPresent reports drift for the present-state user add, running one
 // command (built by addArgs) per user missing from the ACL.
-func planAclPresent(ctx context.Context, observe aclObserveFunc, probe func() (map[string]bool, error), users []string, addArgs func(string) []string) PlanResult {
+func planAclPresent(ctx context.Context, planned Task, observe aclObserveFunc, probe func() (map[string]bool, error), users []string, addArgs func(string) []string) PlanResult {
 	current, err := probe()
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -226,7 +226,7 @@ func planAclPresent(ctx context.Context, observe aclObserveFunc, probe func() (m
 		}
 	}
 	if len(inputs) == 0 {
-		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, observe, current, users, false)
+		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, planned, observe, current, users, false)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
@@ -241,12 +241,12 @@ func planAclPresent(ctx context.Context, observe aclObserveFunc, probe func() (m
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StatePresent, inputs)
 		},
-	}, observe, current, users, false)
+	}, planned, observe, current, users, false)
 }
 
 // planAclAbsent reports drift for the absent-state user remove, running one
 // command (built by removeArgs) per named user still on the ACL.
-func planAclAbsent(ctx context.Context, observe aclObserveFunc, probe func() (map[string]bool, error), users []string, removeArgs func(string) []string) PlanResult {
+func planAclAbsent(ctx context.Context, planned Task, observe aclObserveFunc, probe func() (map[string]bool, error), users []string, removeArgs func(string) []string) PlanResult {
 	current, err := probe()
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -260,7 +260,7 @@ func planAclAbsent(ctx context.Context, observe aclObserveFunc, probe func() (ma
 		}
 	}
 	if len(inputs) == 0 {
-		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, observe, current, users, false)
+		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, planned, observe, current, users, false)
 	}
 	return observedAcl(PlanResult{
 		InSync:    false,
@@ -271,14 +271,14 @@ func planAclAbsent(ctx context.Context, observe aclObserveFunc, probe func() (ma
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateAbsent, inputs)
 		},
-	}, observe, current, users, false)
+	}, planned, observe, current, users, false)
 }
 
 // planAclSet reports drift for the set-state full replacement, which runs the
 // single whole-list command in inputs rather than one add or remove per user,
 // so a failure partway through can never leave a user on the ACL that the
 // recipe dropped.
-func planAclSet(ctx context.Context, observe aclObserveFunc, probe func() (map[string]bool, error), users []string, inputs []subprocess.ExecCommandInput) PlanResult {
+func planAclSet(ctx context.Context, planned Task, observe aclObserveFunc, probe func() (map[string]bool, error), users []string, inputs []subprocess.ExecCommandInput) PlanResult {
 	current, err := probe()
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
@@ -299,7 +299,7 @@ func planAclSet(ctx context.Context, observe aclObserveFunc, probe func() (map[s
 		}
 	}
 	if len(mutations) == 0 {
-		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, observe, current, nil, true)
+		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, planned, observe, current, nil, true)
 	}
 	status := PlanStatusModify
 	if len(current) == 0 {
@@ -314,18 +314,18 @@ func planAclSet(ctx context.Context, observe aclObserveFunc, probe func() (map[s
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StateAbsent}, StateSet, inputs)
 		},
-	}, observe, current, nil, true)
+	}, planned, observe, current, nil, true)
 }
 
 // planAclClear reports drift for the clear-state operation, which runs the
 // whole-list command in inputs with no users.
-func planAclClear(ctx context.Context, observe aclObserveFunc, probe func() (map[string]bool, error), inputs []subprocess.ExecCommandInput) PlanResult {
+func planAclClear(ctx context.Context, planned Task, observe aclObserveFunc, probe func() (map[string]bool, error), inputs []subprocess.ExecCommandInput) PlanResult {
 	current, err := probe()
 	if err != nil {
 		return PlanResult{Status: PlanStatusError, Error: err}
 	}
 	if len(current) == 0 {
-		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, observe, current, nil, true)
+		return observedAcl(PlanResult{InSync: true, Status: PlanStatusOK}, planned, observe, current, nil, true)
 	}
 	users := sortedSetKeys(current)
 	mutations := make([]string, 0, len(users))
@@ -341,7 +341,7 @@ func planAclClear(ctx context.Context, observe aclObserveFunc, probe func() (map
 		apply: func(ctx context.Context) TaskOutputState {
 			return runExecInputs(ctx, TaskOutputState{State: StatePresent}, StateClear, inputs)
 		},
-	}, observe, current, nil, true)
+	}, planned, observe, current, nil, true)
 }
 
 // getAclAppUsers reads the current ACL for an app via `acl:list APP`. The

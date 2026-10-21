@@ -326,7 +326,7 @@ func getHttpAuthDomains(ctx context.Context, appName string) (map[string]bool, e
 // httpAuthObservedMembers.
 func observedHttpAuthDomains(t HttpAuthDomainTask, r PlanResult, current map[string]bool, whole bool) PlanResult {
 	held, state := httpAuthObservedMembers(current, t.Domains, whole)
-	return observed(r, HttpAuthDomainTask{App: t.App, Domains: held, State: state}, len(held) > 0)
+	return observed(r, t, HttpAuthDomainTask{App: t.App, Domains: held, State: state}, len(held) > 0)
 }
 
 // httpAuthObservedMembers returns the members of a string set the probe read

@@ -226,17 +226,17 @@ func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
 	}
 
 	return DispatchPlan(t.State, map[State]func() PlanResult{
-		StatePresent: func() PlanResult { return planPairsSet(ctx, observe, "chart value", desired, currentFn, commandFn) },
-		StateAbsent:  func() PlanResult { return planPairsUnset(ctx, observe, "chart value", desired, currentFn, commandFn) },
+		StatePresent: func() PlanResult { return planPairsSet(ctx, t, observe, "chart value", desired, currentFn, commandFn) },
+		StateAbsent:  func() PlanResult { return planPairsUnset(ctx, t, observe, "chart value", desired, currentFn, commandFn) },
 		// dokku has no whole-chart write, so set and clear go one key at a
 		// time rather than through planPairsReplace and planPairsClear.
 		StateSet: func() PlanResult {
 			if len(desired) == 0 {
-				return planSetAsClear(planPairsClearPerKey(ctx, observe, "chart value", currentFn, commandFn))
+				return planSetAsClear(planPairsClearPerKey(ctx, t, observe, "chart value", currentFn, commandFn))
 			}
-			return planPairsReplacePerKey(ctx, observe, "chart value", desired, currentFn, commandFn)
+			return planPairsReplacePerKey(ctx, t, observe, "chart value", desired, currentFn, commandFn)
 		},
-		StateClear: func() PlanResult { return planPairsClearPerKey(ctx, observe, "chart value", currentFn, commandFn) },
+		StateClear: func() PlanResult { return planPairsClearPerKey(ctx, t, observe, "chart value", currentFn, commandFn) },
 	})
 }
 

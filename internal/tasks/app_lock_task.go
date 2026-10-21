@@ -89,7 +89,7 @@ func (t AppLockTask) Plan(ctx context.Context) PlanResult {
 		if locked {
 			o.State = StatePresent
 		}
-		return observed(r, o, locked)
+		return observed(r, t, o, locked)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

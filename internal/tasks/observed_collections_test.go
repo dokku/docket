@@ -314,6 +314,12 @@ func observedCollectionFixtures() map[string]observedFixture {
 					want:   DomainsTask{Global: true, Domains: []string{"example.com"}, State: StateSet},
 					exists: true,
 				},
+				{
+					name:   "set in sync declared in another order",
+					task:   DomainsTask{App: "web", Domains: []string{"www.example.com", "web.example.com"}, State: StateSet},
+					want:   DomainsTask{App: "web", Domains: []string{"web.example.com", "www.example.com"}, State: StateSet},
+					exists: true,
+				},
 			},
 		},
 		"dokku_ports": {
@@ -387,6 +393,19 @@ func observedCollectionFixtures() map[string]observedFixture {
 				{
 					name: "clear on an app running nothing",
 					task: PsScaleTask{App: "idle", State: StateClear},
+					want: PsScaleTask{App: "idle", State: StateClear},
+				},
+				{
+					// The read drops worker, which runs nothing; the plan is in
+					// sync, so Observed keeps it as declared (#637).
+					name:   "set in sync with a process type at zero",
+					task:   PsScaleTask{App: "web", Scale: map[string]int{"web": 2, "worker": 0, "clock": 1}, State: StateSet},
+					want:   PsScaleTask{App: "web", Scale: map[string]int{"clock": 1, "web": 2}, State: StateSet},
+					exists: true,
+				},
+				{
+					name: "set in sync with nothing running",
+					task: PsScaleTask{App: "idle", Scale: map[string]int{"web": 0}, State: StateSet},
 					want: PsScaleTask{App: "idle", State: StateClear},
 				},
 			},

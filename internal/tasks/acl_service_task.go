@@ -171,23 +171,23 @@ func (t AclServiceTask) Plan(ctx context.Context) PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			return planAclPresent(ctx, observe, probe, t.Users, func(u string) []string {
+			return planAclPresent(ctx, t, observe, probe, t.Users, func(u string) []string {
 				return []string{"--quiet", "acl:add-service", t.Type, t.Service, u}
 			})
 		},
 		StateAbsent: func() PlanResult {
-			return planAclAbsent(ctx, observe, probe, t.Users, func(u string) []string {
+			return planAclAbsent(ctx, t, observe, probe, t.Users, func(u string) []string {
 				return []string{"--quiet", "acl:remove-service", t.Type, t.Service, u}
 			})
 		},
 		StateSet: func() PlanResult {
 			if len(t.Users) == 0 {
-				return planSetAsClear(planAclClear(ctx, observe, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil)))
+				return planSetAsClear(planAclClear(ctx, t, observe, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil)))
 			}
-			return planAclSet(ctx, observe, probe, t.Users, aclSetServiceUsersInputs(t.Type, t.Service, t.Users))
+			return planAclSet(ctx, t, observe, probe, t.Users, aclSetServiceUsersInputs(t.Type, t.Service, t.Users))
 		},
 		StateClear: func() PlanResult {
-			return planAclClear(ctx, observe, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil))
+			return planAclClear(ctx, t, observe, probe, aclSetServiceUsersInputs(t.Type, t.Service, nil))
 		},
 	})
 }

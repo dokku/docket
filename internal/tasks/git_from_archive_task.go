@@ -136,19 +136,19 @@ func (t GitFromArchiveTask) Validate() error {
 	return nil
 }
 
-// observedGitFromArchive attaches app's archive deploy source to r. A source
+// observedGitFromArchive attaches t's app's archive deploy source to r. A source
 // that could not be read sets no observed state.
-func observedGitFromArchive(ctx context.Context, r PlanResult, app string, source AppDeploySource, read bool) PlanResult {
+func observedGitFromArchive(ctx context.Context, r PlanResult, t GitFromArchiveTask, source AppDeploySource, read bool) PlanResult {
 	if !read {
 		return r
 	}
 	if !isArchiveDeploySource(source.Source) {
-		return observed(r, GitFromArchiveTask{App: app, State: StateAbsent}, false)
+		return observed(r, t, GitFromArchiveTask{App: t.App, State: StateAbsent}, false)
 	}
 	// The URL can carry credentials, and the server's value is not the
 	// recipe's, so mask it too.
 	subprocess.MaskerFromContext(ctx).Add(source.SourceMetadata)
-	return observed(r, GitFromArchiveTask{App: app, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source, State: StateDeployed}, true)
+	return observed(r, t, GitFromArchiveTask{App: t.App, ArchiveURL: source.SourceMetadata, ArchiveType: source.Source, State: StateDeployed}, true)
 }
 
 // readAddress reads the archive an address's app deploys from, without the
@@ -158,7 +158,7 @@ func (t GitFromArchiveTask) readAddress(ctx context.Context) (Task, bool, error)
 	if err != nil {
 		return nil, false, err
 	}
-	return observedResult(observedGitFromArchive(ctx, PlanResult{Status: PlanStatusOK}, t.App, source, read))
+	return observedResult(observedGitFromArchive(ctx, PlanResult{Status: PlanStatusOK}, t, source, read), true)
 }
 
 // Plan reports the drift the GitFromArchiveTask would produce.
@@ -179,7 +179,7 @@ func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
 				return PlanResult{Status: PlanStatusError, Error: err}
 			}
 			seen := func(r PlanResult) PlanResult {
-				return observedGitFromArchive(ctx, r, t.App, source, read)
+				return observedGitFromArchive(ctx, r, t, source, read)
 			}
 			if read && source.Source == archiveType && source.SourceMetadata == t.ArchiveURL {
 				return seen(PlanResult{InSync: true, Status: PlanStatusOK})

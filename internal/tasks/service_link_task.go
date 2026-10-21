@@ -246,5 +246,5 @@ func observedServiceLink(t ServiceLinkTask, r PlanResult, linked bool) PlanResul
 	if linked {
 		o.State = StatePresent
 	}
-	return observed(r, o, linked)
+	return observed(r, t, o, linked)
 }

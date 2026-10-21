@@ -32,7 +32,7 @@ func staticCurrent(pairs map[string]string) pairsCurrentFunc {
 func TestPlanPairsSetInSync(t *testing.T) {
 	desired := map[string]string{"foo": "1", "bar": "2"}
 	current := map[string]string{"foo": "1", "bar": "2", "extra": "z"}
-	plan := planPairsSet(testCtx(), observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
+	plan := planPairsSet(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
 	if !plan.InSync {
 		t.Fatalf("expected InSync, got %#v", plan)
 	}
@@ -43,7 +43,7 @@ func TestPlanPairsSetInSync(t *testing.T) {
 
 func TestPlanPairsSetAllNewYieldsCreate(t *testing.T) {
 	desired := map[string]string{"foo": "1", "bar": "2"}
-	plan := planPairsSet(testCtx(), observeChartPairs, "chart value", desired, staticCurrent(map[string]string{}), chartCommandStub)
+	plan := planPairsSet(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", desired, staticCurrent(map[string]string{}), chartCommandStub)
 	if plan.InSync {
 		t.Fatal("expected drift")
 	}
@@ -64,7 +64,7 @@ func TestPlanPairsSetAllNewYieldsCreate(t *testing.T) {
 func TestPlanPairsSetPartialDriftYieldsModify(t *testing.T) {
 	desired := map[string]string{"foo": "1", "bar": "2"}
 	current := map[string]string{"foo": "old"}
-	plan := planPairsSet(testCtx(), observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
+	plan := planPairsSet(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
 	if plan.Status != PlanStatusModify {
 		t.Errorf("expected PlanStatusModify, got %v", plan.Status)
 	}
@@ -76,7 +76,7 @@ func TestPlanPairsSetPartialDriftYieldsModify(t *testing.T) {
 func TestPlanPairsSetProbeError(t *testing.T) {
 	probeErr := errors.New("boom")
 	fn := func(ctx context.Context) (map[string]string, error) { return nil, probeErr }
-	plan := planPairsSet(testCtx(), observeChartPairs, "chart value", map[string]string{"k": "v"}, fn, chartCommandStub)
+	plan := planPairsSet(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", map[string]string{"k": "v"}, fn, chartCommandStub)
 	if plan.Error != probeErr {
 		t.Fatalf("expected probe error to propagate, got %v", plan.Error)
 	}
@@ -88,7 +88,7 @@ func TestPlanPairsSetProbeError(t *testing.T) {
 func TestPlanPairsUnsetSkipsMissingKeys(t *testing.T) {
 	desired := map[string]string{"foo": "", "missing": ""}
 	current := map[string]string{"foo": "1", "other": "2"}
-	plan := planPairsUnset(testCtx(), observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
+	plan := planPairsUnset(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
 	if plan.InSync {
 		t.Fatal("expected drift (one key still exists)")
 	}
@@ -106,7 +106,7 @@ func TestPlanPairsUnsetSkipsMissingKeys(t *testing.T) {
 func TestPlanPairsUnsetInSyncWhenNothingMatches(t *testing.T) {
 	desired := map[string]string{"foo": ""}
 	current := map[string]string{"bar": "1"}
-	plan := planPairsUnset(testCtx(), observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
+	plan := planPairsUnset(testCtx(), SchedulerK3sChartTask{}, observeChartPairs, "chart value", desired, staticCurrent(current), chartCommandStub)
 	if !plan.InSync {
 		t.Fatalf("expected InSync when no desired keys exist on the server, got %#v", plan)
 	}

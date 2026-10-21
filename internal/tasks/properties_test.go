@@ -13,7 +13,9 @@ import (
 // propertyTableTask is a PropertyTableDocer standing in for a real property
 // task, so a test can drive the shared helpers against a synthetic plugin. A
 // test exercising a real plugin's table passes the task type itself instead.
+// The embedded NginxPropertyTask makes it a Task, as planProperty requires.
 type propertyTableTask struct {
+	NginxPropertyTask
 	table PropertyTable
 }
 

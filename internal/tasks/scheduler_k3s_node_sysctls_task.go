@@ -211,19 +211,19 @@ func (t SchedulerK3sNodeSysctlsTask) Plan(ctx context.Context) PlanResult {
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			return planPairsSet(ctx, observe, "sysctl", t.Sysctls, current, t.setCommand)
+			return planPairsSet(ctx, t, observe, "sysctl", t.Sysctls, current, t.setCommand)
 		},
 		StateAbsent: func() PlanResult {
-			return planPairsUnset(ctx, observe, "sysctl", t.Sysctls, current, t.setCommand)
+			return planPairsUnset(ctx, t, observe, "sysctl", t.Sysctls, current, t.setCommand)
 		},
 		StateSet: func() PlanResult {
 			if len(t.Sysctls) == 0 {
-				return planSetAsClear(planPairsClear(ctx, observe, "sysctl", current, t.clearCommand))
+				return planSetAsClear(planPairsClear(ctx, t, observe, "sysctl", current, t.clearCommand))
 			}
-			return planPairsReplace(ctx, observe, "sysctl", t.Sysctls, current, t.replaceCommand)
+			return planPairsReplace(ctx, t, observe, "sysctl", t.Sysctls, current, t.replaceCommand)
 		},
 		StateClear: func() PlanResult {
-			return planPairsClear(ctx, observe, "sysctl", current, t.clearCommand)
+			return planPairsClear(ctx, t, observe, "sysctl", current, t.clearCommand)
 		},
 	})
 }

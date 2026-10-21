@@ -758,12 +758,12 @@ func readServiceCreateInfo(ctx context.Context, t ServiceCreateTask) (map[string
 // attached, since the service exists but its options are unknown.
 func observedServiceCreate(t ServiceCreateTask, r PlanResult, exists bool, info map[string]string, infoErr error) PlanResult {
 	if !exists {
-		return observed(r, ServiceCreateTask{Service: t.Service, Name: t.Name, State: StateAbsent}, false)
+		return observed(r, t, ServiceCreateTask{Service: t.Service, Name: t.Name, State: StateAbsent}, false)
 	}
 	if infoErr != nil {
 		return r
 	}
-	return observed(r, serviceCreateFromInfo(t.Service, t.Name, info), true)
+	return observed(r, t, serviceCreateFromInfo(t.Service, t.Name, info), true)
 }
 
 // planServiceDrift reports what an existing service's image and create-time

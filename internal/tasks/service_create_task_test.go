@@ -677,7 +677,12 @@ func TestServiceCreateTaskImageDriftIgnoreSkipsTheComparison(t *testing.T) {
 	if !plan.InSync || len(plan.Warnings) != 0 {
 		t.Errorf("expected a silent in-sync plan, got InSync=%v warnings=%v", plan.InSync, plan.Warnings)
 	}
-	assertObservedImage(t, plan, "redis", "7.2.4")
+	// The plan is in sync, so Observed carries the declared image (#637); the
+	// probe still read the running one.
+	assertObservedImage(t, plan, task.Image, task.ImageVersion)
+	if read, ok := plan.read.(ServiceCreateTask); !ok || read.ImageVersion != "7.2.4" {
+		t.Errorf("read = %#v, want the running 7.2.4", plan.read)
+	}
 }
 
 // TestServiceCreateTaskImageDriftSkipsTheComparisonWithoutAPin pins that an

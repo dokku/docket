@@ -359,12 +359,25 @@ if err != nil {
 observed := current.(sdk.ConfigTask) // observed.Config holds the server's LOG_LEVEL, if set
 ```
 
-The returned task is the value type registered for the task (`sdk.ConfigTask`, never a pointer). Its
-identity keys come from the task you passed and every field the server reports is filled from what
-the probe read. Fields whose catalog entry carries `WriteOnly` or `ApplyOnly` are left empty or at
-their default, as an export leaves them (see [Reading a server](#reading-a-server)). `State` is the
-state that, declared with the returned fields, would plan in sync: a property that is not set
-comes back with `State: absent` and `exists` false.
+The returned task is the value type registered for the task (`sdk.ConfigTask`, never a pointer).
+Fields whose catalog entry carries `WriteOnly` or `ApplyOnly` are left empty or at their default,
+as an export leaves them (see [Reading a server](#reading-a-server)). What fills the other fields
+depends on whether the task you passed plans in sync:
+
+- When it does, the server already holds what the task declares, so every field the task sets
+  comes back as you passed it, even where the server reports it in another form. A
+  `dokku_ps_scale` in state `set` with `scale: {web: 2, worker: 0}` comes back with `worker: 0`
+  although the server's report leaves out process types scaled to zero, and a list whose order
+  does not matter comes back in your order. A field the task leaves at its zero value declares
+  nothing, so it is filled from what the probe read: a `dokku_service_create` that pins no image
+  comes back with the image the service runs. `exists` follows the declared state: true unless
+  `State` is `absent` or `clear`, so a `set` with no member the server reports, such as
+  `scale: {web: 0}`, still exists. A consumer that stores the read and diffs it against the task,
+  as a Terraform refresh does, then sees a change only when `Plan` would apply one.
+- When it does not, the returned task is what the probe read. Its identity keys come from the task
+  you passed and every field the server reports is filled from the read. `State` is the state
+  that, declared with the returned fields, would plan in sync: a property that is not set comes
+  back with `State: absent` and `exists` false.
 
 The task you pass picks what is read, so it must be valid:
 
@@ -383,8 +396,9 @@ its PEM. That is why `CertContent` and `KeyContent` carry `WriteOnly`: a read le
 field flagged `WriteOnly` or `ApplyOnly` empty, and fills every other field the server reports.
 
 The same values are on the plan itself, so a caller that plans anyway reads them with no extra probe.
-`PlanResult.Observed` holds the task as read and `PlanResult.Exists` whether it exists. They are set
-on every plan that read the server, in sync or not. `ReadTask` is `Plan` plus these errors:
+`PlanResult.Observed` holds the returned task and `PlanResult.Exists` whether it exists, by the same
+rules. They are set on every plan that read the server, in sync or not. `ReadTask` is `Plan` plus
+these errors:
 
 - the plan's own error, including the `*sdk.VersionError` when a gate on the context refuses the
   task, so a resource the gate skipped is never reported as absent;
@@ -417,8 +431,9 @@ any plan, but the returned task carries them raw. Mask what you show, the same w
 ### Reading from an address
 
 `sdk.ReadAddress` reads a resource known only by its identity address - the shape `terraform import`
-or a data source has - and returns the same task, `exists` flag and errors as `sdk.ReadTask`. It is
-what [`docket read`](command-reference.md#docket-read) runs:
+or a data source has - and returns the same errors as `sdk.ReadTask`. With no declared task to
+return, it always returns what the probe read and whether that exists, in sync or not. It is what
+[`docket read`](command-reference.md#docket-read) runs:
 
 ```go
 current, exists, err := sdk.ReadAddress(ctx, "dokku_buildpacks[app=api]")

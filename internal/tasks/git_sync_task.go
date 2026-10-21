@@ -125,7 +125,7 @@ func (t GitSyncTask) Plan(ctx context.Context) PlanResult {
 				if !sync.read {
 					return r
 				}
-				return observed(r, sync.observed, sync.observed.State == StatePresent)
+				return observed(r, t, sync.observed, sync.observed.State == StatePresent)
 			}
 			if sync.matches(t.Remote, t.GitRef, t.SkipDeployBranch) {
 				return seen(PlanResult{InSync: true, Status: PlanStatusOK})

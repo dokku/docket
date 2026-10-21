@@ -59,25 +59,26 @@ type ToggleProbe func(ctx context.Context, tc ToggleContext) (enabled bool, err 
 // circuits to a plan error so an unreachable host is not mistaken for
 // drift.
 //
-// observe builds the calling task's own type from the fields the probe read,
-// so PlanResult.Observed carries the toggle's position as its State. A plan
-// whose probe could not answer carries no Observed.
-func planToggle(ctx context.Context, observe func(ToggleFields) Task, state State, app string, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
+// planned is the task itself, which an in-sync plan observes. observe builds
+// the calling task's own type from the fields the probe read, so a plan that
+// reports drift observes the toggle's position as its State. A plan whose
+// probe could not answer carries no Observed.
+func planToggle(ctx context.Context, planned Task, observe func(ToggleFields) Task, state State, app string, enableCmd, disableCmd string, probe ToggleProbe) PlanResult {
 	tc := ToggleContext{App: app}
 
 	return DispatchPlan(state, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
-			return planTogglePosition(ctx, observe, tc, probe, true, enableCmd, StatePresent)
+			return planTogglePosition(ctx, planned, observe, tc, probe, true, enableCmd, StatePresent)
 		},
 		StateAbsent: func() PlanResult {
-			return planTogglePosition(ctx, observe, tc, probe, false, disableCmd, StateAbsent)
+			return planTogglePosition(ctx, planned, observe, tc, probe, false, disableCmd, StateAbsent)
 		},
 	})
 }
 
 // planTogglePosition probes the toggle once and plans moving it to the wanted
 // position: in sync when it is already there, otherwise cmd.
-func planTogglePosition(ctx context.Context, observe func(ToggleFields) Task, tc ToggleContext, probe ToggleProbe, want bool, cmd string, final State) PlanResult {
+func planTogglePosition(ctx context.Context, planned Task, observe func(ToggleFields) Task, tc ToggleContext, probe ToggleProbe, want bool, cmd string, final State) PlanResult {
 	read := false
 	enabled := false
 	if probe != nil {
@@ -101,7 +102,7 @@ func planTogglePosition(ctx context.Context, observe func(ToggleFields) Task, tc
 		if enabled {
 			f.State = StatePresent
 		}
-		return observed(r, observe(f), enabled)
+		return observed(r, planned, observe(f), enabled)
 	}
 	if read && enabled == want {
 		return seen(PlanResult{InSync: true, Status: PlanStatusOK})

@@ -112,9 +112,9 @@ func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
 	seen := func(r PlanResult, keys map[string]sshKeyEntry) PlanResult {
 		entry, found := keys[t.Name]
 		if !found {
-			return observed(r, SshKeyTask{Name: t.Name, State: StateAbsent}, false)
+			return observed(r, t, SshKeyTask{Name: t.Name, State: StateAbsent}, false)
 		}
-		return observed(r, SshKeyTask{Name: t.Name, Key: entry.PublicKey, State: StatePresent}, true)
+		return observed(r, t, SshKeyTask{Name: t.Name, Key: entry.PublicKey, State: StatePresent}, true)
 	}
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {

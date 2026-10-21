@@ -108,21 +108,30 @@ A few conventions to follow:
 - `Execute()` is exactly `return executeTask(ctx, t)`, so it holds the task's locks across its plan
   and its apply. `TestEveryExecuteTakesTaskLocks` fails the build for an `Execute()` that plans and
   applies itself.
-- Every result built from a probe goes through `observed(result, task, exists)`, which sets
+- Every result built from a probe goes through `observed(result, t, read, exists)`, which sets
   `PlanResult.Observed` and `PlanResult.Exists` - what `sdk.ReadTask` returns (see
-  [Reading one resource](embedding.md#reading-one-resource)). The task is the value type, with
+  [Reading one resource](embedding.md#reading-one-resource)). `t` is the planned task, and a
+  shared helper that builds the result takes it as a parameter. `read` is the value type, with
   the identity keys copied from `t` and every field the probe read. Fields tagged `write_only` or
   `apply_only` stay at their zero value or default. `State` is the state that would plan in sync
   against what was read. A collection in an additive state reads only the members `t` names, and
-  one in a state that owns the collection reads them all. Read every field the task's exporter
+  one in a state that owns the collection reads them all. A drift result observes `read`. An
+  in-sync result observes `t` instead, with each field `t` leaves at its zero value filled from
+  `read` (matching list items on their identity keys), and `Exists` follows `t`'s state, so build
+  `read` the same way either way. Read every field the task's exporter
   reads, even one the drift check ignores, unless reading it would undo a deliberate choice of the
   probe's - such as `dokku_certs` never moving certificate material at plan time - in which case
   tag the field `write_only`. A probe failure the plan treats as drift, rather than as an error,
   sets no observed state. `TestPlanObservesServerState` plans every exported body against a fixture
-  in `observed_*_test.go` and checks that it observes itself, `TestObservedFixturesCoverEveryTask`
-  fails the build for a task with no fixture, and `TestObservedReadsEveryUntaggedField` fails it
-  for a field that is not an identity key, not tagged, and set by no `Observed` across the
-  fixture - so give the fixture's server a value for every field the probe reads.
+  in `observed_*_test.go` and checks that it reads itself, and that each case reads what it
+  states. `TestInSyncPlanObservesTheDeclaredTask` checks that every plan in the fixture that is in
+  sync observes the fields its task sets as declared, and fails a fixture with no such plan.
+  `TestObservedFixturesCoverEveryTask` fails the build for a task with no fixture, and
+  `TestObservedReadsEveryUntaggedField` fails it for a field that is not an identity key, not
+  tagged, and set by no probe's read across the fixture - so give the fixture's server a value
+  for every field the probe reads.
+- A `readAddress` returns `observedResult(result, true)`, which hands back `read` even when the
+  result is in sync, since an address read has no declared task to return.
 - `sdk.ReadAddress` reads a resource from its identity address alone. It builds the task from the
   address's keys and plans it in `clear` when the task offers it, else `absent`, else the default.
   When that cannot read the whole resource - a payload `Validate` demands in every state, or states
@@ -497,9 +506,10 @@ func (t ChecksToggleTask) Plan(ctx context.Context) PlanResult {
   if r, ok := gatePlan(ctx, t); !ok {
     return r
   }
-  // The closure converts the shared field set back to the task's own type, so
-  // PlanResult.Observed carries a ChecksToggleTask.
-  return planToggle(ctx, func(f ToggleFields) Task { return ChecksToggleTask(f) }, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
+  // t is what an in-sync plan observes. The closure converts the shared field
+  // set back to the task's own type, so a drift plan's Observed is a
+  // ChecksToggleTask too.
+  return planToggle(ctx, t, func(f ToggleFields) Task { return ChecksToggleTask(f) }, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 ```
 

@@ -108,7 +108,7 @@ func (t ProxyToggleTask) Plan(ctx context.Context) PlanResult {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
-	return planToggle(ctx, func(f ToggleFields) Task { return ProxyToggleTask(f) }, t.State, t.App, "proxy:enable", "proxy:disable", proxyEnabled)
+	return planToggle(ctx, t, func(f ToggleFields) Task { return ProxyToggleTask(f) }, t.State, t.App, "proxy:enable", "proxy:disable", proxyEnabled)
 }
 
 // init registers the ProxyToggleTask with the task registry

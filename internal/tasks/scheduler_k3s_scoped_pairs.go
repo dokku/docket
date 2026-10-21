@@ -25,6 +25,9 @@ type schedulerK3sScopedPairsSpec struct {
 	ResourceType string
 	Pairs        map[string]string
 
+	// Planned is the task the spec adapts, which an in-sync plan observes.
+	Planned Task
+
 	// Observe builds the task's own type from the pairs the probe read.
 	Observe pairsObserveFunc
 }
@@ -72,7 +75,7 @@ func validateSchedulerK3sScopedPairs(spec schedulerK3sScopedPairsSpec, state Sta
 // scope. Present is additive: a key the server carries and the recipe does not
 // is left alone, which is what state 'set' exists to override.
 func planSchedulerK3sScopedPairsPresent(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
-	return planPairsSet(ctx, spec.Observe,
+	return planPairsSet(ctx, spec.Planned, spec.Observe,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,
 		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
@@ -86,7 +89,7 @@ func planSchedulerK3sScopedPairsPresent(ctx context.Context, spec schedulerK3sSc
 // builder passes an empty value, which dokku's `:labels:set` / `:annotations:set`
 // interpret as "clear this key".
 func planSchedulerK3sScopedPairsAbsent(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
-	return planPairsUnset(ctx, spec.Observe,
+	return planPairsUnset(ctx, spec.Planned, spec.Observe,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,
 		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
@@ -104,7 +107,7 @@ func planSchedulerK3sScopedPairsSet(ctx context.Context, spec schedulerK3sScoped
 	if len(spec.Pairs) == 0 {
 		return planSetAsClear(planSchedulerK3sScopedPairsClear(ctx, spec))
 	}
-	return planPairsReplace(ctx, spec.Observe,
+	return planPairsReplace(ctx, spec.Planned, spec.Observe,
 		singularizeSchedulerK3sKind(spec.Kind),
 		spec.Pairs,
 		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
@@ -116,7 +119,7 @@ func planSchedulerK3sScopedPairsSet(ctx context.Context, spec schedulerK3sScoped
 // builder empties this spec's (process_type, resource_type) scope alone, not
 // every scope on the app.
 func planSchedulerK3sScopedPairsClear(ctx context.Context, spec schedulerK3sScopedPairsSpec) PlanResult {
-	return planPairsClear(ctx, spec.Observe,
+	return planPairsClear(ctx, spec.Planned, spec.Observe,
 		singularizeSchedulerK3sKind(spec.Kind),
 		func(ctx context.Context) (map[string]string, error) { return getSchedulerK3sScopedPairs(ctx, spec) },
 		func() subprocess.ExecCommandInput { return schedulerK3sScopedPairsClearCommand(spec) },

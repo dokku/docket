@@ -313,7 +313,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 		}
 		o := ServicePropertyTask{Service: t.Service, Name: t.Name, Property: t.Property, State: StateAbsent}
 		if current == "" || (rb.unset != "" && current == rb.unset && !rb.fingerprint) {
-			return observed(r, o, false)
+			return observed(r, t, o, false)
 		}
 		o.State = StatePresent
 		switch {
@@ -322,7 +322,7 @@ func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
 		case servicePropertyMatches(rb, current, t.Value):
 			o.Value = t.Value
 		}
-		return observed(r, o, true)
+		return observed(r, t, o, true)
 	}
 
 	return DispatchPlan(t.State, map[State]func() PlanResult{

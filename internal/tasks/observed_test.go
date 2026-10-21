@@ -219,15 +219,22 @@ func observedCoreFixtures() map[string]observedFixture {
 					task: ConfigTask{App: "empty", State: StateClear},
 					want: ConfigTask{App: "empty", State: StateClear},
 				},
+				{
+					name: "set of nothing on an empty app",
+					task: ConfigTask{App: "empty", Config: map[string]string{}, State: StateSet},
+					want: ConfigTask{App: "empty", State: StateClear},
+				},
 			},
 		},
 	}
 }
 
 // observedPlan is one plan a fixture makes: an exported body planned back, or
-// a case. want is the task Observed must equal, and exported is set for a body.
+// a case. task is what was planned, want is the task its probe must read, and
+// exported is set for a body.
 type observedPlan struct {
 	name     string
+	task     Task
 	plan     PlanResult
 	want     interface{}
 	exists   bool
@@ -259,7 +266,7 @@ func planObservedFixture(t *testing.T, fixture observedFixture) []observedPlan {
 			if p.Error != nil {
 				t.Fatalf("body %d: plan error: %v", i, p.Error)
 			}
-			plans = append(plans, observedPlan{name: fmt.Sprintf("body %d", i), plan: p, want: body, exists: declaresPresent(task), exported: true})
+			plans = append(plans, observedPlan{name: fmt.Sprintf("body %d", i), task: task, plan: p, want: body, exists: declaresPresent(task), exported: true})
 		}
 	}
 	for _, c := range fixture.cases {
@@ -268,14 +275,15 @@ func planObservedFixture(t *testing.T, fixture observedFixture) []observedPlan {
 			t.Errorf("%s: plan error: %v", c.name, p.Error)
 			continue
 		}
-		plans = append(plans, observedPlan{name: c.name, plan: p, want: c.want, exists: c.exists})
+		plans = append(plans, observedPlan{name: c.name, task: c.task, plan: p, want: c.want, exists: c.exists})
 	}
 	return plans
 }
 
-// TestPlanObservesServerState checks PlanResult.Observed against every
-// fixture: an exported body plans in sync and observes itself, and each case
-// observes what it states.
+// TestPlanObservesServerState checks what each plan's probe reads against
+// every fixture: an exported body plans in sync and reads itself, and each
+// case reads what it states. A plan reporting drift observes exactly that
+// read; TestInSyncPlanObservesTheDeclaredTask covers the in-sync half.
 func TestPlanObservesServerState(t *testing.T) {
 	t.Parallel()
 	for typeKey, fixture := range observedFixtures() {
@@ -285,6 +293,9 @@ func TestPlanObservesServerState(t *testing.T) {
 			for _, op := range planObservedFixture(t, fixture) {
 				if op.exported && !op.plan.InSync {
 					t.Errorf("%s: exported body plans as drift: %s %v", op.name, op.plan.Reason, op.plan.Mutations)
+				}
+				if !op.plan.InSync && (!reflect.DeepEqual(op.plan.Observed, op.plan.read) || op.plan.Exists != op.plan.readExists) {
+					t.Errorf("%s: a drift plan's Observed %#v (exists %v) is not what the probe read, %#v (exists %v)", op.name, op.plan.Observed, op.plan.Exists, op.plan.read, op.plan.readExists)
 				}
 				checkObserved(t, op.name, typeKey, want, op.plan, op.want, op.exists)
 			}
@@ -306,8 +317,10 @@ func TestObservedReadsEveryUntaggedField(t *testing.T) {
 			t.Parallel()
 			var observed []reflect.Value
 			for _, op := range planObservedFixture(t, fixture) {
-				if op.plan.Observed != nil {
-					observed = append(observed, reflect.ValueOf(op.plan.Observed))
+				// The probe's read, not Observed: an in-sync plan observes
+				// the declared task, which sets whatever the fixture does.
+				if op.plan.read != nil {
+					observed = append(observed, reflect.ValueOf(op.plan.read))
 				}
 			}
 			for _, name := range unobservedFields(typeKey, registeredTypeOrNil(typeKey), observed) {
@@ -471,22 +484,6 @@ func TestReadAddressReadsEveryResource(t *testing.T) {
 	}
 }
 
-// declaresPresent reports whether a task value declares its resource there:
-// an exporter can emit a body that declares it off, such as a disabled toggle
-// with state absent, which observes Exists false.
-func declaresPresent(task interface{}) bool {
-	rv := reflect.ValueOf(task)
-	for rv.Kind() == reflect.Pointer {
-		rv = rv.Elem()
-	}
-	field := rv.FieldByName("State")
-	if !field.IsValid() {
-		return true
-	}
-	state := State(field.String())
-	return state != StateAbsent && state != StateClear
-}
-
 // withField returns a copy of a task value with one field zeroed.
 func withField(v interface{}, name string) interface{} {
 	rv := reflect.ValueOf(v)
@@ -506,29 +503,32 @@ func withDefaults(v interface{}) interface{} {
 	return cp.Elem().Interface()
 }
 
-// checkObserved compares p.Observed with want, ignoring the write_only and
-// apply_only fields, and checks those fields hold nothing read from the server.
+// checkObserved compares what p's probe read with want, ignoring the
+// write_only and apply_only fields, and checks those fields hold nothing read
+// from the server, in the read and in Observed.
 func checkObserved(t *testing.T, name, typeKey string, rt reflect.Type, p PlanResult, want interface{}, exists bool) {
 	t.Helper()
-	if p.Observed == nil {
-		t.Errorf("%s: Observed is nil", name)
+	if p.Observed == nil || p.read == nil {
+		t.Errorf("%s: Observed is %#v and the read %#v; want both set", name, p.Observed, p.read)
 		return
 	}
-	if got := reflect.TypeOf(p.Observed); got != rt {
-		t.Errorf("%s: Observed is %v, want the registered value type %v", name, got, rt)
-		return
-	}
-	if p.Exists != exists {
-		t.Errorf("%s: Exists = %v, want %v", name, p.Exists, exists)
-	}
-	if _, problems := checkReadbackFields(typeKey, reflect.ValueOf(p.Observed), nil); len(problems) > 0 {
-		for _, problem := range problems {
-			t.Errorf("%s: %s", name, problem)
+	for _, v := range []Task{p.Observed, p.read} {
+		if got := reflect.TypeOf(v); got != rt {
+			t.Errorf("%s: Observed is %v, want the registered value type %v", name, got, rt)
+			return
+		}
+		if _, problems := checkReadbackFields(typeKey, reflect.ValueOf(v), nil); len(problems) > 0 {
+			for _, problem := range problems {
+				t.Errorf("%s: %s", name, problem)
+			}
 		}
 	}
-	got, wanted := normalizeObserved(p.Observed), normalizeObserved(want)
+	if p.readExists != exists {
+		t.Errorf("%s: read exists = %v, want %v", name, p.readExists, exists)
+	}
+	got, wanted := normalizeObserved(p.read), normalizeObserved(want)
 	if !reflect.DeepEqual(got, wanted) {
-		t.Errorf("%s: Observed mismatch\n got: %#v\nwant: %#v", name, got, wanted)
+		t.Errorf("%s: read mismatch\n got: %#v\nwant: %#v", name, got, wanted)
 	}
 }
 

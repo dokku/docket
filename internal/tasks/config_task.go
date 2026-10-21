@@ -216,7 +216,7 @@ func observedConfig(r PlanResult, t ConfigTask, current map[string]string, kept 
 	case len(held) > 0:
 		state = StatePresent
 	}
-	return observed(r, ConfigTask{App: t.App, Config: held, State: state}, len(held) > 0)
+	return observed(r, t, ConfigTask{App: t.App, Config: held, State: state}, len(held) > 0)
 }
 
 // configKeysToSet returns keys whose desired value differs from the current

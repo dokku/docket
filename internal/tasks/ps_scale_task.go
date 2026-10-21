@@ -223,7 +223,7 @@ func observedPsScale(r PlanResult, t PsScaleTask, existing map[string]int, whole
 		state = StateClear
 		held = nil
 	}
-	return observed(r, PsScaleTask{App: t.App, Scale: held, State: state}, running)
+	return observed(r, t, PsScaleTask{App: t.App, Scale: held, State: state}, running)
 }
 
 // planPsScalePresent reports drift for the present-state additive scale. Only
