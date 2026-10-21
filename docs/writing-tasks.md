@@ -127,7 +127,7 @@ A few conventions to follow:
   address's keys and plans it in `clear` when the task offers it, else `absent`, else the default.
   When that cannot read the whole resource - a payload `Validate` demands in every state, or states
   that each read only the members they name - implement `readAddress(ctx) (Task, bool, error)` on
-  the task, reusing the observed construction `Plan` uses (`dokku_ps_scale`, `dokku_app_clone`).
+  the task, reusing the observed construction `Plan` uses (`dokku_app_clone`).
   `TestReadAddressReadsEveryResource` reads every exported body back from its address and needs an
   address read of a present and an absent resource for every task that can read its state; add the
   missing ones to `observedAddressCases` in `observed_address_test.go`.
@@ -182,8 +182,8 @@ A few conventions to follow:
   `Imperative() bool` method and return true. Such a task has nothing to undo, so it offers no
   `absent` or `clear` state. [`docket schema`](task-catalog.md) marks it `imperative`, and the
   generator adds a note to its page. `TestImperativeTasksOfferNoTeardown` fails the build if an
-  imperative task offers a teardown state, or if a task other than `dokku_ps_scale` offers
-  neither `absent` nor `clear` without declaring itself imperative.
+  imperative task offers a teardown state, or if a task offers neither `absent` nor `clear`
+  without declaring itself imperative.
 - Every task must also implement `Doc() string` and `examples() ([]Doc, error)`, the optional
   `Documented` interface. They are not part of `Task`, since running a task never needs them, but
   they supply the Synopsis and Examples on the task's generated page and in
@@ -644,8 +644,9 @@ states beyond `present` and `absent`:
 
 Every collection task offers all four states, so a consumer that owns a whole collection can map
 create and update to `set` and destroy to `clear` without special cases. `dokku_ps_scale` is the
-one exception: it offers `present` and `set`, because an app always runs some count of each
-process type, so there is nothing to clear.
+one exception: it offers `present`, `set` and `clear` but no `absent`, because an app always runs
+some count of each process type. Its `clear` resets the app to the formation dokku gives a new app
+(`ps:scale --clear`) rather than emptying it.
 
 `present` and `absent` stay additive alongside them: `present` writes the named entries and leaves
 the rest, `absent` removes the named entries and leaves the rest. That is the whole point of the

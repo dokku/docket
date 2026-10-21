@@ -295,7 +295,7 @@ EOF
   assert_output --partial "is valid"
 }
 
-@test "docket validate exits 1 on ps scale state set with an empty scale" {
+@test "docket validate exits 0 on ps scale state set with an empty scale" {
   write_tasks_file <<EOF
 ---
 - tasks:
@@ -305,8 +305,48 @@ EOF
         scale: {}
 EOF
   run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 0 on ps scale state clear" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ps_scale:
+        app: web
+        state: clear
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_success
+  assert_output --partial "is valid"
+}
+
+@test "docket validate exits 1 on ps scale state clear with a scale" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ps_scale:
+        app: web
+        state: clear
+        scale:
+          web: 1
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
   assert_failure
-  assert_output --partial "'scale' must not be empty for state 'set'"
+  assert_output --partial "'scale' must not be set for state 'clear'"
+}
+
+@test "docket validate exits 1 on ps scale state present without a scale" {
+  write_tasks_file <<EOF
+---
+- tasks:
+    - dokku_ps_scale:
+        app: web
+EOF
+  run "$(docket_bin)" validate --tasks "$TASKS_FILE"
+  assert_failure
+  assert_output --partial "'scale' is required for state 'present'"
 }
 
 @test "docket validate exits 1 on a negative ps scale quantity" {

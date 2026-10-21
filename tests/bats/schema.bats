@@ -396,11 +396,14 @@ setup() {
   run "$(docket_bin)" schema
   assert_success
   # Every task owning a collection offers the four states, except
-  # dokku_ps_scale, which has nothing to clear.
+  # dokku_ps_scale, which offers present, set and clear but no absent.
   echo "$output" |
     jq -e '[.tasks[] | select(.identity.collections != null and (.identity.collections | length) > 0 and .type != "dokku_ps_scale") | .fields[] | select(.name == "state") | .choices] | length > 0 and all(index("present") != null and index("absent") != null and index("set") != null and index("clear") != null)' >/dev/null ||
     fail "a collection task is missing one of present, absent, set or clear"
-  for task in dokku_buildpacks dokku_resource_limit dokku_resource_reserve dokku_service_expose dokku_scheduler_k3s_chart dokku_http_auth_user; do
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_ps_scale") | .fields[] | select(.name == "state") | .choices | index("present") != null and index("set") != null and index("clear") != null' >/dev/null ||
+    fail "dokku_ps_scale is missing one of present, set or clear"
+  for task in dokku_buildpacks dokku_resource_limit dokku_resource_reserve dokku_service_expose dokku_scheduler_k3s_chart dokku_http_auth_user dokku_ps_scale; do
     echo "$output" |
       jq -e --arg t "$task" '.tasks[] | select(.type == $t) | .fields[] | select(.name == "state") | .choices | index("clear") != null' >/dev/null ||
       fail "$task does not offer clear"

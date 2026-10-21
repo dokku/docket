@@ -62,7 +62,7 @@ func observedAddressCases() map[string][]observedAddressCase {
 			present("dokku_proxy_toggle[app=on]", ProxyToggleTask{App: "on", State: StatePresent}),
 		},
 		"dokku_ps_scale": {
-			absent("dokku_ps_scale[app=idle]", PsScaleTask{App: "idle", State: StateSet}),
+			absent("dokku_ps_scale[app=idle]", PsScaleTask{App: "idle", State: StateClear}),
 			present("dokku_ps_scale[app=web]", PsScaleTask{App: "web", Scale: map[string]int{"clock": 1, "web": 2}, State: StateSet}),
 		},
 		"dokku_registry_auth": {

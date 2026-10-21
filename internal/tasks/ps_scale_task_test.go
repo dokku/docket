@@ -121,13 +121,178 @@ func TestGetTasksPsScaleTaskParsedCorrectly(t *testing.T) {
 	}
 }
 
-func TestPsScaleTaskSetEmptyScale(t *testing.T) {
+func TestPsScaleTaskEmptyScaleErrorNamesTheState(t *testing.T) {
 	t.Parallel()
-	task := PsScaleTask{App: "test-app", Scale: map[string]int{}, State: StateSet}
+	task := PsScaleTask{App: "test-app", Scale: map[string]int{}, State: StatePresent}
 	if err := task.Validate(); err == nil {
-		t.Fatal("Validate with empty scale and state=set should return an error")
-	} else if !strings.Contains(err.Error(), "'scale' must not be empty for state 'set'") {
+		t.Fatal("Validate with empty scale and state=present should return an error")
+	} else if !strings.Contains(err.Error(), "'scale' is required for state 'present'") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestPsScaleTaskSetEmptyScalePlansAsClear(t *testing.T) {
+	t.Parallel()
+	// ps:scale --replace refuses a call with no tuples, so an empty set routes
+	// to the reset clear makes, and still reports the set the recipe declared.
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet ps:scale test-app": "web: 2\nworker: 1",
+	}))
+
+	task := PsScaleTask{App: "test-app", Scale: map[string]int{}, State: StateSet}
+	if err := task.Validate(); err != nil {
+		t.Fatalf("Validate with empty scale and state=set returned an error: %v", err)
+	}
+	plan := task.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	wantCommands := []string{"dokku ps:scale --clear test-app"}
+	if !reflect.DeepEqual(plan.Commands, wantCommands) {
+		t.Errorf("commands = %v, want %v", plan.Commands, wantCommands)
+	}
+	out := ExecutePlan(ctx, plan)
+	if out.Error != nil {
+		t.Fatalf("unexpected apply error: %v", out.Error)
+	}
+	if !out.Changed || out.State != StateSet || out.DesiredState != StateSet {
+		t.Errorf("apply = {Changed %v, State %q, DesiredState %q}, want a change ending in set", out.Changed, out.State, out.DesiredState)
+	}
+}
+
+func TestPsScaleTaskClearRejectsAScale(t *testing.T) {
+	t.Parallel()
+	task := PsScaleTask{App: "test-app", Scale: map[string]int{"web": 1}, State: StateClear}
+	if err := task.Validate(); err == nil {
+		t.Fatal("Validate with a scale and state=clear should return an error")
+	} else if !strings.Contains(err.Error(), "'scale' must not be set for state 'clear'") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if err := (PsScaleTask{App: "test-app", State: StateClear}).Validate(); err != nil {
+		t.Errorf("Validate with no scale and state=clear returned an error: %v", err)
+	}
+}
+
+func TestPsScaleClearResetsTheFormation(t *testing.T) {
+	t.Parallel()
+	// --clear writes web=1 and zeroes everything else, so web above one and
+	// every other running process type are the drift.
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet ps:scale test-app": "web: 2\nworker: 1\nclock: 0",
+	}))
+
+	task := PsScaleTask{App: "test-app", State: StateClear}
+	plan := task.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when the formation is not the default")
+	}
+	if plan.Status != PlanStatusDestroy {
+		t.Errorf("Status = %v, want %v", plan.Status, PlanStatusDestroy)
+	}
+	wantCommands := []string{"dokku ps:scale --clear test-app"}
+	if !reflect.DeepEqual(plan.Commands, wantCommands) {
+		t.Errorf("commands = %v, want %v", plan.Commands, wantCommands)
+	}
+	wantMutations := []string{"scale web=1 (was 2)", "scale worker=0 (was 1)"}
+	if !reflect.DeepEqual(plan.Mutations, wantMutations) {
+		t.Errorf("mutations = %v, want %v", plan.Mutations, wantMutations)
+	}
+	wantObserved := PsScaleTask{App: "test-app", Scale: map[string]int{"web": 2, "worker": 1}, State: StateSet}
+	if !reflect.DeepEqual(plan.Observed, wantObserved) || !plan.Exists {
+		t.Errorf("observed = %#v (exists %v), want %#v", plan.Observed, plan.Exists, wantObserved)
+	}
+	out := ExecutePlan(ctx, plan)
+	if out.Error != nil {
+		t.Fatalf("unexpected apply error: %v", out.Error)
+	}
+	if !out.Changed || out.State != StateClear {
+		t.Errorf("apply = {Changed %v, State %q}, want a change ending in clear", out.Changed, out.State)
+	}
+}
+
+func TestPsScaleClearSkipDeployFlagsPrecedeTheApp(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet ps:scale test-app": "web: 1\nworker: 2",
+	}))
+
+	task := PsScaleTask{App: "test-app", SkipDeploy: boolPtr(true), State: StateClear}
+	plan := task.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	wantCommands := []string{"dokku ps:scale --clear --skip-deploy test-app"}
+	if !reflect.DeepEqual(plan.Commands, wantCommands) {
+		t.Errorf("commands = %v, want %v", plan.Commands, wantCommands)
+	}
+}
+
+func TestPsScaleClearInSyncAtTheDefault(t *testing.T) {
+	t.Parallel()
+	// The default is web=1, or nothing when the Procfile has no web, which no
+	// report exposes, so web at one or zero with nothing else running is reset.
+	for name, report := range map[string]string{
+		"web at one":         "web: 1\nworker: 0",
+		"web at zero":        "web: 0",
+		"nothing reported":   "",
+		"zeroed without web": "worker: 0\nclock: 0",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+				"--quiet ps:scale test-app": report,
+			}))
+			plan := PsScaleTask{App: "test-app", State: StateClear}.Plan(ctx)
+			if plan.Error != nil {
+				t.Fatalf("unexpected plan error: %v", plan.Error)
+			}
+			if !plan.InSync {
+				t.Fatalf("expected in sync, got mutations %v", plan.Mutations)
+			}
+			if len(plan.Commands) != 0 {
+				t.Errorf("expected no commands, got %v", plan.Commands)
+			}
+		})
+	}
+}
+
+func TestPsScaleClearDriftsWhenOnlyANonWebTypeRuns(t *testing.T) {
+	t.Parallel()
+	// Whether web comes back up is the Procfile's call, so only worker is
+	// listed, but the reset still runs.
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet ps:scale test-app": "web: 0\nworker: 1",
+	}))
+
+	plan := PsScaleTask{App: "test-app", State: StateClear}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	if plan.InSync {
+		t.Fatal("expected drift when worker is running")
+	}
+	wantMutations := []string{"scale worker=0 (was 1)"}
+	if !reflect.DeepEqual(plan.Mutations, wantMutations) {
+		t.Errorf("mutations = %v, want %v", plan.Mutations, wantMutations)
+	}
+}
+
+func TestPsScaleClearObservesClearWhenNothingRuns(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet ps:scale test-app": "web: 0\nworker: 0",
+	}))
+
+	plan := PsScaleTask{App: "test-app", State: StateClear}.Plan(ctx)
+	if plan.Error != nil {
+		t.Fatalf("unexpected plan error: %v", plan.Error)
+	}
+	want := PsScaleTask{App: "test-app", State: StateClear}
+	if !reflect.DeepEqual(plan.Observed, want) || plan.Exists {
+		t.Errorf("observed = %#v (exists %v), want %#v not existing", plan.Observed, plan.Exists, want)
 	}
 }
 
