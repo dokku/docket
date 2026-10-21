@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -473,6 +474,10 @@ func TestServiceBackupTaskMissingServiceIsAnError(t *testing.T) {
 		plan := task.Plan(subprocess.ContextWithRunner(testCtx(), serviceMissing()))
 		if plan.Error == nil || !strings.Contains(plan.Error.Error(), "does not exist") {
 			t.Errorf("%s: expected a missing-service error, got %v", state, plan.Error)
+		}
+		var missing *ObjectMissingError
+		if !errors.As(plan.Error, &missing) || missing.Object.Kind != ObjectService {
+			t.Errorf("%s: expected an *ObjectMissingError naming the service, got %v", state, plan.Error)
 		}
 	}
 }

@@ -5,8 +5,9 @@ load test_helper
 # These tests read over a fake `ssh` first on PATH, so they need neither a
 # remote host nor a local dokku. The fake answers `dokku version` with 0.38.31
 # so the version gate lets the read run, answers `config:export` for app web
-# with one secret, fails `apps:exists gone` the way dokku reports a missing
-# app, and answers every other command with exit 0 and no output. It touches
+# with one secret, fails `apps:exists gone` and `config:export` for app gone
+# the way dokku reports a missing app, and answers every other command with
+# exit 0 and no output. It touches
 # the control socket on a call and removes it on `-O exit`, so a socket left
 # behind is a master docket never closed.
 
@@ -44,7 +45,7 @@ touch "$socket"
 case "$*" in
   "dokku version") printf '0.38.31\n' ;;
   "dokku --quiet config:export --format json web") printf '{"API_KEY":"s3cr3t-value"}\n' ;;
-  "dokku --quiet apps:exists gone")
+  "dokku --quiet apps:exists gone" | "dokku --quiet config:export --format json gone")
     echo "App gone does not exist" >&2
     exit 1
     ;;
@@ -89,6 +90,12 @@ assert_no_sockets() {
   assert_equal "$status" 2
   echo "$output" | jq -e '.exists == false and .task.state == "absent"' >/dev/null ||
     fail "unexpected --json output: $output"
+}
+
+@test "docket read exits 3 when the app is missing" {
+  run_read 'dokku_config[app=gone]'
+  assert_equal "$status" 3
+  assert_output --partial "app gone does not exist"
 }
 
 @test "docket read masks sensitive values unless --show-sensitive" {

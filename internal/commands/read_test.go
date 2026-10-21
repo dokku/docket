@@ -144,6 +144,19 @@ func TestReadCommandAbsentExitsTwo(t *testing.T) {
 	}
 }
 
+// TestReadCommandObjectMissingExitsThree pins that a resource whose app is
+// missing prints only the error and exits 3.
+func TestReadCommandObjectMissingExitsThree(t *testing.T) {
+	t.Parallel()
+	c, stdout, ui := readWithRunner(absentRunner(nil))
+	if code := c.Run([]string{"--json", "dokku_config[app=gone]"}); code != readExitObjectMissing {
+		t.Fatalf("exit = %d, want %d; stderr:\n%s", code, readExitObjectMissing, ui.ErrorWriter.String())
+	}
+	if !strings.Contains(ui.ErrorWriter.String(), "app gone does not exist") || stdout.Len() != 0 {
+		t.Errorf("stderr = %q, stdout = %q", ui.ErrorWriter.String(), stdout.String())
+	}
+}
+
 // TestReadCommandVersionGate pins the refusal and its hint, and that
 // --ignore-version reads anyway.
 func TestReadCommandVersionGate(t *testing.T) {

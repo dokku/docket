@@ -318,15 +318,23 @@ func gatePlan(ctx context.Context, t Task) (r PlanResult, ok bool) {
 			return planErr(err), false
 		}
 	}
-	if err := checkConstraints(t); err != nil {
+	if err := checkTaskInputs(t); err != nil {
 		return planErr(err), false
 	}
-	if v, isValidator := t.(InputValidator); isValidator {
-		if err := v.Validate(); err != nil {
-			return planErr(err), false
-		}
-	}
 	return PlanResult{}, true
+}
+
+// checkTaskInputs refuses a task whose input breaks a declared field
+// constraint, and then one the task's own Validate() rejects. It asks the
+// server nothing.
+func checkTaskInputs(t Task) error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
+	if v, isValidator := t.(InputValidator); isValidator {
+		return v.Validate()
+	}
+	return nil
 }
 
 // CheckMinimumVersions reports whether the server ctx targets is older than

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +23,11 @@ import (
 // at the address, so a script can tell "not there" from "could not read"
 // without parsing the output.
 const readExitAbsent = 2
+
+// readExitObjectMissing is the exit code for a read whose app or service is
+// missing from the server, so a script can tell "the parent is gone" from a
+// resource that is not there and from a read that failed.
+const readExitObjectMissing = 3
 
 // ReadCommand reads one resource from its identity address and prints it.
 //
@@ -141,6 +147,8 @@ type readJSON struct {
 //	    version refusal, a read error, or a task that cannot read its state
 //	2 - the read succeeded and the resource is not on the server; it is
 //	    still printed, in the state that says so
+//	3 - the app or service the resource depends on is not on the server;
+//	    nothing is printed but the error
 func (c *ReadCommand) Run(args []string) int {
 	flags := c.FlagSet()
 	flags.Usage = func() { c.Ui.Output(c.Help()) }
@@ -187,6 +195,9 @@ func (c *ReadCommand) Run(args []string) int {
 		// The address is the user's own argument and prints as typed; only
 		// what the server said is masked (#488).
 		c.Ui.Error(masker.String(ignoreVersionHint(err).Error()))
+		if errors.Is(err, tasks.ErrObjectMissing) {
+			return readExitObjectMissing
+		}
 		return 1
 	}
 

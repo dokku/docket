@@ -233,7 +233,7 @@ func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
 			return nil, &PlanResult{Status: PlanStatusError, Error: err}
 		}
 		if !exists {
-			return nil, &PlanResult{Status: PlanStatusError, Error: fmt.Errorf("service %s %s does not exist", t.Service, t.Name)}
+			return nil, &PlanResult{Status: PlanStatusError, Error: objectMissing(t, ObjectService)}
 		}
 		info, err := serviceInfo(ctx, t.Service, t.Name)
 		if err != nil {

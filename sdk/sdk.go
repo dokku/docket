@@ -306,9 +306,12 @@ func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error 
 // by its identity keys is read with State absent, which needs no Value.
 //
 // When ctx carries a version gate and the server is older than task's floor,
-// the error is the *VersionError, never a resource reported as absent. A task
-// whose probe cannot read its state returns an error wrapping
-// ErrStateUnreadable.
+// the error is the *VersionError, never a resource reported as absent. When
+// the read does not find the resource and the app or service task depends on
+// is missing, the error is an *ObjectMissingError naming it, which matches
+// ErrObjectMissing; a task that creates its app or service, such as
+// dokku_app, reports itself absent instead. A task whose probe cannot read its
+// state returns an error wrapping ErrStateUnreadable.
 func ReadTask(ctx context.Context, task Task) (Task, bool, error) {
 	return tasks.ReadTask(ctx, task)
 }
@@ -321,8 +324,9 @@ func ReadTask(ctx context.Context, task Task) (Task, bool, error) {
 // NO_VHOST, the git rev env var), and a dokku_ps_scale leaves out process
 // types scaled to zero. The returned task and errors are ReadTask's: the value
 // type registered for the task, the *VersionError when ctx carries a gate the
-// server is behind, and an error wrapping ErrStateUnreadable for a task whose
-// probe cannot read its state.
+// server is behind, an *ObjectMissingError when the app or service the
+// resource depends on is missing, and an error wrapping ErrStateUnreadable for
+// a task whose probe cannot read its state.
 //
 // The address must name one resource. A bare type, a key the task does not
 // declare, or a missing required key is an error, raised before the server is
@@ -335,6 +339,12 @@ func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
 // probe cannot read its current state, such as dokku_storage_ensure, or when
 // the probe failed in a way the plan treats as drift.
 var ErrStateUnreadable = tasks.ErrStateUnreadable
+
+// ErrObjectMissing is matched by the error ReadTask and ReadAddress return when
+// the app or datastore service a task depends on does not exist on the
+// server. errors.As against *ObjectMissingError names the missing object by
+// its kind, recipe keys and values.
+var ErrObjectMissing = tasks.ErrObjectMissing
 
 // ExecutePlan applies p, the result of a task's Plan, without probing the
 // server again. A plan that is already in sync applies nothing.

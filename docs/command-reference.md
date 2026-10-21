@@ -841,6 +841,7 @@ declare, or a missing required key fails before the server is contacted.
 | `0` | The resource exists and was printed. |
 | `1` | A usage error, an address that names no single resource, a version refusal, a read error, or a task whose probe cannot read its state (`dokku_storage_ensure`). |
 | `2` | The read succeeded and the resource is not on the server. It is still printed, in the state that says so (`exists: false` under `--json`). |
+| `3` | The app or service the resource depends on is not on the server. Only the error is printed, such as `app api does not exist`. |
 
 | Flag | Effect |
 |------|--------|
