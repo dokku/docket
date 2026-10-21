@@ -77,7 +77,7 @@ func (t BuilderDockerfilePropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the builder-dockerfile property
 func (t BuilderDockerfilePropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // builderDockerfilePropertyTable maps builder-dockerfile property names to

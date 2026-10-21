@@ -77,7 +77,7 @@ func (t BuilderHerokuishPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the builder-herokuish property
 func (t BuilderHerokuishPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // builderHerokuishPropertyTable maps builder-herokuish property names to the

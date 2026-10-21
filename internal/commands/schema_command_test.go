@@ -650,3 +650,57 @@ func TestSchemaCommandPositionalTaskTypeSuggestsTheFlag(t *testing.T) {
 		t.Errorf("stderr = %q; want it to point at --task", stderr)
 	}
 }
+
+// TestTaskCatalogSchemaShapesObjects is the self-check on the objects a task
+// changes (#621): the schema accepts what docket publishes for a task naming
+// an app and a service, and refuses an unknown kind, an object without keys,
+// `creates: false`, and an unknown restart condition.
+func TestTaskCatalogSchemaShapesObjects(t *testing.T) {
+	t.Parallel()
+	validate := func(mutate func(objects []interface{})) error {
+		t.Helper()
+		out, stderr, exit := runSchema(t, "--task", "dokku_service_link")
+		if exit != 0 {
+			t.Fatalf("exit = %d, want 0 (stderr: %s)", exit, stderr)
+		}
+		doc := decodeCatalog(t, out)
+		objects, ok := catalogTasks(t, doc)["dokku_service_link"]["objects"].([]interface{})
+		if !ok || len(objects) != 2 {
+			t.Fatalf("dokku_service_link objects = %v, want the app and the service", objects)
+		}
+		mutate(objects)
+
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
+		if err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return loadSchema(t, taskCatalogSchemaPath).Validate(inst)
+	}
+
+	if err := validate(func([]interface{}) {}); err != nil {
+		t.Errorf("the published objects must validate: %v", err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(app map[string]interface{})
+	}{
+		{"unknown kind", func(app map[string]interface{}) { app["kind"] = "network" }},
+		{"no keys", func(app map[string]interface{}) { app["keys"] = []interface{}{} }},
+		{"creates false", func(app map[string]interface{}) { app["creates"] = false }},
+		{"unknown restart condition", func(app map[string]interface{}) {
+			app["restarts"] = map[string]interface{}{"after": []interface{}{"restart"}}
+		}},
+	}
+	for _, tc := range cases {
+		if err := validate(func(objects []interface{}) {
+			app, _ := objects[0].(map[string]interface{})
+			tc.mutate(app)
+		}); err == nil {
+			t.Errorf("%s: expected validation to fail", tc.name)
+		}
+	}
+}

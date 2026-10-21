@@ -77,7 +77,7 @@ func (t BuildsPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the builds property
 func (t BuildsPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // buildsPropertyTable maps builds property names to the JSON keys emitted by

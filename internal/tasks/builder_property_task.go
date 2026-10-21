@@ -85,7 +85,7 @@ func (t BuilderPropertyTask) examples() ([]Doc, error) {
 
 // Execute executes the builder configuration task
 func (t BuilderPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // builderPropertyTable maps builder property names to the JSON keys emitted

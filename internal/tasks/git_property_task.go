@@ -85,7 +85,7 @@ func (t GitPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the git property
 func (t GitPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // gitPropertyTable maps git property names to the JSON keys emitted by

@@ -85,7 +85,7 @@ func (t OpenrestyPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the openresty property
 func (t OpenrestyPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // openrestyPropertyTable maps openresty property names to the JSON keys

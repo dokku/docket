@@ -85,7 +85,7 @@ func (t RegistryPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the registry property
 func (t RegistryPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // registryPropertyTable maps registry property names to the JSON keys

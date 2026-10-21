@@ -12,7 +12,7 @@ import (
 // StorageEnsureTask manages the storage for a given dokku application
 type StorageEnsureTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Chown is the chown value to set
 	Chown string `required:"false" apply_only:"true" yaml:"chown,omitempty" options:"heroku,herokuish,paketo,root,false" description:"Chown value to set: an ownership preset or a numeric uid (0-65535)"`
@@ -86,7 +86,7 @@ func (t StorageEnsureTask) examples() ([]Doc, error) {
 
 // Execute ensures the storage for a given app
 func (t StorageEnsureTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the StorageEnsureTask's inputs without contacting the server.

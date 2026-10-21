@@ -11,7 +11,7 @@ import (
 // AclAppTask manages the dokku-acl access list for a dokku application
 type AclAppTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Users is the list of users to add, remove, or set on the ACL
 	Users []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"users,omitempty" description:"List of users to add, remove, or set on the ACL"`
@@ -100,7 +100,7 @@ func (t AclAppTask) examples() ([]Doc, error) {
 
 // Execute manages the app ACL
 func (t AclAppTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the AclAppTask's inputs without contacting the server, so

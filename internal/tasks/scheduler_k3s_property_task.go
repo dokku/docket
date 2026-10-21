@@ -88,7 +88,7 @@ func (t SchedulerK3sPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the scheduler-k3s property
 func (t SchedulerK3sPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // schedulerK3sPropertyTable maps scheduler-k3s property names to the JSON

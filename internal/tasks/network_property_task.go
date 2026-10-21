@@ -85,7 +85,7 @@ func (t NetworkPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the network property
 func (t NetworkPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // networkPropertyTable maps network property names to the JSON keys emitted

@@ -10,7 +10,7 @@ import (
 // AppCloneTask clones an existing dokku app to a new app
 type AppCloneTask struct {
 	// App is the name of the new (target) app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the new (target) app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the new (target) app"`
 
 	// SourceApp is the name of the existing app to clone from
 	SourceApp string `required:"true" apply_only:"true" yaml:"source_app" description:"Name of the existing app to clone from"`
@@ -86,7 +86,16 @@ func (t AppCloneTask) examples() ([]Doc, error) {
 
 // Execute clones an existing dokku app to a new app
 func (t AppCloneTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task creates the target app and deploys it
+// unless skip_deploy is set.
+func (t AppCloneTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Creates:  []ObjectKind{ObjectApp},
+		Restarts: []ObjectRestart{{Kind: ObjectApp, Restart: Restart{Unless: []string{"skip_deploy"}}}},
+	}
 }
 
 // Validate checks the AppCloneTask's inputs without contacting the server.

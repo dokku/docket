@@ -12,7 +12,7 @@ import (
 // HttpAuthTask manages HTTP authentication for a dokku application
 type HttpAuthTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Username is the HTTP auth username seeded when auth is enabled
 	Username string `required:"false" apply_only:"true" yaml:"username,omitempty" description:"HTTP auth username to seed when enabling"`
@@ -95,7 +95,7 @@ func (t HttpAuthTask) examples() ([]Doc, error) {
 
 // Execute enables or disables HTTP authentication for an app
 func (t HttpAuthTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the HttpAuthTask's inputs without contacting the server.

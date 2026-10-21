@@ -14,7 +14,7 @@ import (
 // BuildpacksTask manages the buildpacks for a given dokku application
 type BuildpacksTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Buildpacks is the list of buildpack URLs
 	Buildpacks []string `required:"false" required_when:"present" forbidden_when:"clear" identity:"collection" ordered:"true" yaml:"buildpacks,omitempty" description:"List of buildpack URLs"`
@@ -105,7 +105,7 @@ func (t BuildpacksTask) examples() ([]Doc, error) {
 
 // Execute manages the buildpacks for a given app
 func (t BuildpacksTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the BuildpacksTask's inputs without contacting the server.

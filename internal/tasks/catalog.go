@@ -150,6 +150,12 @@ type TaskSchema struct {
 	// Identity is what the task addresses on the server.
 	Identity IdentitySchema `json:"identity"`
 
+	// Objects are the app and the datastore service the task changes, in a
+	// fixed order: the app, then the service. Concurrent tasks on one object
+	// are serialized; Creates and Restarts say how to order them. Absent on a
+	// task that changes neither.
+	Objects []ObjectSchema `json:"objects,omitempty"`
+
 	// Fields are the recipe keys the task accepts, in declaration order -
 	// which is the order the reference page lists them in.
 	Fields []FieldSchema `json:"fields"`
@@ -200,6 +206,27 @@ type IdentitySchema struct {
 
 	// Collections are the collection fields the task manages wholesale.
 	Collections []IdentityCollectionSchema `json:"collections,omitempty"`
+}
+
+// ObjectSchema is one object a task changes, projected from its `serialize`
+// field tags and its ObjectEffects.
+type ObjectSchema struct {
+	// Kind is "app" or "service".
+	Kind ObjectKind `json:"kind"`
+
+	// Keys are the recipe keys naming the object: the app's key, or the
+	// datastore type's key then the service name's key. The object applies
+	// only when every one of them is set, so an app-or-global task with
+	// `global: true` changes no app.
+	Keys []string `json:"keys"`
+
+	// Creates is true for the task that creates the object, and destroys it
+	// in its absent state. Every other task on the object depends on it.
+	Creates bool `json:"creates,omitempty"`
+
+	// Restarts is present when applying the task can restart or redeploy the
+	// object, and says when. An empty object means whenever it applies.
+	Restarts *Restart `json:"restarts,omitempty"`
 }
 
 // IdentityCollectionSchema is one `identity:"collection"` field.
@@ -553,6 +580,15 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 	}
 	schema.Export, _ = TaskExportSupport(task)
 	schema.Probe, _ = TaskProbeSupport(task)
+
+	for _, object := range TaskObjects(task) {
+		schema.Objects = append(schema.Objects, ObjectSchema{
+			Kind:     object.Kind,
+			Keys:     object.Keys,
+			Creates:  object.Creates,
+			Restarts: object.Restarts,
+		})
+	}
 
 	for _, collection := range TaskIdentityCollections(task) {
 		schema.Identity.Collections = append(schema.Identity.Collections, IdentityCollectionSchema{

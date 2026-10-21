@@ -406,3 +406,25 @@ setup() {
       fail "$task does not offer clear"
   done
 }
+
+@test "docket schema names the objects each task changes" {
+  run "$(docket_bin)" schema
+  assert_success
+  # A link changes the app and the service, app first.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_service_link") | .objects == [{"kind": "app", "keys": ["app"], "restarts": {}}, {"kind": "service", "keys": ["service", "name"]}]' >/dev/null ||
+    fail "dokku_service_link does not name its app and its service"
+  # dokku_acl_service names the instance service and the datastore type.
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_acl_service") | .objects == [{"kind": "service", "keys": ["type", "service"]}]' >/dev/null ||
+    fail "dokku_acl_service does not key its service by type then name"
+  echo "$output" |
+    jq -e '[.tasks[] | select(any(.objects[]?; .creates == true)) | .type] == ["dokku_app", "dokku_app_clone", "dokku_service_create"]' >/dev/null ||
+    fail "the creating tasks are not exactly app, app_clone and service_create"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_config") | .objects[0].restarts.when == ["restart"]' >/dev/null ||
+    fail "dokku_config does not restart its app when restart is set"
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_plugin") | has("objects") | not' >/dev/null ||
+    fail "a server-level task names an object"
+}

@@ -49,6 +49,8 @@ var roots = []reflect.Type{
 	reflect.TypeOf(tasks.ExportedTask{}),
 	reflect.TypeOf(tasks.ResourceSelector{}),
 	reflect.TypeOf(tasks.TaskCatalog{}),
+	reflect.TypeOf(tasks.TaskObject{}),
+	reflect.TypeOf(tasks.ObjectEffects{}),
 	reflect.TypeOf(tasks.PlanResult{}),
 	reflect.TypeOf(tasks.TaskOutputState{}),
 	reflect.TypeOf(tasks.ProbeSupport{}),

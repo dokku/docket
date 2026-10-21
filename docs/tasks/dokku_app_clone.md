@@ -22,6 +22,12 @@ Partial - only the target app's existence is probed; the clone source and the cl
 
 Keyed by `app`.
 
+## Objects
+
+- The app named by `app`. Creates it, and destroys it in state `absent`. Can restart or redeploy it unless `skip_deploy` is true.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -145,7 +145,7 @@ func (t SchedulerK3sChartTask) examples() ([]Doc, error) {
 
 // Execute sets or clears the configured chart values
 func (t SchedulerK3sChartTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the SchedulerK3sChartTask's inputs without contacting the server.

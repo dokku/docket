@@ -29,10 +29,10 @@ import (
 // and state: present plans as drift and fails with the plugin's own error.
 type ServiceBackupTask struct {
 	// Service is the type of service to back up (e.g. redis, postgres, mysql)
-	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to back up (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" serialize:"service.type" yaml:"service" description:"Type of service to back up (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" serialize:"service.name" yaml:"name" description:"Name of the service instance"`
 
 	// Schedule is the cron schedule for backups. Requires bucket.
 	Schedule string `required:"false" yaml:"schedule,omitempty" description:"Cron schedule for backups"`
@@ -183,7 +183,7 @@ func (t ServiceBackupTask) examples() ([]Doc, error) {
 
 // Execute manages the backup configuration for a dokku service
 func (t ServiceBackupTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // hasAuth reports whether any AWS credential field was provided.

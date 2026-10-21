@@ -77,7 +77,7 @@ func (t CaddyPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the caddy property
 func (t CaddyPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // caddyPropertyTable maps caddy property names to the JSON keys emitted by

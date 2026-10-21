@@ -62,6 +62,13 @@
           "description": "How much of its own state the task can read back. `unsupported` means it reports drift on every run and never converges."
         },
         "identity": { "$ref": "#/$defs/identity" },
+        "objects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/object" },
+          "minItems": 1,
+          "maxItems": 2,
+          "description": "The app and the datastore service the task changes, app first. Concurrent tasks on one object are serialized; `creates` and `restarts` say how to order them. Absent on a task that changes neither."
+        },
         "fields": {
           "type": "array",
           "items": { "$ref": "#/$defs/field" },
@@ -135,6 +142,54 @@
           "type": "array",
           "items": { "$ref": "#/$defs/identity_collection" },
           "description": "The collection fields the task manages wholesale."
+        }
+      }
+    },
+
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "keys"],
+      "properties": {
+        "kind": {
+          "enum": ["app", "service"],
+          "description": "What the object is: a dokku app, or a datastore service."
+        },
+        "keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "maxItems": 2,
+          "description": "The recipe keys naming the object: the app's key, or the datastore type's key then the service name's key. The object applies only when every one of them is set."
+        },
+        "creates": {
+          "const": true,
+          "description": "Present on the task that creates the object, and destroys it in its absent state. Every other task on the object depends on it."
+        },
+        "restarts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Present when applying the task can restart or redeploy the object. An empty object means whenever it applies.",
+          "properties": {
+            "when": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Recipe keys of bool fields. The task restarts the object only when at least one of them is true; an omitted key takes the field's default."
+            },
+            "unless": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Recipe keys of bool fields. A true value for any of them stops the restart."
+            },
+            "states": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "The values of the task's state field in which it restarts the object. Absent when it restarts in every state."
+            }
+          }
         }
       }
     },

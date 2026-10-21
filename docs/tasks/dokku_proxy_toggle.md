@@ -20,6 +20,12 @@ Supported.
 
 Keyed by `app`.
 
+## Objects
+
+- The app named by `app`. Can restart or redeploy it.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

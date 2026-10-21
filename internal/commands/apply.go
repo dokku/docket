@@ -275,7 +275,10 @@ func (c *ApplyCommand) Run(args []string) int {
 	// opens, a play's own `host:` included, and closes them all on the way out.
 	// The session owns the version gate too, the way an sdk caller installs
 	// it, so every context it hands out shares one version cache per target.
-	var sessionOpts []subprocess.SessionOption
+	// It carries the lock table sdk.NewSession installs as well, so the CLI
+	// executes tasks the same way an sdk caller does; apply runs one task at a
+	// time, so no task ever waits on it.
+	sessionOpts := []subprocess.SessionOption{tasks.SessionTaskLocks()}
 	if !c.ignoreVersion {
 		sessionOpts = append(sessionOpts, tasks.SessionVersionGate())
 	}

@@ -85,7 +85,7 @@ func (t SchedulerDockerLocalPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the scheduler-docker-local property
 func (t SchedulerDockerLocalPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // schedulerDockerLocalPropertyTable maps scheduler-docker-local property

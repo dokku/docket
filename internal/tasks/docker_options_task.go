@@ -20,7 +20,7 @@ const defaultDockerOptionsProcessType = "_default_"
 // DockerOptionsTask manages docker-options for a given dokku application
 type DockerOptionsTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Phase is the deployment phase the option applies to
 	Phase string `required:"true" identity:"key" yaml:"phase" options:"build,deploy,run" description:"Deployment phase the option applies to"`
@@ -146,7 +146,7 @@ func (t DockerOptionsTask) examples() ([]Doc, error) {
 
 // Execute manages the docker option
 func (t DockerOptionsTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the DockerOptionsTask's inputs without contacting the server.

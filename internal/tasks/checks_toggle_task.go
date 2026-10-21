@@ -105,7 +105,7 @@ func (t ChecksToggleTask) examples() ([]Doc, error) {
 
 // Execute enables or disables the checks plugin
 func (t ChecksToggleTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Plan reports the drift the ChecksToggleTask would produce.

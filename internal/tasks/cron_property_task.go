@@ -77,7 +77,7 @@ func (t CronPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the cron property
 func (t CronPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // cronPropertyTable maps cron property names to the JSON keys emitted by

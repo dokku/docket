@@ -110,7 +110,7 @@ func (t MaintenanceTask) examples() ([]Doc, error) {
 
 // Execute enables or disables maintenance mode
 func (t MaintenanceTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Plan reports the drift the MaintenanceTask would produce.

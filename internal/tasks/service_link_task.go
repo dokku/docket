@@ -9,13 +9,13 @@ import (
 // ServiceLinkTask links or unlinks a dokku service to an app
 type ServiceLinkTask struct {
 	// App is the name of the app to link the service to
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app to link the service to"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app to link the service to"`
 
 	// Service is the type of service to link (e.g. redis, postgres, mysql)
-	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to link (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" serialize:"service.type" yaml:"service" description:"Type of service to link (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" serialize:"service.name" yaml:"name" description:"Name of the service instance"`
 
 	// State is the desired state of the service link
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the service link"`
@@ -123,7 +123,16 @@ func (t ServiceLinkTask) examples() ([]Doc, error) {
 
 // Execute links or unlinks a dokku service to an app
 func (t ServiceLinkTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task restarts the app: <service>:link and
+// <service>:unlink restart it unless passed --no-restart, which the task never
+// passes.
+func (t ServiceLinkTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp}},
+	}
 }
 
 // Plan reports the drift the ServiceLinkTask would produce.

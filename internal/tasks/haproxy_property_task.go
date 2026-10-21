@@ -77,7 +77,7 @@ func (t HaproxyPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the haproxy property
 func (t HaproxyPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // haproxyPropertyTable maps haproxy property names to the JSON keys emitted

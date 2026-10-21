@@ -132,7 +132,7 @@ func (t SchedulerK3sNodeSysctlsTask) examples() ([]Doc, error) {
 
 // Execute sets or clears the scheduler-k3s node sysctls for the task's scope
 func (t SchedulerK3sNodeSysctlsTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Constraints declares that the sysctls are scoped to a profile or are

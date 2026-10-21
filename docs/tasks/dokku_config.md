@@ -20,6 +20,12 @@ Supported.
 
 Keyed by `app`. Manages the whole `config` collection; entries are identified by their key.
 
+## Objects
+
+- The app named by `app`. Can restart or redeploy it when `restart` is true.
+
+Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Choices | Description |

@@ -13,7 +13,7 @@ import (
 // GitFromImageTask deploys a git repository from a docker image
 type GitFromImageTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Image is the docker image to deploy. Tagged sensitive because image
 	// references can embed registry credentials (e.g. user:token@host/repo).
@@ -97,7 +97,14 @@ func (t GitFromImageTask) examples() ([]Doc, error) {
 
 // Execute deploys a git repository from a docker image
 func (t GitFromImageTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task deploys the app.
+func (t GitFromImageTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp}},
+	}
 }
 
 // Validate checks the GitFromImageTask's inputs without contacting the server.

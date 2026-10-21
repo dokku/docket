@@ -228,6 +228,27 @@ func TestConstraintsSection(t *testing.T) {
 	}
 }
 
+// TestObjectsSection pins how a task page names the objects a task changes,
+// and each condition a restart can carry.
+func TestObjectsSection(t *testing.T) {
+	objects := []tasks.ObjectSchema{
+		{Kind: tasks.ObjectApp, Keys: []string{"app"}, Creates: true, Restarts: &tasks.Restart{Unless: []string{"skip_deploy"}}},
+		{Kind: tasks.ObjectService, Keys: []string{"service", "name"}, Restarts: &tasks.Restart{}},
+		{Kind: tasks.ObjectApp, Keys: []string{"app"}, Restarts: &tasks.Restart{When: []string{"build", "build_if_changes"}, States: []tasks.State{tasks.StatePresent}}},
+	}
+	want := "## Objects\n\n" +
+		"- The app named by `app`. Creates it, and destroys it in state `absent`. Can restart or redeploy it unless `skip_deploy` is true.\n" +
+		"- The datastore service named by `service` and `name`. Can restart or redeploy it.\n" +
+		"- The app named by `app`. Can restart or redeploy it when `build` or `build_if_changes` is true, and when `state` is `present`.\n\n" +
+		"Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently)."
+	if got := objectsSection(objects); got != want {
+		t.Errorf("objectsSection =\n%s\nwant\n%s", got, want)
+	}
+	if got := objectsSection(nil); got != "" {
+		t.Errorf("objectsSection with no objects = %q, want empty", got)
+	}
+}
+
 func TestEscapeProseEscapesBareAngleBrackets(t *testing.T) {
 	cases := []struct {
 		in, want string

@@ -9,7 +9,7 @@ import (
 // AppTask creates or destroys an app
 type AppTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// State is the state of the app
 	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"State of the app"`
@@ -71,7 +71,15 @@ func (t AppTask) examples() ([]Doc, error) {
 
 // Execute creates or destroys an app
 func (t AppTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task creates the app, and destroys it in
+// state absent.
+func (t AppTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Creates: []ObjectKind{ObjectApp},
+	}
 }
 
 // Plan reports the drift the AppTask would produce.

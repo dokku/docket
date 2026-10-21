@@ -25,7 +25,7 @@ import (
 // deploy.
 type PsScaleTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Scale is a map of process types to quantities
 	Scale map[string]int `required:"true" identity:"collection" yaml:"scale" description:"Map of process types to quantities"`
@@ -112,7 +112,15 @@ func (t PsScaleTask) examples() ([]Doc, error) {
 
 // Execute sets the process scale for a given dokku application
 func (t PsScaleTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task deploys the app unless skip_deploy is
+// set: ps:scale deploys unless passed --skip-deploy.
+func (t PsScaleTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp, Restart: Restart{Unless: []string{"skip_deploy"}}}},
+	}
 }
 
 // Validate checks the PsScaleTask's inputs without contacting the server.

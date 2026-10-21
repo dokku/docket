@@ -437,6 +437,53 @@ func identitySection(identity tasks.IdentitySchema) string {
 	return "## Identity\n\n" + line
 }
 
+// objectsSection renders the Objects section: the app and the datastore
+// service the task changes, whether it creates them, and when it restarts
+// them. Returns "" for a task that changes neither. The locking it implies is
+// explained once in docs/embedding.md rather than on every page.
+func objectsSection(objects []tasks.ObjectSchema) string {
+	if len(objects) == 0 {
+		return ""
+	}
+	var lines []string
+	for _, object := range objects {
+		var line string
+		switch object.Kind {
+		case tasks.ObjectService:
+			line = "- The datastore service named by " + joinCodeNames(object.Keys) + "."
+		default:
+			line = "- The app named by `" + strings.Join(object.Keys, "`, `") + "`."
+		}
+		if object.Creates {
+			line += " Creates it, and destroys it in state `absent`."
+		}
+		if r := object.Restarts; r != nil {
+			line += " Can restart or redeploy it"
+			var conditions []string
+			if len(r.When) > 0 {
+				conditions = append(conditions, "when "+joinWords(r.When, "or", "`")+" is true")
+			}
+			if len(r.Unless) > 0 {
+				conditions = append(conditions, "unless "+joinWords(r.Unless, "or", "`")+" is true")
+			}
+			if len(r.States) > 0 {
+				states := make([]string, len(r.States))
+				for i, state := range r.States {
+					states[i] = string(state)
+				}
+				conditions = append(conditions, "when `state` is "+joinWords(states, "or", "`"))
+			}
+			if len(conditions) > 0 {
+				line += " " + strings.Join(conditions, ", and ")
+			}
+			line += "."
+		}
+		lines = append(lines, line)
+	}
+	note := "Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently)."
+	return "## Objects\n\n" + strings.Join(lines, "\n") + "\n\n" + note
+}
+
 // joinCodeNames renders a list of field names as backticked, comma-separated
 // prose with a trailing "and".
 func joinCodeNames(names []string) string {
@@ -542,6 +589,9 @@ func renderPage(schema tasks.TaskSchema) string {
 	}
 	if id := identitySection(schema.Identity); id != "" {
 		sections = append(sections, id)
+	}
+	if objects := objectsSection(schema.Objects); objects != "" {
+		sections = append(sections, objects)
 	}
 	if pt := parametersSection(schema.Fields); pt != "" {
 		sections = append(sections, strings.TrimRight(pt, "\n"))

@@ -31,10 +31,10 @@ import (
 // them, so they are never compared.
 type ServiceCreateTask struct {
 	// Service is the type of service to create (e.g. redis, postgres, mysql)
-	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to create (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" serialize:"service.type" yaml:"service" description:"Type of service to create (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" serialize:"service.name" yaml:"name" description:"Name of the service instance"`
 
 	// Image is the image the service container is started from.
 	Image string `required:"false" forbidden_when:"absent" yaml:"image,omitempty" description:"Image to start the service with, e.g. postgis/postgis. Applied when the service is created; image_drift decides what happens when an existing service is running something else."`
@@ -265,7 +265,18 @@ func (t ServiceCreateTask) examples() ([]Doc, error) {
 
 // Execute creates or destroys a dokku service
 func (t ServiceCreateTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task creates the service, and destroys it in
+// state absent. Reconciling a create-time option stops and starts it, and an
+// image drift with image_drift upgrade recreates it. The linked apps
+// restart_apps restarts are not keys of the task, so they are not declared.
+func (t ServiceCreateTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Creates:  []ObjectKind{ObjectService},
+		Restarts: []ObjectRestart{{Kind: ObjectService}},
+	}
 }
 
 // createFlags renders the create-time options as the flags every datastore

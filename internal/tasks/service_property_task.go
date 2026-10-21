@@ -26,10 +26,10 @@ import (
 // plugin's own error.
 type ServicePropertyTask struct {
 	// Service is the type of service to configure (e.g. redis, postgres, mysql)
-	Service string `required:"true" identity:"key" yaml:"service" description:"Type of service to configure (e.g. redis, postgres, mysql)"`
+	Service string `required:"true" identity:"key" serialize:"service.type" yaml:"service" description:"Type of service to configure (e.g. redis, postgres, mysql)"`
 
 	// Name is the name of the service instance
-	Name string `required:"true" identity:"key" yaml:"name" description:"Name of the service instance"`
+	Name string `required:"true" identity:"key" serialize:"service.name" yaml:"name" description:"Name of the service instance"`
 
 	// Property is the name of the property to set
 	Property string `required:"true" identity:"key" yaml:"property" description:"Name of the property to set. Which properties a service accepts depends on its datastore - the backup settings only on one that can be backed up, for example - and <service>:set refuses the rest when the task applies."`
@@ -244,7 +244,7 @@ func (t ServicePropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or clears the dokku service property
 func (t ServicePropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the ServicePropertyTask's inputs without contacting the server.

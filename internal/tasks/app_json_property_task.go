@@ -77,7 +77,7 @@ func (t AppJsonPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the app.json property
 func (t AppJsonPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // appJsonPropertyTable maps app-json property names to the JSON keys emitted

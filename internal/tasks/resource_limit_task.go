@@ -5,7 +5,7 @@ import "context"
 // ResourceLimitTask manages the resource limits for a given dokku application
 type ResourceLimitTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// ProcessType is the process type to set resource limits for
 	ProcessType string `required:"false" identity:"key" yaml:"process_type,omitempty" description:"Process type to set resource limits for"`
@@ -101,7 +101,7 @@ func (t ResourceLimitTask) examples() ([]Doc, error) {
 
 // Execute sets or clears the resource limits for a given dokku application
 func (t ResourceLimitTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // ExportApp reconstructs the app's resource limits, one task per process type.

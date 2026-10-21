@@ -101,7 +101,7 @@ func (t PluginTask) examples() ([]Doc, error) {
 
 // Execute installs or uninstalls the plugin
 func (t PluginTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the PluginTask's inputs without contacting the server.

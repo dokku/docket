@@ -7,7 +7,7 @@ import "context"
 // globally.
 type SchedulerK3sAnnotationsTask struct {
 	// App is the name of the app. Exactly one of App and Global is set.
-	App string `required:"false" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"false" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Global is a flag indicating if the annotations should be applied globally
 	Global bool `required:"false" identity:"key" yaml:"global,omitempty" description:"Flag indicating if the annotations should be applied globally"`
@@ -139,7 +139,7 @@ func (t SchedulerK3sAnnotationsTask) examples() ([]Doc, error) {
 
 // Execute sets or clears the scheduler-k3s annotations for the configured scope
 func (t SchedulerK3sAnnotationsTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the SchedulerK3sAnnotationsTask's inputs without contacting the server.

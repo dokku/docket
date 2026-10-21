@@ -385,6 +385,22 @@ func TestCatalogConditionalRequirementsMatchTags(t *testing.T) {
 	}
 }
 
+// TestCatalogObjectsMatchTaskObjects pins that the catalog publishes exactly
+// what TaskObjects reads off each task: its kinds, keys, creates and
+// restarts, and never the values a prototype happens to hold.
+func TestCatalogObjectsMatchTaskObjects(t *testing.T) {
+	catalog := wholeCatalog(t)
+	for _, schema := range catalog.Tasks {
+		var want []ObjectSchema
+		for _, object := range TaskObjects(lookupTask(schema.Type)) {
+			want = append(want, ObjectSchema{Kind: object.Kind, Keys: object.Keys, Creates: object.Creates, Restarts: object.Restarts})
+		}
+		if !reflect.DeepEqual(schema.Objects, want) {
+			t.Errorf("%s objects = %+v; want %+v", schema.Type, schema.Objects, want)
+		}
+	}
+}
+
 // TestCatalogConstraintsMatchDeclarations checks the published constraints
 // against each task's, and each element's, Constraints() (#620).
 func TestCatalogConstraintsMatchDeclarations(t *testing.T) {

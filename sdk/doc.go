@@ -37,6 +37,11 @@
 // refuse tasks the server is too old for, with the server's versions read once
 // per session however many contexts it hands out.
 //
+// Tasks executed at once under one session take turns on the same app or
+// datastore service, so concurrent callers do not collide on dokku's deploy
+// lock. Hold the same locks across a separate Plan and ExecutePlan with
+// LockTask.
+//
 // # Testing
 //
 // A test can drive tasks without a server by installing a fake runner with

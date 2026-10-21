@@ -77,7 +77,7 @@ func (t BuilderRailpackPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the builder-railpack property
 func (t BuilderRailpackPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // builderRailpackPropertyTable maps builder-railpack property names to the

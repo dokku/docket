@@ -205,6 +205,18 @@ type NetworkTask = tasks.NetworkTask
 // NginxPropertyTask is tasks.NginxPropertyTask.
 type NginxPropertyTask = tasks.NginxPropertyTask
 
+// ObjectEffects is tasks.ObjectEffects.
+type ObjectEffects = tasks.ObjectEffects
+
+// ObjectKind is tasks.ObjectKind.
+type ObjectKind = tasks.ObjectKind
+
+// ObjectRestart is tasks.ObjectRestart.
+type ObjectRestart = tasks.ObjectRestart
+
+// ObjectSchema is tasks.ObjectSchema.
+type ObjectSchema = tasks.ObjectSchema
+
 // OpenrestyPropertyTask is tasks.OpenrestyPropertyTask.
 type OpenrestyPropertyTask = tasks.OpenrestyPropertyTask
 
@@ -273,6 +285,9 @@ type ResourceReserveTask = tasks.ResourceReserveTask
 
 // ResourceSelector is tasks.ResourceSelector.
 type ResourceSelector = tasks.ResourceSelector
+
+// Restart is tasks.Restart.
+type Restart = tasks.Restart
 
 // SchedulerDockerLocalPropertyTask is tasks.SchedulerDockerLocalPropertyTask.
 type SchedulerDockerLocalPropertyTask = tasks.SchedulerDockerLocalPropertyTask
@@ -348,6 +363,9 @@ type Task = tasks.Task
 
 // TaskCatalog is tasks.TaskCatalog.
 type TaskCatalog = tasks.TaskCatalog
+
+// TaskObject is tasks.TaskObject.
+type TaskObject = tasks.TaskObject
 
 // TaskOutputState is tasks.TaskOutputState.
 type TaskOutputState = tasks.TaskOutputState

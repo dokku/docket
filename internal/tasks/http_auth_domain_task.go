@@ -15,7 +15,7 @@ import (
 // dokku application
 type HttpAuthDomainTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Domains is the list of domains to restrict HTTP auth to
 	Domains []string `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"domains,omitempty" description:"List of domains to restrict HTTP auth to"`
@@ -104,7 +104,7 @@ func (t HttpAuthDomainTask) examples() ([]Doc, error) {
 
 // Execute manages the app's HTTP auth domains
 func (t HttpAuthDomainTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the HttpAuthDomainTask's inputs without contacting the server.

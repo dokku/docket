@@ -23,7 +23,7 @@ import (
 // built from inline HTML (Content) or read from a tarball on disk (Tarball).
 type MaintenanceCustomPageTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// Content is inline HTML stored as maintenance.html. Mutually exclusive
 	// with Tarball.
@@ -110,7 +110,7 @@ func (t MaintenanceCustomPageTask) examples() ([]Doc, error) {
 
 // Execute installs or removes the custom maintenance page
 func (t MaintenanceCustomPageTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the MaintenanceCustomPageTask's inputs without contacting the server.

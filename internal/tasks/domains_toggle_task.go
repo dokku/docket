@@ -92,7 +92,16 @@ func (t DomainsToggleTask) examples() ([]Doc, error) {
 
 // Execute enables or disables the domains plugin
 func (t DomainsToggleTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
+}
+
+// ObjectEffects reports that the task restarts the app in state present:
+// domains:enable sets NO_VHOST and restarts, while domains:disable passes
+// --no-restart.
+func (t DomainsToggleTask) ObjectEffects() ObjectEffects {
+	return ObjectEffects{
+		Restarts: []ObjectRestart{{Kind: ObjectApp, Restart: Restart{States: []State{StatePresent}}}},
+	}
 }
 
 // Plan reports the drift the DomainsToggleTask would produce.

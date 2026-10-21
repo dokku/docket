@@ -77,7 +77,7 @@ func (t SchedulerPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the scheduler property
 func (t SchedulerPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // schedulerPropertyTable maps scheduler property names to the JSON keys

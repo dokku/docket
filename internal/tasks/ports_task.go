@@ -12,7 +12,7 @@ import (
 // PortsTask manages the ports for a given dokku application
 type PortsTask struct {
 	// App is the name of the app
-	App string `required:"true" identity:"key" yaml:"app" description:"Name of the app"`
+	App string `required:"true" identity:"key" serialize:"app" yaml:"app" description:"Name of the app"`
 
 	// PortMappings are the port mappings to set
 	PortMappings []PortMapping `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" ordered:"false" yaml:"port_mappings,omitempty" description:"Port mappings to set; under state 'present' and 'set' no two may share a scheme and host port"`
@@ -134,7 +134,7 @@ func (t PortsTask) examples() ([]Doc, error) {
 
 // Execute manages the app's port mappings
 func (t PortsTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // Validate checks the PortsTask's inputs without contacting the server.

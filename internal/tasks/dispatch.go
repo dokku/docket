@@ -99,11 +99,12 @@ func planSetAsClear(r PlanResult) PlanResult {
 	return r
 }
 
-// ExecutePlan applies a PlanResult to the server. It is the canonical
-// implementation of Task.Execute(): each task's Execute body is
-// `return ExecutePlan(ctx, t.Plan(ctx))`. ExecutePlan ensures the existing
-// `state.State == state.DesiredState` contract that internal/commands/apply.go
-// relies on.
+// ExecutePlan applies a PlanResult to the server. It is the apply half of
+// Task.Execute(): each task's Execute body is `return executeTask(ctx, t)`,
+// which takes the task's locks and runs ExecutePlan(ctx, t.Plan(ctx)) under
+// them. ExecutePlan itself takes no lock; see LockTask. ExecutePlan ensures
+// the existing `state.State == state.DesiredState` contract that
+// internal/commands/apply.go relies on.
 //
 // Three branches:
 //

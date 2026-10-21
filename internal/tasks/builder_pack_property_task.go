@@ -77,7 +77,7 @@ func (t BuilderPackPropertyTask) examples() ([]Doc, error) {
 
 // Execute sets or unsets the builder-pack property
 func (t BuilderPackPropertyTask) Execute(ctx context.Context) TaskOutputState {
-	return ExecutePlan(ctx, t.Plan(ctx))
+	return executeTask(ctx, t)
 }
 
 // builderPackPropertyTable maps builder-pack property names to the JSON keys
