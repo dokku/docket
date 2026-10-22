@@ -17,6 +17,10 @@ Partial - the backup schedule, bucket, and use_iam flag are exported; the AWS cr
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `service` and `name`. Fields left empty are omitted from the address.

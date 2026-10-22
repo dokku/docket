@@ -18,6 +18,10 @@ Not supported - deprecated; storage state is exported via dokku_storage_mount.
 
 Not supported - `storage:ensure-directory` has no read command, so the task plans as drift on every run.
 
+## Lifecycle
+
+Applied with state `present` and has no teardown state, so tearing it down leaves the server unchanged. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`.

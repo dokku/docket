@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`, `phase`, `process_type`, and `option`. Fields left empty are omitted from the address.

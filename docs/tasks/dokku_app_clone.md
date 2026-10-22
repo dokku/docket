@@ -18,6 +18,10 @@ Not supported - an imperative clone operation, not reconstructable state.
 
 Partial - only the target app's existence is probed; the clone source and the cloned contents are never read back.
 
+## Lifecycle
+
+Applied with state `present` and has no teardown state, so tearing it down leaves the server unchanged. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`.

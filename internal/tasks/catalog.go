@@ -137,6 +137,12 @@ type TaskSchema struct {
 	// clear state. Absent for every declarative task.
 	Imperative bool `json:"imperative,omitempty"`
 
+	// Lifecycle is the state that applies the task's resource and the state
+	// that tears it down, as TaskLifecycle returns them. Teardown is absent
+	// for an imperative task and for dokku_storage_ensure, which refuses its
+	// absent state.
+	Lifecycle LifecycleSchema `json:"lifecycle"`
+
 	// Requirements are the non-core dokku plugins the task needs, in declared
 	// order, as the prose a task page prints. Absent when the task needs
 	// nothing beyond dokku core. The Dokku floor is MinimumDokkuVersion;
@@ -190,7 +196,8 @@ type TaskSchema struct {
 	// Notes are the task's reference-page notes, rendered, in the order the
 	// page prints them: the Deprecated and Imperative admonitions, the
 	// Requirements, Runner requirements, Export support, Probe support,
-	// Identity, Objects and Constraints sections, and the Properties table.
+	// Lifecycle, Identity, Objects and Constraints sections, and the
+	// Properties table.
 	// Each is rendered from the keys above, and a note whose text depends on
 	// the state also carries one rendering per state. Absent notes do not
 	// apply to the task.
@@ -609,6 +616,7 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 
 	schema.Deprecation = strings.TrimSpace(TaskDeprecation(task))
 	schema.Imperative = TaskImperative(task)
+	schema.Lifecycle = TaskLifecycle(task)
 	if support, ok := TaskMinimumVersions(task); ok {
 		schema.MinimumDokkuVersion = support.Dokku
 		for _, plugin := range support.Plugins {

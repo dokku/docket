@@ -17,6 +17,10 @@ Partial - every property set on a service is exported except the ones another ta
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`, which refuses `value`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `service`, `name`, and `property`. Fields left empty are omitted from the address.

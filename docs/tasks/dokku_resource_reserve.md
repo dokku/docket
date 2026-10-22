@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `resources` and `clear_before`, so a teardown resets them. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app` and `process_type`. Fields left empty are omitted from the address. Manages the whole `resources` collection; entries are identified by their key.

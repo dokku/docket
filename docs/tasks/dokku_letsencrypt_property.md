@@ -17,6 +17,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`, which refuses `value`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`, `global`, and `property`. Fields left empty are omitted from the address.

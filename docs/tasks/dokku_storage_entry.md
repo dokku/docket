@@ -16,6 +16,10 @@ Supported.
 
 Supported - every attribute is compared against what storage:list-entries records for the entry, which is the recorded chown and mode rather than the host directory's ownership and permissions on disk; a directory chowned or chmodded out of band is not detected.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`, which refuses `path`, `size`, `access_mode`, `storage_class`, `namespace`, `chown`, `mode`, `reclaim_policy`, `annotations`, and `labels`, so a teardown resets them. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `name`.

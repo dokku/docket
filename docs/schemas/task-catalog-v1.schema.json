@@ -21,7 +21,7 @@
     "task": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "synopsis", "export", "probe", "identity", "fields"],
+      "required": ["type", "synopsis", "lifecycle", "export", "probe", "identity", "fields"],
       "properties": {
         "type": {
           "type": "string",
@@ -38,6 +38,10 @@
         "imperative": {
           "const": true,
           "description": "Present only on a task that runs an operation rather than declaring a resource. It has nothing to undo, so it offers no absent or clear state."
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle",
+          "description": "The state that applies the task's resource and the state that tears it down. `teardown` is absent on every imperative task and on `dokku_storage_ensure`, which refuses its `absent` state."
         },
         "requirements": {
           "type": "array",
@@ -104,7 +108,7 @@
       "required": ["kind", "markdown"],
       "properties": {
         "kind": {
-          "enum": ["deprecation", "imperative", "requirements", "runner_requirements", "export", "probe", "identity", "objects", "constraints", "properties"],
+          "enum": ["deprecation", "imperative", "requirements", "runner_requirements", "export", "probe", "lifecycle", "identity", "objects", "constraints", "properties"],
           "description": "What the note covers. Each kind appears at most once per task."
         },
         "markdown": {
@@ -166,6 +170,24 @@
         }
       }
     },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apply"],
+      "properties": {
+        "apply": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The state that declares the resource: `set` when the task offers it, else the `state` field's default. A value of the task's `state` field."
+        },
+        "teardown": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The state that removes what `apply` declared: `clear` when the task offers it, else `absent`. A value of the task's `state` field. Absent for an imperative task, which has nothing to undo, and for `dokku_storage_ensure`, which offers `absent` but refuses it."
+        }
+      }
+    },
+
     "support": {
       "type": "object",
       "additionalProperties": false,
