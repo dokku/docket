@@ -4,26 +4,26 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/dokku/docket/sdk"
+	"github.com/dokku/docket/sdk/dokkutest"
 )
 
 func TestCheckMinimumVersionsWithoutGate(t *testing.T) {
-	fake := newFakeDokku("0.38.8")
+	fake := newFakeDokku(t, "0.38.8")
 	task, _ := sdk.NewTask("dokku_app")
-	if err := sdk.CheckMinimumVersions(fake.context(), "dokku_app", task); err != nil {
+	if err := sdk.CheckMinimumVersions(fake.Context(context.Background()), "dokku_app", task); err != nil {
 		t.Fatalf("a context with no gate should not refuse: %v", err)
 	}
-	if fake.count("version") != 0 {
+	if fake.Count("version") != 0 {
 		t.Errorf("a context with no gate should not read the version")
 	}
 }
 
 func TestCheckMinimumVersionsRefusesOldDokku(t *testing.T) {
-	fake := newFakeDokku("0.38.8")
-	ctx := sdk.ContextWithVersionGate(fake.context())
+	fake := newFakeDokku(t, "0.38.8")
+	ctx := sdk.ContextWithVersionGate(fake.Context(context.Background()))
 	task, _ := sdk.NewTask("dokku_app")
 
 	err := sdk.CheckMinimumVersions(ctx, "dokku_app", task)
@@ -44,7 +44,7 @@ func TestCheckMinimumVersionsRefusesOldDokku(t *testing.T) {
 	if err := sdk.CheckMinimumVersions(ctx, "dokku_app", task); err == nil {
 		t.Fatal("the second check should refuse too")
 	}
-	if got := fake.count("version"); got != 1 {
+	if got := fake.Count("version"); got != 1 {
 		t.Errorf("version reads = %d, want 1 per target", got)
 	}
 }
@@ -53,13 +53,13 @@ func TestCheckMinimumVersionsRefusesOldDokku(t *testing.T) {
 // context of its own from the session, and the server's version is still read
 // once for all of them, with each call's refusal intact.
 func TestSessionWithVersionGate(t *testing.T) {
-	fake := newFakeDokku("0.38.8")
+	fake := newFakeDokku(t, "0.38.8")
 	session := sdk.NewSession(nil, sdk.WithVersionGate())
 	defer func() { _ = session.Close() }()
 	task, _ := sdk.NewTask("dokku_app")
 
 	for i := 0; i < 3; i++ {
-		reqCtx, cancel := context.WithCancel(fake.context())
+		reqCtx, cancel := context.WithCancel(fake.Context(context.Background()))
 		ctx := session.Context(reqCtx, sdk.Target{})
 		var verr *sdk.VersionError
 		if err := sdk.CheckMinimumVersions(ctx, "dokku_app", task); !errors.As(err, &verr) {
@@ -67,19 +67,19 @@ func TestSessionWithVersionGate(t *testing.T) {
 		}
 		cancel()
 	}
-	if got := fake.count("version"); got != 1 {
+	if got := fake.Count("version"); got != 1 {
 		t.Errorf("version reads = %d, want 1 per session", got)
 	}
 
-	ungated := sdk.NewSession(nil).Context(fake.context(), sdk.Target{})
+	ungated := sdk.NewSession(nil).Context(fake.Context(context.Background()), sdk.Target{})
 	if err := sdk.CheckMinimumVersions(ungated, "dokku_app", task); err != nil {
 		t.Errorf("a session without the gate refused: %v", err)
 	}
 }
 
 func TestExportRecipeVersionGate(t *testing.T) {
-	fake := newFakeDokku("0.38.0")
-	res, err := sdk.ExportRecipe(fake.context(), sdk.ExportOptions{Apps: []string{"web"}, Inline: true})
+	fake := exportFake(t)
+	res, err := sdk.ExportRecipe(fake.Context(context.Background()), sdk.ExportOptions{Apps: []string{"web"}, Inline: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,8 +96,8 @@ func TestExportRecipeVersionGate(t *testing.T) {
 		t.Fatalf("VersionErrors = %#v, report = %#v", res.Report.VersionErrors, res.Report)
 	}
 
-	fake = newFakeDokku("0.38.0")
-	res, err = sdk.ExportRecipe(fake.context(), sdk.ExportOptions{Apps: []string{"web"}, Inline: true, IgnoreVersion: true})
+	fake = exportFake(t)
+	res, err = sdk.ExportRecipe(fake.Context(context.Background()), sdk.ExportOptions{Apps: []string{"web"}, Inline: true, IgnoreVersion: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,13 +107,13 @@ func TestExportRecipeVersionGate(t *testing.T) {
 	if !exportedTypes(res)["dokku_config"] {
 		t.Fatalf("IgnoreVersion should export dokku_config: %#v", res.Plays())
 	}
-	if fake.count("version") != 0 {
+	if fake.Count("version") != 0 {
 		t.Errorf("IgnoreVersion should not read the version")
 	}
 
 	// IgnoreVersion wins over a gate the caller already installed.
-	fake = newFakeDokku("0.38.0")
-	res, err = sdk.ExportRecipe(sdk.ContextWithVersionGate(fake.context()), sdk.ExportOptions{Apps: []string{"web"}, Inline: true, IgnoreVersion: true})
+	fake = exportFake(t)
+	res, err = sdk.ExportRecipe(sdk.ContextWithVersionGate(fake.Context(context.Background())), sdk.ExportOptions{Apps: []string{"web"}, Inline: true, IgnoreVersion: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,39 +132,15 @@ func exportedTypes(res *sdk.ExportResult) map[string]bool {
 	return types
 }
 
-// fakeDokku answers `dokku version` with a fixed version, one app and its config,
-// and an empty success for everything else. It counts what it is asked.
-type fakeDokku struct {
-	version string
-	mu      sync.Mutex
-	calls   map[string]int
+// newFakeDokku is a fake dokku at version holding app web with one config
+// key.
+func newFakeDokku(t *testing.T, version string) *dokkutest.Server {
+	return dokkutest.New(t).SeedVersion(version).SeedConfig("web", map[string]string{"KEY": "value"})
 }
 
-func newFakeDokku(version string) *fakeDokku {
-	return &fakeDokku{version: version, calls: map[string]int{}}
-}
-
-func (f *fakeDokku) context() context.Context {
-	return sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		key := strings.Join(in.Args, " ")
-		f.mu.Lock()
-		f.calls[key]++
-		f.mu.Unlock()
-		switch key {
-		case "version":
-			return sdk.ExecCommandResponse{Stdout: f.version + "\n"}, nil
-		case "--quiet apps:list":
-			return sdk.ExecCommandResponse{Stdout: "web"}, nil
-		case "--quiet config:export --format json web":
-			return sdk.ExecCommandResponse{Stdout: `{"KEY":"value"}`}, nil
-		default:
-			return sdk.ExecCommandResponse{}, nil
-		}
-	})
-}
-
-func (f *fakeDokku) count(key string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.calls[key]
+// exportFake is newFakeDokku at 0.38.0 that also answers, with an empty
+// success, the commands of the exporters dokkutest does not model, which an
+// export of every task type sends.
+func exportFake(t *testing.T) *dokkutest.Server {
+	return newFakeDokku(t, "0.38.0").Fallback(dokkutest.Respond(""))
 }

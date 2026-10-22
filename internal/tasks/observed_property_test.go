@@ -2,10 +2,11 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
+
+	"github.com/dokku/docket/internal/fakedokku"
 )
 
 func init() {
@@ -37,14 +38,6 @@ func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixtu
 	table := docer.propertyTable()
 	plugin := table.Plugin()
 
-	report := func(target string, payload map[string]string) (string, string) {
-		body, err := json.Marshal(payload)
-		if err != nil {
-			panic(err)
-		}
-		return fmt.Sprintf("--quiet %s:report %s --format json", plugin, target), string(body)
-	}
-
 	rt := registeredTypeOrNil(typeKey)
 	build := func(f PropertyFields) Task {
 		return reflect.ValueOf(f).Convert(rt).Interface().(Task)
@@ -75,14 +68,13 @@ func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixtu
 		}
 	}
 
-	appPayload := map[string]string{}
-	gonePayload := map[string]string{}
-	globalPayload := map[string]string{}
+	// The fake reports every property in the table, empty when unset, so
+	// "gone" and the unset global property need no seed of their own.
+	var seeds []func(s *fakedokku.Server)
 	var cases []observedCase
 	if len(appProps) > 0 {
 		prop := appProps[0]
-		appPayload[table.Keys[prop].PerApp] = "app-value"
-		gonePayload[table.Keys[prop].PerApp] = ""
+		seeds = append(seeds, func(s *fakedokku.Server) { s.SeedProperty(plugin, "web", prop, "app-value") })
 		cases = append(cases,
 			observedCase{
 				name: "absent",
@@ -99,7 +91,7 @@ func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixtu
 	}
 	if len(globalProps) > 0 {
 		prop := globalProps[0]
-		globalPayload[table.Keys[prop].Global] = "global-value"
+		seeds = append(seeds, func(s *fakedokku.Server) { s.SeedGlobalProperty(plugin, prop, "global-value") })
 		cases = append(cases, observedCase{
 			name:   "global",
 			task:   build(PropertyFields{Global: true, Property: prop, Value: "other", State: StatePresent}),
@@ -111,7 +103,6 @@ func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixtu
 				panic(fmt.Sprintf("%s: a global-only table needs two properties for an absent case", typeKey))
 			}
 			unset := globalProps[1]
-			globalPayload[table.Keys[unset].Global] = ""
 			cases = append(cases, observedCase{
 				name: "absent",
 				task: build(PropertyFields{Global: true, Property: unset, Value: "wanted", State: StatePresent}),
@@ -120,16 +111,15 @@ func propertyTaskFixture(typeKey string, docer PropertyTableDocer) observedFixtu
 		}
 	}
 
-	responses := map[string]string{}
-	for target, payload := range map[string]map[string]string{"web": appPayload, "gone": gonePayload, "--global": globalPayload} {
-		k, v := report(target, payload)
-		responses[k] = v
-	}
-
 	appExporter := docer.(AppExporter)
 	globalExporter := docer.(GlobalExporter)
 	return observedFixture{
-		responses: responses,
+		seed: func(s *fakedokku.Server) {
+			s.SeedApp("web", "gone")
+			for _, seed := range seeds {
+				seed(s)
+			}
+		},
 		export: func(ctx context.Context) ([]interface{}, error) {
 			bodies, err := appExporter.ExportApp(ctx, "web")
 			if err != nil {

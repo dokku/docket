@@ -1,5 +1,7 @@
 package tasks
 
+import "github.com/dokku/docket/internal/fakedokku"
+
 func init() {
 	registerObservedFixtures(observedCollectionFixtures)
 }
@@ -253,10 +255,9 @@ func observedCollectionFixtures() map[string]observedFixture {
 			},
 		},
 		"dokku_buildpacks": {
-			responses: map[string]string{
-				"--quiet buildpacks:report web --format json": `{"list":"https://github.com/heroku/heroku-buildpack-nodejs.git,https://github.com/heroku/heroku-buildpack-ruby.git"}`,
-				"--quiet buildpacks:list web":                 "=====> web buildpack urls\nhttps://github.com/heroku/heroku-buildpack-nodejs.git\nhttps://github.com/heroku/heroku-buildpack-ruby.git",
-				"--quiet buildpacks:list empty":               "=====> empty buildpack urls",
+			seed: func(s *fakedokku.Server) {
+				s.SeedBuildpacks("web", "https://github.com/heroku/heroku-buildpack-nodejs.git", "https://github.com/heroku/heroku-buildpack-ruby.git")
+				s.SeedApp("empty")
 			},
 			export: app(BuildpacksTask{}),
 			cases: []observedCase{
@@ -292,10 +293,10 @@ func observedCollectionFixtures() map[string]observedFixture {
 			},
 		},
 		"dokku_domains": {
-			responses: map[string]string{
-				"domains:report web --domains-app-vhosts":         "web.example.com www.example.com",
-				"domains:report bare --domains-app-vhosts":        "",
-				"domains:report --global --domains-global-vhosts": "example.com",
+			seed: func(s *fakedokku.Server) {
+				s.SeedDomains("web", "web.example.com", "www.example.com")
+				s.SeedApp("bare")
+				s.SeedGlobalDomains("example.com")
 			},
 			export: app(DomainsTask{}),
 			cases: []observedCase{
@@ -331,9 +332,9 @@ func observedCollectionFixtures() map[string]observedFixture {
 			},
 		},
 		"dokku_ports": {
-			responses: map[string]string{
-				"--quiet ports:report web --ports-map-json":  `[{"container_port":5000,"host_port":80,"scheme":"http"},{"container_port":5000,"host_port":443,"scheme":"https"}]`,
-				"--quiet ports:report bare --ports-map-json": `null`,
+			seed: func(s *fakedokku.Server) {
+				s.SeedPorts("web", fakedokku.PortMapping{Scheme: "http", Host: 80, Container: 5000}, fakedokku.PortMapping{Scheme: "https", Host: 443, Container: 5000})
+				s.SeedApp("bare")
 			},
 			export: app(PortsTask{}),
 			cases: []observedCase{
@@ -376,9 +377,9 @@ func observedCollectionFixtures() map[string]observedFixture {
 			},
 		},
 		"dokku_ps_scale": {
-			responses: map[string]string{
-				"--quiet ps:scale web":  "-----> Scaling for web\nproctype: qty\n--------: ---\nweb:  2\nworker: 0\nclock: 1",
-				"--quiet ps:scale idle": "-----> Scaling for idle\nproctype: qty\n--------: ---\nweb:  0",
+			seed: func(s *fakedokku.Server) {
+				s.SeedScale("web", map[string]int{"web": 2, "worker": 0, "clock": 1})
+				s.SeedScale("idle", map[string]int{"web": 0})
 			},
 			export: app(PsScaleTask{}),
 			cases: []observedCase{

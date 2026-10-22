@@ -11,16 +11,24 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	defaults "github.com/mcuadros/go-defaults"
 
+	"github.com/dokku/docket/internal/fakedokku"
 	"github.com/dokku/docket/internal/subprocess"
 )
 
 // observedFixture is a fake server and the plans PlanResult.Observed is checked
 // against on it.
 type observedFixture struct {
+	// seed builds the fixture's server on the stateful fake sdk/dokkutest
+	// publishes, for a task the fake models. A command the fake does not
+	// model fails the test, as an unlisted one does with responses. A
+	// fixture sets seed or responses, not both.
+	seed func(s *fakedokku.Server)
+
 	// responses answers each command by its joined arguments. A command not
 	// listed fails the test rather than answering empty, so a fixture states
 	// every read its plans make.
@@ -62,8 +70,11 @@ type observedCase struct {
 }
 
 // observedRunner answers from a fixture and fails t on any command the fixture
-// does not list.
+// does not list, or, for a seeded fixture, the fake does not model.
 func observedRunner(t *testing.T, f observedFixture) func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	if f.seed != nil {
+		return fixtureServer(t, f).Run
+	}
 	return func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		key := strings.Join(in.Args, " ")
 		if code, ok := f.exitCodes[key]; ok {
@@ -77,6 +88,45 @@ func observedRunner(t *testing.T, f observedFixture) func(context.Context, subpr
 		}
 		return subprocess.ExecCommandResponse{Stdout: out}, nil
 	}
+}
+
+// fixtureServer is a fresh fake server holding a seeded fixture's state. t,
+// when not nil, fails on a command the fake does not model.
+func fixtureServer(t testing.TB, f observedFixture) *fakedokku.Server {
+	s := fakedokku.New(t, fakePropertyPlugins())
+	f.seed(s)
+	return s
+}
+
+// fakePropertyPlugins are the property tables of every registered property
+// task, in the form the fake takes them; sdk/dokkutest reads the same tables
+// from the catalog.
+var fakePropertyPlugins = sync.OnceValue(func() []fakedokku.PropertyPlugin {
+	var plugins []fakedokku.PropertyPlugin
+	for _, name := range TaskTypes() {
+		task, _ := Lookup(name)
+		table, ok := TaskPropertyTable(task)
+		if !ok {
+			continue
+		}
+		plugin := fakedokku.PropertyPlugin{Plugin: table.Plugin(), Subcommand: table.Subcommand}
+		for _, prop := range sortedPropertyNames(table) {
+			keys := table.Keys[prop]
+			plugin.Properties = append(plugin.Properties, fakedokku.Property{Name: prop, AppKey: keys.PerApp, GlobalKey: keys.Global})
+		}
+		plugins = append(plugins, plugin)
+	}
+	return plugins
+})
+
+// sortedPropertyNames returns a table's property names, sorted.
+func sortedPropertyNames(table PropertyTable) []string {
+	names := make([]string, 0, len(table.Keys))
+	for name := range table.Keys {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // observedFixtureSets are the functions that contribute fixtures, one per
@@ -186,20 +236,20 @@ func observedCoreFixtures() map[string]observedFixture {
 
 	return map[string]observedFixture{
 		"dokku_app": {
-			responses: map[string]string{"--quiet apps:exists web": ""},
-			exitCodes: map[string]int{"--quiet apps:exists gone": 1},
-			export:    app(AppTask{}),
+			// App gone does not exist.
+			seed:   func(s *fakedokku.Server) { s.SeedApp("web") },
+			export: app(AppTask{}),
 			cases: []observedCase{
 				{name: "absent", task: AppTask{App: "gone", State: StatePresent}, want: AppTask{App: "gone", State: StateAbsent}},
 				{name: "present, planned absent", task: AppTask{App: "web", State: StateAbsent}, want: AppTask{App: "web", State: StatePresent}, exists: true},
 			},
 		},
 		"dokku_config": {
-			responses: map[string]string{
-				"--quiet config:export --format json web":   `{"KEY":"one","OTHER":"two","DATABASE_URL":"postgres://u:p@db:5432/x"}`,
-				"--quiet config:export --format json empty": `{}`,
-				"git:report web --git-rev-env-var":          "GIT_REV",
-				"--quiet plugin:trigger service-list":       "",
+			// No service is linked to web, and its git rev-env-var is the
+			// GIT_REV default.
+			seed: func(s *fakedokku.Server) {
+				s.SeedConfig("web", map[string]string{"KEY": "one", "OTHER": "two", "DATABASE_URL": "postgres://u:p@db:5432/x"})
+				s.SeedApp("empty")
 			},
 			export: app(ConfigTask{}),
 			cases: []observedCase{

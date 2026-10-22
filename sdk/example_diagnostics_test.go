@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/dokku/docket/sdk"
+	"github.com/dokku/docket/sdk/dokkutest"
 )
 
 // Showing why a read failed: the error becomes a short summary to show and a
@@ -14,13 +14,8 @@ import (
 func ExampleDiagnostics() {
 	session := sdk.NewSession(sdk.NewMasker())
 	defer func() { _ = session.Close() }()
-	ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		if strings.Join(in.Args, " ") == "--quiet apps:exists web" {
-			return sdk.ExecCommandResponse{ExitCode: 1}, nil
-		}
-		res := sdk.ExecCommandResponse{Stderr: "App web does not exist", ExitCode: 1}
-		return res, &sdk.ExecError{Response: res, Err: errors.New(res.Stderr), Ran: true}
-	})
+	// The server holds no app web.
+	ctx := dokkutest.New(nil).Context(session.Context(context.Background(), sdk.Target{}))
 
 	task := sdk.ConfigTask{App: "web", Config: map[string]string{"LOG_LEVEL": "info"}, State: sdk.StatePresent}
 	_, _, err := sdk.ReadTask(ctx, task)
@@ -36,16 +31,12 @@ func ExampleDiagnostics() {
 func ExampleDiagnostics_failedCommand() {
 	session := sdk.NewSession(sdk.NewMasker())
 	defer func() { _ = session.Close() }()
-	ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		if strings.Join(in.Args, " ") == "--quiet apps:exists web" {
-			return sdk.ExecCommandResponse{}, nil
-		}
-		if in.Args[1] == "config:set" {
-			res := sdk.ExecCommandResponse{Stdout: "-----> Setting config vars", Stderr: "refusing to set TOKEN=hunter2", ExitCode: 1}
-			return res, &sdk.ExecError{Response: res, Err: errors.New(res.Stderr), Ran: true}
-		}
-		return sdk.ExecCommandResponse{Stdout: "{}"}, nil
+	server := dokkutest.New(nil).SeedApp("web")
+	server.HandlePrefix("--quiet config:set", func(context.Context, sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
+		res := sdk.ExecCommandResponse{Stdout: "-----> Setting config vars", Stderr: "refusing to set TOKEN=hunter2", ExitCode: 1}
+		return res, &sdk.ExecError{Response: res, Err: errors.New(res.Stderr), Ran: true}
 	})
+	ctx := server.Context(session.Context(context.Background(), sdk.Target{}))
 
 	task := sdk.ConfigTask{App: "web", Config: map[string]string{"TOKEN": "hunter2"}, State: sdk.StatePresent}
 	state := sdk.ExecutePlan(ctx, task.Plan(ctx))
