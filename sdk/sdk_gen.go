@@ -4,6 +4,7 @@ package sdk
 
 import (
 	"context"
+	"time"
 
 	"github.com/dokku/docket/internal/subprocess"
 	"github.com/dokku/docket/internal/tasks"
@@ -653,6 +654,20 @@ const (
 	// fine.
 	WarnReasonServiceImageDrift = tasks.WarnReasonServiceImageDrift
 )
+
+// WithControlPersist sets how long each SSH connection the session opens stays
+// open after its last command returns, in place of the default 60 seconds. It
+// is rounded up to whole seconds, which is what ssh's ControlPersist counts.
+//
+// Zero, or a negative d, closes a connection as soon as no command under the
+// session is using it: the call that finishes the last command closes the
+// connection before it returns. That suits an embedder with nowhere to call
+// Close, such as a process that is killed rather than shut down, at the cost
+// of a new connection for each command that runs after the previous one
+// finished. Commands that overlap still share one.
+func WithControlPersist(d time.Duration) SessionOption {
+	return subprocess.WithControlPersist(d)
+}
 
 // WithUnknown is a ConstraintViolations option naming the recipe key paths
 // whose values are not known yet, in the form Violation.Field uses: `app`,

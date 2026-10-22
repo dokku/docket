@@ -17,8 +17,9 @@
 // the same host collide on the socket path.
 //
 // The ControlPersist option keeps the master alive 60 seconds past the
-// last command exit. A Session records every master its calls opened and
-// tears them down on Close, which is how the commands layer ends a run.
+// last command exit, or as long as the Session's WithControlPersist says. A
+// Session records every master its calls opened and tears them down on Close,
+// which is how the commands layer ends a run.
 //
 // Error attribution. OpenSSH exits with code 255 when the transport
 // itself fails (connect refused, auth, host-key mismatch) and forwards
@@ -51,6 +52,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	execute "github.com/alexellis/go-execute/v2"
@@ -244,7 +246,9 @@ func ValidateSSHOptions(opts []string) error {
 // error rather than a corrupted remote command.
 //
 // socket is the ControlPath, computed by the caller because the session
-// that owns the connection has to record it too.
+// that owns the connection has to record it too. persist is how long the
+// master outlives its last command; see controlPersistValue for how it
+// becomes the ControlPersist value.
 //
 // The sudo and host-key settings come from opts, the caller's per-invocation
 // Target. They used to be read from DOKKU_SUDO and
@@ -258,14 +262,14 @@ func ValidateSSHOptions(opts []string) error {
 // override them, then the caller's SSHOptions, then the options docket adds
 // for AcceptNewHostKeys and IdentityFile - so `IdentitiesOnly=no`, or a
 // StrictHostKeyChecking value, stated by the caller wins over docket's own.
-func buildSshArgv(parsed sshTarget, opts Target, socket string, remote []string) ([]string, error) {
+func buildSshArgv(parsed sshTarget, opts Target, socket string, persist time.Duration, remote []string) ([]string, error) {
 	if err := ValidateSSHOptions(opts.SSHOptions); err != nil {
 		return nil, err
 	}
 	argv := []string{
 		"-o", "ControlMaster=auto",
 		"-o", "ControlPath=" + socket,
-		"-o", "ControlPersist=60",
+		"-o", "ControlPersist=" + controlPersistValue(persist),
 		"-o", "BatchMode=yes",
 	}
 	for _, opt := range opts.SSHOptions {
@@ -292,6 +296,26 @@ func buildSshArgv(parsed sshTarget, opts Target, socket string, remote []string)
 		argv = append(argv, quoted)
 	}
 	return argv, nil
+}
+
+// controlPersistValue renders persist as ssh's ControlPersist value: whole
+// seconds, rounded up so a positive duration never becomes zero.
+//
+// Zero is not passed through, because OpenSSH reads `ControlPersist=0` as
+// `yes` - keep the master forever - which is the opposite of what a zero
+// persist asks for. Nor does it become `no`: that leaves the first command's
+// own ssh process as a foreground master, so its call could not return until
+// every command sharing the connection had finished, and cancelling it would
+// cut them all off. Instead the master is backgrounded as usual, the Session
+// closes it with `ssh -O exit` when its last command returns, and the one
+// second it is given here only bounds how long it can outlive a process that
+// was killed before it could close it.
+func controlPersistValue(persist time.Duration) string {
+	if persist <= 0 {
+		return "1"
+	}
+	secs := (persist + time.Second - 1) / time.Second
+	return strconv.FormatInt(int64(secs), 10)
 }
 
 // sshLookPathOnce caches the result of looking up the `ssh` binary so
@@ -416,15 +440,20 @@ func CallSshCommand(ctx context.Context, target Target, input ExecCommandInput) 
 	remote := append([]string{input.Command}, input.Args...)
 	session := sessionFromContext(ctx)
 	socket := controlPath(parsed, target, os.Getpid(), session.id())
-	argv, err := buildSshArgv(parsed, target, socket, remote)
+	argv, err := buildSshArgv(parsed, target, socket, session.controlPersist(), remote)
 	if err != nil {
 		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Command: remote, Err: err}
 	}
 	// Recorded before the connection is made rather than after, so a master
 	// that came up for a command that then failed is still closed.
-	if err := session.track(parsed, socket); err != nil {
+	release, err := session.track(parsed, socket)
+	if err != nil {
 		return ExecCommandResponse{}, &SSHError{Host: parsed.UserHost(), Command: remote, Err: err}
 	}
+	// Released once the command has returned, so a session that does not let
+	// masters persist closes this one before the call returns when nothing
+	// else is using it.
+	defer release()
 
 	// The `ssh` client inherits docket's environment and directory; nothing is
 	// layered on top. Decorating this process would be pointless anyway, since

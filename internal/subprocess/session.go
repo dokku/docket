@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // ErrSessionClosed is the error a call made under a closed session fails with,
@@ -30,6 +31,11 @@ var sessionIDs atomic.Uint64
 // talking to the same host do not share a master, and closing one cannot cut
 // off the other.
 //
+// A master outlives its last command by 60 seconds unless WithControlPersist
+// says otherwise, so a run that sends commands one after another reuses one
+// connection. WithControlPersist(0) has the session close a master itself as
+// soon as no command is using it, for a caller that may never reach Close.
+//
 // A session can also own per-run state of the caller's choosing, given as
 // SessionOptions: every context it hands out carries the same value, so state
 // such as the version gate's cache outlives any one call's context.
@@ -47,6 +53,10 @@ type Session struct {
 	// order, over whatever the parent carries under the same key.
 	values []sessionValue
 
+	// persist is how long a master outlives its last command. Zero means
+	// the session closes a master itself as soon as no command is using it.
+	persist time.Duration
+
 	// closeMaster tears down one master. It is exitControlMaster outside of
 	// tests, which replace it to observe what Close would close without an
 	// ssh server.
@@ -54,8 +64,19 @@ type Session struct {
 
 	mu      sync.Mutex
 	masters map[string]sshTarget
+	// inflight counts the commands using each master right now.
+	inflight map[string]int
+	// closing holds a channel for each master the session is closing because
+	// its last command returned. A command for that socket waits for it to
+	// close rather than reaching a master that is on its way out.
+	closing map[string]chan struct{}
 	closed  bool
 }
+
+// defaultControlPersist is how long a master outlives its last command in a
+// session given no WithControlPersist option, and for a call made outside any
+// session.
+const defaultControlPersist = 60 * time.Second
 
 // SessionOption configures a Session when NewSession builds it.
 //
@@ -78,6 +99,27 @@ func WithSessionValue(key any, newValue func() any) SessionOption {
 	}
 }
 
+// WithControlPersist sets how long each SSH connection the session opens stays
+// open after its last command returns, in place of the default 60 seconds. It
+// is rounded up to whole seconds, which is what ssh's ControlPersist counts.
+//
+// Zero, or a negative d, closes a connection as soon as no command under the
+// session is using it: the call that finishes the last command closes the
+// connection before it returns. That suits an embedder with nowhere to call
+// Close, such as a process that is killed rather than shut down, at the cost
+// of a new connection for each command that runs after the previous one
+// finished. Commands that overlap still share one.
+//
+//sdk:export
+func WithControlPersist(d time.Duration) SessionOption {
+	if d < 0 {
+		d = 0
+	}
+	return func(s *Session) {
+		s.persist = d
+	}
+}
+
 // NewSession returns a session whose contexts carry masker and whatever opts
 // install. A nil masker leaves whatever masker the parent context carries in
 // place.
@@ -85,8 +127,11 @@ func NewSession(masker *Masker, opts ...SessionOption) *Session {
 	s := &Session{
 		sessionID:   sessionIDs.Add(1),
 		masker:      masker,
+		persist:     defaultControlPersist,
 		closeMaster: exitControlMaster,
 		masters:     map[string]sshTarget{},
+		inflight:    map[string]int{},
+		closing:     map[string]chan struct{}{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -151,18 +196,76 @@ func (s *Session) id() uint64 {
 	return s.sessionID
 }
 
-// track records that a call is about to use the master on socket. It refuses
-// once the session is closed, since a master opened then would outlive the
-// session with nothing left to close it. A nil session tracks nothing.
-func (s *Session) track(target sshTarget, socket string) error {
+// controlPersist returns how long the session's masters outlive their last
+// command, or the default for a nil session.
+func (s *Session) controlPersist() time.Duration {
 	if s == nil {
-		return nil
+		return defaultControlPersist
+	}
+	return s.persist
+}
+
+// track records that a call is about to use the master on socket, and returns
+// the function the call runs once its command has returned. It refuses once
+// the session is closed, since a master opened then would outlive the session
+// with nothing left to close it. A nil session tracks nothing.
+//
+// When the session's persist is zero, the release that drops a master's last
+// command closes the master before it returns. A call for that socket that
+// arrives meanwhile waits until the close is done, then opens a new master,
+// rather than reaching one that is exiting.
+func (s *Session) track(target sshTarget, socket string) (func(), error) {
+	if s == nil {
+		return func() {}, nil
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return ErrSessionClosed
+	for {
+		if s.closed {
+			s.mu.Unlock()
+			return nil, ErrSessionClosed
+		}
+		done, ok := s.closing[socket]
+		if !ok {
+			break
+		}
+		s.mu.Unlock()
+		<-done
+		s.mu.Lock()
 	}
 	s.masters[socket] = target
-	return nil
+	s.inflight[socket]++
+	s.mu.Unlock()
+
+	var once sync.Once
+	return func() { once.Do(func() { s.release(socket) }) }, nil
+}
+
+// release records that one call using the master on socket has returned, and
+// closes the master when it was the last and the session's persist is zero.
+func (s *Session) release(socket string) {
+	s.mu.Lock()
+	s.inflight[socket]--
+	if s.inflight[socket] > 0 {
+		s.mu.Unlock()
+		return
+	}
+	delete(s.inflight, socket)
+	if s.persist > 0 || s.closed {
+		// A persisting master is left to ssh's ControlPersist and to Close;
+		// after Close, Close has already taken it.
+		s.mu.Unlock()
+		return
+	}
+	target := s.masters[socket]
+	delete(s.masters, socket)
+	done := make(chan struct{})
+	s.closing[socket] = done
+	s.mu.Unlock()
+
+	s.closeMaster(target, socket)
+
+	s.mu.Lock()
+	delete(s.closing, socket)
+	close(done)
+	s.mu.Unlock()
 }

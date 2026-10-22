@@ -15,7 +15,9 @@ docket apply --host deploy@dokku.example.com:2222
 
 The host is `[user@]host[:port]`. All invocations in one run share a single SSH connection through
 OpenSSH ControlMaster multiplexing, so you pay the connection cost once. The connection is closed
-when the run ends, including the ones opened for a play's own `host:`.
+when the run ends, including the ones opened for a play's own `host:`. A program embedding docket
+closes them the same way, or has them close after each command with
+[`sdk.WithControlPersist`](embedding.md#how-long-connections-stay-open).
 
 Because docket shells out to your own `ssh` binary, everything `ssh` already knows works without
 extra configuration: your `~/.ssh/config`, `ProxyJump`, ssh-agent, and `known_hosts` all apply.
@@ -70,7 +72,9 @@ docket apply --host deploy@dokku.example.com \
 share one connection - `ControlMaster`, `ControlPath`, `ControlPersist`, and `BatchMode` - so those
 four are refused rather than silently ignored. They come before the options docket adds for
 `--accept-new-host-keys` and `--ssh-identity-file`, so an explicit `IdentitiesOnly=no` or
-`StrictHostKeyChecking` value of your own wins over docket's.
+`StrictHostKeyChecking` value of your own wins over docket's. docket closes its connections itself
+when the run ends, so there is no `ControlPersist` to tune from the command line; a program embedding
+docket sets it with [`sdk.WithControlPersist`](embedding.md#how-long-connections-stay-open).
 
 The identity and the options are part of what decides which connection a command shares. Two plays
 on the same host with different keys or options each open their own, and both are closed at the end

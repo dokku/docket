@@ -182,7 +182,7 @@ func TestBuildSshArgvDefault(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{}, testSocket, []string{"dokku", "apps:list"})
+	argv, err := buildSshArgv(parsed, Target{}, testSocket, defaultControlPersist, []string{"dokku", "apps:list"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestBuildSshArgvNonStandardPort(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "2222"}
-	argv, err := buildSshArgv(parsed, Target{}, testSocket, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{}, testSocket, defaultControlPersist, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestBuildSshArgvAcceptNewHostKeys(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{AcceptNewHostKeys: true}, testSocket, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{AcceptNewHostKeys: true}, testSocket, defaultControlPersist, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{Sudo: true}, testSocket, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{Sudo: true}, testSocket, defaultControlPersist, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestBuildSshArgvDokkuSudo(t *testing.T) {
 func TestBuildSshArgvDoubleDashSeparator(t *testing.T) {
 	t.Parallel()
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "config:set", "--no-restart"})
+	argv, err := buildSshArgv(target, Target{}, testSocket, defaultControlPersist, []string{"dokku", "config:set", "--no-restart"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestBuildSshArgvQuotesRemoteArgs(t *testing.T) {
 	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
+	argv, err := buildSshArgv(target, Target{}, testSocket, defaultControlPersist, []string{"dokku", "ps:set", "app", "start-cmd", "npm run start"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestBuildSshArgvQuotesInjection(t *testing.T) {
 	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
+	argv, err := buildSshArgv(target, Target{}, testSocket, defaultControlPersist, []string{"dokku", "config:set", "app", "x; rm -rf ~"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestBuildSshArgvQuotesServiceCreateFlags(t *testing.T) {
 	t.Parallel()
 
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(target, Target{}, testSocket, []string{
+	argv, err := buildSshArgv(target, Target{}, testSocket, defaultControlPersist, []string{
 		"dokku", "--quiet", "postgres:create", "my-db",
 		"--image", "postgis/postgis",
 		"--image-version", "13-master",
@@ -378,7 +378,7 @@ func TestBuildSshArgvRejectsUnquotable(t *testing.T) {
 	target := sshTarget{User: "alice", Host: "host", Port: "22"}
 	// A newline has no POSIX-shell escape, so we refuse to build the remote
 	// command rather than corrupt it.
-	if _, err := buildSshArgv(target, Target{}, testSocket, []string{"dokku", "config:set", "app", "a\nb"}); err == nil {
+	if _, err := buildSshArgv(target, Target{}, testSocket, defaultControlPersist, []string{"dokku", "config:set", "app", "a\nb"}); err == nil {
 		t.Fatal("expected error for argument containing a newline")
 	}
 
@@ -779,7 +779,7 @@ func TestBuildSshArgvIdentityFile(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{IdentityFile: "/keys/deploy"}, testSocket, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{IdentityFile: "/keys/deploy"}, testSocket, defaultControlPersist, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -799,7 +799,7 @@ func TestBuildSshArgvDefaultHasNoIdentity(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	argv, err := buildSshArgv(parsed, Target{}, testSocket, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, Target{}, testSocket, defaultControlPersist, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -822,7 +822,7 @@ func TestBuildSshArgvOptionOrder(t *testing.T) {
 		IdentityFile:      "/keys/deploy",
 		SSHOptions:        []string{"ConnectTimeout=5", "IdentitiesOnly no"},
 	}
-	argv, err := buildSshArgv(parsed, target, testSocket, []string{"dokku", "version"})
+	argv, err := buildSshArgv(parsed, target, testSocket, defaultControlPersist, []string{"dokku", "version"})
 	if err != nil {
 		t.Fatalf("buildSshArgv returned error: %v", err)
 	}
@@ -860,7 +860,7 @@ func TestBuildSshArgvRejectsAManagedOption(t *testing.T) {
 	t.Parallel()
 
 	parsed := sshTarget{User: "alice", Host: "host", Port: "22"}
-	if _, err := buildSshArgv(parsed, Target{SSHOptions: []string{"ControlPath=/tmp/x"}}, testSocket, []string{"dokku", "version"}); err == nil {
+	if _, err := buildSshArgv(parsed, Target{SSHOptions: []string{"ControlPath=/tmp/x"}}, testSocket, defaultControlPersist, []string{"dokku", "version"}); err == nil {
 		t.Error("buildSshArgv accepted a ControlPath option, want an error")
 	}
 }
