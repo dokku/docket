@@ -134,6 +134,7 @@ the reference page lists them in.
 | `default` | The default, as a literal string to be read according to `type`. Absent when there is none. |
 | `choices` | The permitted values. Absent when the field is not an enum. |
 | `description` | Prose for a human. |
+| `note` | What the reference page appends to `description`, overall and per state. Absent when it appends nothing. See [Rendered notes](#rendered-notes). |
 | `sensitive` | Present and `true` when the value is a secret. |
 | `runner_file` | Present and `true` when the value names a file docket reads on the machine it runs on, not on the dokku server. |
 | `write_only` | Present and `true` when the server stores the value but a read of the resource never returns it. |
@@ -395,13 +396,76 @@ come from whichever datastore plugin backs the service, and which of them a serv
 on its datastore. `<service>:info` reports their values, so the task converges, but `<service>:set`
 is what validates a name.
 
+## Rendered notes
+
+The keys above are the raw declarations. The sentences a [task reference](tasks/README.md) page
+builds from them are published too, so a consumer that documents tasks in another tool, such as a
+Terraform provider's registry docs, prints docket's own wording instead of re-rendering it. The
+reference pages are rendered from these same keys, so the two cannot diverge.
+
+`notes` on a task lists the page's notes in the order the page prints them, each rendered as
+markdown with its heading and no trailing newline:
+
+```json
+"notes": [
+  { "kind": "identity",
+    "markdown": "## Identity\n\nKeyed by `app`." },
+  { "kind": "objects",
+    "markdown": "## Objects\n\n- The app named by `app`. Creates it, and destroys it in state `absent`.\n\nTasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).",
+    "states": {
+      "present": "## Objects\n\n- The app named by `app`. Creates it.\n\nTasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently).",
+      "absent": "## Objects\n\n- The app named by `app`. Destroys it.\n\nTasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently)."
+    } }
+]
+```
+
+| `kind` | Rendered from |
+|--------|---------------|
+| `deprecation` | `deprecation` |
+| `imperative` | `imperative` |
+| `requirements` | `minimum_dokku_version` and `requirements` |
+| `runner_requirements` | every `runner_file` field, element fields included |
+| `export` | `export` |
+| `probe` | `probe` |
+| `identity` | `identity` |
+| `objects` | `objects` |
+| `constraints` | `constraints` and each object item's `constraints` |
+| `properties` | `property_schema` |
+
+A kind appears at most once, and a note that does not apply to the task is absent. Links in the
+markdown are relative to `docs/tasks/`. A reference page prints the Parameters table before the
+`constraints` and `properties` notes and every other note before it.
+
+`note` on a field is `suffix`, the text the Parameters table appends to `description` as is,
+leading space or period included, so `description` followed by `suffix` is the table cell. It holds
+the item shape of a structured list, `ordered`, `required_when`, `forbidden_when`, `runner_file`,
+`write_only`, `apply_only` and `sensitive`, in that order. Unlike the task notes, neither
+`description` nor `suffix` is escaped for markdown.
+
+```json
+{ "name": "domains", "description": "List of domain names",
+  "note": {
+    "suffix": " (required when state is present or absent) (must not be set when state is clear)",
+    "states": { "present": " (required)", "absent": " (required)", "set": "",
+                "clear": " (must not be set)" } } }
+```
+
+`states` is present only on a note whose text depends on the task's `state`, which a consumer may
+hide when it drives a single state. It has one key per value of the `state` field, each holding the
+note as it reads in that state: a rule limited to other states is left out and one limited to this
+state loses its state clause, a field required in this state reads `(required)`, and a creating task
+says which of creating and destroying it does. An empty string means the note does not apply in that
+state. `markdown` and `suffix` cover every state, and are what the reference page prints.
+
+Adding these keys does not bump `version`.
+
 ## Stability
 
 - Tasks are sorted by `type`, including when `--task` narrows the catalog, so the output never
   depends on the order the flags were given; properties by `name`; dynamic and rejected families by
   `prefix`.
 - Fields, identity keys, requirements and choices keep declaration order, because that order is
-  meaningful.
+  meaningful. Notes keep the order the reference page prints them in.
 - Objects are always the app, then the service, and an object's keys follow its kind rather than
   declaration order.
 - Two runs of the same binary produce byte-identical output, for the whole catalog and for any

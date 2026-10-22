@@ -371,7 +371,8 @@ defaults applied; use `sdk.NewTask` for a task to run. `sdk.TaskDeprecation`,
 `sdk.TaskMinimumVersions` and `sdk.TaskConstraints` read the rest of a task's metadata.
 
 `sdk.Catalog()` describes every task type in one value - synopsis, deprecation, requirements,
-probe and export support, identity, fields and constraints - and is what `docket schema` emits.
+probe and export support, identity, fields, constraints, and the notes its reference page prints -
+and is what `docket schema` emits.
 `sdk.CatalogFor` narrows it to the types you name. See [Task catalog](task-catalog.md).
 
 ## Reading one resource

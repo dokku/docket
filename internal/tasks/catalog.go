@@ -183,6 +183,15 @@ type TaskSchema struct {
 	// none - see dokku_service_property.
 	PropertySchema *PropertySchema `json:"property_schema,omitempty"`
 
+	// Notes are the task's reference-page notes, rendered, in the order the
+	// page prints them: the Deprecated and Imperative admonitions, the
+	// Requirements, Runner requirements, Export support, Probe support,
+	// Identity, Objects and Constraints sections, and the Properties table.
+	// Each is rendered from the keys above, and a note whose text depends on
+	// the state also carries one rendering per state. Absent notes do not
+	// apply to the task.
+	Notes []NoteSchema `json:"notes,omitempty"`
+
 	// Examples are the task's documented examples, the same ones its reference
 	// page publishes.
 	Examples []ExampleSchema `json:"examples,omitempty"`
@@ -289,9 +298,14 @@ type FieldSchema struct {
 	Choices []string `json:"choices,omitempty"`
 
 	// Description is the raw `description:` tag. Prose the reference page
-	// appends - "(sensitive)", "Each item has: ..." - is derived from
-	// Sensitive and Item rather than baked in here.
+	// appends - "(sensitive)", "Each item has: ..." - is published in Note
+	// rather than baked in here.
 	Description string `json:"description,omitempty"`
+
+	// Note is what the reference page appends to Description, rendered from
+	// the keys of this field, overall and per state. Absent when the page
+	// appends nothing.
+	Note *FieldNoteSchema `json:"note,omitempty"`
 
 	// Sensitive marks a field whose value is a secret. A consumer that echoes
 	// a recipe must mask it.
@@ -629,6 +643,9 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 			YAML: strings.TrimSpace(example.Codeblock) + "\n",
 		})
 	}
+
+	applyFieldNotes(schema.Fields, noteStates(schema.Fields))
+	schema.Notes = buildTaskNotes(schema)
 
 	return schema, nil
 }

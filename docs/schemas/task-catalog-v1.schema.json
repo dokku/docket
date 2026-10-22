@@ -84,12 +84,63 @@
           "$ref": "#/$defs/property_schema",
           "description": "Present only for a task that manages an enumerable dokku property table. Its absence on a task that has a `property` field means the legal names are not enumerable from docket, not that there are none."
         },
+        "notes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/note" },
+          "minItems": 1,
+          "description": "The task's reference-page notes, rendered as markdown, in the order the page prints them. Each is rendered from the other keys of the task. Absent notes do not apply to the task."
+        },
         "examples": {
           "type": "array",
           "items": { "$ref": "#/$defs/example" },
           "description": "The task's documented examples, the same ones its reference page publishes."
         }
       }
+    },
+
+    "note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "markdown"],
+      "properties": {
+        "kind": {
+          "enum": ["deprecation", "imperative", "requirements", "runner_requirements", "export", "probe", "identity", "objects", "constraints", "properties"],
+          "description": "What the note covers. Each kind appears at most once per task."
+        },
+        "markdown": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The note as the reference page prints it, heading included, with no trailing newline. It covers every state. Links are relative to docs/tasks/."
+        },
+        "states": {
+          "$ref": "#/$defs/state_texts",
+          "description": "The note rendered for each value of the task's `state` field. Present only when the text depends on the state. An empty string means the note does not apply in that state."
+        }
+      }
+    },
+
+    "field_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suffix"],
+      "properties": {
+        "suffix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The text appended to the field's `description` as is, leading space or period included. It covers every state."
+        },
+        "states": {
+          "$ref": "#/$defs/state_texts",
+          "description": "The suffix rendered for each value of the task's `state` field. Present only when the text depends on the state. An empty string means nothing is appended in that state."
+        }
+      }
+    },
+
+    "state_texts": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "minProperties": 1,
+      "description": "Text keyed by a value of the task's `state` field. Every value of that field is a key."
     },
 
     "plugin_requirement": {
@@ -251,6 +302,10 @@
           "description": "The permitted values. Absent when the field is not an enum."
         },
         "description": { "type": "string" },
+        "note": {
+          "$ref": "#/$defs/field_note",
+          "description": "What the reference page appends to `description` in the Parameters table, overall and per state. Absent when it appends nothing."
+        },
         "sensitive": {
           "const": true,
           "description": "The value is a secret. A consumer that echoes a recipe must mask it."

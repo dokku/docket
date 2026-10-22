@@ -133,6 +133,9 @@ type ExportedPlay = tasks.ExportedPlay
 // ExportedTask is tasks.ExportedTask.
 type ExportedTask = tasks.ExportedTask
 
+// FieldNoteSchema is tasks.FieldNoteSchema.
+type FieldNoteSchema = tasks.FieldNoteSchema
+
 // FieldSchema is tasks.FieldSchema.
 type FieldSchema = tasks.FieldSchema
 
@@ -207,6 +210,12 @@ type NetworkTask = tasks.NetworkTask
 
 // NginxPropertyTask is tasks.NginxPropertyTask.
 type NginxPropertyTask = tasks.NginxPropertyTask
+
+// NoteKind is tasks.NoteKind.
+type NoteKind = tasks.NoteKind
+
+// NoteSchema is tasks.NoteSchema.
+type NoteSchema = tasks.NoteSchema
 
 // ObjectEffects is tasks.ObjectEffects.
 type ObjectEffects = tasks.ObjectEffects
