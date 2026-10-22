@@ -119,10 +119,11 @@ func (t GitAuthTask) Validate() error {
 }
 
 // Plan reports the drift the GitAuthTask would produce.
-func (t GitAuthTask) Plan(ctx context.Context) PlanResult {
+func (t GitAuthTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	// seen attaches whether the host has a netrc entry. The username and
 	// password are write-only: git:auth-status compares them but never
 	// returns them, so Observed carries the host alone.

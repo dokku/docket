@@ -171,10 +171,11 @@ func (t ConfigTask) SensitiveValues() []string {
 }
 
 // Plan reports the drift the ConfigTask would produce.
-func (t ConfigTask) Plan(ctx context.Context) PlanResult {
+func (t ConfigTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planConfigSet(ctx, t) },
 		StateAbsent:  func() PlanResult { return planConfigUnset(ctx, t) },

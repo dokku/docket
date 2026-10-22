@@ -104,10 +104,11 @@ func (t ProxyToggleTask) ObjectEffects() ObjectEffects {
 }
 
 // Plan reports the drift the ProxyToggleTask would produce.
-func (t ProxyToggleTask) Plan(ctx context.Context) PlanResult {
+func (t ProxyToggleTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planToggle(ctx, t, func(f ToggleFields) Task { return ProxyToggleTask(f) }, t.State, t.App, "proxy:enable", "proxy:disable", proxyEnabled)
 }
 

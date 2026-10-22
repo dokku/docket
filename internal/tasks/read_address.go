@@ -45,6 +45,10 @@ func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
 	if support, _ := TaskProbeSupport(task); support.Status == ProbeUnsupported {
 		return nil, false, fmt.Errorf("%w: %s cannot read its state", ErrStateUnreadable, typeKey)
 	}
+	// A task built from an address holds only its keys and defaults, but
+	// the addressReader paths never reach gatePlan, so its values are
+	// registered here the way every Plan registers its own.
+	registerTaskSensitiveValues(ctx, task)
 	if err := CheckMinimumVersions(ctx, typeKey, task); err != nil {
 		return nil, false, err
 	}

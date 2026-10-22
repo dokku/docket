@@ -178,10 +178,11 @@ func (t PortsTask) Validate() error {
 }
 
 // Plan reports the drift the PortsTask would produce.
-func (t PortsTask) Plan(ctx context.Context) PlanResult {
+func (t PortsTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planPortsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planPortsAbsent(ctx, t) },

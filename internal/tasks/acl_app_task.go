@@ -116,10 +116,11 @@ func (t AclAppTask) Validate() error {
 }
 
 // Plan reports the drift the AclAppTask would produce.
-func (t AclAppTask) Plan(ctx context.Context) PlanResult {
+func (t AclAppTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	probe := func() (map[string]bool, error) { return getAclAppUsers(ctx, t.App) }
 	observe := func(users []string, state State) Task {
 		return AclAppTask{App: t.App, Users: users, State: state}

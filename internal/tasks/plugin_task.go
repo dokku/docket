@@ -116,10 +116,11 @@ func (t PluginTask) Validate() error {
 }
 
 // Plan reports the drift the PluginTask would produce.
-func (t PluginTask) Plan(ctx context.Context) PlanResult {
+func (t PluginTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	// seen attaches the plugin as plugin:list reports it. Drift is decided by
 	// name alone; the source and committish are what export would emit.
 	seen := func(r PlanResult, entry pluginListEntry, installed bool) PlanResult {

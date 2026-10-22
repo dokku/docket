@@ -261,10 +261,11 @@ func (t ServicePropertyTask) Validate() error {
 // Plan reports the drift the ServicePropertyTask would produce, reading the
 // property's current value from `<service>:info` once the service is
 // confirmed to exist.
-func (t ServicePropertyTask) Plan(ctx context.Context) PlanResult {
+func (t ServicePropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	rb, key := t.readback()
 	target := fmt.Sprintf("%s service %s", t.Service, t.Name)
 	if rb.sensitive {

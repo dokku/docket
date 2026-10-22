@@ -83,10 +83,11 @@ func (t AppTask) ObjectEffects() ObjectEffects {
 }
 
 // Plan reports the drift the AppTask would produce.
-func (t AppTask) Plan(ctx context.Context) PlanResult {
+func (t AppTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	exists := false
 	// seen attaches the app's existence, read once by whichever branch runs.
 	seen := func(r PlanResult) PlanResult {

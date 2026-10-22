@@ -76,10 +76,11 @@ func (t AppLockTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Plan reports the drift the AppLockTask would produce.
-func (t AppLockTask) Plan(ctx context.Context) PlanResult {
+func (t AppLockTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	if t.App == "" {
 		return PlanResult{Status: PlanStatusError, Error: fmt.Errorf("'app' is required")}
 	}

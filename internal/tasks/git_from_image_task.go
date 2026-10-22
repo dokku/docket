@@ -157,10 +157,11 @@ func (t GitFromImageTask) readAddress(ctx context.Context) (Task, bool, error) {
 }
 
 // Plan reports the drift the GitFromImageTask would produce.
-func (t GitFromImageTask) Plan(ctx context.Context) PlanResult {
+func (t GitFromImageTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StateDeployed: func() PlanResult {
 			source, read, err := readAppDeploySource(ctx, t.App)

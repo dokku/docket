@@ -184,8 +184,9 @@ func ExampleTaskTypes() {
 	// Output: dokku_app - Creates or destroys an app
 }
 
-// Building a masker for one task before planning it, so nothing rendered for
-// it carries a secret.
+// Masking output rendered for a task before it is planned. Plan, Execute,
+// ReadTask and ExecutePlan register these values with the context's masker
+// themselves.
 func ExampleTaskSensitiveValues() {
 	task, err := sdk.DecodeTask("dokku_http_auth_user", []byte(`
 app: api

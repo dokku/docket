@@ -109,10 +109,11 @@ func (t ChecksToggleTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Plan reports the drift the ChecksToggleTask would produce.
-func (t ChecksToggleTask) Plan(ctx context.Context) PlanResult {
+func (t ChecksToggleTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planToggle(ctx, t, func(f ToggleFields) Task { return ChecksToggleTask(f) }, t.State, t.App, "checks:enable", "checks:disable", checksEnabled)
 }
 

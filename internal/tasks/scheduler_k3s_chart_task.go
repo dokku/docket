@@ -196,10 +196,11 @@ func schedulerK3sChartObserved(chart string, pairs map[string]string, state Stat
 }
 
 // Plan reports the drift the SchedulerK3sChartTask would produce.
-func (t SchedulerK3sChartTask) Plan(ctx context.Context) PlanResult {
+func (t SchedulerK3sChartTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 
 	// Validate() already flattened the values (and returned any error), so
 	// the flattened map is reused here for the apply; the error is

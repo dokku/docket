@@ -112,10 +112,11 @@ func (t DomainsTask) Validate() error {
 }
 
 // Plan reports the drift the DomainsTask would produce.
-func (t DomainsTask) Plan(ctx context.Context) PlanResult {
+func (t DomainsTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planDomainsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planDomainsAbsent(ctx, t) },

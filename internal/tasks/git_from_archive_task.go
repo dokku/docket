@@ -162,10 +162,11 @@ func (t GitFromArchiveTask) readAddress(ctx context.Context) (Task, bool, error)
 }
 
 // Plan reports the drift the GitFromArchiveTask would produce.
-func (t GitFromArchiveTask) Plan(ctx context.Context) PlanResult {
+func (t GitFromArchiveTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StateDeployed: func() PlanResult {
 			archiveType := t.ArchiveType

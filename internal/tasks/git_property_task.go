@@ -115,10 +115,11 @@ func (t GitPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the GitPropertyTask would produce.
-func (t GitPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t GitPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return GitPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

@@ -45,12 +45,13 @@ type LollipopTask struct {
   State   State    `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent" description:"Desired state of the lollipop"`
 }
 
-func (t LollipopTask) Plan(ctx context.Context) PlanResult {
+func (t LollipopTask) Plan(ctx context.Context) (result PlanResult) {
   // Refuse the task when the context carries a version gate and the server is
   // older than MinimumVersions declares.
   if r, ok := gatePlan(ctx, t); !ok {
     return r
   }
+  defer recordPlanned(&result, t)
   // DispatchPlan keeps its argument-free branch signature; the closures capture
   // ctx from the enclosing Plan.
   return DispatchPlan(t.State, map[State]func() PlanResult{
@@ -104,7 +105,13 @@ A few conventions to follow:
 - `DispatchPlan` and `DispatchState` set `DesiredState` on the result automatically.
 - `Plan()` starts with the `gatePlan` check, before validation and before any probe, so a task
   planned outside the CLI honours a version gate on its context.
-  `TestEveryPlanChecksVersionGate` fails the build for a `Plan()` that does not.
+  `TestEveryPlanChecksVersionGate` fails the build for a `Plan()` that does not. `gatePlan` also
+  registers the task's own sensitive values with the context's masker, so nothing the plan renders
+  carries them.
+- `Plan()` names its result `result` and defers `recordPlanned(&result, t)` right after the
+  `gatePlan` check, so every result it returns carries the planned task. `ExecutePlan` is handed
+  only the result, and registers the task's secrets from it. `TestEveryPlanRecordsItsTask` fails
+  the build for a `Plan()` that does not.
 - `Execute()` is exactly `return executeTask(ctx, t)`, so it holds the task's locks across its plan
   and its apply. `TestEveryExecuteTakesTaskLocks` fails the build for an `Execute()` that plans and
   applies itself.
@@ -392,10 +399,11 @@ func (t LollipopTask) Validate() error {
   return nil
 }
 
-func (t LollipopTask) Plan(ctx context.Context) PlanResult {
+func (t LollipopTask) Plan(ctx context.Context) (result PlanResult) {
   if r, ok := gatePlan(ctx, t); !ok { // checks the constraints, then runs Validate()
     return r
   }
+  defer recordPlanned(&result, t)
   // ... probe and DispatchPlan
 }
 ```
@@ -502,10 +510,11 @@ func checksEnabled(ctx context.Context, tc ToggleContext) (bool, error) {
   // ... return true when nothing is disabled
 }
 
-func (t ChecksToggleTask) Plan(ctx context.Context) PlanResult {
+func (t ChecksToggleTask) Plan(ctx context.Context) (result PlanResult) {
   if r, ok := gatePlan(ctx, t); !ok {
     return r
   }
+  defer recordPlanned(&result, t)
   // t is what an in-sync plan observes. The closure converts the shared field
   // set back to the task's own type, so a drift plan's Observed is a
   // ChecksToggleTask too.
@@ -560,10 +569,11 @@ func (t NginxPropertyTask) Validate() error {
   return validatePropertyInput(t, t.Global, t.Property)
 }
 
-func (t NginxPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t NginxPropertyTask) Plan(ctx context.Context) (result PlanResult) {
   if r, ok := gatePlan(ctx, t); !ok {
     return r
   }
+  defer recordPlanned(&result, t)
   return planProperty(ctx, t, func(f PropertyFields) Task { return NginxPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 ```

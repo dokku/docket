@@ -319,7 +319,10 @@ func (e *VersionError) Unwrap() error {
 	return e.Err
 }
 
-// gatePlan is the first statement of every task's Plan. It refuses the task
+// gatePlan is the first statement of every task's Plan. Before anything else
+// it registers the task's own sensitive values with the masker ctx carries,
+// so whatever the plan renders - a command line, an error, a probe's stderr -
+// masks them without the caller registering them. It then refuses the task
 // when ctx carries a version gate and the server is older than the task's
 // floor, so a caller planning a task directly gets the same refusal the CLI
 // gives, and a read never reports a resource the gate skipped as absent. A
@@ -330,15 +333,24 @@ func (e *VersionError) Unwrap() error {
 // false when the plan must stop with r.
 // TestEveryPlanChecksVersionGate fails the build for a Plan that skips it.
 func gatePlan(ctx context.Context, t Task) (r PlanResult, ok bool) {
+	registerTaskSensitiveValues(ctx, t)
 	if versionCacheFrom(ctx) != nil {
 		if err := CheckMinimumVersions(ctx, typeKeyOf(t), t); err != nil {
-			return planErr(err), false
+			return refusedPlan(err, t), false
 		}
 	}
 	if err := checkTaskInputs(t); err != nil {
-		return planErr(err), false
+		return refusedPlan(err, t), false
 	}
 	return PlanResult{}, true
+}
+
+// refusedPlan is gatePlan's refusal: the error as a PlanResult carrying the
+// planned task, which a Plan returns before deferring recordPlanned.
+func refusedPlan(err error, t Task) PlanResult {
+	r := planErr(err)
+	recordPlanned(&r, t)
+	return r
 }
 
 // checkTaskInputs refuses a task whose input breaks a declared field

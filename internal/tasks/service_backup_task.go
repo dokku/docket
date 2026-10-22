@@ -222,10 +222,11 @@ func (t ServiceBackupTask) Validate() error {
 // Plan reports the drift the ServiceBackupTask would produce, comparing each
 // declared group against `<service>:info` once the service is confirmed to
 // exist.
-func (t ServiceBackupTask) Plan(ctx context.Context) PlanResult {
+func (t ServiceBackupTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	target := fmt.Sprintf("%s service %s", t.Service, t.Name)
 	probe := func() (map[string]string, *PlanResult) {
 		exists, err := serviceExists(ctx, t.Service, t.Name)

@@ -199,10 +199,11 @@ func (t RegistryAuthTask) Validate() error {
 }
 
 // Plan reports the drift the RegistryAuthTask would produce.
-func (t RegistryAuthTask) Plan(ctx context.Context) PlanResult {
+func (t RegistryAuthTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	target := t.App
 	if t.Global {
 		target = "(global)"

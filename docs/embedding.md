@@ -274,19 +274,25 @@ whatever the unknown values turn out to be:
 
 ### Masking a task
 
-`sdk.TaskSensitiveValues` returns the values the CLI masks for a task before a run: its
-`sensitive:"true"` fields, including those of nested items such as `dokku_http_auth_user`'s users,
-the value of a property marked sensitive, and whatever the task's own `SensitiveValues()` returns.
-Build the masker from it before planning, so nothing rendered for the task carries a secret:
+A task's own secrets are its `sensitive:"true"` fields, including those of nested items such as
+`dokku_http_auth_user`'s users, the value of a property marked sensitive, and whatever the task's own
+`SensitiveValues()` returns. A task's `Plan` and `Execute`, `sdk.ReadTask`, `sdk.ReadAddress` and
+`sdk.ExecutePlan` add them to the masker on their context before they run anything, so a session's
+masker masks them in every command line, error and stderr without being told them first:
 
 ```go
-masker := sdk.NewMasker(sdk.TaskSensitiveValues(task)...)
+masker := sdk.NewMasker()
 session := sdk.NewSession(masker)
 ```
 
-Empty values are dropped and duplicates removed. A value only known once the server is read, such as
-a secret property's current value, is added to the context's masker during `Plan`, so pass the same
-masker to the session rather than building a second one.
+A context with no masker has nothing registered with it, so `sdk.NewSession(nil)` masks nothing. A
+value only known once the server is read, such as a secret property's current value, is added to the
+context's masker during `Plan` too, so pass the same masker to the session rather than building a
+second one.
+
+`sdk.TaskSensitiveValues` returns the same values for a task, with empty values dropped and
+duplicates removed. Call it only to mask output you render before any of those calls has run, such
+as a task printed before it is planned.
 
 ### Version floors
 
@@ -590,12 +596,13 @@ has no effect while a fake is installed. The response's `Command` is what an app
 `TaskOutputState.Commands`, so set it when a test reads that. `PlanResult.Commands` is rendered by
 the engine and masked by the session's masker either way.
 
-The engine does not mask the errors and messages it returns; the caller masks what it shows. Build
-the masker from `sdk.TaskSensitiveValues` (see [Masking a task](#masking-a-task)), as the CLI does
-before a run, and a test can check both the masked plan and the masked diagnostic:
+The engine does not mask the errors and messages it returns; the caller masks what it shows. The
+session's masker already holds the task's own secrets once the task is planned (see
+[Masking a task](#masking-a-task)), so a test can check both the masked plan and the masked
+diagnostic without registering them:
 
 ```go
-masker := sdk.NewMasker(sdk.TaskSensitiveValues(cfg)...)
+masker := sdk.NewMasker()
 session := sdk.NewSession(masker)
 defer func() { _ = session.Close() }()
 ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), fake)
