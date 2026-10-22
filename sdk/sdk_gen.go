@@ -331,6 +331,40 @@ func NewTask(typeKey string) (Task, error) {
 	return tasks.NewTask(typeKey)
 }
 
+// Kinds of task note, in the order a reference page prints them.
+const (
+	// NoteDeprecation is the Deprecated admonition.
+	NoteDeprecation = tasks.NoteDeprecation
+
+	// NoteImperative says the task runs an operation and has nothing to undo.
+	NoteImperative = tasks.NoteImperative
+
+	// NoteRequirements lists the Dokku floor and the plugins the task needs.
+	NoteRequirements = tasks.NoteRequirements
+
+	// NoteRunnerRequirements lists the files docket reads on the machine it
+	// runs on.
+	NoteRunnerRequirements = tasks.NoteRunnerRequirements
+
+	// NoteExport says whether `docket export` can reconstruct the task.
+	NoteExport = tasks.NoteExport
+
+	// NoteProbe says how much of its own state the task can read back.
+	NoteProbe = tasks.NoteProbe
+
+	// NoteIdentity names the fields that select the resource.
+	NoteIdentity = tasks.NoteIdentity
+
+	// NoteObjects names the app and service the task changes.
+	NoteObjects = tasks.NoteObjects
+
+	// NoteConstraints lists the rules over several fields.
+	NoteConstraints = tasks.NoteConstraints
+
+	// NoteProperties is the table of names a property task accepts.
+	NoteProperties = tasks.NoteProperties
+)
+
 // Object kinds, as TaskObject.Kind.
 const (
 	// ObjectApp is a dokku app, identified by its name.

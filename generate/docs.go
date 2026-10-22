@@ -18,8 +18,10 @@ import (
 // catalog instead is what keeps the published JSON and the published markdown
 // describing the same thing.
 //
-// What stays here is presentation: the prose the catalog deliberately does not
-// bake into its `description` field, the table layout, and the section order.
+// What stays here is presentation: the table layout and the section order.
+// The prose of every note, task-level and per-field, is rendered in
+// internal/tasks and published in the catalog's `notes` and `note` keys
+// (#651), so an embedder reusing it prints exactly what these pages print.
 
 // summarize reduces a task's docblock to a single-line summary for the index:
 // the first line, trimmed to its first sentence.
@@ -36,43 +38,8 @@ func summarize(doc string) string {
 
 // escapeCell makes a string safe to embed in a markdown table cell.
 func escapeCell(s string) string {
-	s = strings.ReplaceAll(escapeProse(s), "|", "\\|")
+	s = strings.ReplaceAll(tasks.EscapeProse(s), "|", "\\|")
 	return strings.ReplaceAll(s, "\n", " ")
-}
-
-// escapeProse escapes a bare `<...>` in task-supplied prose so a placeholder
-// such as `<service>:set` in a description or caveat renders as text.
-// Markdown treats a bare `<service>` as an inline HTML tag, which GitHub drops
-// from the page and which markdown-lint rejects as MD033. Only a `<` that
-// looks like a tag start (a letter, `/`, `!` or `?` after it) is rewritten to
-// `&lt;`; a bare `>` and a comparison such as `>=` are left alone, since they
-// are not HTML. Brackets inside a backtick code span are left alone too, since
-// a code span already renders them literally and an entity there would show up
-// as `&lt;`.
-func escapeProse(s string) string {
-	runes := []rune(s)
-	var b strings.Builder
-	inCode := false
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		switch {
-		case r == '`':
-			inCode = !inCode
-			b.WriteRune(r)
-		case inCode:
-			b.WriteRune(r)
-		case r == '<' && i+1 < len(runes) && isHTMLTagStart(runes[i+1]):
-			b.WriteString("&lt;")
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-// isHTMLTagStart reports whether r can open an HTML tag after a `<`.
-func isHTMLTagStart(r rune) bool {
-	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '/' || r == '!' || r == '?'
 }
 
 func yesNo(b bool) string {
@@ -82,123 +49,13 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// itemFieldNames returns the recipe keys of a list-of-struct field's element,
-// so the Parameters table can describe the item shape inline. Only a list
-// qualifies: a dict's entries are keyed rather than shaped, and its value type
-// is already carried by the type column.
-func itemFieldNames(field tasks.FieldSchema) []string {
-	if field.Type != tasks.TypeList || field.Item == nil || field.Item.Type != tasks.TypeObject {
-		return nil
-	}
-	names := make([]string, 0, len(field.Item.Fields))
-	for _, item := range field.Item.Fields {
-		names = append(names, item.Name)
-	}
-	return names
-}
-
-// paramDescription is the Parameters table's description cell. The catalog
-// carries the raw description tag and the facts (Sensitive, Item) separately,
-// so the prose a reader expects is composed here rather than baked into the
-// machine-readable form.
+// paramDescription is the Parameters table's description cell: the raw
+// description with the field's published note appended.
 func paramDescription(field tasks.FieldSchema) string {
-	desc := field.Description
-	if items := itemFieldNames(field); len(items) > 0 {
-		desc = strings.TrimSpace(desc)
-		if desc != "" && !strings.HasSuffix(desc, ".") {
-			desc += "."
-		}
-		desc = strings.TrimSpace(desc + " Each item has: " + strings.Join(items, ", ") + ".")
+	if field.Note == nil {
+		return field.Description
 	}
-	if field.Ordered != nil && *field.Ordered {
-		desc = strings.TrimSpace(desc + " (order is significant)")
-	}
-	if len(field.RequiredWhen) > 0 {
-		desc = strings.TrimSpace(desc + " (required when state is " + joinWords(field.RequiredWhen, "or", "") + ")")
-	}
-	if len(field.ForbiddenWhen) > 0 {
-		desc = strings.TrimSpace(desc + " (must not be set when state is " + joinWords(field.ForbiddenWhen, "or", "") + ")")
-	}
-	if field.RunnerFile {
-		desc = strings.TrimSpace(desc + " (read from the machine running docket)")
-	}
-	if field.WriteOnly {
-		desc = strings.TrimSpace(desc + " (not returned when reading state)")
-	}
-	if field.ApplyOnly {
-		desc = strings.TrimSpace(desc + " (applied only, not read back)")
-	}
-	if field.Sensitive {
-		desc = strings.TrimSpace(desc + " (sensitive)")
-	}
-	return desc
-}
-
-// joinWords renders words as `a`, `a or b`, or `a, b or c`, each wrapped in
-// quote - a backtick for code, or nothing for prose.
-func joinWords(words []string, conjunction, quote string) string {
-	quoted := make([]string, len(words))
-	for i, word := range words {
-		quoted[i] = quote + word + quote
-	}
-	if len(quoted) <= 1 {
-		return strings.Join(quoted, "")
-	}
-	return strings.Join(quoted[:len(quoted)-1], ", ") + " " + conjunction + " " + quoted[len(quoted)-1]
-}
-
-// constraintSentence renders one multi-field rule as a sentence.
-func constraintSentence(c tasks.Constraint) string {
-	var sentence string
-	switch c.Kind {
-	case tasks.ConstraintExactlyOneOf:
-		sentence = "Exactly one of " + joinWords(c.Fields, "or", "`") + " must be set"
-	case tasks.ConstraintAtLeastOneOf:
-		sentence = "At least one of " + joinWords(c.Fields, "or", "`") + " must be set"
-	case tasks.ConstraintAllOrNoneOf:
-		sentence = joinWords(c.Fields, "and", "`") + " must be set together or not at all"
-	case tasks.ConstraintConflictsWith:
-		sentence = "`" + c.Field + "` must not be set together with " + joinWords(c.Fields, "or", "`")
-	case tasks.ConstraintRequiredWith:
-		sentence = "`" + c.Field + "` requires " + joinWords(c.Fields, "and", "`")
-	default:
-		sentence = string(c.Kind) + " " + joinWords(c.Fields, "and", "`")
-	}
-	if len(c.States) > 0 {
-		states := make([]string, len(c.States))
-		for i, state := range c.States {
-			states[i] = string(state)
-		}
-		sentence += " when `state` is " + joinWords(states, "or", "`")
-	}
-	return sentence + "."
-}
-
-// constraintsSection renders the rules over several fields that the task, and
-// the elements of its structured lists, declare. Returns "" when there are
-// none. Rules about one field and the state - required in some states,
-// forbidden in others - are noted in that field's Parameters row instead.
-func constraintsSection(schema tasks.TaskSchema) string {
-	var lines []string
-	for _, c := range schema.Constraints {
-		lines = append(lines, "- "+constraintSentence(c))
-	}
-	for _, field := range schema.Fields {
-		if field.Item == nil {
-			continue
-		}
-		for _, c := range field.Item.Constraints {
-			sentence := constraintSentence(c)
-			if !strings.HasPrefix(sentence, "`") {
-				sentence = strings.ToLower(sentence[:1]) + sentence[1:]
-			}
-			lines = append(lines, fmt.Sprintf("- Each `%s` item: %s", field.Name, sentence))
-		}
-	}
-	if len(lines) == 0 {
-		return ""
-	}
-	return "## Constraints\n\n" + strings.Join(lines, "\n") + "\n"
+	return field.Description + field.Note.Suffix
 }
 
 // parametersSection renders the Parameters table for a task. Returns "" when
@@ -225,300 +82,11 @@ func parametersSection(fields []tasks.FieldSchema) string {
 	return b.String()
 }
 
-// propertiesSection renders the Properties table for a task that manages a
-// dokku property table: every name its `property` field accepts, the scopes
-// that accept it, and the report keys the drift probe reads. Without it the
-// only way to discover a legal property name is to trigger a validation error.
-func propertiesSection(schema *tasks.PropertySchema) string {
-	if schema == nil || len(schema.Properties) == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-	b.WriteString("## Properties\n\n")
-	fmt.Fprintf(&b,
-		"`property` accepts one of the following, applied with `dokku %s`. A property with no form in a scope is rejected there, matching dokku's own rejection.\n\n",
-		schema.Subcommand,
-	)
-	b.WriteString("| Property | Scopes | Report key (app) | Report key (global) |\n")
-	b.WriteString("| --- | --- | --- | --- |\n")
-	for _, property := range schema.Properties {
-		name := "`" + property.Name + "`"
-		if property.Sensitive {
-			name += " (sensitive)"
-		}
-		fmt.Fprintf(&b,
-			"| %s | %s | %s | %s |\n",
-			name,
-			strings.Join(property.Scopes, ", "),
-			codeOrBlank(property.AppReportKey),
-			codeOrBlank(property.GlobalReportKey),
-		)
-	}
-
-	for _, family := range schema.Dynamic {
-		fmt.Fprintf(&b, "\nNames starting with `%s` are also accepted %s. dokku validates them through `%s` rather than through its report schema, so they cannot be listed above. ",
-			family.Prefix, scopePhrase(family.Scopes), schema.Subcommand)
-		if family.Probeable {
-			b.WriteString("The plugin reports each one it has been given, so they probe for drift like any listed property.")
-		} else {
-			b.WriteString("The plugin does not report them, so they are applied on every run and never converge.")
-		}
-		if family.Sensitive {
-			b.WriteString(" Their values are treated as secrets and masked.")
-		}
-		b.WriteString("\n")
-	}
-
-	for _, family := range schema.Rejected {
-		fmt.Fprintf(&b, "\nNames starting with `%s` are rejected here - they are managed by `%s`, since %s.\n",
-			family.Prefix, family.Replacement, family.Reason)
-	}
-	return b.String()
-}
-
-// scopePhrase renders a dynamic family's scopes as the clause that follows
-// "are also accepted": a family with one scope is spelled out as a restriction,
-// since that is the part a reader has to know, and one with both reads as no
-// restriction at all.
-func scopePhrase(scopes []string) string {
-	if len(scopes) == 1 {
-		return fmt.Sprintf("in the %s scope only", scopes[0])
-	}
-	return "in the " + strings.Join(scopes, " and ") + " scopes"
-}
-
-// codeOrBlank renders a report key as inline code, or an empty cell when the
-// property has no form in that scope.
-func codeOrBlank(key string) string {
-	if key == "" {
-		return ""
-	}
-	return "`" + key + "`"
-}
-
-// requirementsSection renders the Requirements bullet list. The Dokku line
-// comes from minimum_dokku_version and is first; plugin lines come from
-// requirements. Returns "" when the task declares neither.
-func requirementsSection(dokku string, requirements []string) string {
-	if dokku == "" && len(requirements) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("## Requirements\n\n")
-	if dokku != "" {
-		b.WriteString("- Dokku >= " + escapeProse(dokku) + "\n")
-	}
-	for _, r := range requirements {
-		b.WriteString("- " + escapeProse(r) + "\n")
-	}
-	return b.String()
-}
-
-// runnerRequirementsSection renders the Runner requirements bullet list for a
-// task with fields naming files docket reads on the machine it runs on rather
-// than on the dokku server. Element fields are included under a `parent[].child`
-// name, since the Parameters table lists those by name only. Returns ""
-// otherwise.
-func runnerRequirementsSection(fields []tasks.FieldSchema) string {
-	names := runnerFileNames("", fields)
-	if len(names) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("## Runner requirements\n\n")
-	for _, name := range names {
-		fmt.Fprintf(&b, "- `%s` is read from the machine running docket, not the dokku server, so the file must exist there even when docket drives the server over `--host`.\n", name)
-	}
-	return b.String()
-}
-
-// runnerFileNames returns the names of the runner-side file fields in
-// declaration order, descending into structured list and dict elements.
-func runnerFileNames(prefix string, fields []tasks.FieldSchema) []string {
-	var names []string
-	for _, field := range fields {
-		if field.RunnerFile {
-			names = append(names, prefix+field.Name)
-		}
-		if field.Item != nil && field.Item.Type == tasks.TypeObject {
-			names = append(names, runnerFileNames(prefix+field.Name+"[].", field.Item.Fields)...)
-		}
-	}
-	return names
-}
-
-// exportSupportSection renders the Export support section, stating whether
-// `docket export` can reconstruct the task from a live server. Every task
-// declares this via ExportSupport(); the section is omitted only if a task
-// does not (the export coverage test prevents that in practice).
-func exportSupportSection(support tasks.ExportSupport) string {
-	if support.Status == "" {
-		return ""
-	}
-	var label string
-	switch support.Status {
-	case tasks.ExportSupported:
-		label = "Supported"
-	case tasks.ExportPartial:
-		label = "Partial"
-	case tasks.ExportUnsupported:
-		label = "Not supported"
-	default:
-		label = string(support.Status)
-	}
-	line := label
-	if support.Caveat != "" {
-		line += " - " + escapeProse(support.Caveat)
-	}
-	return "## Export support\n\n" + line + "."
-}
-
-// probeSupportSection renders the Probe support section, stating whether
-// `plan` can read the task's current state before deciding on drift. Every task
-// declares this via ProbeSupport(); the section is omitted only if a task does
-// not (the probe coverage test prevents that in practice). A task rendered as
-// "Not supported" here plans as drift on every run, so it never lets
-// `plan --detailed-exitcode` exit 0.
-func probeSupportSection(support tasks.ProbeSupport) string {
-	if support.Status == "" {
-		return ""
-	}
-	var label string
-	switch support.Status {
-	case tasks.ProbeSupported:
-		label = "Supported"
-	case tasks.ProbePartial:
-		label = "Partial"
-	case tasks.ProbeUnsupported:
-		label = "Not supported"
-	default:
-		label = string(support.Status)
-	}
-	line := label
-	if support.Caveat != "" {
-		line += " - " + escapeProse(support.Caveat)
-	}
-	return "## Probe support\n\n" + line + "."
-}
-
-// identitySection renders the Identity section, naming the fields that select
-// the resource the task manages and, where the task owns a collection, what
-// identifies one entry in it. Every task declares at least one identity key;
-// the section is omitted only if a task declares none, which the identity
-// coverage test prevents.
-//
-// The address form is explained once in docs/task-envelope.md rather than
-// repeated on 73 pages; what a reader needs here is which fields go into it.
-func identitySection(identity tasks.IdentitySchema) string {
-	if len(identity.Keys) == 0 {
-		return ""
-	}
-
-	line := "Keyed by " + joinCodeNames(identity.Keys) + "."
-	if len(identity.Keys) > 1 {
-		line += " Fields left empty are omitted from the address."
-	}
-	for _, collection := range identity.Collections {
-		line += fmt.Sprintf(" Manages the whole `%s` collection", collection.Name)
-		switch collection.Item {
-		case tasks.ItemIdentityMapKey:
-			line += "; entries are identified by their key."
-		case tasks.ItemIdentityFields:
-			if len(collection.ItemKeys) > 0 {
-				line += "; entries are identified by " + joinCodeNames(collection.ItemKeys) + "."
-			} else {
-				line += "."
-			}
-		default:
-			line += "; entries are identified by value."
-		}
-	}
-	return "## Identity\n\n" + line
-}
-
-// objectsSection renders the Objects section: the app and the datastore
-// service the task changes, whether it creates them, and when it restarts
-// them. Returns "" for a task that changes neither. The locking it implies is
-// explained once in docs/embedding.md rather than on every page.
-func objectsSection(objects []tasks.ObjectSchema) string {
-	if len(objects) == 0 {
-		return ""
-	}
-	var lines []string
-	for _, object := range objects {
-		var line string
-		switch object.Kind {
-		case tasks.ObjectService:
-			line = "- The datastore service named by " + joinCodeNames(object.Keys) + "."
-		default:
-			line = "- The app named by `" + strings.Join(object.Keys, "`, `") + "`."
-		}
-		if object.Creates {
-			line += " Creates it, and destroys it in state `absent`."
-		}
-		if r := object.Restarts; r != nil {
-			line += " Can restart or redeploy it"
-			var conditions []string
-			if len(r.When) > 0 {
-				conditions = append(conditions, "when "+joinWords(r.When, "or", "`")+" is true")
-			}
-			if len(r.Unless) > 0 {
-				conditions = append(conditions, "unless "+joinWords(r.Unless, "or", "`")+" is true")
-			}
-			if len(r.States) > 0 {
-				states := make([]string, len(r.States))
-				for i, state := range r.States {
-					states[i] = string(state)
-				}
-				conditions = append(conditions, "when `state` is "+joinWords(states, "or", "`"))
-			}
-			if len(conditions) > 0 {
-				line += " " + strings.Join(conditions, ", and ")
-			}
-			line += "."
-		}
-		lines = append(lines, line)
-	}
-	note := "Tasks applied at once on the same object take turns; see [Running tasks concurrently](../embedding.md#running-tasks-concurrently)."
-	return "## Objects\n\n" + strings.Join(lines, "\n") + "\n\n" + note
-}
-
-// joinCodeNames renders a list of field names as backticked, comma-separated
-// prose with a trailing "and".
-func joinCodeNames(names []string) string {
-	quoted := make([]string, len(names))
-	for i, name := range names {
-		quoted[i] = "`" + name + "`"
-	}
-	switch len(quoted) {
-	case 1:
-		return quoted[0]
-	case 2:
-		return quoted[0] + " and " + quoted[1]
-	}
-	return strings.Join(quoted[:len(quoted)-1], ", ") + ", and " + quoted[len(quoted)-1]
-}
-
-// deprecationSection renders the Deprecated admonition for a task that
-// declares one. The notice sits between the Synopsis and the
-// Requirements/Parameters sections so the reader sees it before scanning the
-// field table.
-func deprecationSection(message string) string {
-	if message == "" {
-		return ""
-	}
-	return "> **Deprecated:** " + escapeProse(message)
-}
-
-// imperativeSection renders the note for a task that runs an operation rather
-// than declaring a resource, so a reader planning a teardown knows there is
-// nothing to undo.
-func imperativeSection(imperative bool) string {
-	if !imperative {
-		return ""
-	}
-	return "> **Imperative:** this task runs an operation rather than declaring a resource. It has nothing to undo, so it offers no `absent` or `clear` state."
+// afterParameters are the note kinds a page prints after the Parameters
+// table, since they read as remarks on it. Every other note comes before it.
+var afterParameters = map[tasks.NoteKind]bool{
+	tasks.NoteConstraints: true,
+	tasks.NoteProperties:  true,
 }
 
 // returnValuesSection is the shared Return Values table. Every task returns a
@@ -564,43 +132,23 @@ func examplesSection(examples []tasks.ExampleSchema) string {
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
-// renderPage builds the full markdown page for one task.
+// renderPage builds the full markdown page for one task from its catalog
+// entry: the notes as published, with the Parameters table placed before the
+// first note that comments on it.
 func renderPage(schema tasks.TaskSchema) string {
 	var sections []string
 	sections = append(sections, "# "+schema.Type)
-	sections = append(sections, "## Synopsis\n\n"+escapeProse(schema.Synopsis))
-	if dep := deprecationSection(schema.Deprecation); dep != "" {
-		sections = append(sections, dep)
+	sections = append(sections, "## Synopsis\n\n"+tasks.EscapeProse(schema.Synopsis))
+	parameters := strings.TrimRight(parametersSection(schema.Fields), "\n")
+	for _, note := range schema.Notes {
+		if afterParameters[note.Kind] && parameters != "" {
+			sections = append(sections, parameters)
+			parameters = ""
+		}
+		sections = append(sections, note.Markdown)
 	}
-	if imp := imperativeSection(schema.Imperative); imp != "" {
-		sections = append(sections, imp)
-	}
-	if req := requirementsSection(schema.MinimumDokkuVersion, schema.Requirements); req != "" {
-		sections = append(sections, strings.TrimRight(req, "\n"))
-	}
-	if rr := runnerRequirementsSection(schema.Fields); rr != "" {
-		sections = append(sections, strings.TrimRight(rr, "\n"))
-	}
-	if es := exportSupportSection(schema.Export); es != "" {
-		sections = append(sections, es)
-	}
-	if ps := probeSupportSection(schema.Probe); ps != "" {
-		sections = append(sections, ps)
-	}
-	if id := identitySection(schema.Identity); id != "" {
-		sections = append(sections, id)
-	}
-	if objects := objectsSection(schema.Objects); objects != "" {
-		sections = append(sections, objects)
-	}
-	if pt := parametersSection(schema.Fields); pt != "" {
-		sections = append(sections, strings.TrimRight(pt, "\n"))
-	}
-	if cs := constraintsSection(schema); cs != "" {
-		sections = append(sections, strings.TrimRight(cs, "\n"))
-	}
-	if props := propertiesSection(schema.PropertySchema); props != "" {
-		sections = append(sections, strings.TrimRight(props, "\n"))
+	if parameters != "" {
+		sections = append(sections, parameters)
 	}
 	if ex := examplesSection(schema.Examples); ex != "" {
 		sections = append(sections, strings.TrimRight(ex, "\n"))
@@ -624,7 +172,7 @@ func renderIndex(catalog tasks.TaskCatalog) string {
 		if schema.Probe.Status == tasks.ProbeUnsupported {
 			suffix += " (never converges)"
 		}
-		fmt.Fprintf(&index, "- [%s](%s.md) - %s%s\n", schema.Type, schema.Type, escapeProse(summarize(schema.Synopsis)), suffix)
+		fmt.Fprintf(&index, "- [%s](%s.md) - %s%s\n", schema.Type, schema.Type, tasks.EscapeProse(summarize(schema.Synopsis)), suffix)
 	}
 	return index.String()
 }

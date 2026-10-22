@@ -784,6 +784,12 @@ locally before sending a PR.
 
 The generator renders those pages from `tasks.Catalog()`, the same description
 [`docket schema`](task-catalog.md) emits, so a declaration you add shows up in both or in neither.
+The prose of every note, on the task and on a field, is rendered in
+`internal/tasks/catalog_notes.go` and published as the catalog's
+[rendered notes](task-catalog.md#rendered-notes); the generator only lays them out. A new note kind
+is one renderer added to `taskNoteKinds` or `fieldNoteKinds`, in page order, plus its `kind` in the
+JSON Schema. A renderer takes the state a consumer drives, or `""` for every state, and the catalog
+publishes a per-state copy of any note whose text changes with it.
 
 Because the examples are published as-is, they are also tested. `TestAllTaskExamplesValidate`
 (`internal/tasks/main_test.go`) decodes every example offline, applies the field defaults, and runs the
