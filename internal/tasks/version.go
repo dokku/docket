@@ -16,6 +16,8 @@ import (
 // non-core plugins it needs. MinimumVersions returns the declaration for the
 // task type, including plugins that apply only for some field values. The
 // gate, not the method, decides which of those apply to a particular task.
+//
+//sdk:export
 type VersionSupport struct {
 	// Dokku is the oldest Dokku release, as major.minor.patch.
 	Dokku string
@@ -53,8 +55,10 @@ type VersionDocer interface {
 	MinimumVersions() VersionSupport
 }
 
-// TaskMinimumVersions returns the version declaration for t, and whether t
-// declared one.
+// TaskMinimumVersions reports the oldest Dokku, and the plugins, t declares
+// it runs on. The bool is false when t declares nothing.
+//
+//sdk:export
 func TaskMinimumVersions(t Task) (VersionSupport, bool) {
 	if d, ok := t.(VersionDocer); ok {
 		return d.MinimumVersions(), true
@@ -154,13 +158,19 @@ type versionRead[T any] struct {
 	generation uint64
 }
 
-// ContextWithVersionGate returns a context on which plan, apply, and export
-// refuse a task whose declared floor is newer than the server. A context that
-// already carries a gate is returned as-is, so installing it twice does not
-// split the cache. Without a gate, CheckMinimumVersions does nothing: export
-// unit tests call ExportRecipe directly and their fake dokku answers an empty
-// version, which would otherwise skip every exporter.
+// ContextWithVersionGate returns a copy of ctx on which CheckMinimumVersions
+// compares a task's floor with the server, so plan, apply, read and export
+// refuse a task whose declared floor is newer than the server. The versions it
+// reads are cached per target for as long as the context lives, so install it
+// once per run. A context that already carries a gate is returned as-is. A
+// caller that gets a new context for every call it serves gives the gate to its
+// session with SessionVersionGate instead.
+//
+//sdk:export
 func ContextWithVersionGate(ctx context.Context) context.Context {
+	// Without a gate, CheckMinimumVersions does nothing: export unit tests call
+	// ExportRecipe directly and their fake dokku answers an empty version, which
+	// would otherwise skip every exporter.
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -170,11 +180,16 @@ func ContextWithVersionGate(ctx context.Context) context.Context {
 	return context.WithValue(ctx, versionCacheKey{}, newVersionCache())
 }
 
-// SessionVersionGate is a session option that installs one version gate on
-// every context the session hands out, so they share one cache per target for
-// as long as the session lives, however many calls - each with its own
-// context and cancellation - it serves. Each session built with it gets its
-// own cache. The session's gate replaces one already on the parent context.
+// SessionVersionGate is a NewSession option that installs the version gate on
+// every context the session hands out. They share one cache per target for as
+// long as the session lives, so `dokku version` and `plugin:list` are read
+// once per server per session rather than once per call, while each context
+// keeps the cancellation of the parent it was built from. Only a successful
+// read is cached; a failed one is retried by the next call. Each session gets
+// its own cache, and the session's gate replaces one already on the parent
+// context.
+//
+//sdk:export WithVersionGate
 func SessionVersionGate() subprocess.SessionOption {
 	return subprocess.WithSessionValue(versionCacheKey{}, func() any { return newVersionCache() })
 }
@@ -251,6 +266,8 @@ func withoutVersionGate(ctx context.Context) context.Context {
 // an installed plugin a task needs, is older than the task's floor, or when
 // that version could not be read or parsed. Its message names no flag: the
 // CLI adds the --ignore-version hint when it renders one.
+//
+//sdk:export
 type VersionError struct {
 	// TaskType is the task type that was checked, such as "dokku_app".
 	TaskType string
@@ -337,12 +354,16 @@ func checkTaskInputs(t Task) error {
 	return nil
 }
 
-// CheckMinimumVersions reports whether the server ctx targets is older than
-// the floor task declares. A context with no version gate returns nil, as
-// does a task that declares no floor. An uninstalled plugin is not a failure:
-// the task's own probe reports that, and a recipe can install the plugin
-// earlier in the same run. An installed plugin that is older, or a version
-// that does not parse, fails the task with a *VersionError.
+// CheckMinimumVersions returns a *VersionError when the server ctx targets, or
+// an installed plugin task needs, is older than the floor task declares, or
+// when a version does not parse. A task's Plan and Execute already refuse
+// through it when ctx carries a gate; call it to check a task before planning
+// it. It returns nil when ctx carries no gate, when task declares no floor,
+// and when a plugin task needs is not installed, which the task's own probe
+// reports and which a recipe can install earlier in the same run. typeKey
+// names the task in the error, such as "dokku_app".
+//
+//sdk:export
 func CheckMinimumVersions(ctx context.Context, typeKey string, task Task) error {
 	cache := versionCacheFrom(ctx)
 	if cache == nil || task == nil {

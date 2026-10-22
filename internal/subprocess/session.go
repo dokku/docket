@@ -7,8 +7,10 @@ import (
 	"sync/atomic"
 )
 
-// ErrSessionClosed is returned, wrapped in an *SSHError, by an SSH call made
-// under a Session that has already been closed.
+// ErrSessionClosed is the error a call made under a closed session fails with,
+// wrapped in the error the call returns. Test for it with errors.Is.
+//
+//sdk:export
 var ErrSessionClosed = errors.New("ssh session is closed")
 
 // sessionIDs hands out Session ids. They start at 1 so that 0 can mean "no
@@ -35,6 +37,8 @@ var sessionIDs atomic.Uint64
 // A Session is safe for concurrent use. Close is idempotent; call it once the
 // calls made under its contexts have returned, since a call still in flight
 // loses its connection.
+//
+//sdk:export
 type Session struct {
 	sessionID uint64
 	masker    *Masker
@@ -54,6 +58,8 @@ type Session struct {
 }
 
 // SessionOption configures a Session when NewSession builds it.
+//
+//sdk:export
 type SessionOption func(*Session)
 
 // sessionValue is one context value a session owns.

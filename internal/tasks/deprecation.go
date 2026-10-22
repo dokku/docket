@@ -10,10 +10,12 @@ type DeprecationDocer interface {
 	Deprecation() string
 }
 
-// TaskDeprecation returns the deprecation notice for t, or "" when t does
-// not implement DeprecationDocer. Centralised so docs generation, the
-// list-tasks renderer, and the apply/plan executors share one read site.
+// TaskDeprecation returns t's deprecation notice, or "" when t is current.
+//
+//sdk:export
 func TaskDeprecation(t Task) string {
+	// Centralised so docs generation, the list-tasks renderer, and the apply/plan
+	// executors share one read site.
 	if d, ok := t.(DeprecationDocer); ok {
 		return d.Deprecation()
 	}

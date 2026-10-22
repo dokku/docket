@@ -96,10 +96,14 @@ type taskLockKey struct {
 	label string
 }
 
-// ContextWithTaskLocks returns a context on which Execute serializes tasks
-// that change the same app or datastore service. A context that already
-// carries a table is returned as-is, so installing it twice does not split
-// it. Without a table, Execute and LockTask lock nothing.
+// ContextWithTaskLocks returns a copy of ctx on which Execute serializes the
+// tasks that change the same app or datastore service, on the same server. A
+// context that already carries a lock table is returned as-is, so installing it
+// twice does not split it. Every context a NewSession session hands out already
+// carries one, so this is only for a context built without a session. Without a
+// table, Execute and LockTask lock nothing.
+//
+//sdk:export
 func ContextWithTaskLocks(ctx context.Context) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -117,6 +121,20 @@ func ContextWithTaskLocks(ctx context.Context) context.Context {
 // already on the parent context.
 func SessionTaskLocks() subprocess.SessionOption {
 	return subprocess.WithSessionValue(taskLocksKey{}, func() any { return newTaskLocks() })
+}
+
+// NewSession returns a session whose contexts carry masker and whatever opts,
+// such as the version gate, install. A nil masker leaves any masker already on
+// the parent context in place.
+//
+// Every context the session hands out also carries one lock table, so
+// Execute calls made under the session - from any goroutine - take turns on
+// the same app or datastore service rather than colliding on dokku's deploy
+// lock. See LockTask.
+//
+//sdk:export
+func NewSession(masker *subprocess.Masker, opts ...subprocess.SessionOption) *subprocess.Session {
+	return subprocess.NewSession(masker, append([]subprocess.SessionOption{SessionTaskLocks()}, opts...)...)
 }
 
 func taskLocksFrom(ctx context.Context) *taskLocks {
@@ -148,21 +166,24 @@ func taskLockKeys(ctx context.Context, t Task) []taskLockKey {
 }
 
 // LockTask takes the locks t needs: one for each app or datastore service it
-// changes, on the server ctx targets. It returns a context recording them, so
-// an Execute under it does not wait on the locks its caller already holds,
-// and a function that releases them. The function is safe to call more than
-// once.
+// changes, on the server ctx targets, waiting while another task holds them. It
+// returns a context recording them, so an Execute under it does not wait on the
+// locks its caller already holds, and a function that releases them, safe to
+// call more than once.
 //
-// Execute takes the same locks itself. LockTask is for a caller that plans
-// and applies separately: hold the locks across both, so no other task on the
-// same object runs between the plan and its apply.
+// Execute takes the same locks itself; Plan, ReadTask and ExecutePlan take
+// none. LockTask is for a caller that plans and applies separately: hold the
+// locks across a Plan and its ExecutePlan, so no other task on the same object
+// runs in between.
 //
 // A context with no lock table returns ctx and locks nothing. A caller whose
-// ctx ends while it waits gets ctx's error and holds nothing. Locks are always
-// taken in one order, so a nested call that needs a lock ordered before one
-// its caller holds - executing a dokku_service_link while holding only its
-// service - is refused rather than risking a deadlock: lock the task that
-// needs both first.
+// ctx ends while it waits gets an error wrapping ctx's and holds nothing. Locks
+// are always taken app first, then service, so a nested call needing a lock
+// ordered before one already held - executing a dokku_service_link while
+// holding only its service - returns an error rather than risk a deadlock: lock
+// the task that changes both first.
+//
+//sdk:export
 func LockTask(ctx context.Context, t Task) (context.Context, func(), error) {
 	table := taskLocksFrom(ctx)
 	if table == nil || t == nil {

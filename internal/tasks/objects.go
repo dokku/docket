@@ -13,6 +13,9 @@ const serializeTag = "serialize"
 // create and restart one.
 type ObjectKind string
 
+// Object kinds, as TaskObject.Kind.
+//
+//sdk:export
 const (
 	// ObjectApp is a dokku app, identified by its name.
 	ObjectApp ObjectKind = "app"
@@ -63,6 +66,8 @@ type ObjectRestart struct {
 
 // ObjectEffects is what applying a task does to its objects beyond changing
 // them: whether it creates one, and whether it restarts or redeploys one.
+//
+//sdk:export
 type ObjectEffects struct {
 	// Creates lists the kinds the task creates, and destroys in its absent
 	// state. Every other task on the same object depends on it: a consumer
@@ -81,6 +86,8 @@ type ObjectEffectsDocer interface {
 }
 
 // TaskObject is one object a task changes.
+//
+//sdk:export
 type TaskObject struct {
 	// Kind is what the object is.
 	Kind ObjectKind
@@ -105,10 +112,15 @@ type TaskObject struct {
 	Restarts *Restart
 }
 
-// TaskObjects returns the objects t changes, in a fixed kind order: the app
-// first, then the service. Centralised so the catalog, the docs generator, the
-// lock table and the sdk share one read site.
+// TaskObjects returns the app and the datastore service t changes, app first:
+// the recipe keys naming each and the values t holds for them, whether t
+// creates it, and when t restarts or redeploys it. The catalog publishes the
+// same data as TaskSchema.Objects. Nil when t changes neither.
+//
+//sdk:export
 func TaskObjects(t Task) []TaskObject {
+	// Centralised so the catalog, the docs generator, the lock table and the sdk
+	// share one read site.
 	v, ok := structValue(t)
 	if !ok {
 		return nil

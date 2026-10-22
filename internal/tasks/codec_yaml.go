@@ -6,7 +6,10 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-// FormatYAML is the canonical name of the YAML codec.
+// FormatYAML is the canonical name of the YAML codec, one of the recipe
+// formats ExportResult.MarshalRecipe accepts.
+//
+//sdk:export
 const FormatYAML = "yaml"
 
 // yamlCodec reads and writes recipes as YAML, docket's original and

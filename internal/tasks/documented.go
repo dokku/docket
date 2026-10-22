@@ -16,10 +16,12 @@ type Documented interface {
 	examples() ([]Doc, error)
 }
 
-// TaskSynopsis returns the docblock for t, or "" when t does not implement
-// Documented. Centralised so the catalog and the coverage test share one read
-// site, mirroring TaskDeprecation.
+// TaskSynopsis returns t's description, or "" when it has none.
+//
+//sdk:export
 func TaskSynopsis(t Task) string {
+	// Centralised so the catalog and the coverage test share one read site,
+	// mirroring TaskDeprecation.
 	if d, ok := t.(Documented); ok {
 		return d.Doc()
 	}

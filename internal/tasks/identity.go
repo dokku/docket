@@ -52,6 +52,9 @@ const (
 // ItemIdentity classifies what identifies one item inside a collection field.
 type ItemIdentity string
 
+// How a collection's items are told apart.
+//
+//sdk:export
 const (
 	// ItemIdentityValue means the element value is the item's identity, as in
 	// a `[]string` of domain names.
@@ -233,15 +236,19 @@ func renderIdentityValue(v reflect.Value) (string, bool) {
 	return "", false
 }
 
-// IdentityAddress renders the resource t addresses as
+// IdentityAddress renders the resource t addresses, such as
 // `dokku_config[app=api]`. Keys appear in declaration order; keys holding
 // their zero value are omitted, so a task with no key value at all renders as
-// the bare type key.
+// the bare type key. It is the form ParseIdentityAddress and
+// ParseResourceSelectors read back.
 //
-// The result is a parseable surface, not just a label: it is the auto-generated
-// task name in the `--json` event stream, the argument `--start-at-task`
-// accepts, and the argument `export --resource` accepts. Values are therefore
-// never truncated - a lossy address could not be resolved back.
+// The result is a parseable surface, not just a label: it is the
+// auto-generated task name in the `--json` event stream, the argument
+// `--start-at-task` accepts, and the argument `export --resource` accepts.
+// Values are therefore never truncated - a lossy address could not be resolved
+// back.
+//
+//sdk:export
 func IdentityAddress(typeKey string, t Task) string {
 	keys := TaskIdentity(t)
 	pairs := make([]string, 0, len(keys))
@@ -318,6 +325,8 @@ func quoteIdentityValue(value string) string {
 // The parse is strict: it rejects an auto-generated task name carrying a
 // collision ordinal (`dokku_config[app=api] #2`), because that names a task,
 // not a resource, and two tasks can address one resource.
+//
+//sdk:export
 func ParseIdentityAddress(address string) (string, map[string]string, error) {
 	trimmed := strings.TrimSpace(address)
 	if trimmed == "" {

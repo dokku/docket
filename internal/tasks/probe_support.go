@@ -4,6 +4,9 @@ package tasks
 // back from the server before it decides whether to mutate.
 type ProbeStatus string
 
+// Probe support levels, as ProbeSupport.Status.
+//
+//sdk:export
 const (
 	// ProbeSupported means Plan() reads the resource it manages, so a server
 	// that already matches the recipe plans as in sync and a second apply is
@@ -27,6 +30,8 @@ const (
 // for a task that probes everything it manages).
 //
 // The json tags are for the task catalog, which publishes this verbatim.
+//
+//sdk:export
 type ProbeSupport struct {
 	Status ProbeStatus `json:"status"`
 	Caveat string      `json:"caveat,omitempty"`
@@ -67,10 +72,13 @@ type ProbeDocer interface {
 	ProbeSupport() ProbeSupport
 }
 
-// TaskProbeSupport returns the probe support for t, and whether t declared it.
-// Centralised so docs generation, --list-tasks, and the coverage test share one
-// read site, mirroring TaskExportSupport.
+// TaskProbeSupport reports how much of its own state t's Plan can read back.
+// The bool is false when t declares nothing.
+//
+//sdk:export
 func TaskProbeSupport(t Task) (ProbeSupport, bool) {
+	// Centralised so docs generation, --list-tasks, and the coverage test share
+	// one read site, mirroring TaskExportSupport.
 	if d, ok := t.(ProbeDocer); ok {
 		return d.ProbeSupport(), true
 	}

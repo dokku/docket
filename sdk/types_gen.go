@@ -384,3 +384,6 @@ type VersionError = tasks.VersionError
 
 // VersionSupport is tasks.VersionSupport.
 type VersionSupport = tasks.VersionSupport
+
+// Violation is tasks.Violation.
+type Violation = tasks.Violation

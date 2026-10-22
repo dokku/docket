@@ -732,24 +732,24 @@ func init() {
 	}{})
 }
 
-// NewTask allocates a task of the given registry type-key with its `default:`
-// tags applied, ready to have its fields set.
+// NewTask returns a new task of the registered type typeKey, such as
+// "dokku_app", with its `default:` values applied. Use it rather than a struct
+// literal, which leaves State as "" instead of the default the field documents.
 //
-// Building a task by struct literal is the documented way to drive the engine
-// from Go, and it skips the defaults the loader applies - a literal with no
-// State gets "" rather than "present", which falls into the `invalid state: ""`
-// branch of DispatchPlan instead of behaving the way the field tag says it
-// should. The only code that got this right was decodeTaskBytes, which is
-// unexported and needs YAML to go through. This is the same allocation without
-// the round trip (#425).
+// The task is a pointer to the registered type, so fields are set through a
+// type assertion:
 //
-// The returned Task is a pointer to the registered type, so a caller sets
-// fields through a type assertion:
-//
-//	task, err := tasks.NewTask("dokku_app")
-//	app := task.(*tasks.AppTask)
+//	task, err := sdk.NewTask("dokku_app")
+//	app := task.(*sdk.AppTask)
 //	app.App = "api"
+//
+//sdk:export
 func NewTask(typeKey string) (Task, error) {
+	// A struct literal skips the defaults the loader applies: a literal with
+	// no State gets "" rather than "present", which falls into the `invalid
+	// state: ""` branch of DispatchPlan. decodeTaskBytes got this right but
+	// needs YAML to go through; this is the same allocation without the round
+	// trip (#425).
 	registered, ok := registeredType(typeKey)
 	if !ok {
 		return nil, fmt.Errorf("unknown task type %q", typeKey)
@@ -763,10 +763,13 @@ func NewTask(typeKey string) (Task, error) {
 	return task, nil
 }
 
-// DecodeTask builds a task of the given type-key from a YAML task body, with
-// defaults applied - the loader's own path, exported so a caller holding a
-// recipe fragment does not have to reimplement it (#425).
+// DecodeTask builds a task of the registered type typeKey from a YAML task
+// body, with defaults applied.
+//
+//sdk:export
 func DecodeTask(typeKey string, body []byte) (Task, error) {
+	// The loader's own path, exported so a caller holding a recipe fragment
+	// does not have to reimplement it (#425).
 	return decodeTaskBytes(typeKey, body)
 }
 

@@ -37,6 +37,9 @@ const (
 // strings the catalog publishes.
 type ConstraintKind string
 
+// Kinds of Constraint.
+//
+//sdk:export
 const (
 	// ConstraintExactlyOneOf requires exactly one of Fields to be set.
 	ConstraintExactlyOneOf ConstraintKind = "exactly_one_of"
@@ -97,8 +100,11 @@ type ConstraintDocer interface {
 	Constraints() []Constraint
 }
 
-// TaskConstraints returns the multi-field rules v declares: a task, an
-// element struct, or a pointer to either. Nil when it declares none.
+// TaskConstraints returns the rules over several of v's fields, the same ones
+// TaskSchema.Constraints publishes. v is a task, an element struct, or a
+// pointer to either. Nil when it declares none.
+//
+//sdk:export
 func TaskConstraints(v any) []Constraint {
 	if d, ok := v.(ConstraintDocer); ok {
 		return d.Constraints()
@@ -163,10 +169,12 @@ var appOrGlobalConstraints = []Constraint{
 	{Kind: ConstraintExactlyOneOf, Fields: []string{"app", "global"}},
 }
 
-// Violation is one broken constraint. Field is the path of the key at fault,
-// such as `username` or `users[1].hash`; for a group rule, which no single key
-// breaks, it is the path of the struct the group sits on - `users[1]` for an
-// element, empty for the task itself.
+// Violation is one declared field constraint a task breaks. Field is the
+// recipe key path at fault, such as `username` or `users[1].hash`; for a rule
+// over several keys, which no single key breaks, it is the path of the element
+// the rule sits on - `users[1]` for an element, empty for the task itself.
+//
+//sdk:export
 type Violation struct {
 	Field   string
 	Message string
@@ -177,14 +185,18 @@ func (v Violation) Error() string {
 	return v.Message
 }
 
-// ConstraintViolations returns every declared constraint task breaks, in
-// field declaration order, then the task's group rules, then each element of
-// its structured lists in turn. Nil when the task satisfies all of them.
+// ConstraintViolations returns every declared field constraint task breaks -
+// the required_when and forbidden_when of each field in declaration order, the
+// task's Constraints, then those of each element of its structured lists in
+// turn - or nil when it satisfies them all. A task's Validate and Plan reject
+// the first of these; this reports them all at once, as `docket validate` does.
 //
-// A property task naming a property another task manages is the one
-// exception: that is reported alone, because the user wrote a name this task
-// will never manage, and naming the task that does is more use than telling
-// them the app field is missing too.
+// A property task naming a property another task manages is the one exception:
+// that is reported alone, because the user wrote a name this task will never
+// manage, and naming the task that does is more use than telling them the app
+// field is missing too.
+//
+//sdk:export
 func ConstraintViolations(task any) []Violation {
 	rv := reflect.ValueOf(task)
 	for rv.IsValid() && rv.Kind() == reflect.Pointer {

@@ -70,6 +70,8 @@ func typeKeyOf(t Task) string {
 // Every call allocates, so a caller may do anything with the result without
 // affecting the registry or any other caller. The instance has no `default:`
 // tags applied; use NewTask for a task to set fields on and run.
+//
+//sdk:export
 func Lookup(typeKey string) (Task, bool) {
 	t, ok := registeredType(typeKey)
 	if !ok {
@@ -82,6 +84,8 @@ func Lookup(typeKey string) (Task, bool) {
 // TaskTypes returns every registered task type, sorted. The result is a fresh
 // slice, so a caller may sort, filter or truncate it without disturbing the
 // registry.
+//
+//sdk:export
 func TaskTypes() []string {
 	names := make([]string, 0, len(registeredTasks))
 	for name := range registeredTasks {

@@ -205,12 +205,15 @@ func controlPath(target sshTarget, opts Target, pid int, session uint64) string 
 // ControlPath, would split the connection from the socket the Session closes.
 var reservedSSHOptions = []string{"ControlMaster", "ControlPath", "ControlPersist", "BatchMode"}
 
-// ValidateSSHOptions reports whether opts can be passed to ssh as `-o` values,
-// without contacting anything. An option must be non-empty, must not contain a
-// control character, and must not set one of the options docket owns. It is
-// exported so `docket validate` can check a play's `ssh_options` offline and
-// the commands layer can refuse a bad `--ssh-option` before connecting.
+// ValidateSSHOptions reports whether opts can be a Target's SSHOptions, the
+// `-o` values passed to ssh, without contacting anything: each must be
+// non-empty, free of control characters, and must not set an option docket
+// manages itself.
+//
+//sdk:export
 func ValidateSSHOptions(opts []string) error {
+	// Exported so `docket validate` can check a play's `ssh_options` offline and
+	// the commands layer can refuse a bad `--ssh-option` before connecting.
 	for _, opt := range opts {
 		if strings.TrimSpace(opt) == "" {
 			return errors.New("ssh option is empty")

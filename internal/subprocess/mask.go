@@ -10,14 +10,16 @@ import (
 	"sync"
 )
 
-// MaskPlaceholder is what every sensitive value is replaced with in user-facing
-// output. Length is intentionally fixed at three asterisks so masked output
-// reveals nothing about the original value (no length, prefix, or suffix).
+// The placeholder is exported because one caller has to render it without
+// running text through MaskString: internal/commands/apply_args.go rewrites the
+// usage-string default of a `sensitive: true` input's flag, which `--help`
+// prints before any value has been registered here.
+
+// MaskPlaceholder is what a Masker replaces a sensitive value with. Its length
+// is fixed at three asterisks so masked output reveals nothing about the
+// original value (no length, prefix, or suffix).
 //
-// Exported because one caller has to render the placeholder without running
-// text through MaskString: internal/commands/apply_args.go rewrites the usage-string
-// default of a `sensitive: true` input's flag, which `--help` prints before any
-// value has been registered here.
+//sdk:export
 const MaskPlaceholder = "***"
 
 // Masker holds the set of literal string values that must not appear in
@@ -34,14 +36,19 @@ const MaskPlaceholder = "***"
 // A nil *Masker masks nothing and is safe to use. That is deliberate: a caller
 // that registered no secrets has nothing to hide, so code paths reached with
 // or without a masker need no branch of their own.
+//
+//sdk:export
 type Masker struct {
 	mu     sync.RWMutex
 	values []string
 }
 
-// NewMasker returns a Masker holding values, in the spellings cleanSensitive
-// derives. A Masker built with no values is still usable; more can be added.
+// NewMasker returns a masker for values. A Masker built with no values is still
+// usable; more can be added.
+//
+//sdk:export
 func NewMasker(values ...string) *Masker {
+	// Values are held in the spellings cleanSensitive derives.
 	m := &Masker{}
 	m.Add(values...)
 	return m
