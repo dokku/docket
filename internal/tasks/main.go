@@ -221,9 +221,10 @@ type TaskOutputState struct {
 	Observed Task
 
 	// Exists reports whether the resource is on the server once the task has
-	// run: true unless Observed's State is absent or clear, as
-	// PlanResult.Exists is for a plan in sync. Meaningful only when Observed
-	// is non-nil.
+	// run, as PlanResult.Exists is for a plan in sync: true unless Observed's
+	// State is absent, and true for a collection task in set or clear, whose
+	// whole collection is there even with no members. Meaningful only when
+	// Observed is non-nil.
 	Exists bool
 }
 
@@ -404,13 +405,19 @@ type PlanResult struct {
 	// mask them before showing them.
 	Observed Task
 
-	// Exists reports whether the resource is on the server. When InSync is
-	// true it follows the declared state: true unless Observed's State is
-	// absent or clear, so a collection declared in set with no member the
-	// server reports (a formation scaled to zero, an empty map) still exists.
-	// On drift it is true when the read State is present (or set) and, for a
-	// collection, when at least one member Observed carries is there.
-	// Meaningful only when Observed is non-nil.
+	// Exists reports whether the resource is on the server. Meaningful only
+	// when Observed is non-nil. For a collection task planned in a state that
+	// owns the whole collection, set or clear, it is always true: the
+	// resource is the app's, service's or scope's whole collection, which is
+	// there with no members too, so an empty map or a formation scaled to
+	// zero still exists. A missing app or service is not an empty collection;
+	// ReadTask reports it as an *ObjectMissingError.
+	//
+	// For every other state, when InSync is true it follows the declared
+	// state: true unless Observed's State is absent. On drift it is true when
+	// the read State is present and, for a collection planned in an additive
+	// state (present, absent), when at least one member Observed carries is
+	// there.
 	Exists bool
 
 	// read and readExists are what the probe read, whatever InSync is.
@@ -469,9 +476,18 @@ var ErrStateUnreadable = errors.New("the task's current state cannot be read")
 // planned task, which Observed carries instead of read when r is in sync. It
 // returns r unchanged when r is an error, so a branch can pass every result
 // through it.
+//
+// exists is whether the read found the resource, as the observer judges it.
+// When declared owns its whole collection (set or clear), a read that
+// succeeded found the collection whatever exists says, since an empty
+// collection is a state and not an absence; only the additive states report
+// whether the members they name are there.
 func observed(r PlanResult, declared, read Task, exists bool) PlanResult {
 	if r.Error != nil {
 		return r
+	}
+	if read != nil && ownsWholeCollection(declared) {
+		exists = true
 	}
 	r.read = read
 	r.readExists = exists
@@ -496,10 +512,15 @@ func observed(r PlanResult, declared, read Task, exists bool) PlanResult {
 // state set reads every key it would own. A property task known only by its
 // identity keys is read with State absent, which needs no Value.
 //
+// The State also picks what exists means. A collection task in set or clear
+// owns the whole collection, which exists whenever the read succeeds, with or
+// without members. In present or absent it owns only the members it names,
+// and exists reports whether any of them is there.
+//
 // When ctx carries a version gate and the server is older than t's floor, the
 // error is the *VersionError, never a resource reported as absent. When the
-// read does not find the resource and the app or service t depends on is
-// missing, the error is an *ObjectMissingError naming it, which matches
+// read does not find the resource, or finds a whole collection with no
+// members, and the app or service t depends on is missing, the error is an *ObjectMissingError naming it, which matches
 // ErrObjectMissing; a task that creates its app or service, such as dokku_app,
 // reports itself absent instead. A task whose probe cannot read its state
 // returns an error wrapping ErrStateUnreadable.

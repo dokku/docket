@@ -111,19 +111,65 @@ func isUnset(fv reflect.Value) bool {
 }
 
 // declaresPresent reports whether a task value declares its resource there:
-// false for a State of absent or clear, true for any other State and for a
-// task with none.
-func declaresPresent(task interface{}) bool {
-	rv := reflect.ValueOf(task)
-	for rv.Kind() == reflect.Pointer {
-		rv = rv.Elem()
-	}
-	field := rv.FieldByName("State")
-	if !field.IsValid() {
+// false for a State of absent, and for a State of clear on a task with no
+// collection; true for any other State and for a task with none. A clear
+// collection is the whole collection with no members, which is still there.
+func declaresPresent(task Task) bool {
+	state, ok := taskStateOf(task)
+	if !ok {
 		return true
 	}
-	state := State(field.String())
-	return state != StateAbsent && state != StateClear
+	switch state {
+	case StateAbsent:
+		return false
+	case StateClear:
+		return ownsWholeCollection(task)
+	}
+	return true
+}
+
+// ownsWholeCollection reports whether a task value is a collection task in a
+// state that owns its whole collection: set or clear. For such a task the
+// resource is the app's, service's or scope's whole collection, which is
+// there whether or not it has members, so a read that succeeds always finds
+// it. The additive states, present and absent, own only the members they name.
+func ownsWholeCollection(task Task) bool {
+	state, ok := taskStateOf(task)
+	if !ok || (state != StateSet && state != StateClear) {
+		return false
+	}
+	return len(TaskIdentityCollections(task)) > 0
+}
+
+// emptyWholeCollection reports whether a task value owns its whole collection
+// and holds no member in any of its collection fields. A read that returns
+// one is the only read reporting a resource there that has not shown the
+// server holds the app or service the collection belongs to.
+func emptyWholeCollection(task Task) bool {
+	if task == nil || !ownsWholeCollection(task) {
+		return false
+	}
+	rv := valueOf(task)
+	for _, collection := range TaskIdentityCollections(task) {
+		if !isUnset(rv.FieldByName(collection.Field)) {
+			return false
+		}
+	}
+	return true
+}
+
+// taskStateOf returns the State a task value holds, and false for a task with
+// no State field.
+func taskStateOf(task Task) (State, bool) {
+	rv := valueOf(task)
+	if !rv.IsValid() || rv.Kind() != reflect.Struct {
+		return "", false
+	}
+	field := rv.FieldByName("State")
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return "", false
+	}
+	return State(field.String()), true
 }
 
 // deepCopyValue returns a copy of v that shares no map, slice or pointer with

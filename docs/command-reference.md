@@ -838,9 +838,9 @@ declare, or a missing required key fails before the server is contacted.
 
 | Exit | Meaning |
 |------|---------|
-| `0` | The resource exists and was printed. |
+| `0` | The resource exists and was printed. A collection with no members, such as an app with no config keys, exists: it prints in state `clear` (`exists: true` under `--json`). |
 | `1` | A usage error, an address that names no single resource, a version refusal, a read error, or a task whose probe cannot read its state (`dokku_storage_ensure`). |
-| `2` | The read succeeded and the resource is not on the server. It is still printed, in the state that says so (`exists: false` under `--json`). |
+| `2` | The read succeeded and the resource is not on the server. It is still printed, in the state that says so (`exists: false` under `--json`). An address that reads a whole collection never exits `2`, since the collection is there whenever its app or service is; `dokku_storage_mount` with `container_dir` reads one mount and can. |
 | `3` | The app or service the resource depends on is not on the server. Only the error is printed, such as `app api does not exist`. |
 
 | Flag | Effect |

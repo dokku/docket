@@ -291,8 +291,8 @@ func TestPsScaleClearObservesClearWhenNothingRuns(t *testing.T) {
 		t.Fatalf("unexpected plan error: %v", plan.Error)
 	}
 	want := PsScaleTask{App: "test-app", State: StateClear}
-	if !reflect.DeepEqual(plan.Observed, want) || plan.Exists {
-		t.Errorf("observed = %#v (exists %v), want %#v not existing", plan.Observed, plan.Exists, want)
+	if !reflect.DeepEqual(plan.Observed, want) || !plan.Exists {
+		t.Errorf("observed = %#v (exists %v), want %#v existing", plan.Observed, plan.Exists, want)
 	}
 }
 

@@ -26,11 +26,13 @@ type addressReader interface {
 // the resource has, the way a task in state set or clear would own them: a
 // dokku_config leaves out the keys docket keeps (linked-service DSNs,
 // NO_VHOST, the git rev env var), and a dokku_ps_scale leaves out process
-// types scaled to zero. The returned task and errors are ReadTask's: the value
-// type registered for the task, the *VersionError when ctx carries a gate the
-// server is behind, an *ObjectMissingError when the app or service the
-// resource depends on is missing, and an error wrapping ErrStateUnreadable for
-// a task whose probe cannot read its state.
+// types scaled to zero. A whole collection read that way always exists: one
+// with no members comes back in state clear with exists true, since a missing
+// app or service is reported as an error instead. The returned task and errors
+// are ReadTask's: the value type registered for the task, the *VersionError
+// when ctx carries a gate the server is behind, an *ObjectMissingError when
+// the app or service the resource depends on is missing, and an error
+// wrapping ErrStateUnreadable for a task whose probe cannot read its state.
 //
 // The address must name one resource. A bare type, a key the task does not
 // declare, or a missing required key is an error, raised before the server is

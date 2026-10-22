@@ -252,7 +252,8 @@ from a YAML task body, for a caller that already holds a recipe fragment.
 A caller that stores the resource's state, as a Terraform provider does after every create and
 update, need not read it back. The `sdk.TaskOutputState` that `Execute` and `ExecutePlan` return
 carries `Observed`, the task as the server holds it once the task has run, and `Exists`, whether the
-resource is there. They follow the rules `ReadTask` follows for a task that plans in sync (see
+resource is there, by the per-state rule `ReadTask` follows, so a `clear` that empties a collection
+reports it as there. They follow the rules `ReadTask` follows for a task that plans in sync (see
 [Reading one resource](#reading-one-resource)): every field the task declares comes back as
 declared, every field it leaves at its zero value comes back as the server reports it, and fields
 flagged `WriteOnly` or `ApplyOnly` stay empty or at their default. `Observed` is the value type
@@ -464,10 +465,11 @@ depends on whether the task you passed plans in sync:
   although the server's report leaves out process types scaled to zero, and a list whose order
   does not matter comes back in your order. A field the task leaves at its zero value declares
   nothing, so it is filled from what the probe read: a `dokku_service_create` that pins no image
-  comes back with the image the service runs. `exists` follows the declared state: true unless
-  `State` is `absent` or `clear`, so a `set` with no member the server reports, such as
-  `scale: {web: 0}`, still exists. A consumer that stores the read and diffs it against the task,
-  as a Terraform refresh does, then sees a change only when `Plan` would apply one.
+  comes back with the image the service runs. `exists` follows the declared state: false for
+  `absent` and true otherwise, so a `set` with no member the server reports, such as
+  `scale: {web: 0}`, still exists, and so does a `clear`. A consumer that stores the read and
+  diffs it against the task, as a Terraform refresh does, then sees a change only when `Plan`
+  would apply one.
 - When it does not, the returned task is what the probe read. Its identity keys come from the task
   you passed and every field the server reports is filled from the read. `State` is the state
   that, declared with the returned fields, would plan in sync: a property that is not set comes
@@ -481,6 +483,23 @@ The task you pass picks what is read, so it must be valid:
   there are none.
 - A property task needs a `Value` in state `present`. To read one known only by its identity keys,
   pass it with `State` absent.
+
+The state also picks what `exists` means, the same way on `ReadTask`, `ReadAddress`,
+`PlanResult.Exists` and the `TaskOutputState.Exists` an apply returns:
+
+| State | `exists` is true when |
+|-------|-----------------------|
+| `set` or `clear`, on a collection task | the read succeeds. The resource is the app's, service's or scope's whole collection, which is there with no members too: an app with no config keys or no buildpacks comes back with an empty collection, in state `clear`. |
+| `present` or `absent`, on a collection task | at least one member the task names is there. |
+| any state, on a task with no collection | the resource is there: in sync, unless the task declares `absent`; on drift, when the read comes back `present`. |
+
+`dokku_service_expose` owns its whole port list in every state, but the rule follows the state all
+the same: `present` and `absent` describe whether the service is exposed, so an unexposed service
+has `exists` false, while `set` and `clear` describe the port list, which is there empty.
+
+A missing app or service is never reported as an empty collection: the read returns the
+`*sdk.ObjectMissingError` below instead, so a `set` or `clear` read that succeeds never reports
+`exists` false.
 
 To read every member of a collection without naming them, read it from its address instead (see
 [Reading from an address](#reading-from-an-address)). `dokku_certs` is the exception to reading
@@ -507,10 +526,11 @@ these errors:
   whose probe cannot read anything (`dokku_storage_ensure`), or a probe failure the plan treated as
   drift rather than as an error.
 
-A missing parent is checked only when the read does not find the resource, so a present read costs
-no extra call. A task whose input is invalid returns its own validation error, and a check that
-cannot reach the server leaves the read's own error in place, so `ErrObjectMissing` always means
-the server answered that the object is gone:
+A missing parent is checked only when the read does not find the resource, or finds a whole
+collection with no members, so a read that finds something costs no extra call. A task whose input
+is invalid returns its own validation error, and a check that cannot reach the server leaves the
+read's own error in place, so `ErrObjectMissing` always means the server answered that the object
+is gone:
 
 ```go
 _, exists, err := sdk.ReadAddress(ctx, "dokku_service_link[app=api,service=postgres,name=db]")
@@ -552,6 +572,9 @@ resource imported from the read plans in sync:
   set.
 - A `dokku_service_property` whose value dokku reports only as a fingerprint, such as
   `backup-secret-access-key`, comes back `present` with an empty `Value`.
+- A collection with no members comes back in state `clear` with `exists` true, as a `clear` read
+  reports it (see the table under [Reading one resource](#reading-one-resource)), and
+  `docket read` exits `0` for it.
 - A resource whose app or service is missing returns the `*sdk.ObjectMissingError`, not `exists`
   false, the same as `sdk.ReadTask`.
 

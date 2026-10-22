@@ -215,14 +215,16 @@ func observedCoreFixtures() map[string]observedFixture {
 					want: ConfigTask{App: "web", State: StateAbsent},
 				},
 				{
-					name: "clear on an empty app",
-					task: ConfigTask{App: "empty", State: StateClear},
-					want: ConfigTask{App: "empty", State: StateClear},
+					name:   "clear on an empty app",
+					task:   ConfigTask{App: "empty", State: StateClear},
+					want:   ConfigTask{App: "empty", State: StateClear},
+					exists: true,
 				},
 				{
-					name: "set of nothing on an empty app",
-					task: ConfigTask{App: "empty", Config: map[string]string{}, State: StateSet},
-					want: ConfigTask{App: "empty", State: StateClear},
+					name:   "set of nothing on an empty app",
+					task:   ConfigTask{App: "empty", Config: map[string]string{}, State: StateSet},
+					want:   ConfigTask{App: "empty", State: StateClear},
+					exists: true,
 				},
 			},
 		},
@@ -418,8 +420,9 @@ func TestUnobservedFieldsCatchesAGap(t *testing.T) {
 // identity address alone and must come back whole - every field the body
 // carries, whatever state the read settles on - and each address case returns
 // what it states. Every task that can read its state needs an address read of
-// a present resource and of an absent one, so a task whose keys alone cannot
-// plan a whole read fails here until it gets an addressReader.
+// a present resource and of an absent one - for a collection, of an empty
+// collection, which exists - so a task whose keys alone cannot plan a whole
+// read fails here until it gets an addressReader.
 func TestReadAddressReadsEveryResource(t *testing.T) {
 	t.Parallel()
 	for typeKey, fixture := range observedFixtures() {
@@ -434,7 +437,7 @@ func TestReadAddressReadsEveryResource(t *testing.T) {
 					t.Fatalf("export: %v", err)
 				}
 				for _, body := range bodies {
-					if !declaresPresent(withDefaults(body)) {
+					if !declaresPresent(withDefaults(body).(Task)) {
 						continue
 					}
 					address := IdentityAddress(typeKey, body.(Task))
@@ -461,9 +464,12 @@ func TestReadAddressReadsEveryResource(t *testing.T) {
 					t.Errorf("%s: %v", c.address, err)
 					continue
 				}
-				if c.exists {
+				switch {
+				case c.exists && emptyWholeCollection(c.want):
+					absent = true
+				case c.exists:
 					present = true
-				} else {
+				default:
 					absent = true
 				}
 				if exists != c.exists {
@@ -478,7 +484,7 @@ func TestReadAddressReadsEveryResource(t *testing.T) {
 				t.Error("no address read of a present resource: add an exported body or an address case")
 			}
 			if !absent {
-				t.Error("no address read of an absent resource: add an address case")
+				t.Error("no address read of an absent resource or an empty collection: add an address case")
 			}
 		})
 	}
@@ -589,7 +595,8 @@ func normalizeStruct(v reflect.Value) {
 
 // TestObservedFixturesCoverEveryTask keeps TestPlanObservesServerState from
 // going stale: a task added without a fixture, an exporting task whose fixture
-// skips the export, or a fixture with no absent case fails here. A task whose
+// skips the export, or a fixture with no absent case - or, for a collection,
+// no case reading an empty whole collection - fails here. A task whose
 // probe cannot read anything is held to TestUnreadableTaskObservesNothing
 // instead.
 func TestObservedFixturesCoverEveryTask(t *testing.T) {
@@ -615,12 +622,12 @@ func TestObservedFixturesCoverEveryTask(t *testing.T) {
 		}
 		absent := false
 		for _, c := range fixture.cases {
-			if !c.exists {
+			if !c.exists || emptyWholeCollection(c.want) {
 				absent = true
 			}
 		}
 		if !absent {
-			t.Errorf("task %q has no observed case whose resource is absent", name)
+			t.Errorf("task %q has no observed case whose resource is absent or an empty collection", name)
 		}
 	}
 	for name := range fixtures {

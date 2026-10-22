@@ -21,7 +21,8 @@ import (
 
 // readExitAbsent is the exit code for a read that succeeded and found nothing
 // at the address, so a script can tell "not there" from "could not read"
-// without parsing the output.
+// without parsing the output. A whole collection with no members is there, so
+// it exits 0.
 const readExitAbsent = 2
 
 // readExitObjectMissing is the exit code for a read whose app or service is
@@ -142,7 +143,8 @@ type readJSON struct {
 
 // Run reads the resource and prints it. Exit codes:
 //
-//	0 - the resource exists and was printed
+//	0 - the resource exists and was printed, including a whole collection
+//	    with no members, printed in state clear
 //	1 - flag or argument error, an address that names no single resource, a
 //	    version refusal, a read error, or a task that cannot read its state
 //	2 - the read succeeded and the resource is not on the server; it is
