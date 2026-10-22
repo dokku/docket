@@ -1,0 +1,41 @@
+---
+name: setup-dokku
+description: >-
+  Installs dokku from packagecloud on an Ubuntu runner, with the plugins
+  docket's integration tests run against at the committishes docket pins.
+  Plugins are named from docket's pinned set (redis, http-auth, global-cert,
+  letsencrypt, acl, maintenance), separated by commas, spaces or newlines; an
+  empty string installs none.
+
+inputs:
+  dokku-version:
+    description: The dokku package version to install. Defaults to the release docket's integration suite runs against.
+    required: false
+    default: '0.38.31'
+  plugins:
+    description: >-
+      Plugins to install from docket's pinned set, separated by commas, spaces
+      or newlines. Defaults to the full set. Pass an empty string to install no
+      plugins.
+    required: false
+    default: 'redis http-auth global-cert letsencrypt acl maintenance'
+  docker-legacy-links:
+    description: Whether to keep Docker's legacy link env vars by setting `DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1` on the Docker daemon before the install. true or false.
+    required: false
+    default: 'true'
+  initialize-k3s:
+    description: Whether to run `dokku scheduler-k3s:initialize --server-ip 127.0.0.1` after the install. true or false.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: install dokku
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/setup-dokku.sh"
+      env:
+        DOKKU_VERSION: ${{ inputs.dokku-version }}
+        DOKKU_PLUGINS: ${{ inputs.plugins }}
+        DOCKER_LEGACY_LINKS: ${{ inputs.docker-legacy-links }}
+        INITIALIZE_K3S: ${{ inputs.initialize-k3s }}

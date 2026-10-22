@@ -59,4 +59,6 @@ runs, so a `plan` test asserting that a play ran needs either the gate or
 ## CI
 
 `.github/workflows/test.yml` defines a `bats-test` job that installs Dokku
-and the bats helpers, builds the docket binary, and runs the suite.
+with the http-auth and global-cert plugins through the
+`.github/actions/setup-dokku` action, installs the bats helpers, builds the
+docket binary, and runs the suite.
