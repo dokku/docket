@@ -785,7 +785,7 @@ func TestStorageMountValidatesForms(t *testing.T) {
 		{
 			name: "duplicate phase",
 			task: StorageMountTask{App: "a", Mounts: []StorageMount{{EntryName: "e", ContainerDir: "/c", Phases: []string{"run", "run"}}}, State: StateSet},
-			want: `phase "run" is listed more than once`,
+			want: `'mounts[0].phases[1]' repeats 'mounts[0].phases[0]'`,
 		},
 		{
 			name: "subpath with a comma",

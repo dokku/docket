@@ -498,7 +498,7 @@ func TestCatalogOrderedMatchesTags(t *testing.T) {
 
 	// The lists where a reorder is drift, and a spread of the ones where it is
 	// not: plain collections, keyed structured entries, an element struct's
-	// own list, and kubelet_args, which ignores order but counts duplicates.
+	// own list, and kubelet_args, which ignores order and refuses duplicates.
 	for _, tc := range []struct {
 		typeKey string
 		path    []string

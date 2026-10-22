@@ -54,7 +54,7 @@ type StorageMountTask struct {
 
 	// Phases is the deployment phases the attachment applies to (deploy, run).
 	// Empty defers to the dokku default (both phases).
-	Phases []string `required:"false" forbidden_when:"set,clear" ordered:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
+	Phases []string `required:"false" forbidden_when:"set,clear" ordered:"false" unique:"true" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
 
 	// ProcessType limits the attachment to a specific process type. For the
 	// mounts list it is the scope the list describes.
@@ -98,7 +98,7 @@ type StorageMount struct {
 	ContainerDir string `required:"true" identity:"key" yaml:"container_dir" description:"Absolute container directory to mount; no two mounts in a list may share one"`
 
 	// Phases is the deployment phases the attachment applies to.
-	Phases []string `required:"false" ordered:"false" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
+	Phases []string `required:"false" ordered:"false" unique:"true" yaml:"phases,omitempty" description:"Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default."`
 
 	// Subpath is the subpath within the entry to mount
 	Subpath string `required:"false" yaml:"subpath,omitempty" description:"Subpath within the entry to mount; must not contain ','"`
@@ -555,13 +555,6 @@ func (m StorageMount) validate(state State) error {
 	}
 	if err := validateStoragePhases(m.Phases); err != nil {
 		return err
-	}
-	seen := map[string]bool{}
-	for _, phase := range m.Phases {
-		if seen[phase] {
-			return fmt.Errorf("phase %q is listed more than once", phase)
-		}
-		seen[phase] = true
 	}
 	return storageMountSpecProblem(m.Subpath, m.VolumeChown, m.VolumeOptions)
 }

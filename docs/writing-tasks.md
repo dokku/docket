@@ -95,7 +95,7 @@ A few conventions to follow:
   everything else is specific to the task.
 - Give every field a `description:"..."` tag. The docs generator reads it (along with `required`,
   `required_when`, `forbidden_when`, `default`, `options`, `sensitive`, `runner_file`, `write_only`,
-  `apply_only`, and `ordered`) to build the task's Parameters table, so a field without one renders an empty description cell. Those same tags are what
+  `apply_only`, `ordered`, and `unique`) to build the task's Parameters table, so a field without one renders an empty description cell. Those same tags are what
   [`docket schema`](task-catalog.md) publishes, so a missing description is a hole in the
   machine-readable catalog as well as in the docs. Add `,omitempty` to the `yaml` tag of optional
   fields so example YAML stays clean, and use `required:"false"` whenever a field has a `default`
@@ -201,6 +201,13 @@ A few conventions to follow:
   [`docket schema`](task-catalog.md#fields) publishes the answer so a consumer can choose a list or
   a set type, the generator marks an ordered field on the task's page, and a list field without
   the tag fails the build.
+- Tag a slice field `unique:"true"` when its members must be distinct and it is not an
+  `identity:"collection"`, whose item identity already makes them so (`dokku_config`'s `preserve`,
+  `dokku_storage_mount`'s `phases`). The constraint checker then rejects a member equal to an
+  earlier one in every state, the catalog publishes `unique: true`, and the task's page notes "(no
+  duplicates)". Every `ordered:"false"` list must be an identity collection or `unique:"true"`, so
+  a consumer can model it as a set; `TestCatalogUnorderedListsAreSets` fails the build otherwise.
+  A list that may legitimately repeat a member has to be `ordered:"true"`.
 - When a task type is deprecated (typically because the underlying dokku subcommand was deprecated
   or a richer replacement task exists), implement the optional `Deprecation() string` method.
   The generator renders the returned message in a Deprecated admonition on the task's page and

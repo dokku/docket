@@ -268,7 +268,7 @@
       "additionalProperties": false,
       "required": ["name", "type", "required"],
       "if": { "properties": { "type": { "const": "list" } } },
-      "else": { "not": { "required": ["ordered"] } },
+      "else": { "allOf": [{ "not": { "required": ["ordered"] } }, { "not": { "required": ["unique"] } }] },
       "properties": {
         "name": { "type": "string", "description": "The recipe key." },
         "type": {
@@ -325,7 +325,11 @@
         },
         "ordered": {
           "type": "boolean",
-          "description": "Whether the order of a list's elements is significant. `true` means docket applies and compares them in order, so a reorder is drift; `false` means docket ignores order. It says nothing about uniqueness. Present on every `list` field and never on any other type; a list without it comes from a docket that predates the key."
+          "description": "Whether the order of a list's elements is significant. `true` means docket applies and compares them in order, so a reorder is drift; `false` means docket ignores order. It says nothing about uniqueness, which `unique` and an identity collection's item identity declare. Present on every `list` field and never on any other type; a list without it comes from a docket that predates the key."
+        },
+        "unique": {
+          "const": true,
+          "description": "The list's members must be distinct: validation rejects a member equal to an earlier one. Present only on a `list`, and never on an identity collection, whose item identity already makes its members distinct, so every list with `ordered: false` is one or the other and can be modelled as a set. Absent on a list that may repeat a member."
         },
         "identity": {
           "enum": ["key", "collection"],

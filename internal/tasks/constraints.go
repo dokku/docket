@@ -24,6 +24,10 @@ import (
 //	required_when:"present,absent"  the field must be set in these states
 //	forbidden_when:"clear"          the field must not be set in these states
 //
+// A third, on a list field, holds in every state (#648):
+//
+//	unique:"true"                   no member may repeat another
+//
 // Rules over several fields are Constraint values a task, or an element
 // struct, returns from Constraints().
 
@@ -31,6 +35,7 @@ import (
 const (
 	requiredWhenTag  = "required_when"
 	forbiddenWhenTag = "forbidden_when"
+	uniqueTag        = "unique"
 )
 
 // ConstraintKind names one kind of multi-field rule. The values are the
@@ -186,10 +191,11 @@ func (v Violation) Error() string {
 }
 
 // ConstraintViolations returns every declared field constraint task breaks -
-// the required_when and forbidden_when of each field in declaration order, the
-// task's Constraints, then those of each element of its structured lists in
-// turn - or nil when it satisfies them all. A task's Validate and Plan reject
-// the first of these; this reports them all at once, as `docket validate` does.
+// the required_when, forbidden_when and unique of each field in declaration
+// order, the task's Constraints, then those of each element of its structured
+// lists in turn - or nil when it satisfies them all. A task's Validate and Plan
+// reject the first of these; this reports them all at once, as `docket
+// validate` does.
 //
 // A property task naming a property another task manages is the one exception:
 // that is reported alone, because the user wrote a name this task will never
@@ -311,6 +317,9 @@ func structViolations(check *constraintCheck, rv reflect.Value, state State, pre
 		}
 		if set && stateListed(field.Tag.Get(forbiddenWhenTag), state) {
 			violations = append(violations, Violation{Field: path, Message: fmt.Sprintf("'%s' must not be set for state '%s'", path, state)})
+		}
+		if field.Tag.Get(uniqueTag) == "true" {
+			violations = append(violations, duplicateViolations(check, rv.Field(i), path)...)
 		}
 	}
 
@@ -438,6 +447,50 @@ func (c Constraint) violations(check *constraintCheck, rv reflect.Value, state S
 		return out
 	}
 	return nil
+}
+
+// duplicateViolations reports each member of a unique list that equals an
+// earlier member, at the later member's path. Members are equal when they are
+// deeply equal, so in a list of strings a duplicate is an exact repeat:
+// kubelet_args holding `max-pods=100` twice breaks it, while `max-pods=100`
+// beside `max-pods=110` does not. An unknown member could hold anything, so it
+// is neither reported nor compared; two known members that repeat each other
+// are reported whatever the unknown ones hold. The message names paths rather
+// than the repeated value, which may be a secret.
+func duplicateViolations(check *constraintCheck, list reflect.Value, path string) []Violation {
+	for list.Kind() == reflect.Pointer || list.Kind() == reflect.Interface {
+		if list.IsNil() {
+			return nil
+		}
+		list = list.Elem()
+	}
+	if list.Kind() != reflect.Slice && list.Kind() != reflect.Array {
+		return nil
+	}
+	var violations []Violation
+	var distinct []int
+	for j := 0; j < list.Len(); j++ {
+		member := fmt.Sprintf("%s[%d]", path, j)
+		if check.isUnknown(member) {
+			continue
+		}
+		repeated := -1
+		for _, k := range distinct {
+			if reflect.DeepEqual(list.Index(k).Interface(), list.Index(j).Interface()) {
+				repeated = k
+				break
+			}
+		}
+		if repeated < 0 {
+			distinct = append(distinct, j)
+			continue
+		}
+		violations = append(violations, Violation{
+			Field:   member,
+			Message: fmt.Sprintf("'%s' repeats '%s[%d]'; the members of '%s' must be unique", member, path, repeated, path),
+		})
+	}
+	return violations
 }
 
 // fieldIsSet reports whether a recipe supplied value. A nil pointer is unset,

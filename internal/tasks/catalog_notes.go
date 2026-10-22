@@ -123,6 +123,7 @@ type fieldNoteKind struct {
 var fieldNoteKinds = []fieldNoteKind{
 	{true, itemFieldsNote},
 	{false, orderedNote},
+	{false, uniqueNote},
 	{false, requiredWhenNote},
 	{false, forbiddenWhenNote},
 	{false, runnerFileNote},
@@ -279,6 +280,13 @@ func orderedNote(field FieldSchema, _ State) string {
 		return ""
 	}
 	return "(order is significant)"
+}
+
+func uniqueNote(field FieldSchema, _ State) string {
+	if !field.Unique {
+		return ""
+	}
+	return "(no duplicates)"
 }
 
 func requiredWhenNote(field FieldSchema, state State) string {

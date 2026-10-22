@@ -34,7 +34,7 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 | `entry_name` | string | no |  |  | Named storage registry entry to attach (must not be set when state is set or clear) |
 | `host_dir` | string | no |  |  | Host directory to mount in the legacy bind-mount form (must not be set when state is set or clear) |
 | `container_dir` | string | no |  |  | Container directory to mount (must not be set when state is set or clear) |
-| `phases` | list | no |  |  | Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default. (must not be set when state is set or clear) |
+| `phases` | list | no |  |  | Deployment phases the attachment applies to (deploy, run). Empty defers to the dokku default. (no duplicates) (must not be set when state is set or clear) |
 | `process_type` | string | no |  |  | Process type the attachment applies to. With mounts, the process type whose mounts the list describes; mounts of other process types are left alone. Empty means dokku's _default_ scope. |
 | `subpath` | string | no |  |  | Subpath within the entry to mount (must not be set when state is set or clear) |
 | `readonly` | bool | no |  |  | Mount the attachment as read-only (must not be set when state is set or clear) |
