@@ -822,6 +822,10 @@ a recipe. `--json` prints an object instead, for scripts:
 }
 ```
 
+The `task` object carries every field the task declares, typed as the
+[task catalog](task-catalog.md#fields) describes it, so every read of a type prints the same keys: a
+field the read left empty prints empty (`""`, `[]`, `{}`), and an unset flag prints its default.
+
 A collection reads the way `set` would own it: `dokku_config` leaves out the keys docket keeps on its
 own (linked-service DSNs, `NO_VHOST`, the git rev env var), and `dokku_ps_scale` leaves out process
 types scaled to zero. `dokku_storage_mount[app=api]` reads the `_default_` scope; name

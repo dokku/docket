@@ -750,17 +750,11 @@ func NewTask(typeKey string) (Task, error) {
 	// state: ""` branch of DispatchPlan. decodeTaskBytes got this right but
 	// needs YAML to go through; this is the same allocation without the round
 	// trip (#425).
-	registered, ok := registeredType(typeKey)
-	if !ok {
-		return nil, fmt.Errorf("unknown task type %q", typeKey)
+	v, err := allocateTask(typeKey)
+	if err != nil {
+		return nil, err
 	}
-	v := reflect.New(registered)
-	defaults.SetDefaults(v.Interface())
-	task, ok := v.Interface().(Task)
-	if !ok {
-		return nil, fmt.Errorf("registered type for %q does not implement Task", typeKey)
-	}
-	return task, nil
+	return finishTask(typeKey, v)
 }
 
 // DecodeTask builds a task of the registered type typeKey from a YAML task
@@ -774,14 +768,32 @@ func DecodeTask(typeKey string, body []byte) (Task, error) {
 }
 
 func decodeTaskBytes(typeKey string, body []byte) (Task, error) {
-	registered, ok := registeredType(typeKey)
-	if !ok {
-		return nil, fmt.Errorf("unknown task type %q", typeKey)
+	v, err := allocateTask(typeKey)
+	if err != nil {
+		return nil, err
 	}
-	v := reflect.New(registered)
 	if err := yaml.Unmarshal(body, v.Interface()); err != nil {
 		return nil, err
 	}
+	return finishTask(typeKey, v)
+}
+
+// allocateTask returns a pointer to a zero instance of the registered type
+// typeKey. NewTask, the YAML decode path, and TaskFromValues share it, then
+// fill the struct their own way and hand it to finishTask.
+func allocateTask(typeKey string) (reflect.Value, error) {
+	registered, ok := registeredType(typeKey)
+	if !ok {
+		return reflect.Value{}, fmt.Errorf("unknown task type %q", typeKey)
+	}
+	return reflect.New(registered), nil
+}
+
+// finishTask applies the `default:` tags to a filled task struct and returns it
+// as a Task. Defaults go on last, the way the loader has always applied them,
+// so a field left at its zero value takes its default whichever path filled
+// the struct.
+func finishTask(typeKey string, v reflect.Value) (Task, error) {
 	defaults.SetDefaults(v.Interface())
 	task, ok := v.Interface().(Task)
 	if !ok {

@@ -650,6 +650,38 @@ func TaskExportSupport(t Task) (ExportSupport, bool) {
 	return tasks.TaskExportSupport(t)
 }
 
+// TaskFromValues builds a task of the registered type typeKey from values
+// keyed by recipe key, with defaults applied, the way DecodeTask builds one
+// from a YAML body. Like DecodeTask it checks shape and type only; the task's
+// own rules - required fields, choices, constraints - are for
+// ConstraintViolations and the task's Validate method.
+//
+// Each value must match its field's catalog type, and is accepted where the
+// conversion is lossless:
+//
+//   - string: any Go string, including a named string type such as State. A
+//     json.Number is a number, not a string, and is refused.
+//   - bool: a bool.
+//   - int: any Go integer type, a float32 or float64 holding a whole number,
+//     or a json.Number holding an integer, within the field's range.
+//   - float: any Go integer or float type, or a json.Number.
+//   - list: any slice or array, []any or typed such as []string, whose
+//     elements each match the item type.
+//   - dict and object: any map with string keys, map[string]any or typed
+//     such as map[string]string; a dict's values each match the item type,
+//     and an object's keys are its element's recipe keys.
+//   - any: nil, a bool, a string, a number, or a list or string-keyed map of
+//     those, stored with integers as int64 and floats as float64.
+//
+// A nil value leaves the field unset, so it takes its default; a nil list
+// element or dict value is refused unless the item type is any. An unknown key
+// or a value of the wrong type is an error naming the recipe key path, such as
+// `users[1].hash` or `scale["web"]`, and the first one in sorted key order is
+// reported.
+func TaskFromValues(typeKey string, values map[string]any) (Task, error) {
+	return tasks.TaskFromValues(typeKey, values)
+}
+
 // TaskImperative reports whether t runs an operation rather than declaring a
 // resource, so it has nothing to undo.
 func TaskImperative(t Task) bool {
@@ -702,6 +734,26 @@ func TaskSynopsis(t Task) string {
 // registry.
 func TaskTypes() []string {
 	return tasks.TaskTypes()
+}
+
+// TaskValues returns every field of t keyed by recipe key, typed per the
+// catalog's FieldSchema: a string, a bool, an int64, a float64, a
+// map[string]any for a dict or an object, and a []any for a list. An any item
+// comes back with the same types, integers as int64. t may be the registered
+// pointer or the value type, as Observed is.
+//
+// Every field is present, including one left at its zero value or default, so
+// a caller sees the same keys for every task of a type and applies no defaults
+// itself. An empty list is []any{} and an empty dict map[string]any{}, never
+// nil. A pointer field with no value reads as the default its catalog entry
+// documents, which is what the task coerces nil to, so an unset `restart` on
+// dokku_config reads true; a pointer field with no default would read nil,
+// and no task declares one today. Feeding the map back to TaskFromValues sets
+// the pointer to that default, which the task treats the same as nil.
+//
+// Values are raw: mask sensitive ones before showing them. A nil t returns nil.
+func TaskValues(t Task) map[string]any {
+	return tasks.TaskValues(t)
 }
 
 // Field and item type names. These are the doc-facing type vocabulary, shared

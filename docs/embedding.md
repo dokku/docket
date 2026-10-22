@@ -247,6 +247,46 @@ current := state.Observed            // the app as the server now holds it
 `app.Execute(ctx)` plans and applies in one call. `sdk.DecodeTask` is the same thing as `NewTask`
 from a YAML task body, for a caller that already holds a recipe fragment.
 
+### Tasks as value maps
+
+A caller that holds task values in its own structure, such as Terraform attribute values or a JSON
+body, builds the task with `sdk.TaskFromValues` and reads it back with `sdk.TaskValues`, with no
+YAML step in either direction. Both are keyed by recipe key and typed by the
+[catalog](task-catalog.md#fields): a `string` field is a Go `string`, a `bool` a `bool`, an `int` an
+`int64`, a `float` a `float64`, a `list` a `[]any`, and a `dict` or a list's `object` element a
+`map[string]any`.
+
+```go
+task, err := sdk.TaskFromValues("dokku_ps_scale", map[string]any{
+    "app":   "api",
+    "scale": map[string]any{"web": 2},
+})
+if err != nil {
+    return err // names the key path, such as scale["web"]: expected int, got string
+}
+values := sdk.TaskValues(task) // app, scale, skip_deploy and state, every one present
+```
+
+`TaskFromValues` applies defaults the way `DecodeTask` does, and like it checks only shape and type;
+`sdk.ConstraintViolations` and the task's `Validate` check the task's own rules. It accepts a value
+where the conversion is lossless: any Go integer type, a float holding a whole number, or a
+`json.Number` holding an integer for an `int`; any number for a `float`; any string type, such as
+`sdk.State`, for a `string`; any slice or array for a `list`, such as a `[]string`; and any map with
+string keys for a `dict` or an `object`, such as a `map[string]string`. A `dict` whose items are
+`any` stores numbers as `int64` or `float64`, and lists and maps as `[]any` and `map[string]any`. A
+`nil` value leaves the field unset, so it takes its default. An unknown key, a value of the wrong
+type, and a number that does not fit are errors naming the recipe key path, such as `users[1].hash`
+or `scale["web"]`.
+
+`TaskValues` returns every field, including those at their default, so the caller applies no
+defaults itself and sees the same keys for every task of a type. An empty `list` is `[]any{}` and an
+empty `dict` `map[string]any{}`, never `nil`. A pointer field with no value reads as the default the
+catalog documents for it, which is what the task treats `nil` as: an unset `restart` on
+`dokku_config` reads `true`, and an unset `skip_deploy` on `dokku_ps_scale` reads `false`. Passing
+that map back to `TaskFromValues` sets the pointer to the default, which the task treats the same as
+`nil`. It takes the registered pointer or the value type `Observed` holds, and its values are raw, so
+mask what you show. `docket read --json` prints its `task` this way.
+
 ### The state after an apply
 
 A caller that stores the resource's state, as a Terraform provider does after every create and

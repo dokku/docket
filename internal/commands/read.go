@@ -16,7 +16,6 @@ import (
 	"github.com/josegonzalez/cli-skeleton/command"
 	"github.com/posener/complete"
 	flag "github.com/spf13/pflag"
-	"gopkg.in/yaml.v3"
 )
 
 // readExitAbsent is the exit code for a read that succeeded and found nothing
@@ -133,7 +132,9 @@ func (c *ReadCommand) AutocompleteFlags() complete.Flags {
 	)
 }
 
-// readJSON is what --json prints.
+// readJSON is what --json prints. Task is tasks.TaskValues of the read: every
+// field of the task keyed by recipe key and typed by the catalog, so a script
+// sees the same keys for every read of a type.
 type readJSON struct {
 	Address string                 `json:"address"`
 	Type    string                 `json:"type"`
@@ -196,7 +197,7 @@ func (c *ReadCommand) Run(args []string) int {
 	if err != nil {
 		// The address is the user's own argument and prints as typed; only
 		// what the server said is masked (#488).
-		c.Ui.Error(masker.String(ignoreVersionHint(err).Error()))
+		c.Ui.Error(readErrorText(masker, ignoreVersionHint(err)))
 		if errors.Is(err, tasks.ErrObjectMissing) {
 			return readExitObjectMissing
 		}
@@ -224,18 +225,30 @@ func (c *ReadCommand) Run(args []string) int {
 	return 0
 }
 
+// readErrorText renders a read error the way plan and apply render a task's
+// error, through tasks.Diagnostics: masked, behind `ssh:` for a failure of
+// the ssh transport and `dokku:` for one the server or a command reported. An
+// error the address or the task type raised before anything ran - an unknown
+// type, a key the type does not have, a task that cannot read its state - is
+// the user's input coming back rather than anything dokku said, so it prints
+// without a prefix.
+func readErrorText(masker *subprocess.Masker, err error) string {
+	d := resultError(masker, err)
+	switch d.Reason {
+	case tasks.DiagnosticReasonError, tasks.DiagnosticReasonStateUnreadable:
+		return d.Message
+	}
+	return errorText(d)
+}
+
 // render formats the read as --json's object or as a one-task recipe.
 func (c *ReadCommand) render(address, typeKey string, task tasks.Task, exists bool, format string) ([]byte, error) {
 	if c.jsonOutput {
-		body, err := taskAsMap(task)
-		if err != nil {
-			return nil, err
-		}
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(readJSON{Address: address, Type: typeKey, Exists: exists, Task: body}); err != nil {
+		if err := enc.Encode(readJSON{Address: address, Type: typeKey, Exists: exists, Task: tasks.TaskValues(task)}); err != nil {
 			return nil, err
 		}
 		return buf.Bytes(), nil
@@ -244,20 +257,6 @@ func (c *ReadCommand) render(address, typeKey string, task tasks.Task, exists bo
 		Name:  address,
 		Tasks: []tasks.ExportedTask{{Type: typeKey, Body: task}},
 	}})
-}
-
-// taskAsMap returns a task's fields keyed by their recipe names, the way a
-// recipe spells them, empty fields left out.
-func taskAsMap(task tasks.Task) (map[string]interface{}, error) {
-	raw, err := yaml.Marshal(task)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]interface{}{}
-	if err := yaml.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // maskTaskFields returns a copy of task with every registered value masked in
