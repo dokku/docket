@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dokku/docket/internal/subprocess"
 	"github.com/dokku/docket/internal/tasks"
 )
 
@@ -46,6 +47,9 @@ func (t StubTask) Plan(ctx context.Context) tasks.PlanResult {
 	if fixture.Hook != nil {
 		fixture.Hook()
 	}
+	if fixture.ServerSecret != "" {
+		subprocess.MaskerFromContext(ctx).Add(fixture.ServerSecret)
+	}
 	if fixture.PlanError != nil {
 		return tasks.PlanResult{
 			Status:       tasks.PlanStatusError,
@@ -79,6 +83,9 @@ func (t StubTask) Execute(ctx context.Context) tasks.TaskOutputState {
 	fixture := stubFixtureFor(ctx, t.Key)
 	if fixture.Hook != nil {
 		fixture.Hook()
+	}
+	if fixture.ServerSecret != "" {
+		subprocess.MaskerFromContext(ctx).Add(fixture.ServerSecret)
 	}
 	if fixture.ExecuteError != nil {
 		return tasks.TaskOutputState{
@@ -142,6 +149,10 @@ type StubFixture struct {
 	// run context, recording that this task was reached - at a deterministic
 	// point rather than racing the executor from another goroutine.
 	Hook func()
+	// ServerSecret, when set, is added to the run's masker as the first
+	// thing Plan and Execute do, the way a real probe registers a secret it
+	// read back from the server.
+	ServerSecret string
 }
 
 // stubFixtures is one test's set of stub answers, keyed the way that test

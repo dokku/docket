@@ -93,14 +93,15 @@ func (e *JSONEmitter) ApplyTask(ev ApplyTaskEvent) {
 		}
 	case ev.State.Error != nil:
 		out["status"] = "error"
-		out["error"] = e.masker.String(PrefixErrorMessage(ev.State.Error))
-		if ev.State.Stderr != "" {
-			out["stderr"] = e.masker.String(ev.State.Stderr)
+		d := resultError(e.masker, ev.State)
+		out["error"] = errorText(d)
+		if d.Stderr != "" {
+			out["stderr"] = d.Stderr
 		}
-		if ev.State.Stdout != "" {
-			out["stdout"] = e.masker.String(ev.State.Stdout)
+		if d.Stdout != "" {
+			out["stdout"] = d.Stdout
 		}
-		out["exit_code"] = ev.State.ExitCode
+		out["exit_code"] = d.ExitCode
 		if ev.Ignored {
 			out["ignored"] = true
 		}
@@ -152,7 +153,7 @@ func (e *JSONEmitter) PlanTask(ev PlanTaskEvent) {
 	case ev.Result.Error != nil:
 		out["status"] = "error"
 		out["would_change"] = false
-		out["error"] = e.masker.String(PrefixErrorMessage(ev.Result.Error))
+		out["error"] = errorText(resultError(e.masker, ev.Result))
 	case ev.Result.InSync:
 		out["status"] = "ok"
 	default:

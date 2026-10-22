@@ -701,6 +701,51 @@ fakes can all call `t.Parallel()`.
 Production code must not use `ContextWithRunner`. It exists so a test can drive a task without a
 server; to change where commands actually run, set a `Target`.
 
+## Diagnostics
+
+The engine returns its errors and messages raw. `sdk.Diagnostics` turns them into entries ready to
+show, masked with the masker on the context, so a caller does not mask each field or format each
+error type itself:
+
+```go
+_, _, err := sdk.ReadTask(ctx, task)
+for _, d := range sdk.Diagnostics(ctx, err) {
+    // d.Severity is sdk.DiagnosticError; d.Summary is "app web does not exist"
+}
+```
+
+It takes a `PlanResult`, a `TaskOutputState` (or a pointer to either), or an error, such as the one
+`ReadTask` or `ReadAddress` returns. It returns the error first, when there is one, then one
+warning per entry in `Warnings`, in order. A result with neither returns nil.
+
+Each `sdk.Diagnostic` carries:
+
+| Field | Holds |
+|-------|-------|
+| `Severity` | `sdk.DiagnosticError` or `sdk.DiagnosticWarning`. |
+| `Reason` | A stable key to branch on. For a warning it is the warning's own reason, one of the `sdk.WarnReason*` constants. For an error it is one of the `sdk.DiagnosticReason*` constants below. |
+| `Summary` | A short sentence that stays the same for the same kind of problem. |
+| `Detail` | The rest of what is known: the full message when it says more than `Summary`, then the failed command's stdout and stderr when the message does not already carry them. Empty when `Summary` says it all. |
+| `Message` | The error's own text, or the warning's message. It is what docket's CLI prints. |
+| `ExitCode`, `Stdout`, `Stderr` | The failed command's output, on an error. For a result they are the result's own fields; for a bare error they come from the `*sdk.ExecError` or the ssh failure it wraps. |
+
+An error is classified by what it wraps, and the first match wins:
+
+| `Reason` | Error | `Summary` |
+|----------|-------|-----------|
+| `ssh` | The ssh transport failed (connect, auth, host key), including while reading a version. | `ssh to deploy@dokku.example.com failed` |
+| `version` | A `*sdk.VersionError`. | `dokku 0.38.31 or later is required`, `letsencrypt 0.20.0 or later is required`, `the dokku version could not be parsed`, `the dokku version could not be read` |
+| `object_missing` | An `*sdk.ObjectMissingError`. | `app web does not exist` |
+| `state_unreadable` | An error wrapping `sdk.ErrStateUnreadable`. The reason it carries is the detail. | `the task's current state cannot be read` |
+| `command_not_run` | An `*sdk.ExecError` whose command could not run to completion. | `the command could not be run` |
+| `command_failed` | An `*sdk.ExecError` whose command exited non-zero, or a result carrying a non-zero `ExitCode`. | `the command failed with exit code 1` |
+| `error` | Anything else. | The message's first line. |
+
+Every string in a diagnostic is masked, the summary included: an app name that holds a registered
+secret shows as `***` there as it does everywhere else. docket's own `plan` and `apply` output
+renders each task's errors and warnings through the same function, so what the CLI prints and what
+an embedder shows stay in step.
+
 ## Stability
 
 The exported identifiers in `sdk` are stable from the release they first ship in. While docket is

@@ -60,6 +60,11 @@ slightly between `apply` and `plan`:
 A few fields need a word of explanation:
 
 - `skip_reason` accompanies a `skipped` apply task when a reason was recorded.
+- `error` on a task whose plan or apply failed, and `message` and `reason` on a `warning` raised
+  while planning, are rendered from the task's result
+  by the same function an embedder calls, [`sdk.Diagnostics`](embedding.md#diagnostics). `error` is
+  the diagnostic's message prefixed with `ssh:` for a failure of the ssh transport and `dokku:` for
+  anything else.
 - `stdout`, `stderr`, and `exit_code` are the failing command's output and are present only on an
   errored apply task. `ignored` is `true` when [`ignore_errors`](task-envelope.md#ignore_errors-continue-past-a-failure)
   swallowed the error, in which case the task counts toward neither `errors` nor the exit code.

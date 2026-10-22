@@ -799,8 +799,11 @@ func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac 
 	// Probe diagnostics raised during planning (carried out on the state by
 	// ExecutePlan) surface as informational warning lines/events above the
 	// task's own result line.
-	for _, w := range state.Warnings {
-		ac.emitter.TaskWarning(ac.play.Name, name, w.Reason, w.Message)
+	// They render through tasks.Diagnostics, as an sdk caller's do.
+	for _, d := range tasks.Diagnostics(ac.ctx, state) {
+		if d.Severity == tasks.DiagnosticWarning {
+			ac.emitter.TaskWarning(ac.play.Name, name, d.Reason, d.Message)
+		}
 	}
 
 	postState, overrideErr := applyEnvelopeOverrides(env, state, ac.playExprCtx, ac.registered, failedTask)

@@ -85,6 +85,12 @@ type ConstraintOption = tasks.ConstraintOption
 // CronPropertyTask is tasks.CronPropertyTask.
 type CronPropertyTask = tasks.CronPropertyTask
 
+// Diagnostic is tasks.Diagnostic.
+type Diagnostic = tasks.Diagnostic
+
+// DiagnosticSeverity is tasks.DiagnosticSeverity.
+type DiagnosticSeverity = tasks.DiagnosticSeverity
+
 // DockerOptionsTask is tasks.DockerOptionsTask.
 type DockerOptionsTask = tasks.DockerOptionsTask
 
