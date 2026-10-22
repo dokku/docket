@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dokku/docket/sdk"
+	"github.com/dokku/docket/sdk/dokkutest"
 )
 
 // The calls below register a task's own secrets with the context's masker, so
@@ -34,12 +35,12 @@ func maskingConfig(t *testing.T) (*sdk.ConfigTask, string) {
 
 // maskingContext is a session context with an empty masker and fake as its
 // runner.
-func maskingContext(t *testing.T, fake *recorder) (context.Context, *sdk.Masker) {
+func maskingContext(t *testing.T, fake *dokkutest.Server) (context.Context, *sdk.Masker) {
 	t.Helper()
 	masker := sdk.NewMasker()
 	session := sdk.NewSession(masker)
 	t.Cleanup(func() { _ = session.Close() })
-	return sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), fake.run), masker
+	return fake.Context(session.Context(context.Background(), sdk.Target{})), masker
 }
 
 // assertMasked fails when masking got with masker leaves the secret readable
@@ -58,11 +59,7 @@ func assertMasked(t *testing.T, masker *sdk.Masker, what, got string) {
 func TestPlanRegistersTheTasksSecrets(t *testing.T) {
 	t.Parallel()
 	cfg, _ := maskingConfig(t)
-	ctx, _ := maskingContext(t, &recorder{answers: map[string]func() (sdk.ExecCommandResponse, error){
-		"--quiet config:export --format json api": func() (sdk.ExecCommandResponse, error) {
-			return sdk.ExecCommandResponse{Stdout: "{}"}, nil
-		},
-	}})
+	ctx, _ := maskingContext(t, dokkutest.New(t).SeedApp("api"))
 
 	plan := cfg.Plan(ctx)
 	if plan.Status != sdk.PlanStatusCreate {
@@ -76,9 +73,8 @@ func TestPlanRegistersTheTasksSecrets(t *testing.T) {
 func TestPlanErrorMasksTheTasksSecrets(t *testing.T) {
 	t.Parallel()
 	cfg, _ := maskingConfig(t)
-	ctx, masker := maskingContext(t, &recorder{answers: map[string]func() (sdk.ExecCommandResponse, error){
-		"--quiet config:export --format json api": exited(1, "cannot read TOKEN="+maskingSecret),
-	}})
+	ctx, masker := maskingContext(t, dokkutest.New(t).SeedApp("api").
+		Handle("--quiet config:export --format json api", dokkutest.Exit(1, "cannot read TOKEN="+maskingSecret)))
 
 	plan := cfg.Plan(ctx)
 	if plan.Error == nil {
@@ -90,12 +86,7 @@ func TestPlanErrorMasksTheTasksSecrets(t *testing.T) {
 func TestExecuteRegistersTheTasksSecrets(t *testing.T) {
 	t.Parallel()
 	cfg, setArgs := maskingConfig(t)
-	ctx, masker := maskingContext(t, &recorder{answers: map[string]func() (sdk.ExecCommandResponse, error){
-		"--quiet config:export --format json api": func() (sdk.ExecCommandResponse, error) {
-			return sdk.ExecCommandResponse{Stdout: "{}"}, nil
-		},
-		setArgs: exited(1, "rejected TOKEN="+maskingSecret),
-	}})
+	ctx, masker := maskingContext(t, dokkutest.New(t).SeedApp("api").Handle(setArgs, dokkutest.Exit(1, "rejected TOKEN="+maskingSecret)))
 
 	state := cfg.Execute(ctx)
 	if state.Error == nil {
@@ -109,9 +100,8 @@ func TestExecuteRegistersTheTasksSecrets(t *testing.T) {
 func TestReadTaskRegistersTheTasksSecrets(t *testing.T) {
 	t.Parallel()
 	cfg, _ := maskingConfig(t)
-	ctx, masker := maskingContext(t, &recorder{answers: map[string]func() (sdk.ExecCommandResponse, error){
-		"--quiet config:export --format json api": exited(1, "cannot read TOKEN="+maskingSecret),
-	}})
+	ctx, masker := maskingContext(t, dokkutest.New(t).SeedApp("api").
+		Handle("--quiet config:export --format json api", dokkutest.Exit(1, "cannot read TOKEN="+maskingSecret)))
 
 	_, _, err := sdk.ReadTask(ctx, cfg)
 	if err == nil {
@@ -131,14 +121,9 @@ func TestReadTaskRegistersTheTasksSecrets(t *testing.T) {
 func TestExecutePlanRegistersThePlannedTasksSecrets(t *testing.T) {
 	t.Parallel()
 	cfg, setArgs := maskingConfig(t)
-	fake := &recorder{answers: map[string]func() (sdk.ExecCommandResponse, error){
-		"--quiet config:export --format json api": func() (sdk.ExecCommandResponse, error) {
-			return sdk.ExecCommandResponse{Stdout: "{}"}, nil
-		},
-		setArgs: exited(1, "rejected TOKEN="+maskingSecret),
-	}}
+	fake := dokkutest.New(t).SeedApp("api").Handle(setArgs, dokkutest.Exit(1, "rejected TOKEN="+maskingSecret))
 
-	plan := cfg.Plan(sdk.ContextWithRunner(context.Background(), fake.run))
+	plan := cfg.Plan(fake.Context(context.Background()))
 	if plan.Status != sdk.PlanStatusCreate {
 		t.Fatalf("Status = %q (error %v), want %q", plan.Status, plan.Error, sdk.PlanStatusCreate)
 	}
@@ -170,7 +155,7 @@ func TestExecutePlanRegistersARefusedPlansSecrets(t *testing.T) {
 		t.Fatal("a user with a password and a hash plans an error, got none")
 	}
 
-	ctx, masker := maskingContext(t, &recorder{})
+	ctx, masker := maskingContext(t, dokkutest.New(t))
 	sdk.ExecutePlan(ctx, plan)
 	if shown := masker.String("password " + maskingSecret); strings.Contains(shown, maskingSecret) {
 		t.Errorf("masked = %q, want the refused plan's secret registered", shown)
@@ -180,13 +165,7 @@ func TestExecutePlanRegistersARefusedPlansSecrets(t *testing.T) {
 func TestPlanWithoutAMaskerRegistersNothing(t *testing.T) {
 	t.Parallel()
 	cfg, _ := maskingConfig(t)
-	fake := &recorder{answers: map[string]func() (sdk.ExecCommandResponse, error){
-		"--quiet config:export --format json api": func() (sdk.ExecCommandResponse, error) {
-			return sdk.ExecCommandResponse{Stdout: "{}"}, nil
-		},
-	}}
-
-	plan := cfg.Plan(sdk.ContextWithRunner(context.Background(), fake.run))
+	plan := cfg.Plan(dokkutest.New(t).SeedApp("api").Context(context.Background()))
 	if plan.Status != sdk.PlanStatusCreate {
 		t.Fatalf("Status = %q (error %v), want %q", plan.Status, plan.Error, sdk.PlanStatusCreate)
 	}

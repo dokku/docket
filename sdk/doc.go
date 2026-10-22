@@ -48,6 +48,11 @@
 // ContextWithRunner. The fake answers every command a call makes, and since it
 // travels on the context, tests with different fakes can run in parallel.
 // Production code must not use it.
+//
+// Package dokkutest is a stateful fake built on it: it holds apps, services
+// and their settings, answers the commands the tasks send, applies their
+// changes, and records every call, so a test can assert on the state a task
+// leaves rather than on the commands it ran.
 package sdk
 
 //go:generate go run ../generate/sdk

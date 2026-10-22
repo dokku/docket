@@ -685,8 +685,45 @@ process - still fails the task.
 
 ## Testing without a server
 
-`sdk.ContextWithRunner` installs a fake in place of dokku, so a test can plan and apply tasks and
-assert the exact commands they issue without a server:
+The `sdk/dokkutest` package is a stateful fake dokku. A `dokkutest.Server` holds apps, their
+config, domains, port mappings, buildpacks, process scale and plugin properties, and datastore
+services with their info and links. It answers the commands the tasks send in the formats their
+probes parse, applies their changes to its state, and records every call, so a test seeds the
+state it starts from, runs tasks, and asserts on the state they leave rather than on command lines:
+
+```go
+server := dokkutest.New(t).SeedApp("web").SeedService("postgres", "db", nil)
+ctx := server.Context(context.Background())
+
+link := sdk.ServiceLinkTask{App: "web", Service: "postgres", Name: "db", State: sdk.StatePresent}
+if state := link.Execute(ctx); state.Error != nil {
+    t.Fatal(state.Error)
+}
+if got := server.Links("postgres", "db"); !slices.Equal(got, []string{"web"}) {
+    t.Errorf("links = %v", got)
+}
+read, exists, err := sdk.ReadAddress(ctx, "dokku_service_link[app=web,service=postgres,name=db]")
+```
+
+The fake models `dokku_app`, `dokku_config`, `dokku_domains`, `dokku_ports`, `dokku_buildpacks`,
+`dokku_ps_scale`, every `dokku_*_property` task that manages a plugin's property table,
+`dokku_service_create` and `dokku_service_link`, along with the version gate and the probes a read
+makes for the app or service a task depends on. An app or service that does not exist gets the
+error and exit code dokku gives, so `sdk.ReadAddress` reports it as an `*sdk.ObjectMissingError`.
+
+Any other command fails loudly: the call returns an error naming the command and the test fails.
+`Handle` and `HandlePrefix` answer a command with a handler instead of the model, for a task the
+fake does not cover or a failure a test needs. `dokkutest.Exit` fails a command the way dokku does,
+`dokkutest.Unavailable` fails one that never ran, and `Fallback` answers every command the fake
+does not model. `Calls`, `Count` and `Unknown` report what the fake was sent.
+
+docket's own tests run on it, and a test runs every catalog example of every covered task against
+it, so it stays in step with the commands the tasks send.
+
+### Scripting the commands
+
+`sdk.ContextWithRunner` installs a fake in place of dokku, which is what `dokkutest` builds on. A
+test can install its own to plan and apply tasks and assert the exact commands they issue:
 
 ```go
 var calls []string

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dokku/docket/sdk"
+	"github.com/dokku/docket/sdk/dokkutest"
 )
 
 // A session installs the masker and target a run needs, and closes the SSH
@@ -107,16 +108,8 @@ func ExampleContextWithRunner() {
 // Reading a resource known only by its identity address, such as one being
 // imported, reads every member it has.
 func ExampleReadAddress() {
-	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		switch strings.Join(in.Args, " ") {
-		case "version":
-			return sdk.ExecCommandResponse{Stdout: "dokku version 0.38.31"}, nil
-		case "--quiet buildpacks:list api":
-			return sdk.ExecCommandResponse{Stdout: "=====> api buildpack urls\nhttps://github.com/heroku/heroku-buildpack-nodejs.git"}, nil
-		}
-		return sdk.ExecCommandResponse{}, nil
-	})
-	ctx = sdk.ContextWithVersionGate(ctx)
+	server := dokkutest.New(nil).SeedBuildpacks("api", "https://github.com/heroku/heroku-buildpack-nodejs.git")
+	ctx := sdk.ContextWithVersionGate(server.Context(context.Background()))
 
 	current, exists, err := sdk.ReadAddress(ctx, "dokku_buildpacks[app=api]")
 	if err != nil {
@@ -131,16 +124,8 @@ func ExampleReadAddress() {
 // Reading one resource's current state through its task, without exporting
 // the server.
 func ExampleReadTask() {
-	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		switch strings.Join(in.Args, " ") {
-		case "version":
-			return sdk.ExecCommandResponse{Stdout: "dokku version 0.38.31"}, nil
-		case "--quiet config:export --format json api":
-			return sdk.ExecCommandResponse{Stdout: `{"LOG_LEVEL":"debug","OTHER":"x"}`}, nil
-		}
-		return sdk.ExecCommandResponse{}, nil
-	})
-	ctx = sdk.ContextWithVersionGate(ctx)
+	server := dokkutest.New(nil).SeedConfig("api", map[string]string{"LOG_LEVEL": "debug", "OTHER": "x"})
+	ctx := sdk.ContextWithVersionGate(server.Context(context.Background()))
 
 	task, _ := sdk.NewTask("dokku_config")
 	cfg := task.(*sdk.ConfigTask)

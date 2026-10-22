@@ -1,5 +1,7 @@
 package tasks
 
+import "github.com/dokku/docket/internal/fakedokku"
+
 func init() {
 	registerObservedFixtures(observedServiceFixtures)
 }
@@ -42,6 +44,39 @@ func observedServiceServer() map[string]string {
 	)
 }
 
+// seedObservedServiceServer holds what observedServiceServer answers for, on
+// the fake: postgres my-db with the same info, and redis cache.
+// The fake reports my-db's exposure as unset, which dokku_service_create and
+// dokku_service_link do not read.
+func seedObservedServiceServer(s *fakedokku.Server) {
+	s.SeedApp("web", "api")
+	s.SeedService("postgres", "my-db", map[string]string{
+		"version":                              "postgres:17.2",
+		"memory":                               "512",
+		"custom-env":                           "LANG=C;TZ=UTC",
+		"config-options":                       "--max-connections=200",
+		"shm-size":                             "256m",
+		"initial-network":                      "bridge",
+		"post-create-network":                  "backend,metrics",
+		"post-start-network":                   "frontend",
+		"backup-schedule":                      "0 3 * * *",
+		"backup-bucket":                        "my-bucket",
+		"backup-use-iam":                       "false",
+		"backup-access-key-id-fingerprint":     backupFingerprint("AKIAEXAMPLE"),
+		"backup-secret-access-key-fingerprint": backupFingerprint("secret"),
+		"backup-encryption-fingerprint":        backupFingerprint("passphrase"),
+	})
+	s.SeedService("redis", "cache", map[string]string{"version": "redis:7.2.5"})
+}
+
+// seedObservedLinkedServer is seedObservedServiceServer with my-db linked to
+// web. dokku_service_create's fixture leaves the link out: dokku refuses to
+// destroy a linked service, and only an upgrade reads the links.
+func seedObservedLinkedServer(s *fakedokku.Server) {
+	seedObservedServiceServer(s)
+	s.SeedLink("postgres", "my-db", "web")
+}
+
 // observedHttpAuthServer is app web with http-auth serving one user, one
 // allowed IP and two auth domains, and app off with http-auth disabled and
 // nothing configured.
@@ -74,9 +109,9 @@ func observedStorageMountServer() map[string]string {
 func observedServiceFixtures() map[string]observedFixture {
 	return map[string]observedFixture{
 		"dokku_service_create": {
-			responses: observedServiceServer(),
-			exitCodes: map[string]int{"--quiet postgres:exists gone": 1},
-			export:    exportGlobalFrom(ServiceCreateTask{}),
+			// Service postgres gone does not exist.
+			seed:   seedObservedServiceServer,
+			export: exportGlobalFrom(ServiceCreateTask{}),
 			cases: []observedCase{
 				{
 					name: "absent",
@@ -111,9 +146,9 @@ func observedServiceFixtures() map[string]observedFixture {
 			},
 		},
 		"dokku_service_link": {
-			responses: observedServiceServer(),
-			exitCodes: map[string]int{"--quiet postgres:linked my-db api": 1},
-			export:    exportAppFrom(ServiceLinkTask{}),
+			// my-db is linked to web but not to api.
+			seed:   seedObservedLinkedServer,
+			export: exportAppFrom(ServiceLinkTask{}),
 			cases: []observedCase{
 				{
 					name: "absent",

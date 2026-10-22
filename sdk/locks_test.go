@@ -7,16 +7,19 @@ import (
 	"time"
 
 	"github.com/dokku/docket/sdk"
+	"github.com/dokku/docket/sdk/dokkutest"
 )
 
 // callerKey labels the context of one call in a lock test.
 type callerKey struct{}
 
-// orderedRunner is a fake dokku that records which caller sent each command
-// as the command starts and again as it returns, so a command another call
-// runs alongside shows up between the two. The first command from blockFirst waits on release, so a test can
-// hold one call inside dokku while another starts.
+// orderedRunner wraps a fake dokku holding app api, recording which caller
+// sent each command as the command starts and again as it returns, so a
+// command another call runs alongside shows up between the two. The first
+// command from blockFirst waits on release, so a test can hold one call
+// inside dokku while another starts.
 type orderedRunner struct {
+	server     *dokkutest.Server
 	blockFirst string
 	entered    chan struct{}
 	release    chan struct{}
@@ -25,11 +28,11 @@ type orderedRunner struct {
 	callers    []string
 }
 
-func newOrderedRunner(blockFirst string) *orderedRunner {
-	return &orderedRunner{blockFirst: blockFirst, entered: make(chan struct{}), release: make(chan struct{})}
+func newOrderedRunner(t *testing.T, blockFirst string) *orderedRunner {
+	return &orderedRunner{server: dokkutest.New(t).SeedApp("api"), blockFirst: blockFirst, entered: make(chan struct{}), release: make(chan struct{})}
 }
 
-func (r *orderedRunner) run(ctx context.Context, _ sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
+func (r *orderedRunner) run(ctx context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
 	caller, _ := ctx.Value(callerKey{}).(string)
 	r.mu.Lock()
 	r.callers = append(r.callers, caller)
@@ -40,10 +43,11 @@ func (r *orderedRunner) run(ctx context.Context, _ sdk.ExecCommandInput) (sdk.Ex
 			<-r.release
 		})
 	}
+	res, err := r.server.Run(ctx, in)
 	r.mu.Lock()
 	r.callers = append(r.callers, caller)
 	r.mu.Unlock()
-	return sdk.ExecCommandResponse{}, nil
+	return res, err
 }
 
 // sequence returns the callers in the order their commands ran, with each
@@ -78,7 +82,7 @@ func newConfig(t *testing.T, app string) *sdk.ConfigTask {
 // sends nothing to dokku until the first is done.
 func TestSessionSerializesExecuteOnOneApp(t *testing.T) {
 	t.Parallel()
-	runner := newOrderedRunner("first")
+	runner := newOrderedRunner(t, "first")
 	session := sdk.NewSession(nil)
 	defer func() { _ = session.Close() }()
 	ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), runner.run)
@@ -110,13 +114,13 @@ func TestSessionSerializesExecuteOnOneApp(t *testing.T) {
 // same app out until it releases.
 func TestLockTaskHoldsAcrossPlanAndExecutePlan(t *testing.T) {
 	t.Parallel()
-	runner := newOrderedRunner("")
+	runner := newOrderedRunner(t, "")
 	session := sdk.NewSession(nil)
 	defer func() { _ = session.Close() }()
 	ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), runner.run)
 
-	// The fake answers apps:exists with success, so an absent app plans a
-	// destroy and its apply sends a command of its own.
+	// The fake holds app api, so an absent app plans a destroy and its apply
+	// sends a command of its own.
 	planner := newApp(t, "api")
 	planner.State = sdk.StateAbsent
 	plannerCtx := context.WithValue(ctx, callerKey{}, "planner")
@@ -151,7 +155,7 @@ func TestLockTaskHoldsAcrossPlanAndExecutePlan(t *testing.T) {
 // TaskObjects names what a task locks.
 func TestContextWithTaskLocksWithoutSession(t *testing.T) {
 	t.Parallel()
-	runner := newOrderedRunner("first")
+	runner := newOrderedRunner(t, "first")
 	ctx := sdk.ContextWithTaskLocks(sdk.ContextWithRunner(context.Background(), runner.run))
 
 	objects := sdk.TaskObjects(newConfig(t, "api"))

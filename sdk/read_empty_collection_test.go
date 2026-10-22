@@ -3,10 +3,10 @@ package sdk_test
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/dokku/docket/sdk"
+	"github.com/dokku/docket/sdk/dokkutest"
 )
 
 // TestReadEmptyCollectionExists pins #639 through the sdk: an app with no
@@ -14,15 +14,7 @@ import (
 // from its address or from a task that owns the whole list. A task in an
 // additive state still reports the member it names as missing.
 func TestReadEmptyCollectionExists(t *testing.T) {
-	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		switch strings.Join(in.Args, " ") {
-		case "--quiet buildpacks:list web":
-			return sdk.ExecCommandResponse{Stdout: "=====> web buildpack urls"}, nil
-		case "--quiet buildpacks:report web --format json":
-			return sdk.ExecCommandResponse{Stdout: `{"list":""}`}, nil
-		}
-		return sdk.ExecCommandResponse{}, nil
-	})
+	ctx := dokkutest.New(t).SeedApp("web").Context(context.Background())
 
 	got, exists, err := sdk.ReadAddress(ctx, "dokku_buildpacks[app=web]")
 	if err != nil {

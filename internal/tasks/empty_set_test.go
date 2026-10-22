@@ -122,8 +122,12 @@ func keysOnly(t *testing.T, typeKey string, body Task, state State) Task {
 }
 
 // acceptingRunner answers a fixture's reads and accepts every other command,
-// the writes an apply runs.
+// the writes an apply runs. A seeded fixture's fake applies the writes to its
+// own state instead.
 func acceptingRunner(f observedFixture) func(context.Context, subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
+	if f.seed != nil {
+		return fixtureServer(nil, f).Run
+	}
 	return func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		return subprocess.ExecCommandResponse{Stdout: f.responses[strings.Join(in.Args, " ")]}, nil
 	}

@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/dokku/docket/sdk"
+	"github.com/dokku/docket/sdk/dokkutest"
 )
 
 func TestReadTaskReadsTheDeclaredKeys(t *testing.T) {
-	fake := newFakeDokku("0.99.0")
-	ctx := sdk.ContextWithVersionGate(fake.context())
+	fake := newFakeDokku(t, "0.99.0")
+	ctx := sdk.ContextWithVersionGate(fake.Context(context.Background()))
 
 	task, _ := sdk.NewTask("dokku_config")
 	cfg := task.(*sdk.ConfigTask)
@@ -47,12 +47,7 @@ func TestReadTaskReadsTheDeclaredKeys(t *testing.T) {
 // sees no change. ReadAddress, with no declared task, reads what the server
 // reports.
 func TestReadTaskReturnsTheDeclaredTaskInSync(t *testing.T) {
-	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		if strings.Join(in.Args, " ") == "--quiet ps:scale web" {
-			return sdk.ExecCommandResponse{Stdout: "-----> Scaling for web\nproctype: qty\n--------: ---\nweb:  2\nworker: 0"}, nil
-		}
-		return sdk.ExecCommandResponse{}, nil
-	})
+	ctx := dokkutest.New(t).SeedScale("web", map[string]int{"web": 2, "worker": 0}).Context(context.Background())
 
 	task := sdk.PsScaleTask{App: "web", Scale: map[string]int{"web": 2, "worker": 0}, State: sdk.StateSet}
 	plan := task.Plan(ctx)
@@ -78,8 +73,8 @@ func TestReadTaskReturnsTheDeclaredTaskInSync(t *testing.T) {
 }
 
 func TestReadAddressReadsTheWholeResource(t *testing.T) {
-	fake := newFakeDokku("0.99.0")
-	ctx := sdk.NewSession(nil, sdk.WithVersionGate()).Context(fake.context(), sdk.Target{})
+	fake := newFakeDokku(t, "0.99.0")
+	ctx := sdk.NewSession(nil, sdk.WithVersionGate()).Context(fake.Context(context.Background()), sdk.Target{})
 
 	got, exists, err := sdk.ReadAddress(ctx, "dokku_app[app=web]")
 	if err != nil {
@@ -91,22 +86,22 @@ func TestReadAddressReadsTheWholeResource(t *testing.T) {
 }
 
 func TestReadAddressRefusesOldDokku(t *testing.T) {
-	fake := newFakeDokku("0.38.8")
-	ctx := sdk.NewSession(nil, sdk.WithVersionGate()).Context(fake.context(), sdk.Target{})
+	fake := newFakeDokku(t, "0.38.8")
+	ctx := sdk.NewSession(nil, sdk.WithVersionGate()).Context(fake.Context(context.Background()), sdk.Target{})
 
 	_, _, err := sdk.ReadAddress(ctx, "dokku_app[app=web]")
 	var verr *sdk.VersionError
 	if !errors.As(err, &verr) {
 		t.Fatalf("error = %v, want a *VersionError", err)
 	}
-	if fake.count("--quiet apps:exists web") != 0 {
+	if fake.Count("--quiet apps:exists web") != 0 {
 		t.Error("a refused read should not probe the app")
 	}
 }
 
 func TestReadTaskRefusesOldDokku(t *testing.T) {
-	fake := newFakeDokku("0.38.8")
-	ctx := sdk.ContextWithVersionGate(fake.context())
+	fake := newFakeDokku(t, "0.38.8")
+	ctx := sdk.ContextWithVersionGate(fake.Context(context.Background()))
 	task, _ := sdk.NewTask("dokku_app")
 	task.(*sdk.AppTask).App = "web"
 
@@ -121,7 +116,7 @@ func TestReadTaskRefusesOldDokku(t *testing.T) {
 	if got != nil || exists {
 		t.Errorf("a refused read returned %#v, %v", got, exists)
 	}
-	if fake.count("--quiet apps:exists web") != 0 {
+	if fake.Count("--quiet apps:exists web") != 0 {
 		t.Error("a refused read still probed the app")
 	}
 
@@ -132,39 +127,36 @@ func TestReadTaskRefusesOldDokku(t *testing.T) {
 }
 
 func TestReadTaskWithoutGateReadsOldDokku(t *testing.T) {
-	fake := newFakeDokku("0.38.8")
+	fake := newFakeDokku(t, "0.38.8")
 	task, _ := sdk.NewTask("dokku_app")
 	task.(*sdk.AppTask).App = "web"
 
-	got, exists, err := sdk.ReadTask(fake.context(), task)
+	got, exists, err := sdk.ReadTask(fake.Context(context.Background()), task)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !exists || got != (sdk.AppTask{App: "web", State: sdk.StatePresent}) {
 		t.Errorf("got %#v, %v", got, exists)
 	}
-	if fake.count("version") != 0 {
+	if fake.Count("version") != 0 {
 		t.Error("a context with no gate should not read the version")
 	}
 }
 
 func TestReadTaskUnreadable(t *testing.T) {
-	fake := newFakeDokku("0.99.0")
+	fake := newFakeDokku(t, "0.99.0")
 	task, _ := sdk.NewTask("dokku_storage_ensure")
 	task.(*sdk.StorageEnsureTask).App = "web"
 
-	if _, _, err := sdk.ReadTask(fake.context(), task); !errors.Is(err, sdk.ErrStateUnreadable) {
+	if _, _, err := sdk.ReadTask(fake.Context(context.Background()), task); !errors.Is(err, sdk.ErrStateUnreadable) {
 		t.Errorf("error = %v, want sdk.ErrStateUnreadable", err)
 	}
 }
 
 func TestReadAddressReportsAMissingApp(t *testing.T) {
-	ctx := sdk.ContextWithRunner(context.Background(), func(_ context.Context, in sdk.ExecCommandInput) (sdk.ExecCommandResponse, error) {
-		if strings.HasSuffix(strings.Join(in.Args, " "), " gone") {
-			return sdk.ExecCommandResponse{ExitCode: 1, Stderr: "App gone does not exist"}, nil
-		}
-		return sdk.ExecCommandResponse{}, nil
-	})
+	// The fake holds no app gone, so every command naming it fails the way
+	// dokku's do.
+	ctx := dokkutest.New(t).Context(context.Background())
 
 	_, exists, err := sdk.ReadAddress(ctx, "dokku_config[app=gone]")
 	if !errors.Is(err, sdk.ErrObjectMissing) {
