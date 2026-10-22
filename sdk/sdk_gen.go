@@ -175,6 +175,69 @@ func DecodeTask(typeKey string, body []byte) (Task, error) {
 	return tasks.DecodeTask(typeKey, body)
 }
 
+// Diagnostic severities, as Diagnostic.Severity.
+const (
+	// DiagnosticError marks a diagnostic for an error: the task could not be
+	// planned, applied or read.
+	DiagnosticError = tasks.DiagnosticError
+
+	// DiagnosticWarning marks a diagnostic for a PlanWarning: the task ran,
+	// and something about it needs a look.
+	DiagnosticWarning = tasks.DiagnosticWarning
+)
+
+// Diagnostic reasons for an error, as Diagnostic.Reason. A warning's Reason is
+// its PlanWarning.Reason, one of the WarnReason* constants.
+const (
+	// DiagnosticReasonVersion marks an error for a *VersionError: the server,
+	// or a plugin the task needs, is older than the task's floor, or its
+	// version could not be read or parsed.
+	DiagnosticReasonVersion = tasks.DiagnosticReasonVersion
+
+	// DiagnosticReasonObjectMissing marks an error for an
+	// *ObjectMissingError: the app or service the task depends on does not
+	// exist.
+	DiagnosticReasonObjectMissing = tasks.DiagnosticReasonObjectMissing
+
+	// DiagnosticReasonStateUnreadable marks an error wrapping
+	// ErrStateUnreadable: the task's current state cannot be read.
+	DiagnosticReasonStateUnreadable = tasks.DiagnosticReasonStateUnreadable
+
+	// DiagnosticReasonSSH marks an error for a failure of the ssh transport
+	// itself - connect, auth, host key - rather than of the command it ran.
+	DiagnosticReasonSSH = tasks.DiagnosticReasonSSH
+
+	// DiagnosticReasonCommandFailed marks an error for a command that ran and
+	// exited non-zero.
+	DiagnosticReasonCommandFailed = tasks.DiagnosticReasonCommandFailed
+
+	// DiagnosticReasonCommandNotRun marks an error for a command that could
+	// not be run to completion: it could not start, was cancelled or was
+	// killed.
+	DiagnosticReasonCommandNotRun = tasks.DiagnosticReasonCommandNotRun
+
+	// DiagnosticReasonError marks any other error.
+	DiagnosticReasonError = tasks.DiagnosticReasonError
+)
+
+// Diagnostics returns the errors and warnings in result, masked with the
+// masker on ctx, so a caller can show them without masking or classifying each
+// one itself. result is a PlanResult, a TaskOutputState (or a pointer to
+// either), or an error, such as the one ReadTask or ReadAddress returns.
+//
+// The error, when there is one, comes first, then one warning per entry in
+// Warnings, in order, each keeping its Reason. A result with neither, a nil
+// error and a nil pointer return nil. Any other type returns a single error
+// diagnostic naming it.
+//
+// An error is classified by what it wraps, first match wins: a failure of the
+// ssh transport, a *VersionError, an *ObjectMissingError, ErrStateUnreadable,
+// a command that failed (an *ExecError, or a result carrying a non-zero
+// ExitCode), and anything else.
+func Diagnostics(ctx context.Context, result any) []Diagnostic {
+	return tasks.Diagnostics(ctx, result)
+}
+
 // ErrObjectMissing is matched by the error ReadTask and ReadAddress return when
 // the app or datastore service a task depends on does not exist on the server.
 // errors.As against *ObjectMissingError names the missing object by its kind,
@@ -715,6 +778,16 @@ const (
 	// that asked for drift to be caught is never silently told everything is
 	// fine.
 	WarnReasonServiceImageDrift = tasks.WarnReasonServiceImageDrift
+
+	// WarnReasonServiceOptionDrift marks a warning raised when a datastore
+	// service holds a create-time option - config_options, custom_env,
+	// memory, shm_size or a network - other than the one the recipe declares,
+	// and the task is leaving it alone. Like WarnReasonServiceImageDrift it is
+	// not a probe failure: the value was read, and reconciling it means a
+	// rebuild the recipe did not ask for. It is a separate reason because the
+	// remedy is: an option is set in place and picked up by a stop and a
+	// start, while an image moves only with `<service>:upgrade`.
+	WarnReasonServiceOptionDrift = tasks.WarnReasonServiceOptionDrift
 )
 
 // WithControlPersist sets how long each SSH connection the session opens stays

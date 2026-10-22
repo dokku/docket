@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -315,12 +315,13 @@ func (f *Formatter) ApplyTask(ev ApplyTaskEvent) {
 			suffix = "(ignored)"
 		}
 		f.TaskLine(MarkerError, displayName, suffix)
-		f.ErrorContinuation(ev.State.Error)
+		d := resultError(f.masker, ev.State)
+		f.Continuation('!', errorText(d))
 		// Stderr already surfaces via the dokku-prefixed continuation:
 		// subprocess.CallExecCommand wraps stderr into the error itself.
 		// Stdout is otherwise lost on the error path.
-		if ev.State.Stdout != "" {
-			f.Continuation('!', ev.State.Stdout)
+		if d.Stdout != "" {
+			f.Continuation('!', d.Stdout)
 		}
 		if f.verbose {
 			for _, cmd := range ev.State.Commands {
@@ -361,7 +362,7 @@ func (f *Formatter) PlanTask(ev PlanTaskEvent) {
 	case ev.Skipped:
 		f.TaskLine(MarkerSkipped, displayName, "(when: false)")
 	case ev.Result.Error != nil:
-		f.TaskLine(MarkerProbeError, displayName, fmt.Sprintf("(%s)", PrefixErrorMessage(ev.Result.Error)))
+		f.TaskLine(MarkerProbeError, displayName, fmt.Sprintf("(%s)", errorText(resultError(f.masker, ev.Result))))
 	case ev.Result.InSync:
 		f.TaskLine(MarkerOK, displayName, "(in sync)")
 	default:
@@ -394,33 +395,41 @@ func decoratePhaseName(name, phase string, group bool) string {
 	return name
 }
 
-// ErrorContinuation emits an `! <prefix>: <body>` continuation line
-// under an errored task. The prefix is `ssh` when err unwraps to a
-// *subprocess.SSHError (transport-level failure: connect, auth,
-// host-key) and `dokku` otherwise (remote command exit). Multi-line
-// bodies are masked and rendered as separate continuation lines under
-// the same indent.
-func (f *Formatter) ErrorContinuation(err error) {
-	if err == nil {
-		return
-	}
-	f.Continuation('!', PrefixErrorMessage(err))
-}
-
 // PrefixErrorMessage prepends `ssh:` or `dokku:` to err.Error() based
-// on whether err unwraps to a *subprocess.SSHError. Exported so the
-// plan command can reuse the same prefixing logic for the probe-error
-// suffix that surfaces inline in the TaskLine instead of in a
-// continuation line.
+// on whether err unwraps to a *subprocess.SSHError. The saved plan
+// records a probe error with it. It renders err through
+// tasks.Diagnostics, as every error the run stream prints is, and masks
+// nothing.
 func PrefixErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
-	var sshErr *subprocess.SSHError
-	if errors.As(err, &sshErr) {
-		return "ssh: " + err.Error()
+	return errorText(resultError(nil, err))
+}
+
+// resultError returns the error diagnostic tasks.Diagnostics reports for
+// result - a PlanResult, a TaskOutputState or an error - masked with masker.
+// The human and JSON emitters both render a task's error from it, so the two
+// stay in step with each other and with what an sdk caller is shown. It is the
+// zero Diagnostic when result carries no error.
+func resultError(masker *subprocess.Masker, result any) tasks.Diagnostic {
+	ctx := subprocess.ContextWithMasker(context.Background(), masker)
+	for _, d := range tasks.Diagnostics(ctx, result) {
+		if d.Severity == tasks.DiagnosticError {
+			return d
+		}
 	}
-	return "dokku: " + err.Error()
+	return tasks.Diagnostic{}
+}
+
+// errorText is how the run stream prints an error diagnostic: its message
+// behind `ssh:` for a failure of the ssh transport (connect, auth, host key)
+// and `dokku:` for anything else.
+func errorText(d tasks.Diagnostic) string {
+	if d.Reason == tasks.DiagnosticReasonSSH {
+		return "ssh: " + d.Message
+	}
+	return "dokku: " + d.Message
 }
 
 // TaskLine emits one structured task line: a colored, bracketed,

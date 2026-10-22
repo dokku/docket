@@ -281,6 +281,8 @@ const (
 	// rebuild the recipe did not ask for. It is a separate reason because the
 	// remedy is: an option is set in place and picked up by a stop and a
 	// start, while an image moves only with `<service>:upgrade`.
+	//
+	//sdk:export
 	WarnReasonServiceOptionDrift = "service_option_drift"
 )
 

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -100,10 +101,10 @@ func TestFormatterPlaySkippedMasksWhenEvalError(t *testing.T) {
 	}
 }
 
-func TestFormatterErrorContinuationDokkuPrefix(t *testing.T) {
+func TestFormatterApplyErrorContinuationDokkuPrefix(t *testing.T) {
 	t.Parallel()
 	f, ui := newTestFormatter(false)
-	f.ErrorContinuation(errors.New("app foo does not exist"))
+	f.ApplyTask(ApplyTaskEvent{Name: "t", State: tasks.TaskOutputState{Error: errors.New("app foo does not exist")}})
 	got := ui.OutputWriter.String()
 	want := "          ! dokku: app foo does not exist\n"
 	if got != want {
@@ -111,10 +112,10 @@ func TestFormatterErrorContinuationDokkuPrefix(t *testing.T) {
 	}
 }
 
-func TestFormatterErrorContinuationSshPrefix(t *testing.T) {
+func TestFormatterApplyErrorContinuationSshPrefix(t *testing.T) {
 	t.Parallel()
 	f, ui := newTestFormatter(false)
-	f.ErrorContinuation(&subprocess.SSHError{Host: "alice@host", Stderr: "Permission denied (publickey)."})
+	f.ApplyTask(ApplyTaskEvent{Name: "t", State: tasks.TaskOutputState{Error: &subprocess.SSHError{Host: "alice@host", Stderr: "Permission denied (publickey)."}}})
 	got := ui.OutputWriter.String()
 	want := "          ! ssh: ssh alice@host: Permission denied (publickey).\n"
 	if got != want {
@@ -122,23 +123,14 @@ func TestFormatterErrorContinuationSshPrefix(t *testing.T) {
 	}
 }
 
-func TestFormatterErrorContinuationSshWrappedPrefix(t *testing.T) {
+func TestFormatterApplyErrorContinuationSshWrappedPrefix(t *testing.T) {
 	t.Parallel()
 	wrapped := &subprocess.SSHError{Host: "host", Err: errors.New("connect refused")}
 	f, ui := newTestFormatter(false)
-	f.ErrorContinuation(wrapped)
+	f.ApplyTask(ApplyTaskEvent{Name: "t", State: tasks.TaskOutputState{Error: fmt.Errorf("probing: %w", wrapped)}})
 	got := ui.OutputWriter.String()
 	if !strings.HasPrefix(strings.TrimLeft(got, " "), "! ssh:") {
 		t.Errorf("expected ssh: prefix, got %q", got)
-	}
-}
-
-func TestFormatterErrorContinuationNilNoOp(t *testing.T) {
-	t.Parallel()
-	f, ui := newTestFormatter(false)
-	f.ErrorContinuation(nil)
-	if got := ui.OutputWriter.String(); got != "" {
-		t.Errorf("nil error should produce no output, got %q", got)
 	}
 }
 
@@ -365,7 +357,8 @@ func TestApplyTaskErrorRendersStdout(t *testing.T) {
 			t.Errorf("expected stdout continuation %q in:\n%s", want, out)
 		}
 	}
-	// The dokku-prefixed error continuation comes from ErrorContinuation.
+	// The dokku-prefixed error continuation is rendered from the state's
+	// error diagnostic.
 	errOut := ui.ErrorWriter.String()
 	if !strings.Contains(errOut, "[error]") {
 		t.Errorf("expected error marker on stderr, got:\n%s", errOut)
@@ -384,8 +377,7 @@ func TestApplyTaskErrorOmitsEmptyStdout(t *testing.T) {
 
 	for _, line := range strings.Split(ui.OutputWriter.String(), "\n") {
 		// Only the error continuation may have a `!` prefix; that is
-		// emitted via ErrorContinuation -> Continuation('!') with the
-		// `dokku:` body. Empty Stdout should not produce another `!`
+		// emitted via Continuation('!') with the `dokku:` body. Empty Stdout should not produce another `!`
 		// line.
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {

@@ -626,8 +626,11 @@ func planLeaf(env *tasks.TaskEnvelope, name string, pc *planContext, failedTask 
 
 	// Probe diagnostics raised during planning surface as informational
 	// warning lines/events above the task's own result line.
-	for _, w := range result.Warnings {
-		pc.emitter.TaskWarning(pc.play.Name, name, w.Reason, w.Message)
+	// They render through tasks.Diagnostics, as an sdk caller's do.
+	for _, d := range tasks.Diagnostics(pc.ctx, result) {
+		if d.Severity == tasks.DiagnosticWarning {
+			pc.emitter.TaskWarning(pc.play.Name, name, d.Reason, d.Message)
+		}
 	}
 
 	synth := tasks.TaskOutputState{
