@@ -116,6 +116,10 @@ not silently break a consumer. It is independent of the `version` on
 breaking change to one does not force the other's consumers to re-branch. Adding a key within a
 major version does not bump it.
 
+One change was made within version 1 against that rule: a field's `default` used to be a string
+whatever the field's type, and is now a value of that type, so `dokku_ps_scale`'s `skip_deploy`
+reads `"default": false` rather than `"default": "false"`.
+
 The binary's own version is deliberately not in the document, so two builds of the same code emit
 byte-identical catalogs and a diff shows only real changes. Use `docket version` for that.
 
@@ -131,7 +135,7 @@ the reference page lists them in.
 | `required` | Whether a recipe must supply it. |
 | `required_when` | The states in which a recipe must supply it. Absent when the field is never conditionally required. |
 | `forbidden_when` | The states in which a recipe must not supply it. Absent when the field is allowed in every state. |
-| `default` | The default, as a literal string to be read according to `type`. Absent when there is none. |
+| `default` | The default, as a value of the field's `type`: a boolean for `bool`, a number for `int` and `float`, a string for `string`, an array of the item type for `list`. Absent when there is none. |
 | `choices` | The permitted values. Absent when the field is not an enum. |
 | `description` | Prose for a human. |
 | `note` | What the reference page appends to `description`, overall and per state. Absent when it appends nothing. See [Rendered notes](#rendered-notes). |
@@ -150,7 +154,7 @@ Two of these need care:
   filled in before the missing-field check runs.
 - **A `default` on a field docket treats as optional-with-a-nil-default** documents what the task
   coerces an omitted key to, not a value written into the recipe. `dokku_config`'s `restart` is
-  the example: the catalog reports `"default": "true"`, and an explicit `restart: false` is still
+  the example: the catalog reports `"default": true`, and an explicit `restart: false` is still
   honoured.
 
 `runner_file` matters to a consumer that runs docket somewhere other than the dokku server. Most
@@ -470,6 +474,9 @@ Adding these keys does not bump `version`.
   declaration order.
 - Two runs of the same binary produce byte-identical output, for the whole catalog and for any
   `--task` selection.
+- A field's `default` became typed within version 1 rather than with a version bump, so a
+  consumer that read it as a string has to accept a boolean, number or array too. See
+  [Versioning](#versioning).
 
 ## See also
 

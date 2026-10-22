@@ -154,10 +154,10 @@ func TestCatalogRequiredMatchesTags(t *testing.T) {
 			if field.Required != want {
 				t.Errorf("%s.%s Required = %v; want %v", schema.Type, field.Name, field.Required, want)
 			}
-			if field.Default != def {
-				t.Errorf("%s.%s Default = %q; want %q", schema.Type, field.Name, field.Default, def)
+			if (field.Default != nil) != (def != "") {
+				t.Errorf("%s.%s Default = %#v; want one exactly when the tag is %q", schema.Type, field.Name, field.Default, def)
 			}
-			if field.Required && field.Default != "" {
+			if field.Required && field.Default != nil {
 				t.Errorf("%s.%s is required and defaulted, which the loader cannot express", schema.Type, field.Name)
 			}
 		}
@@ -620,8 +620,8 @@ func TestCatalogFieldShapes(t *testing.T) {
 		t.Errorf("config item identity = %q; want %q", cfg.Item.Identity, ItemIdentityMapKey)
 	}
 	restart := fieldFor(t, config.Fields, "restart")
-	if restart.Type != TypeBool || restart.Required || restart.Default != "true" {
-		t.Errorf("restart = {type %q, required %v, default %q}; want {bool, false, \"true\"}", restart.Type, restart.Required, restart.Default)
+	if restart.Type != TypeBool || restart.Required || restart.Default != true {
+		t.Errorf("restart = {type %q, required %v, default %#v}; want {bool, false, true}", restart.Type, restart.Required, restart.Default)
 	}
 
 	values := fieldFor(t, schemaFor(t, catalog, "dokku_scheduler_k3s_chart").Fields, "values")
@@ -892,7 +892,11 @@ func TestCatalogSkipsUnserializedFields(t *testing.T) {
 		lower  string //nolint:unused // unexported fields are never recipe keys
 	}
 
-	got := fieldNames(buildFields(reflect.TypeOf(example{})))
+	fields, err := buildFields(reflect.TypeOf(example{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fieldNames(fields)
 	if !reflect.DeepEqual(got, []string{"app"}) {
 		t.Errorf("fields = %v; want [app]", got)
 	}

@@ -48,6 +48,10 @@ func CatalogFor(typeKeys []string) (TaskCatalog, error) {
 // CatalogVersion is the TaskCatalog.Version this release emits, the `version`
 // field of every catalog. It changes only when the catalog's shape does, so a
 // consumer can branch on it: adding a key does not bump it.
+//
+// One change was made within version 1 against that rule: a field's `default`
+// was a string whatever its type, and is now a typed value matching the
+// field's type (#645), so a bool field's default reads false, not "false".
 const CatalogVersion = tasks.CatalogVersion
 
 // CheckMinimumVersions returns a *VersionError when the server ctx targets, or
@@ -401,6 +405,30 @@ const (
 	// and its name.
 	ObjectService = tasks.ObjectService
 )
+
+// ParseFieldDefault turns a field's raw `default:` tag text into the typed
+// value the catalog publishes as FieldSchema.Default: a bool, an int64, a
+// float64, a string, or a []any of those, matching fieldType. fieldType and
+// itemType are the catalog's type names - a FieldSchema's Type and its
+// Item.Type - so a caller holding either a task struct or a published catalog
+// can call it. itemType is read only when fieldType is TypeList. An empty raw
+// tag means the field has no default, and returns nil.
+//
+// It follows go-defaults' parsing rules, which are what the loader applies
+// through defaults.SetDefaults: strconv for scalars, the string as-is, and a
+// list spelled `[a,b]` and split on commas with no trimming. Where go-defaults
+// would silently store a zero value - an unparsable bool or number, a list tag
+// without brackets, a default on a dict or on a list of objects, which it never
+// applies - this returns an error instead, so a typo in a tag cannot publish a
+// default the task does not have.
+//
+// A pointer field is described by the type it points to, so a *bool's tag
+// parses as a bool. go-defaults leaves a pointer nil, so on a pointer field the
+// value is what the task coerces nil to, not what the loader writes into the
+// struct.
+func ParseFieldDefault(fieldType string, itemType string, raw string) (any, error) {
+	return tasks.ParseFieldDefault(fieldType, itemType, raw)
+}
 
 // ParseIdentityAddress parses `dokku_config[app=api]` into its type key and
 // key map. A bare type key parses to an empty map, which `export --resource`
