@@ -16,6 +16,10 @@ Partial - every profile dokku reports is exported; a profile whose name dokku ac
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `name`.

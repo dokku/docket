@@ -32,6 +32,7 @@ One JSON object, pretty-printed, with a `version` and a `tasks` array sorted by 
     {
       "type": "dokku_domains",
       "synopsis": "Manages the domains for a given dokku application or globally",
+      "lifecycle": { "apply": "set", "teardown": "clear" },
       "export": { "status": "supported" },
       "probe": { "status": "supported" },
       "identity": {
@@ -68,6 +69,18 @@ after its synopsis (or its deprecation notice). It has nothing to undo, so it of
 `clear` state, and a consumer that tears down what it applied can skip it. The key is absent on every
 declarative task. Today the imperative tasks are `dokku_app_clone`, `dokku_git_sync`,
 `dokku_git_from_archive` and `dokku_git_from_image`.
+
+`lifecycle` names the two states a consumer that manages resources declaratively drives a task
+through: `apply`, the state that declares the resource, and `teardown`, the state that removes it.
+`apply` is `set` when the task offers it, since `set` declares the whole resource, and the `state`
+field's default otherwise - `present` for most tasks, `deployed` for `dokku_git_from_archive` and
+`dokku_git_from_image`. `teardown` is `clear` when the task offers it and `absent` otherwise, and
+is absent on an imperative task, which has nothing to undo. The one task the rule does not fit is
+the deprecated `dokku_storage_ensure`: it offers `absent` but refuses it, since
+`storage:ensure-directory` has no inverse, so it has no `teardown` either. Every task carries the key, so a
+consumer reads both states instead of deriving them from `choices`. Moving a task into its
+teardown state also means leaving out the fields whose `forbidden_when` names that state;
+[`sdk.TaskInState`](embedding.md#applying-and-tearing-down-a-task) does both.
 
 Every name in the document is a key a recipe author types. Go type names and Go field names are
 deliberately absent - the catalog describes the recipe surface, not docket's implementation.
@@ -442,6 +455,7 @@ markdown with its heading and no trailing newline:
 | `runner_requirements` | every `runner_file` field, element fields included |
 | `export` | `export` |
 | `probe` | `probe` |
+| `lifecycle` | `lifecycle` and the `forbidden_when` of each field |
 | `identity` | `identity` |
 | `objects` | `objects` |
 | `constraints` | `constraints` and each object item's `constraints` |

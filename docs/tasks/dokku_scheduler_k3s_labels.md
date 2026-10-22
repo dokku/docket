@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `labels`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`, `global`, `process_type`, and `resource_type`. Fields left empty are omitted from the address. Manages the whole `labels` collection; entries are identified by their key.

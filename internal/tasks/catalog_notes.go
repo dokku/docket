@@ -46,6 +46,9 @@ const (
 	// NoteProbe says how much of its own state the task can read back.
 	NoteProbe NoteKind = "probe"
 
+	// NoteLifecycle names the states that apply and tear down the task.
+	NoteLifecycle NoteKind = "lifecycle"
+
 	// NoteIdentity names the fields that select the resource.
 	NoteIdentity NoteKind = "identity"
 
@@ -104,6 +107,7 @@ var taskNoteKinds = []taskNoteKind{
 	{NoteRunnerRequirements, runnerRequirementsNote},
 	{NoteExport, exportNote},
 	{NoteProbe, probeNote},
+	{NoteLifecycle, lifecycleNote},
 	{NoteIdentity, identityNote},
 	{NoteObjects, objectsNote},
 	{NoteConstraints, constraintsNote},
@@ -452,6 +456,49 @@ func probeNote(schema TaskSchema, _ State) string {
 		label = string(support.Status)
 	}
 	return supportNote("Probe support", label, support.Caveat)
+}
+
+// lifecycleNote names the state that applies the task and the state that
+// tears it down, and the fields a teardown resets because its state refuses
+// them, so a reader driving the task from another tool knows both without
+// working them out from the `state` choices.
+func lifecycleNote(schema TaskSchema, _ State) string {
+	lifecycle := schema.Lifecycle
+	if lifecycle.Apply == "" {
+		return ""
+	}
+	line := fmt.Sprintf("Applied with state `%s`", lifecycle.Apply)
+	if lifecycle.Teardown == "" {
+		line += " and has no teardown state, so tearing it down leaves the server unchanged."
+	} else {
+		line += fmt.Sprintf(" and torn down with state `%s`", lifecycle.Teardown)
+		if names := forbiddenFieldNames("", schema.Fields, lifecycle.Teardown); len(names) > 0 {
+			pronoun := "them"
+			if len(names) == 1 {
+				pronoun = "it"
+			}
+			line += fmt.Sprintf(", which refuses %s, so a teardown resets %s", joinCodeNames(names), pronoun)
+		}
+		line += "."
+	}
+	note := "See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task)."
+	return "## Lifecycle\n\n" + line + " " + note
+}
+
+// forbiddenFieldNames returns the names of the fields forbidden in state, in
+// declaration order, descending into structured list and dict elements.
+func forbiddenFieldNames(prefix string, fields []FieldSchema, state State) []string {
+	var names []string
+	for _, field := range fields {
+		if containsState(field.ForbiddenWhen, state) {
+			names = append(names, prefix+field.Name)
+			continue
+		}
+		if field.Item != nil && field.Item.Type == TypeObject {
+			names = append(names, forbiddenFieldNames(prefix+field.Name+"[].", field.Item.Fields, state)...)
+		}
+	}
+	return names
 }
 
 // supportNote renders an Export or Probe support section.

@@ -21,6 +21,10 @@ Partial - export reads the current page back via maintenance:custom-page-export 
 
 Partial - the page checksum is probed when the plugin reports it; plugin versions that do not report it make the page plan as drift on every run.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`, which refuses `content` and `tarball`, so a teardown resets them. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`.

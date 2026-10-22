@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `entry_name`, `host_dir`, `container_dir`, `phases`, `subpath`, `readonly`, `volume_chown`, `volume_options`, and `mounts`, so a teardown resets them. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`, `container_dir`, and `process_type`. Fields left empty are omitted from the address. Manages the whole `mounts` collection; entries are identified by `container_dir`.

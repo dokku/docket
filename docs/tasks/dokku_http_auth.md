@@ -17,6 +17,10 @@ Partial - the enabled state is exported; the seeded credentials are not carried 
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`.

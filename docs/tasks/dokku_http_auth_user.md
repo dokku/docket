@@ -17,6 +17,10 @@ Supported.
 
 Partial - an existing user's htpasswd hash is probed; a cleartext password is not readable, so a user that already exists converges only when update_password forces it.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `users`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`. Manages the whole `users` collection; entries are identified by `username`.

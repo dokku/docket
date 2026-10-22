@@ -18,6 +18,10 @@ Supported.
 
 Partial - the recorded archive source is probed; the archive contents are not hashed, so a changed archive at the same url plans as in sync.
 
+## Lifecycle
+
+Applied with state `deployed` and has no teardown state, so tearing it down leaves the server unchanged. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`.

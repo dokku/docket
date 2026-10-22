@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `values`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `chart`. Manages the whole `values` collection; entries are identified by their key.

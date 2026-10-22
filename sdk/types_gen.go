@@ -196,6 +196,9 @@ type LetsencryptPropertyTask = tasks.LetsencryptPropertyTask
 // LetsencryptTask is tasks.LetsencryptTask.
 type LetsencryptTask = tasks.LetsencryptTask
 
+// LifecycleSchema is tasks.LifecycleSchema.
+type LifecycleSchema = tasks.LifecycleSchema
+
 // LogsPropertyTask is tasks.LogsPropertyTask.
 type LogsPropertyTask = tasks.LogsPropertyTask
 

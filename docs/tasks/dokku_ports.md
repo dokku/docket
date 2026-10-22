@@ -16,6 +16,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `port_mappings`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`. Manages the whole `port_mappings` collection; entries are identified by `scheme` and `host`.

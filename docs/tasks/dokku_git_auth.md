@@ -16,6 +16,10 @@ Not supported - netrc credentials are write-only and cannot be read back.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `host`.

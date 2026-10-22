@@ -447,6 +447,9 @@ const (
 	// NoteProbe says how much of its own state the task can read back.
 	NoteProbe = tasks.NoteProbe
 
+	// NoteLifecycle names the states that apply and tear down the task.
+	NoteLifecycle = tasks.NoteLifecycle
+
 	// NoteIdentity names the fields that select the resource.
 	NoteIdentity = tasks.NoteIdentity
 
@@ -686,6 +689,34 @@ func TaskFromValues(typeKey string, values map[string]any) (Task, error) {
 // resource, so it has nothing to undo.
 func TaskImperative(t Task) bool {
 	return tasks.TaskImperative(t)
+}
+
+// TaskInState returns a copy of t moved into state: its `state` key set to
+// state, and every field whose `forbidden_when` names state reset to its
+// default, or to its zero value when it has none. Element fields of a list of
+// structs are reset the same way. t itself is left unchanged, and the copy
+// shares no list or map with it.
+//
+// It is how a consumer tears down a resource it applied: the task it applied
+// carries values the teardown state refuses, such as dokku_ps_scale's `scale`
+// under `clear` or a property task's `value` under `absent`, and moving it
+// with TaskInState(t, TaskLifecycle(t).Teardown) drops them. A field the state
+// requires is not invented, so moving a task into a state it lacks the input
+// for still fails its validation.
+//
+// The error is a state t does not offer.
+func TaskInState(t Task, state State) (Task, error) {
+	return tasks.TaskInState(t, state)
+}
+
+// TaskLifecycle returns the state that applies t's resource and the state
+// that tears it down, the same pair the catalog publishes as `lifecycle`.
+// Apply is `set` when t offers it and the `state` field's default otherwise;
+// Teardown is `clear` when offered, else `absent`, and empty when t is
+// imperative. A task the rule does not fit declares its own pair instead:
+// dokku_storage_ensure offers `absent` but refuses it, so it has no Teardown.
+func TaskLifecycle(t Task) LifecycleSchema {
+	return tasks.TaskLifecycle(t)
 }
 
 // TaskMinimumVersions reports the oldest Dokku, and the plugins, t declares

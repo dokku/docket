@@ -64,6 +64,14 @@ func (t StorageEnsureTask) Deprecation() string {
 	return "use dokku_storage_entry instead; dokku's storage:ensure-directory has been deprecated in favor of storage:create"
 }
 
+// Lifecycle declares no teardown state. The task offers absent, but
+// storage:ensure-directory has no inverse and Validate refuses absent, so
+// tearing the task down leaves the directory in place, as it would for an
+// imperative task.
+func (t StorageEnsureTask) Lifecycle() LifecycleSchema {
+	return LifecycleSchema{Apply: StatePresent}
+}
+
 // examples returns the examples for the storage ensure task
 func (t StorageEnsureTask) examples() ([]Doc, error) {
 	return MarshalExamples([]StorageEnsureTaskExample{

@@ -16,6 +16,10 @@ Partial - the global scope and every node profile storing sysctls are exported; 
 
 Supported.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `sysctls`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `global` and `profile`. Fields left empty are omitted from the address. Manages the whole `sysctls` collection; entries are identified by their key.

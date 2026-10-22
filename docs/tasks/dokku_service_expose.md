@@ -17,6 +17,10 @@ Supported.
 
 Supported.
 
+## Lifecycle
+
+Applied with state `set` and torn down with state `clear`, which refuses `ports`, so a teardown resets it. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `service` and `name`. Fields left empty are omitted from the address. Manages the whole `ports` collection; entries are identified by value.

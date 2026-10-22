@@ -18,6 +18,10 @@ Partial - the image reference is written to the companion vars-file.
 
 Partial - the recorded image reference is probed; the image digest is not, so a mutable tag that moved plans as in sync.
 
+## Lifecycle
+
+Applied with state `deployed` and has no teardown state, so tearing it down leaves the server unchanged. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`.

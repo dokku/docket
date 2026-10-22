@@ -16,6 +16,10 @@ Partial - registry:report names the servers a credential exists for, so the logi
 
 Supported.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`, `global`, and `server`. Fields left empty are omitted from the address.

@@ -17,6 +17,10 @@ Partial - app and global certificate PEM material is exported (via certs:show an
 
 Partial - a certificate is compared against the desired one by the SHA-256 fingerprint its report carries - certs:report for an app, global-cert:report --global for the global certificate - falling back to reading the PEM back with certs:show or global-cert:show when the recipe pins a certificate chain or the report carries no usable fingerprint; on the fingerprint path a server holding the pinned certificate plus an extra chain reads as in sync, since dokku digests only the first certificate it finds; the private key is never read back, so a key rotated under an unchanged certificate plans as in sync; a cert file path is only compared when docket can read the file from the machine it runs on, which a run against --host cannot; and a letsencrypt-managed certificate is left uncompared.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app` and `global`. Fields left empty are omitted from the address.

@@ -786,6 +786,54 @@ secret shows as `***` there as it does everywhere else. docket's own `plan` and 
 renders each task's errors and warnings through the same function, so what the CLI prints and what
 an embedder shows stay in step.
 
+## Applying and tearing down a task
+
+A caller that manages resources declaratively, as a Terraform provider does, applies each resource
+in one state and destroys it in another. `sdk.TaskLifecycle` names both, the same pair the
+[task catalog](task-catalog.md#the-document) publishes as `lifecycle`:
+
+```go
+lifecycle := sdk.TaskLifecycle(task)
+// lifecycle.Apply is the state that declares the resource.
+// lifecycle.Teardown is the state that removes it, or "" for an imperative task.
+```
+
+`Apply` is `set` when the task offers it, since `set` declares the whole resource rather than
+adding to it, and the `state` field's default otherwise: `present` for most tasks, `deployed` for
+`dokku_git_from_archive` and `dokku_git_from_image`. `Teardown` is `clear` when the task offers it
+and `absent` otherwise. An imperative task (`dokku_app_clone`, `dokku_git_sync`,
+`dokku_git_from_archive`, `dokku_git_from_image`) runs an operation rather than declaring a
+resource, so it has no teardown and a destroy leaves the server alone. `dokku_ps_scale`, which
+offers `present`, `set` and `clear` but no `absent`, applies with `set` and tears down with `clear`,
+a reset to dokku's default formation. The one task the rule does not fit is the deprecated
+`dokku_storage_ensure`: it offers `absent` but refuses it, since `storage:ensure-directory` has no
+inverse, so it declares no teardown either.
+
+The task a caller applied usually cannot be planned in the teardown state as it is. The teardown
+state refuses some of the fields the apply needed: `dokku_ps_scale` under `clear` refuses `scale`,
+a property task under `absent` refuses `value`, and `dokku_service_create` under `absent` refuses
+its creation options. `sdk.TaskInState` returns a copy of the task moved into a state, with every
+field whose `forbidden_when` names that state reset to its default, or to its zero value when it has
+none, element fields included:
+
+```go
+destroy, err := sdk.TaskInState(applied, sdk.TaskLifecycle(applied).Teardown)
+if err != nil {
+    return err // the task offers no such state
+}
+plan := destroy.Plan(ctx)
+```
+
+The task passed in is left unchanged, and the copy shares no list or map with it. A copy of a
+pointer is a pointer and a copy of a value is a value. The error is a state the task does not offer,
+which includes the empty teardown of an imperative task. `TaskInState` invents no input: it only
+removes what the state refuses, so moving a task into a state whose required fields it lacks, such
+as a property task in state `absent` moved to `present` without a `value`, still fails validation.
+Moving any task that passes validation into its teardown state yields one that passes it too, and so
+does moving one written in `present`, `set` or `deployed` into its apply state. It does not convert
+between forms: a single `dokku_storage_mount` in state `present` moved to `set` loses its
+`container_dir` and the rest, which `set` refuses, and so declares no mounts at all.
+
 ## Stability
 
 The exported identifiers in `sdk` are stable from the release they first ship in. While docket is

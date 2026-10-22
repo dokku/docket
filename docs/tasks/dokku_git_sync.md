@@ -18,6 +18,10 @@ Supported.
 
 Partial - dokku records the resolved commit as `<remote>#<sha>`, which cannot be compared against a branch or tag name, so only the remote and the persisted deploy branch are probed.
 
+## Lifecycle
+
+Applied with state `present` and has no teardown state, so tearing it down leaves the server unchanged. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `app`.

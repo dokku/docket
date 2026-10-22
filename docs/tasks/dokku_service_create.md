@@ -17,6 +17,10 @@ Partial - the service, the image it is running and its create-time options are e
 
 Partial - the service's existence is probed, along with the image it is running and every create-time option the recipe declares; password and root_password are applied only at create and cannot be read back, so they are not drift-detected.
 
+## Lifecycle
+
+Applied with state `present` and torn down with state `absent`, which refuses `image`, `image_version`, `config_options`, `custom_env`, `memory`, `shm_size`, `initial_network`, `post_create_network`, `post_start_network`, `password`, `root_password`, `image_drift`, and `restart_apps`, so a teardown resets them. See [Applying and tearing down a task](../embedding.md#applying-and-tearing-down-a-task).
+
 ## Identity
 
 Keyed by `service` and `name`. Fields left empty are omitted from the address.
