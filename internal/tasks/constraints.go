@@ -196,8 +196,14 @@ func (v Violation) Error() string {
 // manage, and naming the task that does is more use than telling them the app
 // field is missing too.
 //
+// Pass WithUnknown to check a task before every value is known, such as a
+// Terraform plan whose attributes come from another resource's output: a rule
+// is then reported only when the known fields decide it, and one that turns on
+// an unknown value is skipped. Without options every field holds its final
+// value.
+//
 //sdk:export
-func ConstraintViolations(task any) []Violation {
+func ConstraintViolations(task any, opts ...ConstraintOption) []Violation {
 	rv := reflect.ValueOf(task)
 	for rv.IsValid() && rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
@@ -208,10 +214,19 @@ func ConstraintViolations(task any) []Violation {
 	if !rv.IsValid() || rv.Kind() != reflect.Struct {
 		return nil
 	}
-	if err := rejectedPropertyError(rv); err != nil {
-		return []Violation{{Field: PropertyFieldName, Message: err.Error()}}
+	check := newConstraintCheck(opts)
+	if !check.isUnknown(PropertyFieldName) {
+		if err := rejectedPropertyError(rv); err != nil {
+			return []Violation{{Field: PropertyFieldName, Message: err.Error()}}
+		}
 	}
-	return structViolations(rv, taskState(rv), "")
+	// An unknown state is checked as no state, which applies no rule scoped
+	// to one.
+	state := taskState(rv)
+	if check.isUnknown("state") {
+		state = ""
+	}
+	return structViolations(check, rv, state, "")
 }
 
 // checkConstraints returns the first constraint task breaks, or nil. It is
@@ -265,7 +280,7 @@ func taskState(rv reflect.Value) State {
 
 // structViolations checks one task or element struct. prefix qualifies every
 // key it names: empty for the task, `users[1].` for an element.
-func structViolations(rv reflect.Value, state State, prefix string) []Violation {
+func structViolations(check *constraintCheck, rv reflect.Value, state State, prefix string) []Violation {
 	var violations []Violation
 	rt := rv.Type()
 
@@ -276,6 +291,11 @@ func structViolations(rv reflect.Value, state State, prefix string) []Violation 
 			continue
 		}
 		path := prefix + name
+		if check.isUnknown(path) {
+			// An unknown field counts as set for each required rule here,
+			// and whether it breaks a forbidden one turns on its value.
+			continue
+		}
 		set := fieldIsSet(rv.Field(i), field.Tag.Get("default"))
 
 		// A task's own required keys are the loader's to check - docket
@@ -296,7 +316,7 @@ func structViolations(rv reflect.Value, state State, prefix string) []Violation 
 
 	for _, constraint := range TaskConstraints(rv.Interface()) {
 		if constraint.appliesIn(state) {
-			violations = append(violations, constraint.violations(rv, state, prefix)...)
+			violations = append(violations, constraint.violations(check, rv, state, prefix)...)
 		}
 	}
 
@@ -310,10 +330,16 @@ func structViolations(rv reflect.Value, state State, prefix string) []Violation 
 		if list.Kind() != reflect.Slice && list.Kind() != reflect.Array {
 			continue
 		}
-		if structElem(list.Type().Elem()) == nil {
+		// Neither the items of an unknown list nor an unknown item are
+		// known, so neither is checked.
+		if structElem(list.Type().Elem()) == nil || check.isUnknown(prefix+name) {
 			continue
 		}
 		for j := 0; j < list.Len(); j++ {
+			item := fmt.Sprintf("%s%s[%d]", prefix, name, j)
+			if check.isUnknown(item) {
+				continue
+			}
 			elem := list.Index(j)
 			for elem.Kind() == reflect.Pointer {
 				if elem.IsNil() {
@@ -324,21 +350,25 @@ func structViolations(rv reflect.Value, state State, prefix string) []Violation 
 			if elem.Kind() != reflect.Struct {
 				continue
 			}
-			violations = append(violations, structViolations(elem, state, fmt.Sprintf("%s%s[%d].", prefix, name, j))...)
+			violations = append(violations, structViolations(check, elem, state, item+".")...)
 		}
 	}
 
 	return violations
 }
 
-// violations checks c against rv, whose keys prefix qualifies.
-func (c Constraint) violations(rv reflect.Value, state State, prefix string) []Violation {
-	isSet := func(name string) bool {
-		value, ok := fieldByRecipeKey(rv, name)
-		if !ok {
-			return false
+// violations checks c against rv, whose keys prefix qualifies. A rule is
+// reported only when the fields check knows decide it.
+func (c Constraint) violations(check *constraintCheck, rv reflect.Value, state State, prefix string) []Violation {
+	status := func(name string) fieldStatus {
+		if check.isUnknown(prefix + name) {
+			return fieldUnknown
 		}
-		return fieldIsSet(value, recipeKeyDefault(rv.Type(), name))
+		value, ok := fieldByRecipeKey(rv, name)
+		if !ok || !fieldIsSet(value, recipeKeyDefault(rv.Type(), name)) {
+			return fieldUnset
+		}
+		return fieldSet
 	}
 	qualified := func(names []string) []string {
 		out := make([]string, len(names))
@@ -354,30 +384,40 @@ func (c Constraint) violations(rv reflect.Value, state State, prefix string) []V
 	}
 
 	var set []string
+	unset, unknown := 0, 0
 	for _, name := range c.Fields {
-		if isSet(name) {
+		switch status(name) {
+		case fieldSet:
 			set = append(set, name)
+		case fieldUnset:
+			unset++
+		case fieldUnknown:
+			unknown++
 		}
 	}
 
 	switch c.Kind {
 	case ConstraintExactlyOneOf:
+		// Two known fields break it whatever the unknown ones hold; none
+		// set breaks it only when no unknown one could be the one.
 		switch {
-		case len(set) == 0:
+		case len(set) == 0 && unknown == 0:
 			return []Violation{{Field: group, Message: fmt.Sprintf("exactly one of %s is required%s", quotedList(qualified(c.Fields), "or"), when)}}
 		case len(set) > 1:
 			return []Violation{{Field: group, Message: fmt.Sprintf("%s are mutually exclusive", quotedList(qualified(set), "and"))}}
 		}
 	case ConstraintAtLeastOneOf:
-		if len(set) == 0 {
+		if len(set) == 0 && unknown == 0 {
 			return []Violation{{Field: group, Message: fmt.Sprintf("at least one of %s is required%s", quotedList(qualified(c.Fields), "or"), when)}}
 		}
 	case ConstraintAllOrNoneOf:
-		if len(set) > 0 && len(set) < len(c.Fields) {
+		// A known set field beside a known unset one breaks it whatever
+		// the unknown ones hold.
+		if len(set) > 0 && unset > 0 {
 			return []Violation{{Field: group, Message: fmt.Sprintf("%s must be set together%s", quotedList(qualified(c.Fields), "and"), when)}}
 		}
 	case ConstraintConflictsWith:
-		if !isSet(c.Field) {
+		if status(c.Field) != fieldSet {
 			return nil
 		}
 		var out []Violation
@@ -386,12 +426,12 @@ func (c Constraint) violations(rv reflect.Value, state State, prefix string) []V
 		}
 		return out
 	case ConstraintRequiredWith:
-		if !isSet(c.Field) {
+		if status(c.Field) != fieldSet {
 			return nil
 		}
 		var out []Violation
 		for _, name := range c.Fields {
-			if !isSet(name) {
+			if status(name) == fieldUnset {
 				out = append(out, Violation{Field: prefix + name, Message: fmt.Sprintf("'%s' is required when '%s' is set%s", prefix+name, prefix+c.Field, when)})
 			}
 		}

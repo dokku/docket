@@ -79,6 +79,9 @@ type Constraint = tasks.Constraint
 // ConstraintKind is tasks.ConstraintKind.
 type ConstraintKind = tasks.ConstraintKind
 
+// ConstraintOption is tasks.ConstraintOption.
+type ConstraintOption = tasks.ConstraintOption
+
 // CronPropertyTask is tasks.CronPropertyTask.
 type CronPropertyTask = tasks.CronPropertyTask
 

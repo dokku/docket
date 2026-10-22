@@ -243,6 +243,35 @@ A task's `Validate()` checks the same constraints first, then the rules that dep
 as an enum or a format. A task's `Plan()` runs the same `Validate()` before it probes, so a plan
 refuses whatever validation refuses. `sdk.TaskConstraints` returns a task's declared multi-field rules.
 
+A caller that checks a task before all its values exist, such as a Terraform provider at plan time
+where an attribute comes from another resource's output, names those fields with `sdk.WithUnknown`.
+Each path is a recipe key path in the form `Violation.Field` uses, including list items:
+
+```go
+violations := sdk.ConstraintViolations(task, sdk.WithUnknown("app", "users[1].hash"))
+```
+
+A rule is then reported only when the known fields decide it, so every violation returned holds
+whatever the unknown values turn out to be:
+
+- An unknown field counts as set for a rule that needs it present: its `required_when`, a list
+  item's required keys, an `at_least_one_of` or `all_or_none_of` it is in, and the fields a
+  `required_with` requires.
+- A rule whose outcome turns on an unknown value is skipped: its `forbidden_when`, an
+  `exactly_one_of` with at most one known field set, a `conflicts_with` it is in, and a
+  `required_with` it is the `field` of.
+- A rule the known fields decide on their own is reported as usual, such as two set fields in an
+  `exactly_one_of` or a `conflicts_with`, or a set and an unset field in an `all_or_none_of`.
+- An unknown `state` skips every rule scoped to a state: each field's `required_when` and
+  `forbidden_when`, and every constraint that lists `states`, on the task and on its list items.
+  Rules that apply in every state are still checked.
+- An unknown list, such as `users`, is an unknown field, and none of its items are checked. An
+  unknown item, such as `users[1]`, is skipped while the other items are checked.
+- An unknown `property` skips the check that a property task's property is not one another task
+  manages. A path that names no field is ignored.
+
+`Validate()` and `Plan()` take no unknowns: they check the values the task holds.
+
 ### Masking a task
 
 `sdk.TaskSensitiveValues` returns the values the CLI masks for a task before a run: its
