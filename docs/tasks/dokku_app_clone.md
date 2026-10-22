@@ -45,6 +45,16 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Clone an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_git_from_image:
+      app: node-js-app
+      image: dokku/smoke-test-app:dockerfile
+```
+
 ```yaml
 dokku_app_clone:
     app: node-js-app-staging
@@ -52,6 +62,13 @@ dokku_app_clone:
 ```
 
 ### Clone an app without deploying
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_app_clone:

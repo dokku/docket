@@ -57,6 +57,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Selecting the scheduler for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_property:
     app: node-js-app
@@ -75,6 +82,13 @@ dokku_scheduler_property:
 ```
 
 ### Clearing the scheduler property for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_property:

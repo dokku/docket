@@ -43,6 +43,18 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Allow IP addresses to bypass HTTP auth for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth_allowed_ip:
     app: hello-world
@@ -52,6 +64,18 @@ dokku_http_auth_allowed_ip:
 ```
 
 ### Remove an allowed IP address from an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
 
 ```yaml
 dokku_http_auth_allowed_ip:
@@ -63,6 +87,18 @@ dokku_http_auth_allowed_ip:
 
 ### Replace the set of allowed IP addresses for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth_allowed_ip:
     app: hello-world
@@ -72,6 +108,18 @@ dokku_http_auth_allowed_ip:
 ```
 
 ### Clear all allowed IP addresses from an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
 
 ```yaml
 dokku_http_auth_allowed_ip:

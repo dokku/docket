@@ -13,6 +13,7 @@ set -euo pipefail
 # committish is the release docket's integration suite is tested against.
 PLUGIN_PINS=(
   "redis https://github.com/dokku/dokku-redis.git 2.3.1"
+  "postgres https://github.com/dokku/dokku-postgres.git 2.3.1"
   "http-auth https://github.com/dokku/dokku-http-auth.git 0.14.0"
   "global-cert https://github.com/dokku-community/dokku-global-cert.git 0.7.0"
   "letsencrypt https://github.com/dokku/dokku-letsencrypt.git 0.25.2"

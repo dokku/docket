@@ -543,7 +543,23 @@
       "required": ["name", "yaml"],
       "properties": {
         "name": { "type": "string", "description": "The heading the reference page gives the example." },
-        "yaml": { "type": "string", "description": "The YAML snippet, ready to paste into a recipe's task list." }
+        "yaml": { "type": "string", "description": "The YAML snippet, ready to paste into a recipe's task list." },
+        "requires": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The tasks to apply before the example, in apply order: the plugins its task needs, the task creating each app and service it names, and anything else the example declares, each after what it needs in turn. Absent when the example needs nothing.",
+          "items": { "$ref": "#/$defs/exampleRequirement" }
+        }
+      }
+    },
+
+    "exampleRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "yaml"],
+      "properties": {
+        "type": { "type": "string", "description": "The required task's type, the snippet's only top-level key. A registered task type, though a catalog narrowed with --task may not list it." },
+        "yaml": { "type": "string", "description": "The required task as a YAML snippet, in the same form as an example." }
       }
     }
   }

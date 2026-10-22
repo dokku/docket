@@ -57,6 +57,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Enabling the init process for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_docker_local_property:
     app: node-js-app
@@ -65,6 +72,13 @@ dokku_scheduler_docker_local_property:
 ```
 
 ### Setting the parallel schedule count for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_docker_local_property:
@@ -84,6 +98,13 @@ dokku_scheduler_docker_local_property:
 ```
 
 ### Clearing the init process for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_docker_local_property:

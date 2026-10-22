@@ -45,6 +45,22 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Link a redis service named my-redis to my-app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+- dokku_app:
+      app: my-app
+- dokku_service_create:
+      service: redis
+      name: my-redis
+- dokku_git_from_image:
+      app: my-app
+      image: dokku/smoke-test-app:dockerfile
+```
+
 ```yaml
 dokku_service_link:
     app: my-app
@@ -54,6 +70,22 @@ dokku_service_link:
 
 ### Link a postgres service named my-db to my-app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_app:
+      app: my-app
+- dokku_service_create:
+      service: postgres
+      name: my-db
+- dokku_git_from_image:
+      app: my-app
+      image: dokku/smoke-test-app:dockerfile
+```
+
 ```yaml
 dokku_service_link:
     app: my-app
@@ -62,6 +94,22 @@ dokku_service_link:
 ```
 
 ### Unlink a redis service named my-redis from my-app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+- dokku_app:
+      app: my-app
+- dokku_service_create:
+      service: redis
+      name: my-redis
+- dokku_git_from_image:
+      app: my-app
+      image: dokku/smoke-test-app:dockerfile
+```
 
 ```yaml
 dokku_service_link:

@@ -44,6 +44,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Ensure a storage directory owned by the herokuish user
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_storage_ensure:
     app: node-js-app
@@ -51,6 +58,13 @@ dokku_storage_ensure:
 ```
 
 ### Ensure a storage directory owned by root
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_storage_ensure:

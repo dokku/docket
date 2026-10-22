@@ -773,7 +773,8 @@ methods plus its struct field tags - they are not hand-edited. Each page carries
 `Doc()`), a Requirements section (the Dokku floor, then each plugin line), a Runner requirements
 section (when a field is tagged `runner_file:"true"`), Export support and Probe support sections, an
 Identity section, a Parameters table (reflected from the field tags), a Properties table (for a task
-with a `propertyTable()`), the examples, and a shared Return Values table. After adding or changing a
+with a `propertyTable()`), the examples, each after the tasks it requires, and a shared Return
+Values table. After adding or changing a
 task, regenerate them:
 
 ```bash
@@ -811,11 +812,29 @@ Because the examples are published as-is, they are also tested. `TestAllTaskExam
 (`internal/tasks/main_test.go`) decodes every example offline, applies the field defaults, and runs the
 task's `Validate()`, so a snippet that would fail `docket validate` cannot ship - it runs as part of
 `make test`. `TestIntegrationTaskExamples` (`internal/tasks/example_integration_test.go`) then applies every
-example against a live Dokku under `make test-integration`. Write examples that are actually
-runnable: reference real resources (a reachable image or archive, not a placeholder URL), and if a
-task needs a prerequisite the shared placeholder apps do not provide - a backing service, a deployed
-app, a plugin, a cluster - or its documented value cannot apply verbatim (a secret or inline PEM),
-declare it in the driver's `exampleIntegrationPolicy` rather than leaving the example unapplied.
+example against a live Dokku under `make test-integration`, after applying the tasks the example
+requires. Write examples that are actually runnable: reference real resources (a reachable image or
+archive, not a placeholder URL).
+
+What an example requires is published with it as `requires` and printed on its page. The plugins
+the task declares in `MinimumVersions()` and the app and service its `serialize` fields name are
+derived. Anything else the example needs, such as a deployed app or a storage entry it attaches,
+goes in a `Requires []Task` field on the example struct, tagged `yaml:"-"`, with a `GetRequires()`
+method returning it:
+
+```go
+{
+    Name:     "Link a redis service named my-redis to my-app",
+    Requires: []Task{deployedExampleApp("my-app")},
+    ServiceLinkTask: ServiceLinkTask{App: "my-app", Service: "redis", Name: "my-redis"},
+},
+```
+
+`TestExampleRequiresCoverObjects` fails when an example names an app or service nothing in its
+list creates, and `TestExampleRequiresAreValidTasks` when a required task would fail
+`docket validate`. Declare in the driver's `exampleIntegrationPolicy` only what a task cannot
+express - a cluster, an env-gated harness, a documented value that cannot apply verbatim (a secret
+or inline PEM) - rather than leaving the example unapplied.
 
 ## Opening a pull request
 

@@ -41,6 +41,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Disable the zero downtime deployment
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_checks_toggle:
     app: hello-world
@@ -48,6 +55,13 @@ dokku_checks_toggle:
 ```
 
 ### Re-enable the zero downtime deployment (enabled by default)
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_checks_toggle:

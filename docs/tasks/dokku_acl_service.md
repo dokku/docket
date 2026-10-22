@@ -44,6 +44,20 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Grant users access to a redis service
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+- dokku_service_create:
+      service: redis
+      name: my-redis
+```
+
 ```yaml
 dokku_acl_service:
     service: my-redis
@@ -54,6 +68,20 @@ dokku_acl_service:
 ```
 
 ### Revoke a user's access to a redis service
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+- dokku_service_create:
+      service: redis
+      name: my-redis
+```
 
 ```yaml
 dokku_acl_service:
@@ -66,6 +94,20 @@ dokku_acl_service:
 
 ### Replace the users with access to a redis service
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+- dokku_service_create:
+      service: redis
+      name: my-redis
+```
+
 ```yaml
 dokku_acl_service:
     service: my-redis
@@ -76,6 +118,20 @@ dokku_acl_service:
 ```
 
 ### Clear the entire ACL for a redis service
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+- dokku_service_create:
+      service: redis
+      name: my-redis
+```
 
 ```yaml
 dokku_acl_service:

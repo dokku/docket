@@ -56,6 +56,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Setting the appjson-path for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_app_json_property:
     app: node-js-app
@@ -74,6 +81,13 @@ dokku_app_json_property:
 ```
 
 ### Clearing the appjson-path for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_app_json_property:

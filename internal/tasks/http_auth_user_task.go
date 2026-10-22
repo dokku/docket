@@ -69,11 +69,20 @@ type HttpAuthUserTaskExample struct {
 
 	// DokkuHttpAuthUser is the HttpAuthUserTask configuration
 	DokkuHttpAuthUser HttpAuthUserTask `yaml:"dokku_http_auth_user"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e HttpAuthUserTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e HttpAuthUserTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the HTTP auth user task
@@ -135,7 +144,8 @@ func (t HttpAuthUserTask) SensitiveValues() []string {
 func (t HttpAuthUserTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HttpAuthUserTaskExample{
 		{
-			Name: "Add HTTP auth users to an app",
+			Name:     "Add HTTP auth users to an app",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App: "hello-world",
 				Users: []HttpAuthUser{
@@ -145,7 +155,8 @@ func (t HttpAuthUserTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Add a user from an htpasswd hash, as `docket export` emits",
+			Name:     "Add a user from an htpasswd hash, as `docket export` emits",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App: "hello-world",
 				Users: []HttpAuthUser{
@@ -154,7 +165,8 @@ func (t HttpAuthUserTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Rotate an existing user's password",
+			Name:     "Rotate an existing user's password",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App:            "hello-world",
 				Users:          []HttpAuthUser{{Username: "admin", Password: "new-secret"}},
@@ -162,7 +174,8 @@ func (t HttpAuthUserTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Replace the app's users with exactly this set",
+			Name:     "Replace the app's users with exactly this set",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App: "hello-world",
 				Users: []HttpAuthUser{
@@ -172,7 +185,8 @@ func (t HttpAuthUserTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Remove a user from an app",
+			Name:     "Remove a user from an app",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App:   "hello-world",
 				Users: []HttpAuthUser{{Username: "ops"}},
@@ -180,7 +194,8 @@ func (t HttpAuthUserTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Remove all HTTP auth users from an app",
+			Name:     "Remove all HTTP auth users from an app",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthUser: HttpAuthUserTask{
 				App:   "hello-world",
 				State: StateClear,

@@ -28,11 +28,20 @@ type ServiceLinkTaskExample struct {
 
 	// ServiceLinkTask is the ServiceLinkTask configuration
 	ServiceLinkTask ServiceLinkTask `yaml:"dokku_service_link"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e ServiceLinkTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e ServiceLinkTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the service link task
@@ -94,7 +103,8 @@ func (t ServiceLinkTask) ExportApp(ctx context.Context, app string) ([]interface
 func (t ServiceLinkTask) examples() ([]Doc, error) {
 	return MarshalExamples([]ServiceLinkTaskExample{
 		{
-			Name: "Link a redis service named my-redis to my-app",
+			Name:     "Link a redis service named my-redis to my-app",
+			Requires: []Task{deployedExampleApp("my-app")},
 			ServiceLinkTask: ServiceLinkTask{
 				App:     "my-app",
 				Service: "redis",
@@ -102,7 +112,8 @@ func (t ServiceLinkTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Link a postgres service named my-db to my-app",
+			Name:     "Link a postgres service named my-db to my-app",
+			Requires: []Task{deployedExampleApp("my-app")},
 			ServiceLinkTask: ServiceLinkTask{
 				App:     "my-app",
 				Service: "postgres",
@@ -110,7 +121,8 @@ func (t ServiceLinkTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Unlink a redis service named my-redis from my-app",
+			Name:     "Unlink a redis service named my-redis from my-app",
+			Requires: []Task{deployedExampleApp("my-app")},
 			ServiceLinkTask: ServiceLinkTask{
 				App:     "my-app",
 				Service: "redis",

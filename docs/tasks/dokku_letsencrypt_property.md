@@ -64,6 +64,16 @@ Names starting with `dns-provider-` are also accepted in the app and global scop
 
 ### Setting the letsencrypt email for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: letsencrypt
+      url: https://github.com/dokku/dokku-letsencrypt.git
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_letsencrypt_property:
     app: node-js-app
@@ -72,6 +82,16 @@ dokku_letsencrypt_property:
 ```
 
 ### Setting the dns provider for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: letsencrypt
+      url: https://github.com/dokku/dokku-letsencrypt.git
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_letsencrypt_property:
@@ -82,6 +102,14 @@ dokku_letsencrypt_property:
 
 ### Setting a dns-provider-* env var globally
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: letsencrypt
+      url: https://github.com/dokku/dokku-letsencrypt.git
+```
+
 ```yaml
 dokku_letsencrypt_property:
     app: ""
@@ -91,6 +119,16 @@ dokku_letsencrypt_property:
 ```
 
 ### Clearing the letsencrypt email for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: letsencrypt
+      url: https://github.com/dokku/dokku-letsencrypt.git
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_letsencrypt_property:

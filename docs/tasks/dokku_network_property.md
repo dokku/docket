@@ -61,6 +61,15 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Associates a network after a container is created but before it is started
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+- dokku_network:
+      name: example-network
+```
+
 ```yaml
 dokku_network_property:
     app: hello-world
@@ -69,6 +78,15 @@ dokku_network_property:
 ```
 
 ### Associates the network at container creation
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+- dokku_network:
+      name: example-network
+```
 
 ```yaml
 dokku_network_property:
@@ -79,6 +97,13 @@ dokku_network_property:
 
 ### Setting a global network property
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_network:
+      name: example-network
+```
+
 ```yaml
 dokku_network_property:
     app: ""
@@ -88,6 +113,13 @@ dokku_network_property:
 ```
 
 ### Clearing a network property
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_network_property:

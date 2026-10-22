@@ -49,6 +49,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Set deployment annotations on an app's web process
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_annotations:
     app: node-js-app
@@ -60,6 +67,13 @@ dokku_scheduler_k3s_annotations:
 ```
 
 ### Set ingress annotations on an app at the global process scope
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_annotations:
@@ -82,6 +96,13 @@ dokku_scheduler_k3s_annotations:
 
 ### Remove specific annotations from an app's deployment
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_annotations:
     app: node-js-app
@@ -92,6 +113,13 @@ dokku_scheduler_k3s_annotations:
 ```
 
 ### Replace the deployment annotations on an app's web process
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_annotations:
@@ -104,6 +132,13 @@ dokku_scheduler_k3s_annotations:
 ```
 
 ### Clear the deployment annotations from an app's web process
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_annotations:

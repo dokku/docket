@@ -58,6 +58,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Enabling maintenance mode for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_cron_property:
     app: node-js-app
@@ -76,6 +83,13 @@ dokku_cron_property:
 ```
 
 ### Clearing the maintenance mode for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_cron_property:

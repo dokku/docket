@@ -24,11 +24,20 @@ type LetsencryptTaskExample struct {
 
 	// LetsencryptTask is the LetsencryptTask configuration
 	LetsencryptTask LetsencryptTask `yaml:"dokku_letsencrypt"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e LetsencryptTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e LetsencryptTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the letsencrypt task
@@ -66,13 +75,15 @@ func (t LetsencryptTask) MinimumVersions() VersionSupport {
 func (t LetsencryptTask) examples() ([]Doc, error) {
 	return MarshalExamples([]LetsencryptTaskExample{
 		{
-			Name: "Enable letsencrypt for an app",
+			Name:     "Enable letsencrypt for an app",
+			Requires: []Task{deployedExampleApp("node-js-app")},
 			LetsencryptTask: LetsencryptTask{
 				App: "node-js-app",
 			},
 		},
 		{
-			Name: "Disable letsencrypt for an app",
+			Name:     "Disable letsencrypt for an app",
+			Requires: []Task{deployedExampleApp("node-js-app")},
 			LetsencryptTask: LetsencryptTask{
 				App:   "node-js-app",
 				State: StateAbsent,

@@ -3,9 +3,9 @@ name: setup-dokku
 description: >-
   Installs dokku from packagecloud on an Ubuntu runner, with the plugins
   docket's integration tests run against at the committishes docket pins.
-  Plugins are named from docket's pinned set (redis, http-auth, global-cert,
-  letsencrypt, acl, maintenance), separated by commas, spaces or newlines; an
-  empty string installs none.
+  Plugins are named from docket's pinned set (redis, postgres, http-auth,
+  global-cert, letsencrypt, acl, maintenance), separated by commas, spaces or
+  newlines; an empty string installs none.
 
 inputs:
   dokku-version:
@@ -18,7 +18,7 @@ inputs:
       or newlines. Defaults to the full set. Pass an empty string to install no
       plugins.
     required: false
-    default: 'redis http-auth global-cert letsencrypt acl maintenance'
+    default: 'redis postgres http-auth global-cert letsencrypt acl maintenance'
   docker-legacy-links:
     description: Whether to keep Docker's legacy link env vars by setting `DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1` on the Docker daemon before the install. true or false.
     required: false

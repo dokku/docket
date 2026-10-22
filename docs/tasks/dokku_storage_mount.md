@@ -60,6 +60,16 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Attach a named storage entry to an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
+
 ```yaml
 dokku_storage_mount:
     app: node-js-app
@@ -68,6 +78,16 @@ dokku_storage_mount:
 ```
 
 ### Attach a named entry on deploy only, read-only, for the web process
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
 
 ```yaml
 dokku_storage_mount:
@@ -82,6 +102,13 @@ dokku_storage_mount:
 
 ### Mount a host directory into an app (legacy form)
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_storage_mount:
     app: node-js-app
@@ -90,6 +117,13 @@ dokku_storage_mount:
 ```
 
 ### Mount a host directory with SELinux relabeling
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_storage_mount:
@@ -101,6 +135,16 @@ dokku_storage_mount:
 
 ### Attach a named entry with mount options
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
+
 ```yaml
 dokku_storage_mount:
     app: node-js-app
@@ -111,6 +155,16 @@ dokku_storage_mount:
 
 ### Unmount a named entry from an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
+
 ```yaml
 dokku_storage_mount:
     app: node-js-app
@@ -120,6 +174,16 @@ dokku_storage_mount:
 ```
 
 ### Declare the complete set of mounts for an app, removing any other
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
 
 ```yaml
 dokku_storage_mount:
@@ -134,6 +198,16 @@ dokku_storage_mount:
 ```
 
 ### Declare the web process's mounts, each with its own subpath
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
 
 ```yaml
 dokku_storage_mount:
@@ -154,6 +228,16 @@ dokku_storage_mount:
 
 ### Add mounts to an app, leaving its other mounts in place
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
+
 ```yaml
 dokku_storage_mount:
     app: node-js-app
@@ -165,6 +249,16 @@ dokku_storage_mount:
 
 ### Remove mounts from an app, leaving its other mounts in place
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+- dokku_storage_entry:
+      name: node-js-app-data
+      chown: herokuish
+```
+
 ```yaml
 dokku_storage_mount:
     app: node-js-app
@@ -175,6 +269,13 @@ dokku_storage_mount:
 ```
 
 ### Remove every mount of the default process type
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_storage_mount:

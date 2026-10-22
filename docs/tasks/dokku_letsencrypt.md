@@ -42,12 +42,38 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Enable letsencrypt for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: letsencrypt
+      url: https://github.com/dokku/dokku-letsencrypt.git
+- dokku_app:
+      app: node-js-app
+- dokku_git_from_image:
+      app: node-js-app
+      image: dokku/smoke-test-app:dockerfile
+```
+
 ```yaml
 dokku_letsencrypt:
     app: node-js-app
 ```
 
 ### Disable letsencrypt for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: letsencrypt
+      url: https://github.com/dokku/dokku-letsencrypt.git
+- dokku_app:
+      app: node-js-app
+- dokku_git_from_image:
+      app: node-js-app
+      image: dokku/smoke-test-app:dockerfile
+```
 
 ```yaml
 dokku_letsencrypt:

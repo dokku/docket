@@ -58,6 +58,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Setting the proxy type for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_proxy_property:
     app: node-js-app
@@ -77,6 +84,13 @@ dokku_proxy_property:
 
 ### Setting the proxy port for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_proxy_property:
     app: node-js-app
@@ -85,6 +99,13 @@ dokku_proxy_property:
 ```
 
 ### Clearing the proxy type for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_proxy_property:

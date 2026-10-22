@@ -75,6 +75,13 @@ Names starting with `chart.` are rejected here - they are managed by `dokku_sche
 
 ### Setting the deploy timeout for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_property:
     app: node-js-app
@@ -83,6 +90,13 @@ dokku_scheduler_k3s_property:
 ```
 
 ### Setting the namespace for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_property:
@@ -102,6 +116,13 @@ dokku_scheduler_k3s_property:
 ```
 
 ### Clearing the namespace for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_property:

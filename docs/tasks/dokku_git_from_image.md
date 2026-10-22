@@ -51,6 +51,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Deploy an app from a docker image
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_git_from_image:
     app: node-js-app
@@ -58,6 +65,13 @@ dokku_git_from_image:
 ```
 
 ### Deploy from an image with git author metadata
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_git_from_image:

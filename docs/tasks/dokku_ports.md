@@ -42,6 +42,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Map http port 80 to container port 5000
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_ports:
     app: node-js-app
@@ -52,6 +59,13 @@ dokku_ports:
 ```
 
 ### Map both http and https ports
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_ports:
@@ -67,6 +81,13 @@ dokku_ports:
 
 ### Remove a port mapping
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_ports:
     app: node-js-app
@@ -79,6 +100,13 @@ dokku_ports:
 
 ### Replace every port mapping on an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_ports:
     app: node-js-app
@@ -90,6 +118,13 @@ dokku_ports:
 ```
 
 ### Clear all port mappings from an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_ports:

@@ -103,6 +103,9 @@ type DomainsToggleTask = tasks.DomainsToggleTask
 // DynamicPropertySchema is tasks.DynamicPropertySchema.
 type DynamicPropertySchema = tasks.DynamicPropertySchema
 
+// ExampleRequirementSchema is tasks.ExampleRequirementSchema.
+type ExampleRequirementSchema = tasks.ExampleRequirementSchema
+
 // ExampleSchema is tasks.ExampleSchema.
 type ExampleSchema = tasks.ExampleSchema
 

@@ -44,6 +44,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Set CPU and memory limits
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_resource_limit:
     app: hello-world
@@ -53,6 +60,13 @@ dokku_resource_limit:
 ```
 
 ### Set memory limit for web process type
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_resource_limit:
@@ -64,6 +78,13 @@ dokku_resource_limit:
 
 ### Replace the resource limits with exactly these
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_resource_limit:
     app: hello-world
@@ -73,6 +94,13 @@ dokku_resource_limit:
 ```
 
 ### Clear all resource limits
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_resource_limit:

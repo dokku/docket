@@ -739,6 +739,21 @@ func TaskProbeSupport(t Task) (ProbeSupport, bool) {
 	return tasks.TaskProbeSupport(t)
 }
 
+// TaskRequires returns the tasks t needs applied before it, in the order to
+// apply them, the same derivation the catalog publishes as each example's
+// `requires`: a dokku_plugin installing each non-core plugin t's plugin
+// requirements name, then the task creating each object t names but does not
+// create itself - dokku_app for an app, dokku_service_create for a service -
+// each preceded by the tasks it needs in turn. A task needing nothing returns
+// nil.
+//
+// The list covers what docket can derive from the task's declarations alone.
+// An example that needs more, such as a deployed app or a storage entry it
+// names, declares it, and the catalog publishes both.
+func TaskRequires(t Task) []Task {
+	return tasks.TaskRequires(t)
+}
+
 // TaskSensitiveValues returns the values that must be masked in anything
 // rendered for t: its `sensitive:"true"` fields, including those of nested
 // items, the value of a property marked sensitive, and whatever t's own
@@ -758,6 +773,13 @@ func TaskSensitiveValues(t Task) []string {
 // TaskSynopsis returns t's description, or "" when it has none.
 func TaskSynopsis(t Task) string {
 	return tasks.TaskSynopsis(t)
+}
+
+// TaskTypeOf returns the task type t is registered under, such as dokku_app
+// for an AppTask or an *AppTask, or "" for a type docket does not register.
+// It names the tasks TaskRequires returns, which carry no type of their own.
+func TaskTypeOf(t Task) string {
+	return tasks.TaskTypeOf(t)
 }
 
 // TaskTypes returns every registered task type, sorted. The result is a fresh

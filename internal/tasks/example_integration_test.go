@@ -4,24 +4,22 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/dokku/docket/internal/subprocess"
 )
 
-// exampleDeployImage is the image used to deploy a placeholder app when a
-// task's examples need a running deploy (ps:scale, service:link, letsencrypt,
-// app:clone source). It matches the image the per-task integration tests use.
-const exampleDeployImage = "dokku/smoke-test-app:dockerfile"
-
-// exampleReq declares the extra setup a task's documented examples() need to be
-// applied end to end. The zero value (a task absent from exampleIntegrationPolicy)
-// applies every example verbatim against the shared placeholder apps it
-// references, which is the common case for property, config, toggle, storage,
-// domains, and ports tasks. Entries gate a task behind a plugin, service,
-// cluster, or env flag, or opt it out with a reason, so a new task is exercised
-// by default and only genuinely special ones need an entry.
+// exampleReq declares what applying a task's documented examples end to end
+// needs beyond their published requirements. Everything a recipe could
+// express - the plugins, the apps and services an example names, a deployed
+// app, a resource it attaches - is the example's `requires` list in the
+// catalog, and the driver applies that list before the examples run. What is
+// left here is what a task cannot express: the test environment itself (a
+// k3s cluster, an env-gated harness, legacy docker links), an opt-out, how
+// the examples relate to each other, and a documented value that is a
+// placeholder the driver must replace. The zero value (a task absent from
+// exampleIntegrationPolicy) applies every example verbatim after its
+// requirements, which is the common case.
 type exampleReq struct {
 	// skip, when non-empty, opts the whole task out of the apply sweep. Its
 	// examples are still covered offline by TestAllTaskExamplesValidate.
@@ -31,90 +29,52 @@ type exampleReq struct {
 	envGate string
 	// k3s gates the task behind a live scheduler-k3s cluster.
 	k3s bool
-	// plugins are dokku plugins every example needs; the task skips when any is
-	// missing.
-	plugins []string
-	// ensureApps are apps that must exist (created, not deployed) before the
-	// task's setup and examples run - used when the setup needs the app present
-	// (e.g. to enable http-auth on it).
-	ensureApps []string
-	// deployApps are placeholder apps that must be deployed (not just created)
-	// before the examples run.
-	deployApps []string
-	// cleanupApps are extra apps the task creates (e.g. a clone target) that
-	// must be destroyed afterward.
-	cleanupApps []string
-	// cleanupServices are `<type>:<name>` datastore services the task's own
-	// examples create and do not destroy. ensureExampleService skips
-	// dokku_service_create, so its examples are the one place a service is
-	// left standing unless it is named here.
-	cleanupServices []string
-	// freshAppPerExample destroys and recreates the referenced app before each
-	// example, so a task whose examples are independent full deploys of the
-	// same app (git_from_archive) does not fail the second on unchanged content.
-	freshAppPerExample bool
-	// requireDockerLink gates the task behind legacy docker --link support.
+	// requireDockerLink gates the task behind legacy docker --link support, a
+	// property of the docker daemon rather than of any task.
 	requireDockerLink bool
-	// setup provisions a backing resource and returns a transform that rewrites
+	// freshRequiresPerExample tears down and re-applies an example's
+	// requirements before it runs, so a task whose examples are independent
+	// full deploys of the same app (git_from_archive) does not fail the second
+	// on unchanged content.
+	freshRequiresPerExample bool
+	// setup provisions what no task can and returns a transform that rewrites
 	// each decoded example before it is applied. It is used only where a
 	// documented value is a placeholder that cannot apply verbatim (an inline
-	// PEM / cert path, or a registry secret); a nil transform means apply
-	// verbatim.
+	// PEM / cert path, a registry secret, a file on the runner) or where the
+	// example needs test infra (an ACME DNS record); a nil transform means
+	// apply verbatim. It runs after every example's requirements are applied.
 	setup func(t *testing.T) (transform func(Task) Task, cleanup func())
 }
 
 // exampleIntegrationPolicy maps a registered task name to its apply requirements.
-// Tasks not listed apply every example verbatim against the placeholder apps.
+// Tasks not listed apply every example verbatim after its requirements.
 var exampleIntegrationPolicy = map[string]exampleReq{
 	// Env-gated heavy infra (dedicated CI jobs provision it).
 	"dokku_letsencrypt": {
-		envGate:    "DOKKU_TEST_LETSENCRYPT",
-		plugins:    []string{"letsencrypt"},
-		deployApps: []string{"node-js-app"},
-		setup:      setupLetsencryptExample,
+		envGate: "DOKKU_TEST_LETSENCRYPT",
+		setup:   setupLetsencryptExample,
 	},
 	"dokku_scheduler_k3s_annotations":  {k3s: true},
 	"dokku_scheduler_k3s_chart":        {k3s: true},
 	"dokku_scheduler_k3s_labels":       {k3s: true},
-	"dokku_scheduler_k3s_node_sysctls": {k3s: true, setup: setupSchedulerK3sNodeSysctlsExample},
+	"dokku_scheduler_k3s_node_sysctls": {k3s: true},
 	"dokku_scheduler_k3s_profile":      {k3s: true},
 	"dokku_scheduler_k3s_property":     {k3s: true},
 
-	// Plugin-gated app tasks (the plugins are installed in the integration CI job).
-	"dokku_acl_app":              {plugins: []string{"acl"}},
-	"dokku_acl_service":          {plugins: []string{"acl"}},
-	"dokku_http_auth":            {plugins: []string{"http-auth"}},
-	"dokku_http_auth_allowed_ip": {plugins: []string{"http-auth"}, ensureApps: []string{"hello-world"}, setup: setupHttpAuthEnabledExample},
-	"dokku_http_auth_domain":     {plugins: []string{"http-auth"}, ensureApps: []string{"hello-world"}, setup: setupHttpAuthDomainExample},
-	"dokku_http_auth_user":       {plugins: []string{"http-auth"}, ensureApps: []string{"hello-world"}, setup: setupHttpAuthEnabledExample},
-	"dokku_maintenance":          {plugins: []string{"maintenance"}},
-	"dokku_maintenance_custom_page": {
-		plugins:    []string{"maintenance"},
-		ensureApps: []string{"node-js-app"},
-		setup:      setupMaintenanceCustomPageExample,
-	},
-	"dokku_letsencrypt_property": {plugins: []string{"letsencrypt"}},
+	// The tarball example names a file on the runner, which no task writes.
+	"dokku_maintenance_custom_page": {setup: setupMaintenanceCustomPageExample},
 
-	// service_create's examples create five services and destroy only one,
-	// so the survivors are torn down here.
-	"dokku_service_create": {cleanupServices: []string{"postgres:my-db", "redis:my-pinned-redis", "redis:my-upgraded-redis", "redis:my-tuned-redis"}},
-
-	// Deploy-dependent tasks.
-	"dokku_app_clone":    {deployApps: []string{"node-js-app"}, cleanupApps: []string{"node-js-app-staging"}},
-	"dokku_service_link": {plugins: []string{"redis"}, requireDockerLink: true, deployApps: []string{"my-app"}},
+	// service_link needs legacy docker links on the daemon.
+	"dokku_service_link": {requireDockerLink: true},
 
 	// git_from_archive's two examples are independent full deploys of the same
 	// app, so the second must start from a fresh app to avoid an unchanged-tree
 	// error on redeploy.
-	"dokku_git_from_archive": {freshAppPerExample: true},
-
-	// storage_mount's named-entry examples reference a storage entry that must
-	// be created first.
-	"dokku_storage_mount": {ensureApps: []string{"node-js-app"}, setup: setupStorageMountExample},
+	"dokku_git_from_archive": {freshRequiresPerExample: true},
 
 	// Tasks whose documented value is a placeholder the driver must provision
-	// (a real inline PEM / cert path, a registry secret, or a maintenance
-	// tarball) because it cannot be published in the docs.
+	// (a real inline PEM / cert path, or a registry secret) because it cannot
+	// be published in the docs.
 	"dokku_certs":         {setup: setupCertsExample},
 	"dokku_registry_auth": {setup: setupRegistryExample},
 
@@ -129,12 +89,13 @@ var exampleIntegrationPolicy = map[string]exampleReq{
 // TestIntegrationTaskExamples applies every documented example against a live
 // Dokku, so the snippets in docs/tasks/*.md are provably runnable, not just
 // offline-valid (TestAllTaskExamplesValidate). For each registered task it
-// wraps the example Codeblock as a one-task recipe, loads it through GetTasks
-// (exercising the same parse path apply uses), and runs Plan then apply,
-// asserting the plan does not error and the applied state reaches the desired
-// state. Examples run in source order so a "set"/"create" example precedes its
-// paired "clear"/"destroy". Per-task prerequisites and opt-outs live in
-// exampleIntegrationPolicy.
+// reads the examples from the catalog, applies each example's published
+// `requires` list, then wraps the example as a one-task recipe, loads it
+// through GetTasks (exercising the same parse path apply uses), and runs Plan
+// then apply, asserting the plan does not error and the applied state reaches
+// the desired state. Examples run in source order so a "set"/"create" example
+// precedes its paired "clear"/"destroy". What the requires list cannot express
+// lives in exampleIntegrationPolicy.
 func TestIntegrationTaskExamples(t *testing.T) {
 	for name, task := range allRegisteredTasks() {
 		policy := exampleIntegrationPolicy[name]
@@ -149,41 +110,25 @@ func TestIntegrationTaskExamples(t *testing.T) {
 			if policy.envGate != "" && os.Getenv(policy.envGate) != "1" {
 				t.Skipf("example apply skipped: %s is not set", policy.envGate)
 			}
-			for _, plugin := range policy.plugins {
-				skipIfPluginMissingT(t, plugin)
-			}
 			if policy.requireDockerLink {
 				skipIfDockerLinkUnsupportedT(t)
 			}
 
-			examples, err := TaskExamples(task)
+			schema, err := TaskSchemaOf(name, task)
 			if err != nil {
-				t.Fatalf("examples() returned error: %v", err)
+				t.Fatalf("TaskSchemaOf returned error: %v", err)
 			}
 
-			// created tracks every app the driver stands up for this task so it
-			// can tear them down afterward, whatever app names the examples use.
-			created := map[string]bool{}
-			t.Cleanup(func() {
-				for app := range created {
-					destroyApp(testCtx(), app)
+			// Every example's requirements go on before any example runs, and
+			// come off, with every object an example created, once they all
+			// have.
+			setup := &exampleSetup{}
+			t.Cleanup(setup.teardown)
+			unmet := map[string]string{}
+			for _, example := range schema.Examples {
+				if reason := setup.apply(t, example.Requires); reason != "" {
+					unmet[example.Name] = reason
 				}
-				for _, app := range policy.cleanupApps {
-					destroyApp(testCtx(), app)
-				}
-				for _, svc := range policy.cleanupServices {
-					if parts := strings.SplitN(svc, ":", 2); len(parts) == 2 {
-						destroyService(testCtx(), parts[0], parts[1])
-					}
-				}
-			})
-			for _, app := range policy.ensureApps {
-				createApp(testCtx(), app)
-				created[app] = true
-			}
-			for _, app := range policy.deployApps {
-				deployExampleApp(t, app)
-				created[app] = true
 			}
 
 			var transform func(Task) Task
@@ -195,15 +140,19 @@ func TestIntegrationTaskExamples(t *testing.T) {
 				}
 			}
 
-			for _, example := range examples {
+			for _, example := range schema.Examples {
 				t.Run(example.Name, func(t *testing.T) {
+					if reason := unmet[example.Name]; reason != "" {
+						t.Skipf("example apply skipped: %s", reason)
+					}
+					if policy.freshRequiresPerExample {
+						setup.reapply(t, example.Requires)
+					}
 					task := loadExampleTask(t, example)
-					gateExample(t, name, task)
-					ensureExampleApp(t, name, task, created, policy.freshAppPerExample)
-					ensureExampleService(t, name, task)
 					if transform != nil {
 						task = transform(task)
 					}
+					setup.trackCreated(task)
 					applyExample(t, example.Name, task)
 					registerGlobalPropertyRevert(t, task)
 				})
@@ -212,48 +161,132 @@ func TestIntegrationTaskExamples(t *testing.T) {
 	}
 }
 
-// ensureExampleApp creates the app an example references so an app-scoped apply
-// has a real app to act on, tracking it for teardown. It skips the empty app of
-// a global example, and does not pre-create for the two tasks that manage the
-// app themselves: dokku_app_clone (App is the clone target the example creates,
-// torn down via cleanupApps) and dokku_app (its examples create and destroy the
-// app, which is only tracked here so a failed run still tears it down).
-func ensureExampleApp(t *testing.T, taskName string, task Task, created map[string]bool, fresh bool) {
-	t.Helper()
-	if taskName == "dokku_app_clone" {
-		return
-	}
-	app := taskStringField(task, "App")
-	if app == "" {
-		return
-	}
-	if taskName == "dokku_app" {
-		created[app] = true
-		return
-	}
-	if fresh {
-		destroyApp(testCtx(), app)
-	}
-	createApp(testCtx(), app)
-	created[app] = true
+// exampleSetup applies the requirements of one task's examples and undoes
+// them afterwards.
+type exampleSetup struct {
+	// applied are the required tasks applied, in order, by identity address.
+	applied []Task
+	seen    map[string]bool
+	// created are the objects the examples themselves create, as the tasks
+	// that destroy them.
+	created []Task
 }
 
-// deployExampleApp deploys the smoke-test image onto app so examples that act on
-// a running app (ps:scale, service:link, app:clone source, letsencrypt) have one.
-func deployExampleApp(t *testing.T, app string) {
+// apply applies each requirement not yet applied, in order. A dokku_plugin
+// requirement is never installed: CI's setup-dokku action provisions the
+// plugins, and a missing one returns the reason the example skips, before the
+// requirements that need it are applied.
+func (s *exampleSetup) apply(t *testing.T, requires []ExampleRequirementSchema) string {
 	t.Helper()
-	createApp(testCtx(), app)
-	result := GitFromImageTask{App: app, Image: exampleDeployImage, State: StateDeployed}.Execute(testCtx())
-	if result.Error != nil {
-		t.Fatalf("failed to deploy placeholder app %q: %v", app, result.Error)
+	for _, required := range requires {
+		task, err := decodeExampleCodeblock(required.YAML)
+		if err != nil {
+			t.Fatalf("required %s does not decode: %v", required.Type, err)
+		}
+		if plugin, ok := taskAsPointer(task).(*PluginTask); ok {
+			if !dokkuPluginInstalled(plugin.Name) {
+				return fmt.Sprintf("dokku plugin %q not installed", plugin.Name)
+			}
+			continue
+		}
+		address := IdentityAddress(required.Type, task)
+		if s.seen[address] {
+			continue
+		}
+		if s.seen == nil {
+			s.seen = map[string]bool{}
+		}
+		s.seen[address] = true
+		s.applied = append(s.applied, task)
+		applyRequirement(t, address, task)
+	}
+	return ""
+}
+
+// reapply tears down the given requirements and applies them again, so the
+// example starts from what they alone produce.
+func (s *exampleSetup) reapply(t *testing.T, requires []ExampleRequirementSchema) {
+	t.Helper()
+	for i := len(requires) - 1; i >= 0; i-- {
+		task, err := decodeExampleCodeblock(requires[i].YAML)
+		if err != nil {
+			t.Fatalf("required %s does not decode: %v", requires[i].Type, err)
+		}
+		if _, ok := taskAsPointer(task).(*PluginTask); ok {
+			continue
+		}
+		tearDownTask(task)
+	}
+	for _, required := range requires {
+		task, err := decodeExampleCodeblock(required.YAML)
+		if err != nil {
+			t.Fatalf("required %s does not decode: %v", required.Type, err)
+		}
+		if _, ok := taskAsPointer(task).(*PluginTask); ok {
+			continue
+		}
+		applyRequirement(t, IdentityAddress(required.Type, task), task)
 	}
 }
 
-// loadExampleTask wraps an example Codeblock into a one-task recipe and loads it
+// trackCreated records each object task creates, so it is destroyed after
+// the examples whatever the examples left standing.
+func (s *exampleSetup) trackCreated(task Task) {
+	for _, object := range TaskObjects(task) {
+		if object.Creates && object.Set {
+			if creator := objectCreator(object); creator != nil {
+				s.created = append(s.created, creator)
+			}
+		}
+	}
+}
+
+// teardown destroys what the examples created, then tears down the applied
+// requirements in reverse order. It is best effort: a failure leaves residue
+// on a throwaway CI server but cannot fail a passing example.
+func (s *exampleSetup) teardown() {
+	for i := len(s.created) - 1; i >= 0; i-- {
+		tearDownTask(s.created[i])
+	}
+	for i := len(s.applied) - 1; i >= 0; i-- {
+		tearDownTask(s.applied[i])
+	}
+}
+
+// applyRequirement plans and applies one required task, failing the test
+// when it does not converge.
+func applyRequirement(t *testing.T, address string, task Task) {
+	t.Helper()
+	if plan := task.Plan(testCtx()); plan.Status == PlanStatusError {
+		t.Fatalf("required %s: Plan returned error status: %v", address, plan.Error)
+	}
+	state := task.Execute(testCtx())
+	if state.Error != nil {
+		t.Fatalf("required %s: apply returned error: %v\n  commands: %v\n  stdout: %s\n  stderr: %s",
+			address, state.Error, state.Commands, state.Stdout, state.Stderr)
+	}
+}
+
+// tearDownTask moves task into its teardown state and applies it. A task
+// with no teardown, such as a deploy, is left alone; destroying its app
+// removes it.
+func tearDownTask(task Task) {
+	teardown := TaskLifecycle(task).Teardown
+	if teardown == "" {
+		return
+	}
+	destroy, err := TaskInState(task, teardown)
+	if err != nil {
+		return
+	}
+	destroy.Execute(testCtx())
+}
+
+// loadExampleTask wraps an example snippet into a one-task recipe and loads it
 // through the real loader, returning the single decoded task.
-func loadExampleTask(t *testing.T, example Doc) Task {
+func loadExampleTask(t *testing.T, example ExampleSchema) Task {
 	t.Helper()
-	out, err := GetTasks(wrapExampleRecipe(example.Codeblock), map[string]interface{}{})
+	out, err := GetTasks(wrapExampleRecipe(example.YAML), map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("example %q: GetTasks: %v", example.Name, err)
 	}
@@ -264,57 +297,10 @@ func loadExampleTask(t *testing.T, example Doc) Task {
 	return out.Get(keys[0])
 }
 
-// wrapExampleRecipe turns a single-task example Codeblock into a one-task
-// recipe the loader accepts, re-indenting the block under a `tasks:` list item.
-// The first line is prefixed with the list marker and the rest are indented to
-// align beneath it, preserving the block's internal structure.
+// wrapExampleRecipe turns a single-task snippet into a one-task recipe the
+// loader accepts, the same way exampleRecipe lays out a complete one.
 func wrapExampleRecipe(codeblock string) []byte {
-	var b strings.Builder
-	b.WriteString("---\n- tasks:\n")
-	for i, line := range strings.Split(strings.TrimRight(codeblock, "\n"), "\n") {
-		if i == 0 {
-			b.WriteString("    - ")
-		} else {
-			b.WriteString("      ")
-		}
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	return []byte(b.String())
-}
-
-// gateExample skips a single example when the specific backing plugin it needs
-// is absent: the service datastore plugin (redis/postgres) for a Service field,
-// or global-cert for a global certs example. This is per example, not per task,
-// so a task's redis example still runs when only its postgres example must skip.
-func gateExample(t *testing.T, taskName string, task Task) {
-	t.Helper()
-	if service := taskStringField(task, "Service"); service != "" {
-		skipIfPluginMissingT(t, service)
-	}
-	if certs, ok := taskAsPointer(task).(*CertsTask); ok && certs.Global {
-		skipIfPluginMissingT(t, "global-cert")
-	}
-}
-
-// ensureExampleService creates the datastore service an example links, exposes,
-// or configures, so the apply has a real service to act on. It is a no-op for
-// dokku_service_create, whose own examples create and destroy the service.
-func ensureExampleService(t *testing.T, taskName string, task Task) {
-	t.Helper()
-	if taskName == "dokku_service_create" {
-		return
-	}
-	service := taskStringField(task, "Service")
-	name := taskStringField(task, "Name")
-	if service == "" || name == "" {
-		return
-	}
-	result := ServiceCreateTask{Service: service, Name: name, State: StatePresent}.Execute(testCtx())
-	if result.Error != nil {
-		t.Fatalf("failed to create backing service %s/%s: %v", service, name, result.Error)
-	}
-	t.Cleanup(func() { destroyService(testCtx(), service, name) })
+	return exampleRecipe(ExampleSchema{YAML: codeblock})
 }
 
 // applyExample runs Plan then apply for one decoded example, asserting the plan
@@ -390,66 +376,6 @@ func setupRegistryExample(t *testing.T) (func(Task) Task, func()) {
 		return auth
 	}
 	return transform, nil
-}
-
-// setupSchedulerK3sNodeSysctlsExample creates the node profile the
-// profile-scoped node sysctls example writes to, since dokku refuses sysctls for
-// a profile that does not exist. Removing the profile afterwards also deletes
-// the sysctls the example stored for it.
-func setupSchedulerK3sNodeSysctlsExample(t *testing.T) (func(Task) Task, func()) {
-	t.Helper()
-	profile := SchedulerK3sProfileTask{Name: "edge-workers", Role: "worker", State: StatePresent}
-	if result := profile.Execute(testCtx()); result.Error != nil {
-		t.Fatalf("failed to create node sysctls example profile: %v", result.Error)
-	}
-	return nil, func() {
-		SchedulerK3sProfileTask{Name: "edge-workers", Role: "worker", State: StateAbsent}.Execute(testCtx())
-	}
-}
-
-// setupHttpAuthEnabledExample enables HTTP auth on the example app so the
-// http_auth_user / http_auth_allowed_ip examples, which configure an already
-// enabled auth, have an initialized auth config to act on.
-func setupHttpAuthEnabledExample(t *testing.T) (func(Task) Task, func()) {
-	t.Helper()
-	enableHttpAuthExampleApp(t)
-	return nil, nil
-}
-
-// setupHttpAuthDomainExample enables HTTP auth and adds the domains the
-// http_auth_domain examples restrict auth to, since dokku only accepts domains
-// that already belong to the app.
-func setupHttpAuthDomainExample(t *testing.T) (func(Task) Task, func()) {
-	t.Helper()
-	enableHttpAuthExampleApp(t)
-	result := DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}, State: StateSet}.Execute(testCtx())
-	if result.Error != nil {
-		t.Fatalf("failed to add http-auth-domain example domains: %v", result.Error)
-	}
-	return nil, nil
-}
-
-// enableHttpAuthExampleApp turns on HTTP auth for the shared http-auth example
-// app (created via the task's ensureApps).
-func enableHttpAuthExampleApp(t *testing.T) {
-	t.Helper()
-	result := HttpAuthTask{App: "hello-world", Username: "admin", Password: "secret", State: StatePresent}.Execute(testCtx())
-	if result.Error != nil {
-		t.Fatalf("failed to enable http-auth on example app: %v", result.Error)
-	}
-}
-
-// setupStorageMountExample creates the named storage entry the storage_mount
-// named-entry examples attach, and removes it afterward.
-func setupStorageMountExample(t *testing.T) (func(Task) Task, func()) {
-	t.Helper()
-	result := StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish", State: StatePresent}.Execute(testCtx())
-	if result.Error != nil {
-		t.Fatalf("failed to create storage entry for storage_mount example: %v", result.Error)
-	}
-	return nil, func() {
-		StorageEntryTask{Name: "node-js-app-data", State: StateAbsent}.Execute(testCtx())
-	}
 }
 
 // setupMaintenanceCustomPageExample writes a valid maintenance-page tarball to
@@ -563,21 +489,6 @@ func registerGlobalPropertyRevert(t *testing.T, task Task) {
 		return
 	}
 	t.Cleanup(func() { clearTask.Execute(testCtx()) })
-}
-
-// taskStringField returns the value of a string field on a task struct, or ""
-// when the field is absent or not a string. It reads through a pointer so it
-// works whether the loader returned a value or pointer task.
-func taskStringField(task Task, field string) string {
-	v := reflect.Indirect(reflect.ValueOf(task))
-	if v.Kind() != reflect.Struct {
-		return ""
-	}
-	f := v.FieldByName(field)
-	if !f.IsValid() || f.Kind() != reflect.String {
-		return ""
-	}
-	return f.String()
 }
 
 // taskAsPointer returns task as a pointer to its struct so a type switch can

@@ -56,6 +56,14 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Create a redis service named my-redis
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+```
+
 ```yaml
 dokku_service_create:
     service: redis
@@ -64,6 +72,14 @@ dokku_service_create:
 
 ### Create a postgres service named my-db
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+```
+
 ```yaml
 dokku_service_create:
     service: postgres
@@ -71,6 +87,14 @@ dokku_service_create:
 ```
 
 ### Create a redis service on a pinned image
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+```
 
 ```yaml
 dokku_service_create:
@@ -81,6 +105,14 @@ dokku_service_create:
 ```
 
 ### Reconcile a changed image pin by upgrading the service
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+```
 
 ```yaml
 dokku_service_create:
@@ -93,6 +125,14 @@ dokku_service_create:
 
 ### Reconcile a changed shared memory size with set, stop and start
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+```
+
 ```yaml
 dokku_service_create:
     service: redis
@@ -102,6 +142,14 @@ dokku_service_create:
 ```
 
 ### Destroy a redis service named my-redis
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+```
 
 ```yaml
 dokku_service_create:

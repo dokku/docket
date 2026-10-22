@@ -43,6 +43,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Scale web and worker processes
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_ps_scale:
     app: hello-world
@@ -52,6 +59,13 @@ dokku_ps_scale:
 ```
 
 ### Scale web and worker processes without deploy
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_ps_scale:
@@ -64,6 +78,13 @@ dokku_ps_scale:
 
 ### Declare the whole process formation
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_ps_scale:
     app: hello-world
@@ -73,6 +94,13 @@ dokku_ps_scale:
 ```
 
 ### Reset the process formation to its defaults
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_ps_scale:

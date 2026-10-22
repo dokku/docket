@@ -68,6 +68,13 @@ dokku_apps_property:
 
 ### Overriding the deploy-source for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_apps_property:
     app: node-js-app
@@ -76,6 +83,13 @@ dokku_apps_property:
 ```
 
 ### Overriding the deploy-source-metadata for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_apps_property:

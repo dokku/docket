@@ -409,10 +409,17 @@ type ItemSchema struct {
 }
 
 // ExampleSchema is one documented example: the heading its reference page
-// gives it, and the YAML snippet itself.
+// gives it, the YAML snippet itself, and the tasks it needs applied first.
 type ExampleSchema struct {
 	Name string `json:"name"`
 	YAML string `json:"yaml"`
+
+	// Requires are the tasks to apply before the example, in apply order:
+	// the plugins its task needs, the task creating each app and service it
+	// names, and anything else the example declares, such as a deployed app,
+	// each after what it needs in turn. These tasks followed by the example
+	// make a complete recipe. Absent when the example needs nothing.
+	Requires []ExampleRequirementSchema `json:"requires,omitempty"`
 }
 
 // PropertySchema is the enumerable property table a *_property task manages -
@@ -567,8 +574,9 @@ func Catalog() (TaskCatalog, error) {
 //
 //sdk:export
 func CatalogFor(typeKeys []string) (TaskCatalog, error) {
-	// The other error comes from examples(), which yaml-marshals each example
-	// struct. Nothing else here can fail.
+	// The other errors come from examples(), which yaml-marshals each example
+	// struct, and from decoding each example to derive what it requires.
+	// Nothing else here can fail.
 	names := TaskTypes()
 	if len(typeKeys) > 0 {
 		seen := make(map[string]bool, len(typeKeys))
@@ -665,9 +673,14 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 		return TaskSchema{}, fmt.Errorf("examples for task %s: %w", typeKey, err)
 	}
 	for _, example := range examples {
+		requires, err := buildExampleRequires(example)
+		if err != nil {
+			return TaskSchema{}, fmt.Errorf("examples for task %s: %w", typeKey, err)
+		}
 		schema.Examples = append(schema.Examples, ExampleSchema{
-			Name: example.Name,
-			YAML: strings.TrimSpace(example.Codeblock) + "\n",
+			Name:     example.Name,
+			YAML:     strings.TrimSpace(example.Codeblock) + "\n",
+			Requires: requires,
 		})
 	}
 

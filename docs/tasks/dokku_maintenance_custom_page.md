@@ -53,6 +53,16 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Set a custom maintenance page from inline HTML
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: maintenance
+      url: https://github.com/dokku/dokku-maintenance.git
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_maintenance_custom_page:
     app: node-js-app
@@ -62,6 +72,16 @@ dokku_maintenance_custom_page:
 
 ### Set a custom maintenance page from a tarball (supports extra assets)
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: maintenance
+      url: https://github.com/dokku/dokku-maintenance.git
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_maintenance_custom_page:
     app: node-js-app
@@ -69,6 +89,16 @@ dokku_maintenance_custom_page:
 ```
 
 ### Remove the custom maintenance page, resetting to the default
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: maintenance
+      url: https://github.com/dokku/dokku-maintenance.git
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_maintenance_custom_page:
