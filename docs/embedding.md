@@ -36,7 +36,8 @@ ctx := session.Context(context.Background(), sdk.Target{
 
 Every command over SSH shares one multiplexed connection per server. The session records each
 server its contexts actually reached and closes those connections on `Close()`. Without it, each one
-stays open for up to a minute after the last command. A context derived from a session context
+stays open for up to a minute after the last command, or for as long as
+[`sdk.WithControlPersist`](#how-long-connections-stay-open) says. A context derived from a session context
 still belongs to that session, so a single call can go to another server with
 `sdk.ContextWithTarget(ctx, other)` and that connection is closed too.
 
@@ -57,6 +58,25 @@ sdk.WithVersionGate())` installs it on every context the session hands out. That
 long-lived embedder that gets a new context for every call it serves - each call keeps its own
 cancellation, and the server's versions are still read once per session.
 
+### How long connections stay open
+
+A connection stays open for 60 seconds after its last command, so commands that follow one another
+reuse it instead of connecting again. `sdk.WithControlPersist(d)` sets that time for every connection
+the session opens, rounded up to whole seconds:
+
+```go
+session := sdk.NewSession(nil, sdk.WithControlPersist(0))
+```
+
+Zero closes a connection as soon as no command under the session is using it: the call that finishes
+the last command closes the connection before it returns. Use it when your program may never reach
+`Close()` - a Terraform provider, say, whose process is killed without a shutdown hook - so no
+connection to the server is left behind. Commands that overlap still share one
+connection, but each command that starts after the previous one finished opens a new one. A negative
+duration is read as zero.
+
+`Close()` still closes whatever is open, whatever the setting.
+
 ### Choosing the SSH key
 
 Without more, `ssh` picks the key itself from ssh-agent or `~/.ssh/config` on the machine running
@@ -73,7 +93,8 @@ ctx := session.Context(context.Background(), sdk.Target{
 `IdentityFile` is passed as `-i <path> -o IdentitiesOnly=yes`, so `ssh` offers that key alone.
 Each entry of `SSHOptions` is one `-o` value, in `Key=Value` or `Key Value` form. The four options
 docket uses to share a connection - `ControlMaster`, `ControlPath`, `ControlPersist` and
-`BatchMode` - are refused: a call that names one fails with an `ssh:` error before `ssh` runs.
+`BatchMode` - are refused: a call that names one fails with an `ssh:` error before `ssh` runs. Set
+how long connections persist with [`sdk.WithControlPersist`](#how-long-connections-stay-open) instead.
 Check a caller-supplied list ahead of time with `sdk.ValidateSSHOptions`. The identity and the
 options are part of what picks the shared connection, so two targets on one host with different
 keys never share one.
