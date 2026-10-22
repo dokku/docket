@@ -129,10 +129,11 @@ func (t TraefikPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the TraefikPropertyTask would produce.
-func (t TraefikPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t TraefikPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return TraefikPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

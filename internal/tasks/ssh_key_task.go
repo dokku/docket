@@ -102,10 +102,11 @@ func (t SshKeyTask) Validate() error {
 }
 
 // Plan reports the drift the SshKeyTask would produce.
-func (t SshKeyTask) Plan(ctx context.Context) PlanResult {
+func (t SshKeyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	// seen attaches the key installed under the task's name, as
 	// ssh-keys:list reports it. A list dokku could not produce reads as no
 	// keys, the same answer the probe acts on.

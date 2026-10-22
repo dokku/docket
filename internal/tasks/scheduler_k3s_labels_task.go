@@ -154,10 +154,11 @@ func (t SchedulerK3sLabelsTask) Constraints() []Constraint {
 }
 
 // Plan reports the drift the SchedulerK3sLabelsTask would produce.
-func (t SchedulerK3sLabelsTask) Plan(ctx context.Context) PlanResult {
+func (t SchedulerK3sLabelsTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planSchedulerK3sScopedPairsPresent(ctx, spec) },

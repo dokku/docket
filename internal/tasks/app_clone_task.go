@@ -133,10 +133,11 @@ func (t AppCloneTask) readAddress(ctx context.Context) (Task, bool, error) {
 }
 
 // Plan reports the drift the AppCloneTask would produce.
-func (t AppCloneTask) Plan(ctx context.Context) PlanResult {
+func (t AppCloneTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			exists, err := appExists(ctx, t.App)

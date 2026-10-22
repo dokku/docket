@@ -122,12 +122,15 @@ func sensitiveValuesFromTask(t interface{}) []string {
 // TaskSensitiveValues returns the values that must be masked in anything
 // rendered for t: its `sensitive:"true"` fields, including those of nested
 // items, the value of a property marked sensitive, and whatever t's own
-// SensitiveValues method returns. It is the set the CLI collects for t before
-// a run; pass them to NewMasker. Empty values are dropped and duplicates
+// SensitiveValues method returns. Empty values are dropped and duplicates
 // removed; the order is unspecified. It returns nil for a nil task.
 //
-// A value only known once the server is read, such as a secret property's
-// current value, is added to the context's masker during Plan.
+// A task's Plan, Execute, ReadTask, ReadAddress and ExecutePlan already add
+// these values to the masker on their context before they run anything, and
+// Plan adds the secrets it reads from the server too, so a caller need not
+// register them. Call it to mask output you render yourself before any of
+// those has run, such as a task printed before it is planned. A context with
+// no masker has nothing registered with it.
 //
 //sdk:export
 func TaskSensitiveValues(t Task) []string {
@@ -141,6 +144,18 @@ func TaskSensitiveValues(t Task) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+// registerTaskSensitiveValues adds t's own sensitive values to the masker ctx
+// carries. It does nothing when ctx carries no masker or t is nil. Masker.Add
+// only accumulates and is lock-guarded, so registering the same task again on
+// every call is safe.
+func registerTaskSensitiveValues(ctx context.Context, t Task) {
+	masker := subprocess.MaskerFromContext(ctx)
+	if masker == nil || t == nil {
+		return
+	}
+	masker.Add(TaskSensitiveValues(t)...)
 }
 
 // isNilPointer reports whether t is nil or a nil pointer. The registered

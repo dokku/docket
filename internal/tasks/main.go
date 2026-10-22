@@ -395,6 +395,16 @@ type PlanResult struct {
 	read       Task
 	readExists bool
 
+	// planned is the task whose Plan built this result, as it was declared,
+	// in the value type registered for it (AppTask, never *AppTask). Every
+	// Plan records it through recordPlanned, on every branch including a
+	// refusal; it is nil only on a PlanResult built by hand. ExecutePlan is
+	// handed a plan and no task, so this is where it finds the task: it
+	// registers the task's sensitive values with the context's masker from
+	// it before applying, and it is the declared task an apply's observed
+	// state is built from, by the rules Observed follows for a plan in sync.
+	planned Task
+
 	// apply, when non-nil, is the closure ExecutePlan invokes to mutate
 	// server state. nil when InSync. Captures any probed state needed for
 	// the mutation so the apply path does not re-probe. Unexported so
@@ -414,6 +424,14 @@ type PlanResult struct {
 // server.
 func planErr(err error) PlanResult {
 	return PlanResult{Status: PlanStatusError, Error: err}
+}
+
+// recordPlanned sets the task a Plan built r for. Every Plan defers it right
+// after its gatePlan check, so whichever branch returns, the result carries
+// the task; TestEveryPlanRecordsItsTask fails the build for a Plan that does
+// not.
+func recordPlanned(r *PlanResult, t Task) {
+	r.planned = t
 }
 
 // ErrStateUnreadable is wrapped by the error ReadTask returns when a task's

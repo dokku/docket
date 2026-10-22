@@ -107,10 +107,11 @@ func (t PsPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the PsPropertyTask would produce.
-func (t PsPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t PsPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return PsPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

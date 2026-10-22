@@ -385,10 +385,11 @@ func validateKVFlag(name string, values map[string]string) error {
 }
 
 // Plan reports the drift the StorageEntryTask would produce.
-func (t StorageEntryTask) Plan(ctx context.Context) PlanResult {
+func (t StorageEntryTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			entry, err := lookupStorageEntry(ctx, t.Name)

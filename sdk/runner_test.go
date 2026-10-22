@@ -167,7 +167,8 @@ func TestContextWithRunnerMasking(t *testing.T) {
 	cfg.App = "api"
 	cfg.Config = map[string]string{"TOKEN": secret}
 
-	masker := sdk.NewMasker(sdk.TaskSensitiveValues(cfg)...)
+	// Planning registers the task's own secrets with the session's masker.
+	masker := sdk.NewMasker()
 	session := sdk.NewSession(masker)
 	defer func() { _ = session.Close() }()
 	ctx := sdk.ContextWithRunner(session.Context(context.Background(), sdk.Target{}), fake.run)

@@ -199,10 +199,11 @@ func (t SchedulerK3sNodeSysctlsTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerK3sNodeSysctlsTask would produce.
-func (t SchedulerK3sNodeSysctlsTask) Plan(ctx context.Context) PlanResult {
+func (t SchedulerK3sNodeSysctlsTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	current := func(ctx context.Context) (map[string]string, error) {
 		return getSchedulerK3sNodeSysctls(ctx, t)
 	}

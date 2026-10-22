@@ -100,10 +100,11 @@ func (t ChecksPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the ChecksPropertyTask would produce.
-func (t ChecksPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t ChecksPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return ChecksPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

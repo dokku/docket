@@ -280,10 +280,11 @@ func (t StorageMountTask) Validate() error {
 }
 
 // Plan reports the drift the StorageMountTask would produce.
-func (t StorageMountTask) Plan(ctx context.Context) PlanResult {
+func (t StorageMountTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	if len(t.Mounts) > 0 || t.State == StateSet || t.State == StateClear {
 		return DispatchPlan(t.State, map[State]func() PlanResult{
 			StatePresent: func() PlanResult { return planStorageMountsPresent(ctx, t) },

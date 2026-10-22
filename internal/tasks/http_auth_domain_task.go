@@ -122,10 +122,11 @@ func (t HttpAuthDomainTask) Validate() error {
 }
 
 // Plan reports the drift the HttpAuthDomainTask would produce.
-func (t HttpAuthDomainTask) Plan(ctx context.Context) PlanResult {
+func (t HttpAuthDomainTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planHttpAuthDomainsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planHttpAuthDomainsAbsent(ctx, t) },

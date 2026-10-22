@@ -147,10 +147,11 @@ func (t ServiceExposeTask) Validate() error {
 }
 
 // Plan reports the drift the ServiceExposeTask would produce.
-func (t ServiceExposeTask) Plan(ctx context.Context) PlanResult {
+func (t ServiceExposeTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planServiceExpose(ctx, t, StatePresent) },
 		StateAbsent:  func() PlanResult { return planServiceUnexpose(ctx, t, StateAbsent) },

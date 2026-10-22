@@ -239,10 +239,11 @@ func (u HttpAuthUser) Constraints() []Constraint {
 }
 
 // Plan reports the drift the HttpAuthUserTask would produce.
-func (t HttpAuthUserTask) Plan(ctx context.Context) PlanResult {
+func (t HttpAuthUserTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planHttpAuthUsersPresent(ctx, t) },
 		StateSet: func() PlanResult {

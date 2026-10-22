@@ -159,10 +159,11 @@ func (t SchedulerK3sAutoscalingAuthTask) Constraints() []Constraint {
 }
 
 // Plan reports the drift the SchedulerK3sAutoscalingAuthTask would produce.
-func (t SchedulerK3sAutoscalingAuthTask) Plan(ctx context.Context) PlanResult {
+func (t SchedulerK3sAutoscalingAuthTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	spec := t.spec()
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planSchedulerK3sAutoscalingAuthPresent(ctx, spec) },

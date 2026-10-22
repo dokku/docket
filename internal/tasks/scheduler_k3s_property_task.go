@@ -162,10 +162,11 @@ func (t SchedulerK3sPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the SchedulerK3sPropertyTask would produce.
-func (t SchedulerK3sPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t SchedulerK3sPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return SchedulerK3sPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

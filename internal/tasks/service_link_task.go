@@ -136,10 +136,11 @@ func (t ServiceLinkTask) ObjectEffects() ObjectEffects {
 }
 
 // Plan reports the drift the ServiceLinkTask would produce.
-func (t ServiceLinkTask) Plan(ctx context.Context) PlanResult {
+func (t ServiceLinkTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			svcExists, err := serviceExists(ctx, t.Service, t.Name)

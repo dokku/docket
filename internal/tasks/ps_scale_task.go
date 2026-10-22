@@ -172,10 +172,11 @@ func (t PsScaleTask) Validate() error {
 }
 
 // Plan reports the drift the PsScaleTask would produce.
-func (t PsScaleTask) Plan(ctx context.Context) PlanResult {
+func (t PsScaleTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planPsScalePresent(ctx, t) },
 		StateSet: func() PlanResult {

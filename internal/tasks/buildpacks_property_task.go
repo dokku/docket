@@ -102,10 +102,11 @@ func (t BuildpacksPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the BuildpacksPropertyTask would produce.
-func (t BuildpacksPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t BuildpacksPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return BuildpacksPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

@@ -163,10 +163,11 @@ func (t CertsTask) Validate() error {
 }
 
 // Plan reports the drift the CertsTask would produce.
-func (t CertsTask) Plan(ctx context.Context) PlanResult {
+func (t CertsTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	// seen attaches whether the scope has a certificate installed. The
 	// certificate and key are not carried: the probe compares fingerprints
 	// and never moves the private key off the server, which is why

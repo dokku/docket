@@ -111,10 +111,11 @@ func (t GitSyncTask) ObjectEffects() ObjectEffects {
 }
 
 // Plan reports the drift the GitSyncTask would produce.
-func (t GitSyncTask) Plan(ctx context.Context) PlanResult {
+func (t GitSyncTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			sync, err := readAppSyncState(ctx, t.App)

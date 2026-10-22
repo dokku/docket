@@ -140,10 +140,11 @@ func (t StorageEnsureTask) ensureArgs() []string {
 // Plan reports the drift the StorageEnsureTask would produce. dokku does
 // not expose a probe for storage:ensure-directory, so the plan reports
 // drift unconditionally.
-func (t StorageEnsureTask) Plan(ctx context.Context) PlanResult {
+func (t StorageEnsureTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult {
 			args := t.ensureArgs()

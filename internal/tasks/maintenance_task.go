@@ -114,10 +114,11 @@ func (t MaintenanceTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Plan reports the drift the MaintenanceTask would produce.
-func (t MaintenanceTask) Plan(ctx context.Context) PlanResult {
+func (t MaintenanceTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planToggle(ctx, t, func(f ToggleFields) Task { return MaintenanceTask(f) }, t.State, t.App, "maintenance:enable", "maintenance:disable", maintenanceEnabled)
 }
 

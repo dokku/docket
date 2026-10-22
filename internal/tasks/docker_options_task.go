@@ -158,10 +158,11 @@ func (t DockerOptionsTask) Validate() error {
 }
 
 // Plan reports the drift the DockerOptionsTask would produce.
-func (t DockerOptionsTask) Plan(ctx context.Context) PlanResult {
+func (t DockerOptionsTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	// seen attaches whether the option is stored in its scope; the option is
 	// the identity, so presence is all there is to read.
 	seen := func(r PlanResult, present bool) PlanResult {

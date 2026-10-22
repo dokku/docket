@@ -79,10 +79,11 @@ func (t NetworkTask) Execute(ctx context.Context) TaskOutputState {
 }
 
 // Plan reports the drift the NetworkTask would produce.
-func (t NetworkTask) Plan(ctx context.Context) PlanResult {
+func (t NetworkTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	// seen attaches whether the resource exists; its identity is all there is
 	// to read.
 	seen := func(r PlanResult, exists bool) PlanResult {

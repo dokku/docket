@@ -100,10 +100,11 @@ func (t AppJsonPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the AppJsonPropertyTask would produce.
-func (t AppJsonPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t AppJsonPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return AppJsonPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

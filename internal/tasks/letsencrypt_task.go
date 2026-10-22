@@ -95,10 +95,11 @@ func (t LetsencryptTask) Validate() error {
 }
 
 // Plan reports the drift the LetsencryptTask would produce.
-func (t LetsencryptTask) Plan(ctx context.Context) PlanResult {
+func (t LetsencryptTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	// seen attaches whether the resource exists; its identity is all there is
 	// to read.
 	seen := func(r PlanResult, exists bool) PlanResult {

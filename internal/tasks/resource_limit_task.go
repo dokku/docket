@@ -120,10 +120,11 @@ func (t ResourceLimitTask) Validate() error {
 }
 
 // Plan reports the drift the ResourceLimitTask would produce.
-func (t ResourceLimitTask) Plan(ctx context.Context) PlanResult {
+func (t ResourceLimitTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planResource(ctx, t, func(resources map[string]string, state State) Task {
 		return ResourceLimitTask{App: t.App, ProcessType: t.ProcessType, Resources: resources, State: state}
 	}, t.State, t.App, t.ProcessType, t.Resources, boolValue(t.ClearBefore, false), "resource:limit")

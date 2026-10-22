@@ -100,8 +100,9 @@ func planSetAsClear(r PlanResult) PlanResult {
 }
 
 // ExecutePlan applies p, the result of a task's Plan, without probing the
-// server again. A plan that is already in sync applies nothing. It takes no
-// lock; see LockTask.
+// server again. A plan that is already in sync applies nothing. It first adds
+// the planned task's sensitive values to the masker on ctx, even when p was
+// planned under another context. It takes no lock; see LockTask.
 //
 //sdk:export
 func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
@@ -128,6 +129,11 @@ func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
 	// state so the apply run loop can drain them through the emitter, even on
 	// the error / in-sync branches that never invoke the apply closure.
 	defer func() { out.Warnings = append(out.Warnings, p.Warnings...) }()
+
+	// The plan may have been built under another context, or another
+	// masker, so the planned task's own secrets are registered with this
+	// one before the apply renders anything.
+	registerTaskSensitiveValues(ctx, p.planned)
 
 	if p.Error != nil {
 		stdout, stderr, exitCode := p.Stdout, p.Stderr, p.ExitCode

@@ -153,10 +153,11 @@ func (t NginxPropertyTask) Validate() error {
 }
 
 // Plan reports the drift the NginxPropertyTask would produce.
-func (t NginxPropertyTask) Plan(ctx context.Context) PlanResult {
+func (t NginxPropertyTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return planProperty(ctx, t, func(f PropertyFields) Task { return NginxPropertyTask(f) }, t.State, t.App, t.Global, t.Property, t.Value)
 }
 

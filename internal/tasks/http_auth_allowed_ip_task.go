@@ -134,10 +134,11 @@ func (t HttpAuthAllowedIpTask) Validate() error {
 }
 
 // Plan reports the drift the HttpAuthAllowedIpTask would produce.
-func (t HttpAuthAllowedIpTask) Plan(ctx context.Context) PlanResult {
+func (t HttpAuthAllowedIpTask) Plan(ctx context.Context) (result PlanResult) {
 	if r, ok := gatePlan(ctx, t); !ok {
 		return r
 	}
+	defer recordPlanned(&result, t)
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planHttpAuthAllowedIpsPresent(ctx, t) },
 		StateAbsent:  func() PlanResult { return planHttpAuthAllowedIpsAbsent(ctx, t) },
