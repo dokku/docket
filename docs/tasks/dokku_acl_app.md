@@ -43,6 +43,16 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Grant users access to an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_acl_app:
     app: node-js-app
@@ -52,6 +62,16 @@ dokku_acl_app:
 ```
 
 ### Revoke a user's access to an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_acl_app:
@@ -63,6 +83,16 @@ dokku_acl_app:
 
 ### Replace the users with access to an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_acl_app:
     app: node-js-app
@@ -72,6 +102,16 @@ dokku_acl_app:
 ```
 
 ### Clear the entire ACL for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: acl
+      url: https://github.com/dokku-community/dokku-acl.git
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_acl_app:

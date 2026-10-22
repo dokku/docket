@@ -51,6 +51,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Deploy a tar.gz archive
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_git_from_archive:
     app: node-js-app
@@ -59,6 +66,13 @@ dokku_git_from_archive:
 ```
 
 ### Deploy a zip archive with author metadata
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_git_from_archive:

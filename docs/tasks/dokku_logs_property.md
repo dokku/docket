@@ -61,6 +61,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Setting the max-size value for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_logs_property:
     app: node-js-app
@@ -79,6 +86,13 @@ dokku_logs_property:
 ```
 
 ### Clearing the max-size value for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_logs_property:

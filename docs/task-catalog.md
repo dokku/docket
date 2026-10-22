@@ -57,7 +57,8 @@ One JSON object, pretty-printed, with a `version` and a `tasks` array sorted by 
         { "kind": "exactly_one_of", "fields": ["app", "global"] }
       ],
       "examples": [
-        { "name": "Add a domain to an app", "yaml": "dokku_domains:\n    app: node-js-app\n..." }
+        { "name": "Add a domain to an app", "yaml": "dokku_domains:\n    app: node-js-app\n...",
+          "requires": [{ "type": "dokku_app", "yaml": "dokku_app:\n    app: node-js-app\n" }] }
       ]
     }
   ]
@@ -361,6 +362,52 @@ from `objects`:
   app is the restart; a task that changes a setting without one, such as `dokku_resource_limit`,
   takes effect on the next deploy.
 
+### What an example requires
+
+Each example is a single task that names its app or service by a literal, as if it already
+existed. `requires` on an example lists the tasks to apply before it, in apply order, so the
+required tasks followed by the example make a complete recipe:
+
+```json
+{ "name": "Link a redis service named my-redis to my-app",
+  "yaml": "dokku_service_link:\n    app: my-app\n    service: redis\n    name: my-redis\n",
+  "requires": [
+    { "type": "dokku_plugin",
+      "yaml": "dokku_plugin:\n    name: redis\n    url: https://github.com/dokku/dokku-redis.git\n" },
+    { "type": "dokku_app", "yaml": "dokku_app:\n    app: my-app\n" },
+    { "type": "dokku_service_create", "yaml": "dokku_service_create:\n    service: redis\n    name: my-redis\n" },
+    { "type": "dokku_git_from_image",
+      "yaml": "dokku_git_from_image:\n    app: my-app\n    image: dokku/smoke-test-app:dockerfile\n" }
+  ] }
+```
+
+| Key | Meaning |
+|-----|---------|
+| `type` | The required task's type, the snippet's only top-level key. |
+| `yaml` | The required task, in the same form as an example's `yaml`. |
+
+Most of the list follows from the keys above. It starts with a `dokku_plugin` for each plugin the
+example's `plugin_requirements` name: a fixed `name`, or the value of `name_field`, and only when
+the `when` key is true. Then it lists the task that creates each object in `objects` the example
+names but does not `creates` itself: `dokku_app` for an app, and `dokku_service_create` for a
+service, with its keys set to the example's values. A required task's own needs come before it, so
+a required `dokku_service_create` brings its datastore plugin. An example that needs more declares
+it, and it is listed after the rest: a deployed app for `dokku_service_link` and `dokku_letsencrypt`,
+the source app for `dokku_app_clone`, deployed unless the clone skips its deploy, HTTP auth turned on for the `dokku_http_auth_*` tasks, the storage entry a
+`dokku_storage_mount` attaches, the network a `dokku_network_property` names, and the node profile
+a profile-scoped `dokku_scheduler_k3s_node_sysctls` writes to. A task appears once, however many
+others need it. `requires` is absent on an example that needs nothing, such as `dokku_app`'s.
+
+`requires` is only what a recipe can express. A `dokku_plugin` installs the plugin from its
+repository without pinning a version, so a consumer that pins plugins replaces it with its own. A
+placeholder value an example documents, such as `dokku_certs`'s certificate path, is not made real.
+A narrowed catalog keeps every example's `requires`, including tasks whose `type` it does not list.
+
+`sdk.TaskRequires` derives the same list for any task, without the declared part; see
+[What a task requires](embedding.md#what-a-task-requires).
+
+Adding this key does not bump `version`.
+
 ## Property tasks
 
 A `*_property` task looks like it takes a free-form `property: string`. It does not: each one
@@ -497,6 +544,8 @@ Adding these keys does not bump `version`.
   meaningful. Notes keep the order the reference page prints them in.
 - Objects are always the app, then the service, and an object's keys follow its kind rather than
   declaration order.
+- An example's `requires` keep apply order: plugins, then the tasks creating its objects, then what
+  it declares, each after what it needs in turn.
 - Two runs of the same binary produce byte-identical output, for the whole catalog and for any
   `--task` selection.
 - A field's `default` became typed within version 1 rather than with a version bump, so a

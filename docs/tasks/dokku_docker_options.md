@@ -44,6 +44,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Mount the docker socket at deploy
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_docker_options:
     app: node-js-app
@@ -52,6 +59,13 @@ dokku_docker_options:
 ```
 
 ### Scope a deploy option to the web process type
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_docker_options:
@@ -62,6 +76,13 @@ dokku_docker_options:
 ```
 
 ### Remove a docker option from the deploy phase
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_docker_options:

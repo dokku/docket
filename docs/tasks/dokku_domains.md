@@ -47,6 +47,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Add domains to an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: example-app
+```
+
 ```yaml
 dokku_domains:
     app: example-app
@@ -57,6 +64,13 @@ dokku_domains:
 ```
 
 ### Remove domains from an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: example-app
+```
 
 ```yaml
 dokku_domains:
@@ -78,6 +92,13 @@ dokku_domains:
 ```
 
 ### Clear all domains from an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: example-app
+```
 
 ```yaml
 dokku_domains:

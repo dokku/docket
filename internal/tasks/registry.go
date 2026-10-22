@@ -63,6 +63,15 @@ func typeKeyOf(t Task) string {
 	return ""
 }
 
+// TaskTypeOf returns the task type t is registered under, such as dokku_app
+// for an AppTask or an *AppTask, or "" for a type docket does not register.
+// It names the tasks TaskRequires returns, which carry no type of their own.
+//
+//sdk:export
+func TaskTypeOf(t Task) string {
+	return typeKeyOf(t)
+}
+
 // Lookup reports whether typeKey is a registered task type and, when it is,
 // returns a zero-value instance of it for reading the task's metadata - its
 // synopsis, identity keys, export support and so on.

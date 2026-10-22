@@ -135,8 +135,27 @@ func returnValuesSection() string {
 	return b.String()
 }
 
+// requiresBlock renders the tasks an example requires as one task list, in
+// apply order, so the block pastes into a recipe ahead of the example.
+func requiresBlock(requires []tasks.ExampleRequirementSchema) string {
+	var b strings.Builder
+	b.WriteString("Requires these tasks, applied first:\n\n")
+	b.WriteString("```yaml\n")
+	for _, required := range requires {
+		for i, line := range strings.Split(strings.TrimSpace(required.YAML), "\n") {
+			if i == 0 {
+				b.WriteString("- " + line + "\n")
+			} else {
+				b.WriteString("  " + line + "\n")
+			}
+		}
+	}
+	b.WriteString("```\n\n")
+	return b.String()
+}
+
 // examplesSection renders a task's examples under a single Examples header,
-// one H3 subsection per example.
+// one H3 subsection per example, each preceded by the tasks it requires.
 func examplesSection(examples []tasks.ExampleSchema) string {
 	if len(examples) == 0 {
 		return ""
@@ -145,6 +164,9 @@ func examplesSection(examples []tasks.ExampleSchema) string {
 	b.WriteString("## Examples\n\n")
 	for _, example := range examples {
 		b.WriteString("### " + example.Name + "\n\n")
+		if len(example.Requires) > 0 {
+			b.WriteString(requiresBlock(example.Requires))
+		}
 		b.WriteString("```yaml\n")
 		b.WriteString(strings.TrimSpace(example.YAML) + "\n")
 		b.WriteString("```\n\n")

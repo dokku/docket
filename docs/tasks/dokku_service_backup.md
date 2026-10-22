@@ -61,6 +61,17 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Schedule daily backups of a postgres service to S3
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
+
 ```yaml
 dokku_service_backup:
     service: postgres
@@ -75,6 +86,17 @@ dokku_service_backup:
 
 ### Schedule backups using the instance IAM profile
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
+
 ```yaml
 dokku_service_backup:
     service: postgres
@@ -85,6 +107,17 @@ dokku_service_backup:
 ```
 
 ### Remove the backup configuration for a postgres service
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
 
 ```yaml
 dokku_service_backup:

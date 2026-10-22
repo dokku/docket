@@ -48,6 +48,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Set AWS secret manager trigger metadata on an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_autoscaling_auth:
     app: node-js-app
@@ -71,6 +78,13 @@ dokku_scheduler_k3s_autoscaling_auth:
 
 ### Clear specific metadata keys from an app's trigger
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_autoscaling_auth:
     app: node-js-app
@@ -82,6 +96,13 @@ dokku_scheduler_k3s_autoscaling_auth:
 
 ### Replace the whole metadata map for an app's trigger
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_autoscaling_auth:
     app: node-js-app
@@ -92,6 +113,13 @@ dokku_scheduler_k3s_autoscaling_auth:
 ```
 
 ### Clear every metadata key from an app's trigger
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_autoscaling_auth:

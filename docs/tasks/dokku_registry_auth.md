@@ -49,6 +49,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Log in to a registry for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_registry_auth:
     app: node-js-app
@@ -69,6 +76,13 @@ dokku_registry_auth:
 ```
 
 ### Log out from a registry for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_registry_auth:

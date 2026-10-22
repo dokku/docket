@@ -31,11 +31,20 @@ type HttpAuthDomainTaskExample struct {
 
 	// DokkuHttpAuthDomain is the HttpAuthDomainTask configuration
 	DokkuHttpAuthDomain HttpAuthDomainTask `yaml:"dokku_http_auth_domain"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e HttpAuthDomainTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e HttpAuthDomainTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the HTTP auth domain task
@@ -71,6 +80,10 @@ func (t HttpAuthDomainTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HttpAuthDomainTaskExample{
 		{
 			Name: "Restrict HTTP auth to specific domains for an app",
+			Requires: []Task{
+				HttpAuthTask{App: "hello-world"},
+				DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}},
+			},
 			DokkuHttpAuthDomain: HttpAuthDomainTask{
 				App:     "hello-world",
 				Domains: []string{"app.example.com", "www.example.com"},
@@ -78,6 +91,10 @@ func (t HttpAuthDomainTask) examples() ([]Doc, error) {
 		},
 		{
 			Name: "Stop restricting HTTP auth to a domain for an app",
+			Requires: []Task{
+				HttpAuthTask{App: "hello-world"},
+				DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}},
+			},
 			DokkuHttpAuthDomain: HttpAuthDomainTask{
 				App:     "hello-world",
 				Domains: []string{"www.example.com"},
@@ -86,6 +103,10 @@ func (t HttpAuthDomainTask) examples() ([]Doc, error) {
 		},
 		{
 			Name: "Replace the set of HTTP auth domains for an app",
+			Requires: []Task{
+				HttpAuthTask{App: "hello-world"},
+				DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}},
+			},
 			DokkuHttpAuthDomain: HttpAuthDomainTask{
 				App:     "hello-world",
 				Domains: []string{"app.example.com"},
@@ -94,6 +115,10 @@ func (t HttpAuthDomainTask) examples() ([]Doc, error) {
 		},
 		{
 			Name: "Clear all HTTP auth domains from an app",
+			Requires: []Task{
+				HttpAuthTask{App: "hello-world"},
+				DomainsTask{App: "hello-world", Domains: []string{"app.example.com", "www.example.com"}},
+			},
 			DokkuHttpAuthDomain: HttpAuthDomainTask{
 				App:   "hello-world",
 				State: StateClear,

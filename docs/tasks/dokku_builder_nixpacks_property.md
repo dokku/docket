@@ -56,6 +56,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Setting the nixpacks.toml path for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_builder_nixpacks_property:
     app: node-js-app
@@ -74,6 +81,13 @@ dokku_builder_nixpacks_property:
 ```
 
 ### Clearing the nixpacks.toml path for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_builder_nixpacks_property:

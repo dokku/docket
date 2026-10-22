@@ -49,6 +49,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Set deployment labels on an app's web process
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_labels:
     app: node-js-app
@@ -60,6 +67,13 @@ dokku_scheduler_k3s_labels:
 ```
 
 ### Set ingress labels on an app at the global process scope
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_labels:
@@ -82,6 +96,13 @@ dokku_scheduler_k3s_labels:
 
 ### Remove specific labels from an app's deployment
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_scheduler_k3s_labels:
     app: node-js-app
@@ -92,6 +113,13 @@ dokku_scheduler_k3s_labels:
 ```
 
 ### Replace the deployment labels on an app's web process
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_labels:
@@ -104,6 +132,13 @@ dokku_scheduler_k3s_labels:
 ```
 
 ### Clear the deployment labels from an app's web process
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_scheduler_k3s_labels:

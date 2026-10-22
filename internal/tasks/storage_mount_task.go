@@ -120,11 +120,20 @@ type StorageMountTaskExample struct {
 
 	// StorageMountTask is the StorageMountTask configuration
 	StorageMountTask StorageMountTask `yaml:"dokku_storage_mount"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e StorageMountTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e StorageMountTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the storage mount task
@@ -153,7 +162,8 @@ func (t StorageMountTask) MinimumVersions() VersionSupport {
 func (t StorageMountTask) examples() ([]Doc, error) {
 	return MarshalExamples([]StorageMountTaskExample{
 		{
-			Name: "Attach a named storage entry to an app",
+			Name:     "Attach a named storage entry to an app",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App:          "node-js-app",
 				EntryName:    "node-js-app-data",
@@ -164,7 +174,8 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 		// dokku's _default_ scope overlaps every named process type, so it
 		// refuses a web mount at a container path a _default_ mount holds.
 		{
-			Name: "Attach a named entry on deploy only, read-only, for the web process",
+			Name:     "Attach a named entry on deploy only, read-only, for the web process",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App:          "node-js-app",
 				EntryName:    "node-js-app-data",
@@ -197,7 +208,8 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Attach a named entry with mount options",
+			Name:     "Attach a named entry with mount options",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App:           "node-js-app",
 				EntryName:     "node-js-app-data",
@@ -206,7 +218,8 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Unmount a named entry from an app",
+			Name:     "Unmount a named entry from an app",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App:          "node-js-app",
 				EntryName:    "node-js-app-data",
@@ -215,7 +228,8 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Declare the complete set of mounts for an app, removing any other",
+			Name:     "Declare the complete set of mounts for an app, removing any other",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App: "node-js-app",
 				Mounts: []StorageMount{
@@ -226,7 +240,8 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Declare the web process's mounts, each with its own subpath",
+			Name:     "Declare the web process's mounts, each with its own subpath",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App:         "node-js-app",
 				ProcessType: "web",
@@ -238,7 +253,8 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Add mounts to an app, leaving its other mounts in place",
+			Name:     "Add mounts to an app, leaving its other mounts in place",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App: "node-js-app",
 				Mounts: []StorageMount{
@@ -247,7 +263,8 @@ func (t StorageMountTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Remove mounts from an app, leaving its other mounts in place",
+			Name:     "Remove mounts from an app, leaving its other mounts in place",
+			Requires: []Task{StorageEntryTask{Name: "node-js-app-data", Chown: "herokuish"}},
 			StorageMountTask: StorageMountTask{
 				App: "node-js-app",
 				Mounts: []StorageMount{

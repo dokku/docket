@@ -42,12 +42,32 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Enable maintenance mode for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: maintenance
+      url: https://github.com/dokku/dokku-maintenance.git
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_maintenance:
     app: node-js-app
 ```
 
 ### Disable maintenance mode for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: maintenance
+      url: https://github.com/dokku/dokku-maintenance.git
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_maintenance:

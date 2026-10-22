@@ -29,11 +29,20 @@ type AppCloneTaskExample struct {
 
 	// AppCloneTask is the AppCloneTask configuration
 	AppCloneTask AppCloneTask `yaml:"dokku_app_clone"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e AppCloneTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e AppCloneTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the app clone task
@@ -67,14 +76,16 @@ func (t AppCloneTask) MinimumVersions() VersionSupport {
 func (t AppCloneTask) examples() ([]Doc, error) {
 	return MarshalExamples([]AppCloneTaskExample{
 		{
-			Name: "Clone an app",
+			Name:     "Clone an app",
+			Requires: []Task{deployedExampleApp("node-js-app")},
 			AppCloneTask: AppCloneTask{
 				App:       "node-js-app-staging",
 				SourceApp: "node-js-app",
 			},
 		},
 		{
-			Name: "Clone an app without deploying",
+			Name:     "Clone an app without deploying",
+			Requires: []Task{AppTask{App: "node-js-app"}},
 			AppCloneTask: AppCloneTask{
 				App:        "node-js-app-staging",
 				SourceApp:  "node-js-app",

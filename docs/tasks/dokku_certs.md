@@ -56,6 +56,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Add an SSL certificate to an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_certs:
     app: node-js-app
@@ -65,6 +72,13 @@ dokku_certs:
 
 ### Remove an SSL certificate from an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_certs:
     app: node-js-app
@@ -72,6 +86,14 @@ dokku_certs:
 ```
 
 ### Add a global SSL certificate (requires the dokku-global-cert plugin)
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: global-cert
+      url: https://github.com/dokku-community/dokku-global-cert.git
+```
 
 ```yaml
 dokku_certs:
@@ -83,6 +105,14 @@ dokku_certs:
 
 ### Remove the global SSL certificate
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: global-cert
+      url: https://github.com/dokku-community/dokku-global-cert.git
+```
+
 ```yaml
 dokku_certs:
     app: ""
@@ -91,6 +121,13 @@ dokku_certs:
 ```
 
 ### Add an SSL certificate to an app from inline PEM
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_certs:
@@ -106,6 +143,14 @@ dokku_certs:
 ```
 
 ### Add a global SSL certificate from inline PEM (requires the dokku-global-cert plugin)
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: global-cert
+      url: https://github.com/dokku-community/dokku-global-cert.git
+```
 
 ```yaml
 dokku_certs:

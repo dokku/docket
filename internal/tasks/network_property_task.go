@@ -12,11 +12,20 @@ type NetworkPropertyTaskExample struct {
 
 	// NetworkPropertyTask is the NetworkPropertyTask configuration
 	NetworkPropertyTask NetworkPropertyTask `yaml:"dokku_network_property"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e NetworkPropertyTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e NetworkPropertyTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the network property task
@@ -49,7 +58,8 @@ func (t NetworkPropertyTask) MinimumVersions() VersionSupport {
 func (t NetworkPropertyTask) examples() ([]Doc, error) {
 	return MarshalExamples([]NetworkPropertyTaskExample{
 		{
-			Name: "Associates a network after a container is created but before it is started",
+			Name:     "Associates a network after a container is created but before it is started",
+			Requires: []Task{NetworkTask{Name: "example-network"}},
 			NetworkPropertyTask: NetworkPropertyTask{
 				App:      "hello-world",
 				Property: "attach-post-create",
@@ -57,7 +67,8 @@ func (t NetworkPropertyTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Associates the network at container creation",
+			Name:     "Associates the network at container creation",
+			Requires: []Task{NetworkTask{Name: "example-network"}},
 			NetworkPropertyTask: NetworkPropertyTask{
 				App:      "hello-world",
 				Property: "initial-network",
@@ -65,7 +76,8 @@ func (t NetworkPropertyTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Setting a global network property",
+			Name:     "Setting a global network property",
+			Requires: []Task{NetworkTask{Name: "example-network"}},
 			NetworkPropertyTask: NetworkPropertyTask{
 				Global:   true,
 				Property: "attach-post-create",

@@ -871,6 +871,28 @@ does moving one written in `present`, `set` or `deployed` into its apply state. 
 between forms: a single `dokku_storage_mount` in state `present` moved to `set` loses its
 `container_dir` and the rest, which `set` refuses, and so declares no mounts at all.
 
+## What a task requires
+
+A task names its app or service by a literal and assumes it exists. `sdk.TaskRequires` returns the
+tasks to apply before it, in apply order: a `dokku_plugin` for each non-core plugin the task needs,
+then the task creating each app and service it names but does not create itself, `dokku_app` or
+`dokku_service_create`, each after what it needs in turn. `sdk.TaskTypeOf` names each one:
+
+```go
+for _, required := range sdk.TaskRequires(link) {
+    fmt.Println(sdk.IdentityAddress(sdk.TaskTypeOf(required), required))
+}
+// dokku_plugin[name=redis]
+// dokku_app[app=api]
+// dokku_service_create[service=redis,name=cache]
+```
+
+A task needing nothing returns nil, and a task appears once however many others need it. The list
+is what docket can derive from the task's declarations. It cannot know that a link wants a deployed
+app or that a mount attaches a storage entry, so the documented examples declare those on top, and
+the [task catalog](task-catalog.md#what-an-example-requires) publishes each example's whole list as
+`requires`. A required `dokku_plugin` names the plugin's repository but no version.
+
 ## Stability
 
 The exported identifiers in `sdk` are stable from the release they first ship in. While docket is

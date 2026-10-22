@@ -44,6 +44,17 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Expose a postgres service named my-db on host port 5432
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
+
 ```yaml
 dokku_service_expose:
     service: postgres
@@ -53,6 +64,17 @@ dokku_service_expose:
 ```
 
 ### Expose a redis service named my-redis on host port 6379
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: redis
+      url: https://github.com/dokku/dokku-redis.git
+- dokku_service_create:
+      service: redis
+      name: my-redis
+```
 
 ```yaml
 dokku_service_expose:
@@ -64,6 +86,17 @@ dokku_service_expose:
 
 ### Expose a postgres service named my-db on exactly these host ports
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
+
 ```yaml
 dokku_service_expose:
     service: postgres
@@ -74,6 +107,17 @@ dokku_service_expose:
 ```
 
 ### Unexpose a postgres service named my-db
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
 
 ```yaml
 dokku_service_expose:

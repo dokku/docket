@@ -865,8 +865,8 @@ The same read is available to Go callers as [`sdk.ReadAddress`](embedding.md#rea
 
 `docket schema` prints a machine-readable description of every task type docket registers - the
 recipe keys each one accepts, their types, defaults, choices and descriptions, which values are
-secrets, what resource the task addresses, its export and probe support, its documented examples,
-and for a property task the exact set of property names it accepts. It is the same data the
+secrets, what resource the task addresses, its export and probe support, its documented examples
+and the tasks each one requires, and for a property task the exact set of property names it accepts. It is the same data the
 [task reference](tasks/README.md) pages are rendered from, in a form something other than a reader
 can consume.
 

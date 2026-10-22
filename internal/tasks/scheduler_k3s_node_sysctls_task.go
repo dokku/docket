@@ -49,11 +49,20 @@ type SchedulerK3sNodeSysctlsTaskExample struct {
 
 	// SchedulerK3sNodeSysctlsTask is the SchedulerK3sNodeSysctlsTask configuration
 	SchedulerK3sNodeSysctlsTask SchedulerK3sNodeSysctlsTask `yaml:"dokku_scheduler_k3s_node_sysctls"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e SchedulerK3sNodeSysctlsTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e SchedulerK3sNodeSysctlsTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the scheduler-k3s node sysctls task
@@ -118,7 +127,8 @@ func (t SchedulerK3sNodeSysctlsTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Replace the node sysctls of a node profile",
+			Name:     "Replace the node sysctls of a node profile",
+			Requires: []Task{SchedulerK3sProfileTask{Name: "edge-workers", Role: "worker"}},
 			SchedulerK3sNodeSysctlsTask: SchedulerK3sNodeSysctlsTask{
 				Profile: "edge-workers",
 				Sysctls: map[string]string{

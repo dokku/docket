@@ -79,6 +79,14 @@ dokku_scheduler_k3s_node_sysctls:
 
 ### Replace the node sysctls of a node profile
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_scheduler_k3s_profile:
+      name: edge-workers
+      role: worker
+```
+
 ```yaml
 dokku_scheduler_k3s_node_sysctls:
     profile: edge-workers

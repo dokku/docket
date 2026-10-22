@@ -41,12 +41,26 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Lock an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_app_lock:
     app: node-js-app
 ```
 
 ### Unlock an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_app_lock:

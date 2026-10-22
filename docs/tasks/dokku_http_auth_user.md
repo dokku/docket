@@ -49,6 +49,18 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Add HTTP auth users to an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth_user:
     app: hello-world
@@ -61,6 +73,18 @@ dokku_http_auth_user:
 
 ### Add a user from an htpasswd hash, as `docket export` emits
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth_user:
     app: hello-world
@@ -70,6 +94,18 @@ dokku_http_auth_user:
 ```
 
 ### Rotate an existing user's password
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
 
 ```yaml
 dokku_http_auth_user:
@@ -82,6 +118,18 @@ dokku_http_auth_user:
 
 ### Replace the app's users with exactly this set
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth_user:
     app: hello-world
@@ -93,6 +141,18 @@ dokku_http_auth_user:
 
 ### Remove a user from an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth_user:
     app: hello-world
@@ -102,6 +162,18 @@ dokku_http_auth_user:
 ```
 
 ### Remove all HTTP auth users from an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+```
 
 ```yaml
 dokku_http_auth_user:

@@ -48,6 +48,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Sync a git repository to an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_git_sync:
     app: hello-world
@@ -60,6 +67,13 @@ dokku_git_sync:
 ```
 
 ### Sync a git repository with a specific ref and build
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_git_sync:

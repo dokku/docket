@@ -44,6 +44,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### set KEY=VALUE
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_config:
     app: hello-world
@@ -54,6 +61,13 @@ dokku_config:
 
 ### set KEY=VALUE without restart
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_config:
     app: hello-world
@@ -63,6 +77,13 @@ dokku_config:
 ```
 
 ### set the app's entire config, keeping a key written outside the recipe
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_config:
@@ -77,6 +98,13 @@ dokku_config:
 ```
 
 ### clear the app's config
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_config:

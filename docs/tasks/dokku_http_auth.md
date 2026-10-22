@@ -48,6 +48,16 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Enable HTTP authentication for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth:
     app: hello-world
@@ -57,12 +67,32 @@ dokku_http_auth:
 
 ### Enable HTTP authentication without seeding a user
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+```
+
 ```yaml
 dokku_http_auth:
     app: hello-world
 ```
 
 ### Disable HTTP authentication for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+```
 
 ```yaml
 dokku_http_auth:

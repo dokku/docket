@@ -45,6 +45,17 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Set the restart-policy for a postgres service
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
+
 ```yaml
 dokku_service_property:
     service: postgres
@@ -55,6 +66,17 @@ dokku_service_property:
 
 ### Publish an exposed postgres service directly rather than through an ambassador
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
+
 ```yaml
 dokku_service_property:
     service: postgres
@@ -64,6 +86,17 @@ dokku_service_property:
 ```
 
 ### Clear the restart-policy for a postgres service
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: postgres
+      url: https://github.com/dokku/dokku-postgres.git
+- dokku_service_create:
+      service: postgres
+      name: my-db
+```
 
 ```yaml
 dokku_service_property:

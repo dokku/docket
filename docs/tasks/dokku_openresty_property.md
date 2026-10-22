@@ -87,6 +87,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Setting the proxy read timeout for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_openresty_property:
     app: node-js-app
@@ -95,6 +102,13 @@ dokku_openresty_property:
 ```
 
 ### Setting the client max body size for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_openresty_property:
@@ -114,6 +128,13 @@ dokku_openresty_property:
 ```
 
 ### Clearing an openresty property
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_openresty_property:

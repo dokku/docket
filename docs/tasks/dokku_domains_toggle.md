@@ -41,12 +41,26 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Enable the domains plugin for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_domains_toggle:
     app: node-js-app
 ```
 
 ### Disable the domains plugin for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
 
 ```yaml
 dokku_domains_toggle:

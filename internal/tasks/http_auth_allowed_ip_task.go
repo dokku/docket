@@ -32,11 +32,20 @@ type HttpAuthAllowedIpTaskExample struct {
 
 	// DokkuHttpAuthAllowedIp is the HttpAuthAllowedIpTask configuration
 	DokkuHttpAuthAllowedIp HttpAuthAllowedIpTask `yaml:"dokku_http_auth_allowed_ip"`
+
+	// Requires are the tasks the example needs applied first, beyond the
+	// ones TaskRequires derives.
+	Requires []Task `yaml:"-"`
 }
 
 // GetName returns the name of the example
 func (e HttpAuthAllowedIpTaskExample) GetName() string {
 	return e.Name
+}
+
+// GetRequires returns the tasks the example declares it needs
+func (e HttpAuthAllowedIpTaskExample) GetRequires() []Task {
+	return e.Requires
 }
 
 // Doc returns the docblock for the HTTP auth allowed ip task
@@ -71,14 +80,16 @@ func (t HttpAuthAllowedIpTask) MinimumVersions() VersionSupport {
 func (t HttpAuthAllowedIpTask) examples() ([]Doc, error) {
 	return MarshalExamples([]HttpAuthAllowedIpTaskExample{
 		{
-			Name: "Allow IP addresses to bypass HTTP auth for an app",
+			Name:     "Allow IP addresses to bypass HTTP auth for an app",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthAllowedIp: HttpAuthAllowedIpTask{
 				App:        "hello-world",
 				AllowedIps: []string{"192.0.2.1", "198.51.100.0/24"},
 			},
 		},
 		{
-			Name: "Remove an allowed IP address from an app",
+			Name:     "Remove an allowed IP address from an app",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthAllowedIp: HttpAuthAllowedIpTask{
 				App:        "hello-world",
 				AllowedIps: []string{"192.0.2.1"},
@@ -86,7 +97,8 @@ func (t HttpAuthAllowedIpTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Replace the set of allowed IP addresses for an app",
+			Name:     "Replace the set of allowed IP addresses for an app",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthAllowedIp: HttpAuthAllowedIpTask{
 				App:        "hello-world",
 				AllowedIps: []string{"192.0.2.1"},
@@ -94,7 +106,8 @@ func (t HttpAuthAllowedIpTask) examples() ([]Doc, error) {
 			},
 		},
 		{
-			Name: "Clear all allowed IP addresses from an app",
+			Name:     "Clear all allowed IP addresses from an app",
+			Requires: []Task{HttpAuthTask{App: "hello-world"}},
 			DokkuHttpAuthAllowedIp: HttpAuthAllowedIpTask{
 				App:   "hello-world",
 				State: StateClear,

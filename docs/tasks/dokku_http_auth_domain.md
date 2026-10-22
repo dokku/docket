@@ -43,6 +43,24 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Restrict HTTP auth to specific domains for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+- dokku_domains:
+      app: hello-world
+      domains:
+          - app.example.com
+          - www.example.com
+      state: ""
+```
+
 ```yaml
 dokku_http_auth_domain:
     app: hello-world
@@ -52,6 +70,24 @@ dokku_http_auth_domain:
 ```
 
 ### Stop restricting HTTP auth to a domain for an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+- dokku_domains:
+      app: hello-world
+      domains:
+          - app.example.com
+          - www.example.com
+      state: ""
+```
 
 ```yaml
 dokku_http_auth_domain:
@@ -63,6 +99,24 @@ dokku_http_auth_domain:
 
 ### Replace the set of HTTP auth domains for an app
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+- dokku_domains:
+      app: hello-world
+      domains:
+          - app.example.com
+          - www.example.com
+      state: ""
+```
+
 ```yaml
 dokku_http_auth_domain:
     app: hello-world
@@ -72,6 +126,24 @@ dokku_http_auth_domain:
 ```
 
 ### Clear all HTTP auth domains from an app
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_plugin:
+      name: http-auth
+      url: https://github.com/dokku/dokku-http-auth.git
+- dokku_app:
+      app: hello-world
+- dokku_http_auth:
+      app: hello-world
+- dokku_domains:
+      app: hello-world
+      domains:
+          - app.example.com
+          - www.example.com
+      state: ""
+```
 
 ```yaml
 dokku_http_auth_domain:

@@ -58,6 +58,13 @@ Tasks applied at once on the same object take turns; see [Running tasks concurre
 
 ### Overriding the auto-selected builder
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_builder_property:
     app: node-js-app
@@ -67,6 +74,13 @@ dokku_builder_property:
 
 ### Setting the builder to the default value
 
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: node-js-app
+```
+
 ```yaml
 dokku_builder_property:
     app: node-js-app
@@ -75,6 +89,13 @@ dokku_builder_property:
 ```
 
 ### Changing the build build directory
+
+Requires these tasks, applied first:
+
+```yaml
+- dokku_app:
+      app: monorepo
+```
 
 ```yaml
 dokku_builder_property:
