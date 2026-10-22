@@ -353,7 +353,9 @@ func TestPluginChangeInvalidatesVersionCache(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the old plugin to be refused before the change")
 	}
-	state := (PluginTask{Name: "letsencrypt", State: StateAbsent}).Execute(ctx)
+	// The count is of version-gate reads, so the uninstall skips the read
+	// that fills Observed.
+	state := (PluginTask{Name: "letsencrypt", State: StateAbsent}).Execute(ContextWithoutObserved(ctx))
 	if state.Error != nil {
 		t.Fatalf("uninstall: %v", state.Error)
 	}

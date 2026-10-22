@@ -202,6 +202,29 @@ type TaskOutputState struct {
 	// each entry through EventEmitter.TaskWarning; the message is masked at
 	// emit time. Empty for tasks that produced no diagnostic.
 	Warnings []PlanWarning
+
+	// Observed is the task as the server holds it once the task has run, in
+	// the value type registered for the task (AppTask, never *AppTask), so an
+	// embedder storing the resource's state needs no ReadTask after Execute.
+	// It follows the rules PlanResult.Observed follows for a plan in sync:
+	// every field the task declares as declared, every field it leaves unset
+	// as the server reports it, and fields tagged write_only or apply_only
+	// left at their zero value or default. A task that was already in sync
+	// carries its plan's Observed. After an apply, see ExecutePlan for when
+	// the server is probed again to fill it.
+	//
+	// nil when Error is set, when the task has nothing to read (a task whose
+	// probe cannot read its state, such as dokku_storage_ensure, or an
+	// imperative task), and when the task ran under ContextWithoutObserved,
+	// as every task `docket apply` runs does; it is never part of a value a
+	// recipe registers. Values are raw; mask them before showing them.
+	Observed Task
+
+	// Exists reports whether the resource is on the server once the task has
+	// run: true unless Observed's State is absent or clear, as
+	// PlanResult.Exists is for a plan in sync. Meaningful only when Observed
+	// is non-nil.
+	Exists bool
 }
 
 // PlanWarning is a non-fatal probe diagnostic a task's Plan() surfaces for the
@@ -402,7 +425,8 @@ type PlanResult struct {
 	// handed a plan and no task, so this is where it finds the task: it
 	// registers the task's sensitive values with the context's masker from
 	// it before applying, and it is the declared task an apply's observed
-	// state is built from, by the rules Observed follows for a plan in sync.
+	// state is built from, by the rules Observed follows for a plan in sync,
+	// and the task it plans again when that state needs a fresh read.
 	planned Task
 
 	// apply, when non-nil, is the closure ExecutePlan invokes to mutate
@@ -524,8 +548,10 @@ type Task interface {
 
 	// Execute executes the task. Implemented as executeTask(ctx, t), which
 	// takes the locks on the app or service the task changes and runs
-	// ExecutePlan(ctx, t.Plan(ctx)) under them, so probing happens once and
-	// the per-state mutation logic lives only in Plan().
+	// ExecutePlan(ctx, t.Plan(ctx)) under them, so probing happens once -
+	// twice only when the observed state needs the server's word on a field
+	// the task leaves unset - and the per-state mutation logic lives only in
+	// Plan().
 	Execute(ctx context.Context) TaskOutputState
 }
 

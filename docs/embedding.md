@@ -240,11 +240,45 @@ app := task.(*sdk.AppTask)
 app.App = "api"
 
 plan := app.Plan(ctx)                // reports drift, never mutates
-state := sdk.ExecutePlan(ctx, plan)  // applies that plan without probing again
+state := sdk.ExecutePlan(ctx, plan)  // applies that plan
+current := state.Observed            // the app as the server now holds it
 ```
 
 `app.Execute(ctx)` plans and applies in one call. `sdk.DecodeTask` is the same thing as `NewTask`
 from a YAML task body, for a caller that already holds a recipe fragment.
+
+### The state after an apply
+
+A caller that stores the resource's state, as a Terraform provider does after every create and
+update, need not read it back. The `sdk.TaskOutputState` that `Execute` and `ExecutePlan` return
+carries `Observed`, the task as the server holds it once the task has run, and `Exists`, whether the
+resource is there. They follow the rules `ReadTask` follows for a task that plans in sync (see
+[Reading one resource](#reading-one-resource)): every field the task declares comes back as
+declared, every field it leaves at its zero value comes back as the server reports it, and fields
+flagged `WriteOnly` or `ApplyOnly` stay empty or at their default. `Observed` is the value type
+registered for the task (`sdk.AppTask`, never a pointer), and its values are raw, so mask what you
+show.
+
+A task that was already in sync carries its plan's `Observed` and `Exists`, and nothing more is
+read. After a successful apply, the plan's own read is reused when the task declares every field a
+read fills, since the declaration then decides every field and the server is not probed again: a
+`dokku_app`, or a `dokku_config` in state `present`, reads the server only for its plan. When the task leaves such a
+field unset, the apply may have changed it - a create picks the server's defaults, such as the image
+a `dokku_service_create` that pins none is created on, a destroy or a `clear` removes what the plan
+read, and an in-place change such as a `dokku_storage_mount` remount resets the options it does not
+pass - so the task is planned once more after the apply and `Observed` is what that plan observes.
+Under `Execute`, that second plan runs under the same locks as the apply (see
+[Running tasks concurrently](#running-tasks-concurrently)).
+
+`Observed` is nil when the plan errored or the apply failed, when the task reads nothing
+(`dokku_storage_ensure`), when the probe failed in a way the plan treated as drift, when the second
+plan fails, and for an imperative task (`dokku_app_clone`, `dokku_git_sync`, `dokku_git_from_image`,
+`dokku_git_from_archive`), which runs an operation rather than declaring a resource. A failed
+second plan does not fail the task: the apply succeeded, and `sdk.ReadTask` reads the state again.
+
+A caller that never looks at `Observed` skips it, and the second plan with it, by running the task
+under `sdk.ContextWithoutObserved(ctx)`. `docket apply` does, so its output and the values a recipe
+registers with `register:` carry neither field.
 
 ### Checking a task's input
 
@@ -454,7 +488,9 @@ field flagged `WriteOnly` or `ApplyOnly` empty, and fills every other field the 
 
 The same values are on the plan itself, so a caller that plans anyway reads them with no extra probe.
 `PlanResult.Observed` holds the returned task and `PlanResult.Exists` whether it exists, by the same
-rules. They are set on every plan that read the server, in sync or not. `ReadTask` is `Plan` plus
+rules. They are set on every plan that read the server, in sync or not. After an apply, the state
+`Execute` returns carries the same fields for the server as the apply left it (see
+[The state after an apply](#the-state-after-an-apply)). `ReadTask` is `Plan` plus
 these errors:
 
 - the plan's own error, including the `*sdk.VersionError` when a gate on the context refuses the
@@ -564,7 +600,7 @@ defer unlock()
 
 plan := task.Plan(ctx)
 // ... show or check the plan ...
-state := sdk.ExecutePlan(ctx, plan)
+state := sdk.ExecutePlan(ctx, plan) // any second plan for state.Observed runs under the locks too
 ```
 
 An `Execute` under the returned context does not wait on the locks it already holds. One that needs

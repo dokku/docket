@@ -789,7 +789,10 @@ func (c *ApplyCommand) executeLeafTask(env *tasks.TaskEnvelope, name string, ac 
 	if err := tasks.CheckMinimumVersions(ac.ctx, env.TypeName, env.Task); err != nil {
 		state = tasks.TaskOutputState{Error: ignoreVersionHint(err)}
 	} else {
-		state = env.Task.Execute(ac.ctx)
+		// apply reports and registers what the task did, never the
+		// server's state afterwards, so it skips building Observed and the
+		// re-probe that can take.
+		state = env.Task.Execute(tasks.ContextWithoutObserved(ac.ctx))
 	}
 	ac.counts.Tasks++
 
