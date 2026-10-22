@@ -86,10 +86,11 @@ const (
 )
 
 // ConstraintViolations returns every declared field constraint task breaks -
-// the required_when and forbidden_when of each field in declaration order, the
-// task's Constraints, then those of each element of its structured lists in
-// turn - or nil when it satisfies them all. A task's Validate and Plan reject
-// the first of these; this reports them all at once, as `docket validate` does.
+// the required_when, forbidden_when and unique of each field in declaration
+// order, the task's Constraints, then those of each element of its structured
+// lists in turn - or nil when it satisfies them all. A task's Validate and Plan
+// reject the first of these; this reports them all at once, as `docket
+// validate` does.
 //
 // A property task naming a property another task manages is the one exception:
 // that is reported alone, because the user wrote a name this task will never
@@ -747,7 +748,10 @@ func WithControlPersist(d time.Duration) SessionOption {
 // An unknown structured list (`users`) is unknown as a field, and none of its
 // items are checked, since neither how many there are nor what they hold is
 // known; an unknown item (`users[1]`) is skipped the same way while the other
-// items are checked. A path naming no field of the task is ignored.
+// items are checked. The same holds for a list tagged unique: an unknown list
+// is not checked for repeats, and an unknown member (`phases[1]`) is not
+// compared with the others, while two known members that repeat each other
+// are still reported. A path naming no field of the task is ignored.
 func WithUnknown(paths ...string) ConstraintOption {
 	return tasks.WithUnknown(paths...)
 }

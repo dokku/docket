@@ -345,11 +345,19 @@ type FieldSchema struct {
 	// Ordered is present on every list field and absent on every other kind.
 	// True means docket applies and compares the elements in order, so a
 	// reorder is drift (buildpacks, exposed service ports). False means docket
-	// ignores element order. It says nothing about uniqueness: kubelet_args
-	// ignores order but still counts a repeated argument. A consumer choosing
+	// ignores element order. It says nothing about uniqueness, which Unique
+	// and an identity collection's item identity declare. A consumer choosing
 	// between a list and a set type reads it instead of keeping its own table,
 	// and a list without it comes from a docket that predates the key (#605).
 	Ordered *bool `json:"ordered,omitempty"`
+
+	// Unique marks a list whose members must be distinct, from its
+	// `unique:"true"` tag: validation rejects a member equal to an earlier
+	// one. Absent on any other list and on every other kind. An identity
+	// collection does not carry it, since its item identity already makes
+	// members distinct, so every unordered list is one or the other and can
+	// be modelled as a set (#648).
+	Unique bool `json:"unique,omitempty"`
 
 	// Identity is "key" or "collection" when the field carries an identity
 	// tag, and absent otherwise.
@@ -724,6 +732,7 @@ func buildFields(rt reflect.Type) ([]FieldSchema, error) {
 		}
 		if schema.Type == TypeList {
 			schema.Ordered = orderedTag(field.Tag)
+			schema.Unique = field.Tag.Get(uniqueTag) == "true"
 		}
 		switch field.Tag.Get(identityTag) {
 		case identityTagKey:

@@ -37,7 +37,10 @@ type ConstraintOption func(*constraintCheck)
 // An unknown structured list (`users`) is unknown as a field, and none of its
 // items are checked, since neither how many there are nor what they hold is
 // known; an unknown item (`users[1]`) is skipped the same way while the other
-// items are checked. A path naming no field of the task is ignored.
+// items are checked. The same holds for a list tagged unique: an unknown list
+// is not checked for repeats, and an unknown member (`phases[1]`) is not
+// compared with the others, while two known members that repeat each other
+// are still reported. A path naming no field of the task is ignored.
 //
 //sdk:export
 func WithUnknown(paths ...string) ConstraintOption {

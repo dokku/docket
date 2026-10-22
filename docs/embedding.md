@@ -322,6 +322,9 @@ whatever the unknown values turn out to be:
   Rules that apply in every state are still checked.
 - An unknown list, such as `users`, is an unknown field, and none of its items are checked. An
   unknown item, such as `users[1]`, is skipped while the other items are checked.
+- A list marked `unique` is not checked for repeats while it is unknown, and an unknown member,
+  such as `phases[1]`, is not compared with the others. Two known members that repeat each other
+  are still reported.
 - An unknown `property` skips the check that a property task's property is not one another task
   manages. A path that names no field is ignored.
 

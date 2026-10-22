@@ -28,10 +28,12 @@ type SchedulerK3sProfileTask struct {
 	Role string `required:"true" yaml:"role" options:"server,worker" description:"Role for nodes joined with this profile."`
 
 	// KubeletArgs is the list of `key=value` strings forwarded to k3s via
-	// `--kubelet-arg`. Drift detection compares this as a multiset; the
-	// emitted command preserves the user-declared order so the on-disk JSON
-	// tracks the YAML when an apply actually runs.
-	KubeletArgs []string `required:"false" ordered:"false" yaml:"kubelet_args,omitempty" description:"List of key=value kubelet arguments to forward to k3s."`
+	// `--kubelet-arg`. Validation rejects an exact repeat of a `key=value`
+	// member, so drift detection's multiset comparison is a set comparison;
+	// one key with different values is two distinct arguments and is left to
+	// k3s. The emitted command preserves the user-declared order so the
+	// on-disk JSON tracks the YAML when an apply actually runs.
+	KubeletArgs []string `required:"false" ordered:"false" unique:"true" yaml:"kubelet_args,omitempty" description:"List of key=value kubelet arguments to forward to k3s."`
 
 	// TaintScheduling toggles the `--taint-scheduling` flag on
 	// `scheduler-k3s:profiles:add`. Absent or false is "explicitly cleared".
@@ -121,6 +123,9 @@ func (t SchedulerK3sProfileTask) Execute(ctx context.Context) TaskOutputState {
 
 // Validate checks the SchedulerK3sProfileTask's inputs without contacting the server.
 func (t SchedulerK3sProfileTask) Validate() error {
+	if err := checkConstraints(t); err != nil {
+		return err
+	}
 	if err := validateSchedulerK3sProfile(t); err != nil {
 		return err
 	}

@@ -144,6 +144,7 @@ the reference page lists them in.
 | `write_only` | Present and `true` when the server stores the value but a read of the resource never returns it. |
 | `apply_only` | Present and `true` when the value steers how apply runs and is not server state. |
 | `ordered` | On every `list`: `true` when the element order is significant, `false` when docket ignores it. Absent on any other type. |
+| `unique` | Present and `true` on a `list` whose members must be distinct. Absent on an identity collection and on any other type. |
 | `identity` | `key` or `collection`. Absent on a field that is neither. |
 | `item` | The element shape of a `list` or `dict`. Absent on a scalar. |
 
@@ -196,9 +197,17 @@ applies the elements in order and compares them in order, so a reorder is drift:
 positionally onto the service's container ports, and `dokku_service_create`'s network lists are
 compared as written. `false` means docket ignores the order, as it does for `dokku_domains`'s
 `domains` or `dokku_http_auth_allowed_ip`'s `allowed_ips`, and an exported task may return the
-elements in any order. `false` says nothing about uniqueness: `dokku_scheduler_k3s_profile`'s
-`kubelet_args` ignores order but still counts a repeated argument. Every `list` carries the key,
-element fields included, so a list without it comes from a docket that predates it.
+elements in any order. Every `list` carries the key, element fields included, so a list without it
+comes from a docket that predates it.
+
+`ordered` says nothing about uniqueness; `unique` and `identity` do. An identity collection's
+members are distinct by their item identity. Any other list whose members must be distinct carries
+`unique: true`, and docket refuses a recipe that repeats a member, as `dokku_config`'s `preserve`,
+`dokku_storage_mount`'s `phases` (on the task and on each `mounts` item) and
+`dokku_scheduler_k3s_profile`'s `kubelet_args` do. Two members are the same when they are equal,
+so in `kubelet_args` a repeat is the exact same `key=value`; one key with two values is two
+arguments. Every list with `ordered: false` is either an identity collection or `unique`, so a
+consumer can model each of them as a set.
 
 ### Item shapes
 
@@ -239,6 +248,8 @@ exactly what `plan`, `apply` and `docket validate` would.
 
 `required_when` and `forbidden_when` on a field list the states in which it must, or must not, be
 set. The states are values of the task's `state` field, so they apply only to a task that has one.
+`unique` on a list holds in every state: a member equal to an earlier one is reported at the later
+member's path, such as `phases[1]`.
 
 `constraints` on a task, and `item.constraints` on an object item, are the rules over several
 fields, in declaration order:
@@ -442,8 +453,8 @@ markdown are relative to `docs/tasks/`. A reference page prints the Parameters t
 
 `note` on a field is `suffix`, the text the Parameters table appends to `description` as is,
 leading space or period included, so `description` followed by `suffix` is the table cell. It holds
-the item shape of a structured list, `ordered`, `required_when`, `forbidden_when`, `runner_file`,
-`write_only`, `apply_only` and `sensitive`, in that order. Unlike the task notes, neither
+the item shape of a structured list, `ordered`, `unique`, `required_when`, `forbidden_when`,
+`runner_file`, `write_only`, `apply_only` and `sensitive`, in that order. Unlike the task notes, neither
 `description` nor `suffix` is escaped for markdown.
 
 ```json
