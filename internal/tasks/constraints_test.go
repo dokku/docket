@@ -173,7 +173,7 @@ func TestConstraintMessages(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var got []string
-			for _, v := range tc.constraint.violations(tc.value, StatePresent, "") {
+			for _, v := range tc.constraint.violations(nil, tc.value, StatePresent, "") {
 				got = append(got, v.Message)
 			}
 			if !slices.Equal(got, tc.want) {
