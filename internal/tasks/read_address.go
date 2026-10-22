@@ -20,20 +20,23 @@ type addressReader interface {
 	readAddress(ctx context.Context) (Task, bool, error)
 }
 
-// ReadAddress returns the resource an identity address such as
-// `dokku_buildpacks[app=api]` names, as it exists on the server, and whether
-// it exists. It reads every member the resource has, whatever states the
-// task offers: a collection comes back as a task in state set or clear would
-// own it, so dokku_config leaves out the keys docket keeps (linked-service
-// DSNs, NO_VHOST, the git rev env var) and dokku_ps_scale leaves out process
-// types scaled to zero. The result and errors are ReadTask's: the value type
-// registered for the task, a *VersionError when the gate on ctx refuses it, an
-// *ObjectMissingError when the app or service it depends on does not exist,
-// and an error wrapping ErrStateUnreadable when its probe cannot read anything.
+// ReadAddress returns the resource an identity address names, such as
+// `dokku_buildpacks[app=api]`, as it exists on the server, and whether it
+// exists, from the address alone; nothing is applied. It reads every member
+// the resource has, the way a task in state set or clear would own them: a
+// dokku_config leaves out the keys docket keeps (linked-service DSNs,
+// NO_VHOST, the git rev env var), and a dokku_ps_scale leaves out process
+// types scaled to zero. The returned task and errors are ReadTask's: the value
+// type registered for the task, the *VersionError when ctx carries a gate the
+// server is behind, an *ObjectMissingError when the app or service the
+// resource depends on is missing, and an error wrapping ErrStateUnreadable for
+// a task whose probe cannot read its state.
 //
-// The address must name one resource: a bare type, a key the task does not
+// The address must name one resource. A bare type, a key the task does not
 // declare, or a missing required key is an error, raised before the server is
-// contacted.
+// contacted. IdentityAddress renders the address of a task you hold.
+//
+//sdk:export
 func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
 	typeKey, task, err := taskFromAddress(address)
 	if err != nil {

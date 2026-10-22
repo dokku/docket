@@ -11,7 +11,10 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-// FormatNameHCL is the canonical name of the HCL codec.
+// FormatNameHCL is the canonical name of the HCL codec, one of the recipe
+// formats ExportResult.MarshalRecipe accepts.
+//
+//sdk:export FormatHCL
 const FormatNameHCL = "hcl"
 
 // hclCodec reads and writes recipes as HCL, the block-and-attribute syntax

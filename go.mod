@@ -20,6 +20,7 @@ require (
 	github.com/titanous/json5 v1.0.0
 	github.com/zclconf/go-cty v1.19.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/tools v0.51.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.14.1
 )
@@ -58,7 +59,6 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

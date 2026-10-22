@@ -9,6 +9,8 @@ import (
 // ResourceSelector is one parsed `docket export --resource` address: which
 // task type to export, and which of that type's identity keys the address
 // pinned. An empty Keys map means "every resource of this type".
+//
+//sdk:export
 type ResourceSelector struct {
 	// Address is the address as the user wrote it, for diagnostics.
 	Address string
@@ -20,13 +22,14 @@ type ResourceSelector struct {
 	Keys map[string]string
 }
 
-// ParseResourceSelectors parses and validates every --resource value.
+// ParseResourceSelectors parses addresses for ExportOptions.Resources, the
+// values of `export --resource`. Each must name a registered task type that
+// ExportRecipe can reach, and only keys that task declares.
 //
 // Validation happens here, before the export contacts the server, so a typo in
-// an address fails immediately rather than after an SSH round trip. Three
-// things are checked: the type resolves to a registered task, that task is
-// actually reachable from ExportRecipe, and every key the address names is one
-// the task declares.
+// an address fails immediately rather than after an SSH round trip.
+//
+//sdk:export
 func ParseResourceSelectors(addresses []string) ([]ResourceSelector, error) {
 	inApp, inGlobal := exportOrderSets()
 

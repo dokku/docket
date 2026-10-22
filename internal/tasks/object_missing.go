@@ -7,14 +7,19 @@ import (
 	"strings"
 )
 
-// ErrObjectMissing is matched by the error a read returns when the app or
-// service a task depends on does not exist on the server. errors.As against
-// *ObjectMissingError names the missing object.
+// ErrObjectMissing is matched by the error ReadTask and ReadAddress return when
+// the app or datastore service a task depends on does not exist on the server.
+// errors.As against *ObjectMissingError names the missing object by its kind,
+// recipe keys and values.
+//
+//sdk:export
 var ErrObjectMissing = errors.New("an object the task depends on does not exist")
 
 // ObjectMissingError reports that an object a task depends on - its app or
 // its datastore service - does not exist on the server. It matches
 // ErrObjectMissing under errors.Is.
+//
+//sdk:export
 type ObjectMissingError struct {
 	// Object is the missing object, with the recipe keys that name it and
 	// their values on the task.

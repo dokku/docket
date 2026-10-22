@@ -24,19 +24,23 @@ import (
 // deliberately absent - an in-repo caller that wants those still has Lookup
 // and reflect.
 
-// CatalogVersion is the wire-format version every emitted catalog carries in
-// its `version` field.
+// The catalog version is deliberately independent of the --json event stream's
+// version (commands.jsonSchemaVersion): the two are different formats with
+// different consumers, and a breaking change to one must not force the other's
+// consumers to re-branch.
+
+// CatalogVersion is the TaskCatalog.Version this release emits, the `version`
+// field of every catalog. It changes only when the catalog's shape does, so a
+// consumer can branch on it: adding a key does not bump it.
 //
-// It is deliberately independent of the --json event stream's version
-// (commands.jsonSchemaVersion): the two are different formats with different
-// consumers, and a breaking change to one must not force the other's consumers
-// to re-branch. Bumps are reserved for breaking changes; adding a key within a
-// major version does not bump.
+//sdk:export
 const CatalogVersion = 1
 
 // Field and item type names. These are the doc-facing type vocabulary, shared
 // with the Parameters table the generator renders, and they are what the
 // published JSON Schema enumerates.
+//
+//sdk:export
 const (
 	// TypeString covers Go strings and named string types such as State.
 	TypeString = "string"
@@ -71,6 +75,8 @@ const (
 )
 
 // Identity roles a field can carry, from its `identity:` struct tag.
+//
+//sdk:export
 const (
 	// IdentityRoleKey marks a field that decides which resource the task
 	// manages. Declaration order is key order.
@@ -81,6 +87,8 @@ const (
 )
 
 // Scopes a property can be set in.
+//
+//sdk:export
 const (
 	// PropertyScopeApp means the property has a per-app form, set by naming an
 	// app.
@@ -93,6 +101,8 @@ const (
 
 // TaskCatalog is the machine-readable description of a set of registered task
 // types. It is what `docket schema` emits.
+//
+//sdk:export
 type TaskCatalog struct {
 	// Version is CatalogVersion. Consumers should branch on it so a future
 	// schema change does not silently break them.
@@ -455,6 +465,8 @@ type RejectedPropertySchema struct {
 }
 
 // PropertyFieldName is the recipe key every property table constrains.
+//
+//sdk:export
 const PropertyFieldName = "property"
 
 // buildPropertySchema projects a runtime PropertyTable into its published
@@ -496,28 +508,32 @@ func buildPropertySchema(table PropertyTable) PropertySchema {
 	return schema
 }
 
-// Catalog returns the catalog for every registered task, sorted by type key.
+// Catalog describes every registered task type, sorted by type key. It is what
+// `docket schema` emits.
+//
+//sdk:export
 func Catalog() (TaskCatalog, error) {
 	return CatalogFor(nil)
 }
 
-// CatalogFor returns the catalog narrowed to typeKeys, sorted by type key. A
-// nil or empty selection means every registered task, so the whole catalog and
-// a narrowed one are the same code path rather than two that can drift.
+// CatalogFor describes only the given task types, sorted by type key. A nil or
+// empty selection means every registered task, so the whole catalog and a
+// narrowed one are the same code path rather than two that can drift.
 //
 // Sorting is by type key whatever order the keys arrived in, which is what lets
 // a narrowed catalog be diffed against a full one and makes two runs of the
 // same selection byte-identical. Duplicates collapse: the document is a set
 // keyed by type, so naming a type twice is not an error.
 //
-// An unregistered key is an error rather than a silently smaller document - a
+// An unregistered type is an error rather than a silently smaller document - a
 // caller asking for a type that does not exist wants to know. Keys are checked
 // in the order given, so the message names the first one the caller wrote, and
 // all of them are checked before any schema is built.
 //
-// The other error comes from examples(), which yaml-marshals each example
-// struct. Nothing else here can fail.
+//sdk:export
 func CatalogFor(typeKeys []string) (TaskCatalog, error) {
+	// The other error comes from examples(), which yaml-marshals each example
+	// struct. Nothing else here can fail.
 	names := TaskTypes()
 	if len(typeKeys) > 0 {
 		seen := make(map[string]bool, len(typeKeys))

@@ -99,27 +99,31 @@ func planSetAsClear(r PlanResult) PlanResult {
 	return r
 }
 
-// ExecutePlan applies a PlanResult to the server. It is the apply half of
-// Task.Execute(): each task's Execute body is `return executeTask(ctx, t)`,
-// which takes the task's locks and runs ExecutePlan(ctx, t.Plan(ctx)) under
-// them. ExecutePlan itself takes no lock; see LockTask. ExecutePlan ensures
-// the existing `state.State == state.DesiredState` contract that
-// internal/commands/apply.go relies on.
+// ExecutePlan applies p, the result of a task's Plan, without probing the
+// server again. A plan that is already in sync applies nothing. It takes no
+// lock; see LockTask.
 //
-// Three branches:
-//
-//  1. p.Error != nil  - probe failed; return TaskOutputState carrying the
-//     error and the desired state. The apply closure is not invoked.
-//  2. p.InSync        - no change needed; return State == DesiredState with
-//     Changed=false. The apply closure is not invoked.
-//  3. otherwise       - invoke p.apply (must be non-nil) and return its
-//     TaskOutputState verbatim. apply is responsible for setting Changed
-//     and a final State that matches DesiredState on success.
-//
-// ctx is handed to the apply closure rather than the closure capturing the
-// context Plan ran under, so applying a plan always uses the caller's current
-// cancellation and target.
+//sdk:export
 func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
+	// ExecutePlan is the apply half of Task.Execute(): each task's Execute body is
+	// `return executeTask(ctx, t)`, which takes the task's locks and runs
+	// ExecutePlan(ctx, t.Plan(ctx)) under them. It ensures the existing
+	// `state.State == state.DesiredState` contract that internal/commands/apply.go
+	// relies on.
+	//
+	// Three branches:
+	//
+	//  1. p.Error != nil - probe failed; return TaskOutputState carrying the error
+	//     and the desired state. The apply closure is not invoked.
+	//  2. p.InSync - no change needed; return State == DesiredState with
+	//     Changed=false. The apply closure is not invoked.
+	//  3. otherwise - invoke p.apply (must be non-nil) and return its
+	//     TaskOutputState verbatim. apply is responsible for setting Changed and a
+	//     final State that matches DesiredState on success.
+	//
+	// ctx is handed to the apply closure rather than the closure capturing the
+	// context Plan ran under, so applying a plan always uses the caller's current
+	// cancellation and target.
 	// Probe diagnostics raised during planning ride out on every returned
 	// state so the apply run loop can drain them through the emitter, even on
 	// the error / in-sync branches that never invoke the apply closure.

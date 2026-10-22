@@ -9,8 +9,13 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-// FormatNameJSON5 is the canonical name of the JSON5 codec. It is spelled
-// with "Name" because FormatJSON5 is already the JSON5 formatter.
+// The name is spelled with "Name" because FormatJSON5 is already the JSON5
+// formatter. The sdk has no formatter, so it exports this as FormatJSON5.
+
+// FormatNameJSON5 is the canonical name of the JSON5 codec, one of the recipe
+// formats ExportResult.MarshalRecipe accepts.
+//
+//sdk:export FormatJSON5
 const FormatNameJSON5 = "json5"
 
 // json5Codec reads and writes recipes as JSON5, a strict superset of JSON

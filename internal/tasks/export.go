@@ -213,6 +213,8 @@ var appExportOrder = []string{
 }
 
 // ExportOptions controls an export run.
+//
+//sdk:export
 type ExportOptions struct {
 	// Apps restricts the export to these app names; empty means every app.
 	Apps []string
@@ -240,6 +242,8 @@ type ExportOptions struct {
 }
 
 // ExportReport carries non-fatal diagnostics from an export run.
+//
+//sdk:export
 type ExportReport struct {
 	Warnings []string
 
@@ -279,20 +283,26 @@ func (r *ExportReport) addVersionWarning(warning string, err error) {
 // YAML the export just produced. It is always the value form of the task type
 // registered under Type: the engine drops any body an exporter returns as a
 // pointer or as another task's type (see exportedBodyType). Read it with As.
+//
+//sdk:export
 type ExportedTask struct {
 	Type string      `yaml:"-"`
 	Body interface{} `yaml:"-"`
 }
 
-// As returns e's body as the task type T, and false when the body is any other
-// type, so a caller reads fields without hand-writing an assertion on Body:
+// As returns an exported task's body as T, the value type registered under
+// e.Type (ConfigTask, not *ConfigTask), so a caller reads fields without
+// hand-writing an assertion on Body:
 //
-//	if cfg, ok := tasks.As[tasks.ConfigTask](task); ok { ... }
+//	if cfg, ok := As[ConfigTask](task); ok { ... }
 //
-// Pass the value type. Bodies are never pointers, so As[*ConfigTask] is always
-// false. If an exporter ever needs to return a pointer, this and
-// exportedBodyType are the places to absorb it.
+// It reports false for any other type, including a pointer type: bodies are
+// never pointers.
+//
+//sdk:export
 func As[T Task](e ExportedTask) (T, bool) {
+	// If an exporter ever needs to return a pointer, this and exportedBodyType are
+	// the places to absorb it.
 	body, ok := e.Body.(T)
 	return body, ok
 }
@@ -307,6 +317,8 @@ func (t ExportedTask) MarshalYAML() (interface{}, error) {
 
 // ExportedPlay is one play of an exported recipe. Name is the app it describes,
 // or "global" for the leading play of not-app-scoped resources.
+//
+//sdk:export
 type ExportedPlay struct {
 	Name   string                   `yaml:"name"`
 	Inputs []map[string]interface{} `yaml:"inputs,omitempty"`
@@ -315,6 +327,8 @@ type ExportedPlay struct {
 
 // ExportResult is the outcome of ExportRecipe: the assembled recipe (as a list
 // of plays), the companion vars map (empty in inline mode), and any warnings.
+//
+//sdk:export
 type ExportResult struct {
 	plays  []ExportedPlay
 	Vars   map[string]string
@@ -376,6 +390,22 @@ func (res *ExportResult) Plays() []ExportedPlay {
 // slice is the result's own and must not be modified.
 func (res *ExportResult) SensitiveValues() []string {
 	return res.sensitive
+}
+
+// GatedExportRecipe reads the server ctx targets and returns the recipe that
+// describes it. An export that finds nothing is not an error: check
+// Report.MissingApps and Report.MissingResources.
+//
+// An exporter whose task declares a floor newer than the server is skipped
+// with a warning and listed in Report.VersionErrors. Set
+// ExportOptions.IgnoreVersion to read it anyway.
+//
+//sdk:export ExportRecipe
+func GatedExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
+	if !opts.IgnoreVersion {
+		ctx = ContextWithVersionGate(ctx)
+	}
+	return ExportRecipe(ctx, opts)
 }
 
 // ExportRecipe reads the live Dokku server (via the current subprocess host)

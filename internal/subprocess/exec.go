@@ -14,6 +14,8 @@ import (
 )
 
 // ExecCommandInput is the input for the ExecCommand function
+//
+//sdk:export
 type ExecCommandInput struct {
 	// Command is the command to execute
 	Command string
@@ -54,6 +56,8 @@ type ExecCommandInput struct {
 //	if errors.As(err, &execErr) {
 //	    // execErr.Response.Stderr is available
 //	}
+//
+//sdk:export
 type ExecError struct {
 	Response ExecCommandResponse
 	Err      error
@@ -87,6 +91,8 @@ func (e *ExecError) Unwrap() error {
 }
 
 // ExecCommandResponse is the response for the ExecCommand function
+//
+//sdk:export
 type ExecCommandResponse struct {
 	// Command is the resolved command line that was executed, including
 	// any sudo wrapping and joined arguments. Used by callers that surface
@@ -172,19 +178,37 @@ func resolveSshCommandString(m *Masker, command string, args []string) string {
 // ExecRunner is the shape of the executor CallExecCommand delegates to. A test
 // supplies one to return canned responses without spawning a process or
 // contacting a server.
+//
+//sdk:export
 type ExecRunner func(ctx context.Context, input ExecCommandInput) (ExecCommandResponse, error)
 
 // runnerKey is the context key a per-invocation ExecRunner is stored under.
 type runnerKey struct{}
 
-// ContextWithRunner returns a copy of ctx whose dokku commands go to fn
-// instead of to a real process. It is the only seam there is: the executor
-// travels on the context rather than in a package variable, so two tests can
-// install different fakes at the same time and both can call t.Parallel().
+// ContextWithRunner returns a copy of ctx whose commands go to fn instead of
+// to a real process or server. The runner travels on the context rather than
+// in a package variable, so two tests can install different fakes at the same
+// time and both can call t.Parallel().
 //
 // Production code must not use it. The seam exists so a test can drive a task
 // without a server; a caller that wants to change where commands actually run
 // sets a Target.
+//
+// fn receives every command a call makes, not only dokku's, with its arguments
+// as they would have run: unmasked, and without the sudo or SSH wrapping a
+// Target adds. A Target on ctx has no effect while fn is installed.
+//
+// A command that ran and exited non-zero is a response carrying that ExitCode.
+// A probe reads it as its answer whether fn returns a nil error alongside it
+// or, as the real runner does, an *ExecError with Ran set. An apply fails only
+// on an error, so return the *ExecError to fail one. Any other error is a
+// command that could not run, which a probe reports as an error rather than as
+// absence.
+//
+// The response's Command is what an apply records in TaskOutputState.Commands,
+// so set it when a test reads that.
+//
+//sdk:export
 func ContextWithRunner(ctx context.Context, fn ExecRunner) context.Context {
 	return context.WithValue(ctx, runnerKey{}, fn)
 }

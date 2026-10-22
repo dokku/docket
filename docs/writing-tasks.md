@@ -760,6 +760,15 @@ task plus the `docs/tasks/README.md` index, and `go generate ./sdk/`, which rewr
 the regenerated files alongside your code - `TestGeneratedDocsAreCurrent` and
 `TestGeneratedSDKIsCurrent` fail the build if you forget, and print the diff.
 
+Nothing under `sdk/` is written by hand apart from `doc.go` and the tests. To add a function,
+constant, variable or type to the sdk, put an `//sdk:export` line at the end of its doc comment in
+`internal/tasks` or `internal/subprocess`, after a blank `//` line, and run `make generate`. The doc
+comment becomes the sdk's. On a const or var block the directive exports every name in it; on one
+spec inside a block it exports only that spec. `//sdk:export Name` exports a single declaration
+under another name. The generator wraps functions, re-exports values and aliases types, and it
+aliases every engine type an export reaches as well. A rebase that conflicts in `sdk/sdk_gen.go` or
+`sdk/types_gen.go` is settled by running `make generate` again.
+
 CI also runs `make lint` (`golangci-lint` with the linters pinned in `.golangci.yml`). Run the same
 locally before sending a PR.
 

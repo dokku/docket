@@ -121,10 +121,15 @@ func sensitiveValuesFromTask(t interface{}) []string {
 
 // TaskSensitiveValues returns the values that must be masked in anything
 // rendered for t: its `sensitive:"true"` fields, including those of nested
-// items, the value of a property its property table marks Sensitive, and
-// whatever its SensitiveValues method returns. It is the set the CLI collects
-// for t before a run. Empty values are dropped and duplicates removed; the
-// order is unspecified. It returns nil for a nil task.
+// items, the value of a property marked sensitive, and whatever t's own
+// SensitiveValues method returns. It is the set the CLI collects for t before
+// a run; pass them to NewMasker. Empty values are dropped and duplicates
+// removed; the order is unspecified. It returns nil for a nil task.
+//
+// A value only known once the server is read, such as a secret property's
+// current value, is added to the context's masker during Plan.
+//
+//sdk:export
 func TaskSensitiveValues(t Task) []string {
 	var out []string
 	seen := map[string]bool{}

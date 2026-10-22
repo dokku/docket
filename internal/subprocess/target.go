@@ -12,6 +12,8 @@ import "context"
 //
 // The zero Target runs dokku locally with no elevation, which is docket's
 // behaviour when neither --host nor DOKKU_HOST is set.
+//
+//sdk:export
 type Target struct {
 	// Host is the remote as [user@]host[:port]. When non-empty, `dokku`
 	// invocations are routed through an `ssh` subprocess instead of running
@@ -52,12 +54,15 @@ type Target struct {
 // type cannot collide with a key from any other package.
 type targetKey struct{}
 
-// ContextWithTarget returns a copy of ctx carrying target. The commands layer
-// calls it once per run with the resolved flags and env; a caller that wants a
-// single command sent somewhere else derives a child context rather than
-// setting a field on the input, which keeps "which server" a question with one
-// answer per call.
+// ContextWithTarget returns a copy of ctx that sends dokku commands to target.
+// A context derived from a session context still belongs to that session.
+//
+//sdk:export
 func ContextWithTarget(ctx context.Context, target Target) context.Context {
+	// The commands layer calls it once per run with the resolved flags and env; a
+	// caller that wants a single command sent somewhere else derives a child
+	// context rather than setting a field on the input, which keeps "which server"
+	// a question with one answer per call.
 	return context.WithValue(ctx, targetKey{}, target)
 }
 

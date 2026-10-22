@@ -46,17 +46,27 @@ func UnmarshalRecipe(data []byte, format string) (Recipe, error) {
 // State represents the desired state of a task
 type State string
 
-// State constants
+// Task states.
 const (
 	// StatePresent represents the present state
+	//
+	//sdk:export
 	StatePresent State = "present"
 	// StateAbsent represents the absent state
+	//
+	//sdk:export
 	StateAbsent State = "absent"
 	// StateDeployed represents the deployed state
+	//
+	//sdk:export
 	StateDeployed State = "deployed"
 	// StateSet represents the set state
+	//
+	//sdk:export
 	StateSet State = "set"
 	// StateClear represents the clear state
+	//
+	//sdk:export
 	StateClear State = "clear"
 	// StateSkipped is the sentinel value the apply / plan path emits when
 	// a task's `when:` predicate is false. Both State and DesiredState are
@@ -144,6 +154,8 @@ type Input struct {
 }
 
 // TaskOutputState represents the output of a task
+//
+//sdk:export
 type TaskOutputState struct {
 	// Changed is a flag indicating if the task was changed
 	Changed bool
@@ -202,13 +214,18 @@ type PlanWarning struct {
 	Message string
 }
 
+// PlanWarning reasons, as PlanWarning.Reason.
 const (
 	// WarnReasonUnknownProperty marks a probe warning raised when a property's
 	// key is absent from the plugin's JSON report (a stale key map or a dokku
 	// version that does not emit it).
+	//
+	//sdk:export
 	WarnReasonUnknownProperty = "unknown_property"
 	// WarnReasonProbeRejected marks a probe warning raised when an older plugin
 	// rejects `:report --format json` outright.
+	//
+	//sdk:export
 	WarnReasonProbeRejected = "probe_rejected"
 	// WarnReasonProbeIndeterminate marks a probe warning raised when a probe
 	// ran, was understood, and still could not answer: the server holds the
@@ -218,6 +235,8 @@ const (
 	// would read does not parse. The task drifts and applies rather than
 	// assuming a match, so the warning is what tells the operator why a run
 	// against that server never settles.
+	//
+	//sdk:export
 	WarnReasonProbeIndeterminate = "probe_indeterminate"
 	// WarnReasonServiceImageDrift marks a warning raised when a datastore
 	// service is running an image other than the one the recipe pins, and the
@@ -227,6 +246,8 @@ const (
 	// the case where the running image could not be read at all, so a recipe
 	// that asked for drift to be caught is never silently told everything is
 	// fine.
+	//
+	//sdk:export
 	WarnReasonServiceImageDrift = "service_image_drift"
 	// WarnReasonServiceOptionDrift marks a warning raised when a datastore
 	// service holds a create-time option - config_options, custom_env,
@@ -253,6 +274,9 @@ func (s TaskOutputState) withExecResult(r subprocess.ExecCommandResponse) TaskOu
 // PlanStatus is the short marker that summarizes a planned change.
 type PlanStatus string
 
+// Plan statuses, as PlanResult.Status.
+//
+//sdk:export
 const (
 	// PlanStatusOK indicates the task is in sync; no change would be made.
 	PlanStatusOK PlanStatus = "ok"
@@ -271,6 +295,8 @@ const (
 // Plan() never mutates server state. The unexported apply closure carries
 // any state probed during planning so the apply path does not re-probe;
 // ExecutePlan is the only consumer. When InSync is true, apply is nil.
+//
+//sdk:export
 type PlanResult struct {
 	// InSync is true when the task would not change anything.
 	InSync bool
@@ -390,9 +416,11 @@ func planErr(err error) PlanResult {
 	return PlanResult{Status: PlanStatusError, Error: err}
 }
 
-// ErrStateUnreadable is the error ReadTask returns when a plan carries no
-// Observed state: the task's probe cannot read the resource, or a probe
-// failure was treated as drift rather than as an error.
+// ErrStateUnreadable is wrapped by the error ReadTask returns when a task's
+// probe cannot read its current state, such as dokku_storage_ensure, or when
+// the probe failed in a way the plan treats as drift.
+//
+//sdk:export
 var ErrStateUnreadable = errors.New("the task's current state cannot be read")
 
 // observed attaches the state the probe read to a plan result. declared is the
@@ -415,12 +443,26 @@ func observed(r PlanResult, declared, read Task, exists bool) PlanResult {
 	return r
 }
 
-// ReadTask returns the task as it exists on the server and whether the
-// resource exists, from one Plan. It never applies anything. The task's State
-// picks which members a collection reads, so the task must still pass its own
-// validation. A *VersionError from the gate comes back as is. A read that does
-// not find the resource, when the app or service it depends on is missing,
-// returns an *ObjectMissingError.
+// ReadTask returns t as it exists on the server, and whether the resource
+// exists, from a single Plan; nothing is applied. The returned task is the
+// value type registered for t (AppTask, not *AppTask), carrying the identity
+// keys from t and every field the server reports. Fields whose catalog entry
+// is WriteOnly or ApplyOnly are left empty or at their default.
+//
+// t must be a valid task: its State picks which members of a collection are
+// read, so a dokku_config in state present reads the keys it names, and one in
+// state set reads every key it would own. A property task known only by its
+// identity keys is read with State absent, which needs no Value.
+//
+// When ctx carries a version gate and the server is older than t's floor, the
+// error is the *VersionError, never a resource reported as absent. When the
+// read does not find the resource and the app or service t depends on is
+// missing, the error is an *ObjectMissingError naming it, which matches
+// ErrObjectMissing; a task that creates its app or service, such as dokku_app,
+// reports itself absent instead. A task whose probe cannot read its state
+// returns an error wrapping ErrStateUnreadable.
+//
+//sdk:export
 func ReadTask(ctx context.Context, t Task) (Task, bool, error) {
 	if t == nil {
 		return nil, false, errors.New("nil task")
@@ -451,6 +493,8 @@ func observedResult(p PlanResult, raw bool) (Task, bool, error) {
 // Task represents a task. It is only what running a task needs; the synopsis
 // and examples a task documents itself with live on the optional Documented
 // interface.
+//
+//sdk:export
 type Task interface {
 	// Plan reports the drift the task would produce against the live server,
 	// without mutating it. Plan must never call mutating dokku commands.

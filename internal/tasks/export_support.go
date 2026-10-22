@@ -4,6 +4,9 @@ package tasks
 // reads a live Dokku server and emits a recipe (the inverse of apply).
 type ExportStatus string
 
+// Export support levels, as ExportSupport.Status.
+//
+//sdk:export
 const (
 	// ExportSupported means the task's full state can be read back from the
 	// server and reconstructed faithfully.
@@ -25,6 +28,8 @@ const (
 // (and may be empty for a plainly supported task).
 //
 // The json tags are for the task catalog, which publishes this verbatim.
+//
+//sdk:export
 type ExportSupport struct {
 	Status ExportStatus `json:"status"`
 	Caveat string       `json:"caveat,omitempty"`
@@ -46,10 +51,13 @@ type ExportDocer interface {
 	ExportSupport() ExportSupport
 }
 
-// TaskExportSupport returns the export support for t, and whether t declared
-// it. Centralised so docs generation, the export engine, and the coverage
-// test share one read site, mirroring TaskDeprecation.
+// TaskExportSupport reports whether ExportRecipe can reconstruct t from a
+// server. The bool is false when t declares nothing.
+//
+//sdk:export
 func TaskExportSupport(t Task) (ExportSupport, bool) {
+	// Centralised so docs generation, the export engine, and the coverage test
+	// share one read site, mirroring TaskDeprecation.
 	if d, ok := t.(ExportDocer); ok {
 		return d.ExportSupport(), true
 	}

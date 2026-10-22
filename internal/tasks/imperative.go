@@ -9,10 +9,13 @@ type ImperativeDocer interface {
 	Imperative() bool
 }
 
-// TaskImperative reports whether t declares itself imperative. A task that
-// does not implement ImperativeDocer is declarative. Centralised so the
-// catalog and the docs generator share one read site.
+// TaskImperative reports whether t runs an operation rather than declaring a
+// resource, so it has nothing to undo.
+//
+//sdk:export
 func TaskImperative(t Task) bool {
+	// A task that does not implement ImperativeDocer is declarative. Centralised
+	// so the catalog and the docs generator share one read site.
 	if i, ok := t.(ImperativeDocer); ok {
 		return i.Imperative()
 	}
