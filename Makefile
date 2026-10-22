@@ -219,11 +219,11 @@ lint:
 
 .PHONY: test
 test:
-	go test -v -count=1 . ./internal/... ./sdk/ ./generate/...
+	go test -v -count=1 . ./internal/... ./sdk/... ./generate/...
 
 .PHONY: test-race
 test-race:
-	go test -race -count=1 . ./internal/... ./sdk/ ./generate/...
+	go test -race -count=1 . ./internal/... ./sdk/... ./generate/...
 
 .PHONY: test-integration
 test-integration:
