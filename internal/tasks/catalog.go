@@ -33,6 +33,10 @@ import (
 // field of every catalog. It changes only when the catalog's shape does, so a
 // consumer can branch on it: adding a key does not bump it.
 //
+// One change was made within version 1 against that rule: a field's `default`
+// was a string whatever its type, and is now a typed value matching the
+// field's type (#645), so a bool field's default reads false, not "false".
+//
 //sdk:export
 const CatalogVersion = 1
 
@@ -286,12 +290,14 @@ type FieldSchema struct {
 	// allowed in every state.
 	ForbiddenWhen []string `json:"forbidden_when,omitempty"`
 
-	// Default is the literal `default:` tag text, to be read according to
-	// Type. It is not pre-parsed, so it cannot diverge from what go-defaults
-	// does with it. Note that go-defaults leaves pointer fields untouched: on
-	// a *bool the tag documents what the task coerces nil to, not a value the
-	// loader writes into the struct.
-	Default string `json:"default,omitempty"`
+	// Default is the field's `default:` tag as a typed value matching Type -
+	// a bool, a number, a string, or a list of those - as ParseFieldDefault
+	// reads it. Absent when the field has no default.
+	// TestCatalogDefaultsMatchSetDefaults holds it to what defaults.SetDefaults
+	// puts in a fresh task. go-defaults leaves pointer fields untouched, so on
+	// a *bool the value documents what the task coerces nil to, not a value
+	// the loader writes into the struct.
+	Default any `json:"default,omitempty"`
 
 	// Choices are the `options:` tag values, in tag order. Absent when the
 	// field is not an enum.
@@ -583,10 +589,15 @@ func TaskSchemaOf(typeKey string, task Task) (TaskSchema, error) {
 	schema := TaskSchema{
 		Type:        typeKey,
 		Synopsis:    strings.TrimSpace(TaskSynopsis(task)),
-		Fields:      buildFields(taskStructOf(task)),
 		Identity:    IdentitySchema{Keys: IdentityKeyNames(task)},
 		Constraints: cloneConstraints(TaskConstraints(task)),
 	}
+
+	fields, err := buildFields(taskStructOf(task))
+	if err != nil {
+		return TaskSchema{}, fmt.Errorf("fields for task %s: %w", typeKey, err)
+	}
+	schema.Fields = fields
 
 	schema.Deprecation = strings.TrimSpace(TaskDeprecation(task))
 	schema.Imperative = TaskImperative(task)
@@ -675,10 +686,11 @@ func taskStructOf(task Task) reflect.Type {
 }
 
 // buildFields reflects over a task (or element) struct and returns its recipe
-// keys in declaration order.
-func buildFields(rt reflect.Type) []FieldSchema {
+// keys in declaration order. The error is a `default:` tag ParseFieldDefault
+// cannot read.
+func buildFields(rt reflect.Type) ([]FieldSchema, error) {
 	if rt == nil || rt.Kind() != reflect.Struct {
-		return nil
+		return nil, nil
 	}
 
 	var fields []FieldSchema
@@ -701,7 +713,6 @@ func buildFields(rt reflect.Type) []FieldSchema {
 			Required:      field.Tag.Get("required") == "true" && def == "",
 			RequiredWhen:  conditionalStates(field.Tag.Get(requiredWhenTag)),
 			ForbiddenWhen: conditionalStates(field.Tag.Get(forbiddenWhenTag)),
-			Default:       def,
 			Description:   field.Tag.Get("description"),
 			Sensitive:     field.Tag.Get("sensitive") == "true",
 			RunnerFile:    field.Tag.Get("runner_file") == "true",
@@ -720,11 +731,25 @@ func buildFields(rt reflect.Type) []FieldSchema {
 		case identityTagCollection:
 			schema.Identity = IdentityRoleCollection
 		}
-		schema.Item = buildItem(field.Type, schema.Identity == IdentityRoleCollection)
+		item, err := buildItem(field.Type, schema.Identity == IdentityRoleCollection)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		schema.Item = item
+
+		itemType := ""
+		if item != nil {
+			itemType = item.Type
+		}
+		value, err := ParseFieldDefault(schema.Type, itemType, def)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		schema.Default = value
 
 		fields = append(fields, schema)
 	}
-	return fields
+	return fields, nil
 }
 
 // orderedTag reads a list field's `ordered:` tag. A missing or malformed tag
@@ -748,8 +773,9 @@ func orderedTag(tag reflect.StructTag) *bool {
 // `identity:"collection"`, which is what decides whether item identity is
 // reported: an untagged list is an attribute of the resource (storage_mount's
 // `phases` narrows one mount), not the set of items the task manages, so it
-// has no item identity to declare.
-func buildItem(t reflect.Type, collection bool) *ItemSchema {
+// has no item identity to declare. The error is an element field's
+// `default:` tag ParseFieldDefault cannot read.
+func buildItem(t reflect.Type, collection bool) (*ItemSchema, error) {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -762,17 +788,21 @@ func buildItem(t reflect.Type, collection bool) *ItemSchema {
 	case reflect.Slice, reflect.Array:
 		item.Type = elementType(t.Elem())
 	default:
-		return nil
+		return nil, nil
 	}
 
 	if item.Type == TypeObject {
-		item.Fields = buildFields(structElem(t.Elem()))
+		fields, err := buildFields(structElem(t.Elem()))
+		if err != nil {
+			return nil, err
+		}
+		item.Fields = fields
 		item.Constraints = cloneConstraints(structConstraints(structElem(t.Elem())))
 	}
 	if collection {
 		item.Identity, item.Keys = collectionItemIdentity(t)
 	}
-	return &item
+	return &item, nil
 }
 
 // elementType names a collection's element type. A struct element is

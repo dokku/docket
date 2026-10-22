@@ -58,6 +58,26 @@ func paramDescription(field tasks.FieldSchema) string {
 	return field.Description + field.Note.Suffix
 }
 
+// defaultCell is the Parameters table's Default cell: a field's typed catalog
+// default written back the way its `default:` tag spells it, so a page reads
+// `false` and `present` rather than JSON, and a list reads `[a,b]`.
+func defaultCell(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case []any:
+		items := make([]string, len(v))
+		for i, item := range v {
+			items[i] = defaultCell(item)
+		}
+		return "[" + strings.Join(items, ",") + "]"
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
 // parametersSection renders the Parameters table for a task. Returns "" when
 // the task has no documented parameters.
 func parametersSection(fields []tasks.FieldSchema) string {
@@ -74,7 +94,7 @@ func parametersSection(fields []tasks.FieldSchema) string {
 			field.Name,
 			field.Type,
 			yesNo(field.Required),
-			escapeCell(field.Default),
+			escapeCell(defaultCell(field.Default)),
 			escapeCell(strings.Join(field.Choices, ", ")),
 			escapeCell(paramDescription(field)),
 		)

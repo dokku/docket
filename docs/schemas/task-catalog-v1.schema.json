@@ -292,8 +292,9 @@
           "description": "The states in which the field must not be set, as values of the task's `state` field. Absent when the field is allowed in every state."
         },
         "default": {
-          "type": "string",
-          "description": "The literal default, to be read according to `type`. On a pointer field it documents what the task coerces an omitted key to, not a value written into the recipe."
+          "type": ["boolean", "number", "string", "array"],
+          "items": { "type": ["boolean", "number", "string"] },
+          "description": "The default as a typed value matching `type`: a boolean for `bool`, a number for `int` and `float`, a string for `string`, an array of the item type for `list`. Absent when there is none. On a pointer field it documents what the task coerces an omitted key to, not a value written into the recipe. Typed within version 1: earlier releases published every default as a string."
         },
         "choices": {
           "type": "array",

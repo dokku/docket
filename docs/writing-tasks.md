@@ -100,6 +100,13 @@ A few conventions to follow:
   machine-readable catalog as well as in the docs. Add `,omitempty` to the `yaml` tag of optional
   fields so example YAML stays clean, and use `required:"false"` whenever a field has a `default`
   (a defaulted field is never actually required).
+- Write a `default` the way go-defaults parses it for the field's type: `true` or `false` on a
+  bool, a decimal on a number, `[a,b]` on a list of scalars. The catalog publishes it as a value of
+  that type, parsed by `ParseFieldDefault`, and the catalog fails to build on a default it cannot
+  parse, such as `yes` on a bool or any default on a dict, which go-defaults would silently turn
+  into a zero value. On a pointer field go-defaults leaves the value nil, so the tag documents what
+  the task coerces nil to, and the task's code must do that itself. `TestCatalogDefaultsMatchSetDefaults`
+  holds every published default to what `defaults.SetDefaults` puts in a fresh task.
 - For a task that performs several atomic changes in one call (such as setting multiple config
   keys), populate `PlanResult.Mutations` with one entry per change, so `plan` can itemize the diff.
 - `DispatchPlan` and `DispatchState` set `DesiredState` on the result automatically.
