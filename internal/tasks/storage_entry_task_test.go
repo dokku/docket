@@ -1070,8 +1070,10 @@ func TestStorageEntryExecuteAppliesAttributeDrift(t *testing.T) {
 		return subprocess.ExecCommandResponse{Stdout: responses[strings.Join(in.Args, " ")]}, nil
 	})
 
+	// The test counts the apply's own commands, so it skips the read that
+	// fills Observed.
 	task := StorageEntryTask{Name: "app-data", Chown: "root", State: StatePresent}
-	result := task.Execute(ctx)
+	result := task.Execute(ContextWithoutObserved(ctx))
 	if result.Error != nil {
 		t.Fatalf("expected the apply to succeed, got: %v", result.Error)
 	}

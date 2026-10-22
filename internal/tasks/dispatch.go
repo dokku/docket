@@ -99,10 +99,26 @@ func planSetAsClear(r PlanResult) PlanResult {
 	return r
 }
 
-// ExecutePlan applies p, the result of a task's Plan, without probing the
-// server again. A plan that is already in sync applies nothing. It first adds
-// the planned task's sensitive values to the masker on ctx, even when p was
-// planned under another context. It takes no lock; see LockTask.
+// ExecutePlan applies p, the result of a task's Plan. A plan that is already in
+// sync applies nothing. It first adds the planned task's sensitive values to
+// the masker on ctx, even when p was planned under another context. It takes
+// no lock; see LockTask.
+//
+// The returned state's Observed and Exists are the task as the server holds it
+// once the plan is carried out, by the rules PlanResult.Observed follows for a
+// plan in sync: every field the planned task declares as declared, every field
+// it leaves unset as the server reports it, and write_only and apply_only
+// fields left unread. A plan in sync carries its own Observed and Exists. After
+// a successful apply they are built from the plan's read when the planned task
+// declares every field a read fills, so the server is not probed again;
+// otherwise the planned task is planned once more after the apply, since the
+// apply may have moved a field the task leaves to the server, such as the image
+// a dokku_service_create without one is created on. Observed is nil when the
+// plan errored, when the apply failed, when the plan read nothing (a task whose
+// probe cannot read its state, such as dokku_storage_ensure), when that second
+// plan fails, for an imperative task, which runs an operation rather than
+// declaring a resource to observe, and on a context from
+// ContextWithoutObserved.
 //
 //sdk:export
 func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
@@ -117,10 +133,12 @@ func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
 	//  1. p.Error != nil - probe failed; return TaskOutputState carrying the error
 	//     and the desired state. The apply closure is not invoked.
 	//  2. p.InSync - no change needed; return State == DesiredState with
-	//     Changed=false. The apply closure is not invoked.
+	//     Changed=false and the plan's Observed. The apply closure is not
+	//     invoked.
 	//  3. otherwise - invoke p.apply (must be non-nil) and return its
-	//     TaskOutputState verbatim. apply is responsible for setting Changed and a
-	//     final State that matches DesiredState on success.
+	//     TaskOutputState with the observed state added on success. apply is
+	//     responsible for setting Changed and a final State that matches
+	//     DesiredState on success.
 	//
 	// ctx is handed to the apply closure rather than the closure capturing the
 	// context Plan ran under, so applying a plan always uses the caller's current
@@ -161,11 +179,15 @@ func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
 		}
 	}
 	if p.InSync {
-		return TaskOutputState{
+		out := TaskOutputState{
 			Changed:      false,
 			State:        p.DesiredState,
 			DesiredState: p.DesiredState,
 		}
+		if observes(ctx, p) {
+			out.Observed, out.Exists = p.Observed, p.Exists
+		}
+		return out
 	}
 	if p.apply == nil {
 		return TaskOutputState{
@@ -177,6 +199,11 @@ func ExecutePlan(ctx context.Context, p PlanResult) (out TaskOutputState) {
 	out = p.apply(ctx)
 	if out.DesiredState == "" {
 		out.DesiredState = p.DesiredState
+	}
+	// A state other than the desired one is a failed apply to every caller,
+	// so it observes nothing either.
+	if out.Error == nil && out.State == out.DesiredState && observes(ctx, p) {
+		out.Observed, out.Exists = appliedObserved(ctx, p)
 	}
 	return out
 }
