@@ -132,8 +132,10 @@ A few conventions to follow:
   one in a state that owns the collection reads them all. A drift result observes `read`. An
   in-sync result observes `t` instead, with each field `t` leaves at its zero value filled from
   `read` (matching list items on their identity keys), and `Exists` follows `t`'s state, so build
-  `read` the same way either way. Read every field the task's exporter
-  reads, even one the drift check ignores, unless reading it would undo a deliberate choice of the
+  `read` the same way either way. `exists` is whether the read found the resource, or for a
+  collection a member it reads; when `t` owns its whole collection (`set` or `clear`), `observed`
+  reports it there whatever `exists` says, since an empty collection exists. Read every field the
+  task's exporter reads, even one the drift check ignores, unless reading it would undo a deliberate choice of the
   probe's - such as `dokku_certs` never moving certificate material at plan time - in which case
   tag the field `write_only`. A probe failure the plan treats as drift, rather than as an error,
   sets no observed state. `TestPlanObservesServerState` plans every exported body against a fixture

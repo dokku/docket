@@ -509,11 +509,13 @@ const (
 // the resource has, the way a task in state set or clear would own them: a
 // dokku_config leaves out the keys docket keeps (linked-service DSNs,
 // NO_VHOST, the git rev env var), and a dokku_ps_scale leaves out process
-// types scaled to zero. The returned task and errors are ReadTask's: the value
-// type registered for the task, the *VersionError when ctx carries a gate the
-// server is behind, an *ObjectMissingError when the app or service the
-// resource depends on is missing, and an error wrapping ErrStateUnreadable for
-// a task whose probe cannot read its state.
+// types scaled to zero. A whole collection read that way always exists: one
+// with no members comes back in state clear with exists true, since a missing
+// app or service is reported as an error instead. The returned task and errors
+// are ReadTask's: the value type registered for the task, the *VersionError
+// when ctx carries a gate the server is behind, an *ObjectMissingError when
+// the app or service the resource depends on is missing, and an error
+// wrapping ErrStateUnreadable for a task whose probe cannot read its state.
 //
 // The address must name one resource. A bare type, a key the task does not
 // declare, or a missing required key is an error, raised before the server is
@@ -533,10 +535,15 @@ func ReadAddress(ctx context.Context, address string) (Task, bool, error) {
 // state set reads every key it would own. A property task known only by its
 // identity keys is read with State absent, which needs no Value.
 //
+// The State also picks what exists means. A collection task in set or clear
+// owns the whole collection, which exists whenever the read succeeds, with or
+// without members. In present or absent it owns only the members it names,
+// and exists reports whether any of them is there.
+//
 // When ctx carries a version gate and the server is older than t's floor, the
 // error is the *VersionError, never a resource reported as absent. When the
-// read does not find the resource and the app or service t depends on is
-// missing, the error is an *ObjectMissingError naming it, which matches
+// read does not find the resource, or finds a whole collection with no
+// members, and the app or service t depends on is missing, the error is an *ObjectMissingError naming it, which matches
 // ErrObjectMissing; a task that creates its app or service, such as dokku_app,
 // reports itself absent instead. A task whose probe cannot read its state
 // returns an error wrapping ErrStateUnreadable.

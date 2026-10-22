@@ -247,9 +247,10 @@ func observedGitFixtures() map[string]observedFixture {
 					want: AclAppTask{App: "web", State: StateAbsent},
 				},
 				{
-					name: "clear on an empty list",
-					task: AclAppTask{App: "empty", State: StateClear},
-					want: AclAppTask{App: "empty", State: StateClear},
+					name:   "clear on an empty list",
+					task:   AclAppTask{App: "empty", State: StateClear},
+					want:   AclAppTask{App: "empty", State: StateClear},
+					exists: true,
 				},
 			},
 		},

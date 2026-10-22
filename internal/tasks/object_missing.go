@@ -93,10 +93,12 @@ func planRead(ctx context.Context, t Task, raw bool) (Task, bool, error) {
 // readResult is what ReadTask and ReadAddress return for t once its own read
 // is done. A read that did not find the resource present asks the server
 // whether the app or service t depends on exists, and reports a missing one
-// as an *ObjectMissingError in place of the read's own result. A present
-// read, a version refusal and a cancelled context come back as they are.
+// as an *ObjectMissingError in place of the read's own result. So does a read
+// of a whole collection with no members: it exists, but a probe that finds
+// nothing for a missing app reads the same way. A present read, a version
+// refusal and a cancelled context come back as they are.
 func readResult(ctx context.Context, t Task, got Task, exists bool, err error) (Task, bool, error) {
-	if err == nil && exists {
+	if err == nil && exists && !emptyWholeCollection(got) {
 		return got, exists, err
 	}
 	var missing *ObjectMissingError
