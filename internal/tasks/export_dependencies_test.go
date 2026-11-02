@@ -259,3 +259,63 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestExportGlobalOnly(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	ctx := subprocess.ContextWithRunner(testCtx(), recordingDokku(dependencyFixture(), &calls))
+
+	var scopes []string
+	res, err := ExportRecipe(ctx, ExportOptions{GlobalOnly: true, Progress: func(ev ExportProgress) {
+		if ev.Type == "" {
+			scopes = append(scopes, ev.Scope)
+		}
+	}})
+	if err != nil {
+		t.Fatalf("ExportRecipe: %v", err)
+	}
+	if res.PlayCount() != 1 || res.AppCount() != 0 {
+		t.Fatalf("plays = %v, want the global play alone", res.Plays())
+	}
+	// Every server-wide resource, not only the ones some app depends on.
+	got := globalAddresses(t, res)
+	for _, want := range []string{
+		"dokku_network[name=unrelated-net]",
+		"dokku_plugin[name=unrelated]",
+		"dokku_service_create[service=redis,name=cache]",
+		"dokku_git_property[global=true,property=deploy-branch]",
+	} {
+		if !containsString(got, want) {
+			t.Errorf("global play missing %s: %v", want, got)
+		}
+	}
+	for _, call := range calls {
+		if call == "--quiet apps:list" || strings.Contains(call, " api ") || strings.HasSuffix(call, " api") {
+			t.Errorf("a global-only export read an app: %q", call)
+		}
+	}
+	if want := []string{"global"}; !reflect.DeepEqual(scopes, want) {
+		t.Errorf("progress scopes = %v, want %v", scopes, want)
+	}
+}
+
+func TestExportGlobalOnlyRejectsNarrowing(t *testing.T) {
+	t.Parallel()
+	sel, err := ParseResourceSelectors([]string{"dokku_plugin[name=redis]"})
+	if err != nil {
+		t.Fatalf("ParseResourceSelectors: %v", err)
+	}
+	for name, opts := range map[string]ExportOptions{
+		"apps":      {GlobalOnly: true, Apps: []string{"api"}},
+		"resources": {GlobalOnly: true, Resources: sel},
+	} {
+		ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(dependencyFixture()))
+		res, err := ExportRecipe(ctx, opts)
+		if err == nil {
+			t.Errorf("%s: GlobalOnly was combined without an error", name)
+		}
+		if res == nil {
+			t.Errorf("%s: the result must never be nil", name)
+		}
+	}
+}

@@ -79,6 +79,8 @@ type ExportCommand struct {
 	// skipDependencies leaves out the global resources an --app export
 	// would otherwise carry for the apps it names.
 	skipDependencies bool
+	// globalOnly exports the server-wide resources and no app.
+	globalOnly bool
 
 	host              string
 	sudo              bool
@@ -110,6 +112,7 @@ func (c *ExportCommand) Examples() map[string]string {
 		"Redact secrets into a fill-in-the-blanks vars-file":    fmt.Sprintf("%s %s --redact", appName, c.Name()),
 		"Export one app and the global resources it needs":      fmt.Sprintf("%s %s --app my-app", appName, c.Name()),
 		"Export one app without its global resources":           fmt.Sprintf("%s %s --app my-app --skip-dependencies", appName, c.Name()),
+		"Export the server-wide resources without any app":      fmt.Sprintf("%s %s --global-only", appName, c.Name()),
 		"Export one resource":                                   fmt.Sprintf("%s %s --resource 'dokku_config[app=my-app]'", appName, c.Name()),
 		"Export every app's domains":                            fmt.Sprintf("%s %s --resource dokku_domains", appName, c.Name()),
 	}
@@ -138,6 +141,7 @@ func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.quiet, "quiet", false, "do not print progress while the server is read; warnings and errors still print")
 	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app and the global resources it depends on (repeatable)")
 	f.BoolVar(&c.skipDependencies, "skip-dependencies", false, "with --app, leave out the global resources the app depends on")
+	f.BoolVar(&c.globalOnly, "global-only", false, "export every server-wide resource and no app; not valid with --app or --resource")
 	f.StringArrayVar(&c.resources, "resource", nil, "restrict the export to the named resource address, e.g. 'dokku_config[app=my-app]' (repeatable); a bare task type exports every resource of that type")
 	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
 	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via sudo -n, remotely with --host and locally without")
@@ -162,6 +166,7 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 			"--app":                  complete.PredictNothing,
 			"--resource":             complete.PredictNothing,
 			"--skip-dependencies":    complete.PredictNothing,
+			"--global-only":          complete.PredictNothing,
 			"--host":                 complete.PredictNothing,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
@@ -177,7 +182,7 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 //
 //	0 - export written (or streamed to stdout)
 //	1 - flag parse error, --verbose combined with --quiet, --skip-dependencies
-//	    without --app, a file-only flag
+//	    without --app, --global-only with --app or --resource, a file-only flag
 //	    combined with --output -, read
 //	    error, an output file exists without --overwrite (and the prompt was
 //	    declined or stdin is not interactive), or an IO error
@@ -212,6 +217,12 @@ func (c *ExportCommand) Run(args []string) int {
 	// silently dropped anywhere else.
 	if c.skipDependencies && len(c.apps) == 0 {
 		c.Ui.Error("--skip-dependencies requires --app")
+		return 1
+	}
+
+	// --global-only reads no app, so either filter would be ignored.
+	if c.globalOnly && (len(c.apps) > 0 || len(c.resources) > 0) {
+		c.Ui.Error("--global-only cannot be combined with --app or --resource")
 		return 1
 	}
 
@@ -272,6 +283,7 @@ func (c *ExportCommand) Run(args []string) int {
 	res, err := tasks.ExportRecipe(ctx, tasks.ExportOptions{
 		Apps:             c.apps,
 		SkipDependencies: c.skipDependencies,
+		GlobalOnly:       c.globalOnly,
 		Resources:        resources,
 		Redact:           c.redact,
 		Inline:           toStdout,
@@ -397,7 +409,11 @@ func (c *ExportCommand) Run(args []string) int {
 		}
 	}
 
-	c.Ui.Output(fmt.Sprintf("==> Exported %s (%s)", c.output, pluralize(res.AppCount(), "app")))
+	if c.globalOnly {
+		c.Ui.Output(fmt.Sprintf("==> Exported %s (server-wide resources only)", c.output))
+	} else {
+		c.Ui.Output(fmt.Sprintf("==> Exported %s (%s)", c.output, pluralize(res.AppCount(), "app")))
+	}
 	if writeVars {
 		c.Ui.Output(fmt.Sprintf("    values written to %s", varsOutput))
 		if c.redact {

@@ -229,6 +229,12 @@ type ExportOptions struct {
 	// to. It has no effect without Apps.
 	SkipDependencies bool
 
+	// GlobalOnly reads the global play alone - every resource that is not
+	// app-scoped, in full - and no app at all, not even the app list. It is
+	// the server-wide half of a migration that moves the apps one at a time
+	// with Apps. It cannot be combined with Apps or Resources.
+	GlobalOnly bool
+
 	// Resources restricts the export to specific resource addresses. Empty
 	// means every resource. Mutually exclusive with Apps: an address already
 	// says which app it belongs to.
@@ -482,6 +488,9 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 		usedVarNames: map[string]bool{},
 		filter:       newResourceFilter(opts.Resources),
 	}
+	if opts.GlobalOnly && (len(opts.Apps) > 0 || len(opts.Resources) > 0) {
+		return res, errors.New("GlobalOnly cannot be combined with Apps or Resources")
+	}
 	inApp, inGlobal := exportOrderSets()
 
 	// Global resources come first, in a leading "global" play. Skipped when
@@ -500,6 +509,10 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 		if global := res.exportGlobalPlay(ctx, scope, opts, nil); global != nil {
 			res.plays = append(res.plays, *global)
 		}
+	}
+	// A server-wide export stops here, before apps:list is even run.
+	if opts.GlobalOnly {
+		return res, nil
 	}
 
 	// An address that pins `app=` narrows the run the same way --app does, so

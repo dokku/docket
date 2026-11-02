@@ -191,6 +191,7 @@ the value form of the type registered under `task.Type`, never a pointer, so
 | --- | --- |
 | `Apps` | Only these apps. The leading global play carries only the global resources they depend on - see [exporting one app](command-reference.md#exporting-one-app). With `Resources` as well, dependencies are not gathered and the global play is skipped unless an address asks for it. |
 | `SkipDependencies` | With `Apps`, leave the global play out entirely. The equivalent of `docket export --skip-dependencies`. |
+| `GlobalOnly` | Read the global play alone, in full, and no app - the app list is not read either. Combining it with `Apps` or `Resources` is an error. The equivalent of `docket export --global-only`. |
 | `Resources` | Only these addresses, parsed by `sdk.ParseResourceSelectors`. When every address names its app or is global, only those apps are read and the server's app list is not. |
 | `Inline` | Keep sensitive values in the bodies instead of lifting them into `Vars`. |
 | `Redact` | Replace sensitive values with a placeholder. |

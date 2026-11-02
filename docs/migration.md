@@ -179,9 +179,18 @@ docket apply --host deploy@new-server --tasks tasks.yml --vars-file tasks.vars.y
 
 The recipe holds the app and a global play with only what the app depends on: the services it
 links to, the networks it and those services attach to, the storage entries it mounts, and the
-plugins those need. Server-wide settings stay behind, so apply any you rely on separately. See
-[exporting one app](command-reference.md#exporting-one-app) for the full list. Then move that app's
-data, storage and DNS (steps 3 to 6) and repeat for the next app.
+plugins those need. Server-wide settings stay behind; export them on their own with
+`--global-only`, review the recipe, and apply it before the first app:
+
+```bash
+docket export --host deploy@old-server --global-only --output global.yml
+docket apply  --host deploy@new-server --tasks global.yml --vars-file global.vars.yml
+```
+
+The vars-file exists only when the server holds a server-wide secret, such as the scheduler-k3s
+token, so drop `--vars-file` when export does not mention one. See
+[exporting one app](command-reference.md#exporting-one-app) for what an app export carries. Then
+move that app's data, storage and DNS (steps 3 to 6) and repeat for the next app.
 
 A service shared by two apps lands in both apps' recipes, emitted the same way each time, so
 applying the second app's recipe finds it already in place and leaves it alone. Move the service's

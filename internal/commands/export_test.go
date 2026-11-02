@@ -850,3 +850,48 @@ func TestExportOutputValidatesWithUnappliableK3sProfile(t *testing.T) {
 			code, vui.ErrorWriter.String(), recipeBytes)
 	}
 }
+
+func TestExportCommandGlobalOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "tasks.yml")
+
+	c, ui := exportWithRunner(fakeExecRunner(appDependencyFixture()), dir)
+	if code := c.Run([]string{"--global-only", "--output", recipe}); code != 0 {
+		t.Fatalf("Run exit = %d, want 0; stderr=%s", code, ui.ErrorWriter.String())
+	}
+	body, err := os.ReadFile(recipe)
+	if err != nil {
+		t.Fatalf("recipe not written: %v", err)
+	}
+	// Both services, including the one no app links, and no app play.
+	for _, want := range []string{"name: global", "name: cache", "name: unlinked"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("recipe missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(string(body), "name: web") {
+		t.Errorf("a global-only recipe carries an app play:\n%s", body)
+	}
+	if out := ui.OutputWriter.String(); !strings.Contains(out, "(server-wide resources only)") {
+		t.Errorf("summary should say the export is server-wide, got:\n%s", out)
+	}
+}
+
+// TestExportCommandGlobalOnlyRejectsNarrowing runs with no fake executor, so
+// the rejection has to come before the server is read.
+func TestExportCommandGlobalOnlyRejectsNarrowing(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"--global-only", "--app", "web", "--output", "-"},
+		{"--global-only", "--resource", "dokku_plugin[name=redis]", "--output", "-"},
+	} {
+		c, ui := newExportCommand()
+		if code := c.Run(args); code != 1 {
+			t.Errorf("%v: Run exit = %d, want 1", args, code)
+		}
+		if !strings.Contains(ui.ErrorWriter.String(), "--global-only cannot be combined") {
+			t.Errorf("%v: expected a clear rejection; got %q", args, ui.ErrorWriter.String())
+		}
+	}
+}
