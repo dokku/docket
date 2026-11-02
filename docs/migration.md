@@ -79,6 +79,8 @@ which servers an app holds a credential for but nothing about the credential its
 to supply at apply time. Each task's [reference page](tasks/README.md) has an Export support
 section noting its limits. Those warnings mask the secrets the export read, so the log of a
 migration run is safe to paste into a ticket even though the pair of files it wrote is not.
+A task whose plugin the old server does not have installed - dokku-acl, for example - is not read at
+all, so it adds nothing to the recipe and no warning to the log.
 
 `tasks.vars.yml` is written `0600` on the box that produced it, which says nothing about where you
 put it next: move it the way you would move a private key, and delete it once the migration is done.

@@ -284,6 +284,12 @@ func ExecutePlan(ctx context.Context, p PlanResult) TaskOutputState {
 // An exporter whose task declares a floor newer than the server is skipped
 // with a warning and listed in Report.VersionErrors. Set
 // ExportOptions.IgnoreVersion to read it anyway.
+//
+// An exporter whose task needs a plugin the server does not have installed -
+// dokku_acl_app without dokku-acl, the global dokku_certs without
+// dokku-global-cert - is not run at all, so it adds no warning and no
+// progress event. Calling a task's ExportApp or ExportGlobal directly does
+// not check; it runs the plugin's command regardless.
 func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
 	return tasks.GatedExportRecipe(ctx, opts)
 }

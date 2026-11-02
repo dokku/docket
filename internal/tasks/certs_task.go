@@ -578,14 +578,16 @@ func (t CertsTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
 
 // exportCert probes whether a certificate is installed for the given scope (app
 // or global) and, if so, reads its PEM back via certs:show / global-cert:show.
-// A transport failure aborts the export; any other probe error (for example the
-// dokku-global-cert plugin not being installed) is swallowed so the scope is
-// skipped silently.
+// A transport failure aborts the export, as does any global probe error: the
+// export engine does not run the global read on a server without
+// dokku-global-cert (#672), so a failure there is the installed plugin's own.
+// Any other app probe error is swallowed so the app's scope is skipped
+// silently.
 func exportCert(ctx context.Context, t CertsTask) ([]interface{}, error) {
 	enabled, err := certsEnabled(ctx, t)
 	if err != nil {
 		var sshErr *subprocess.SSHError
-		if errors.As(err, &sshErr) {
+		if t.Global || errors.As(err, &sshErr) {
 			return nil, err
 		}
 		return nil, nil

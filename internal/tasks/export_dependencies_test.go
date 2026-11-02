@@ -159,11 +159,7 @@ func TestExportAppSkipDependencies(t *testing.T) {
 	if got := globalAddresses(t, res); got != nil {
 		t.Errorf("SkipDependencies exported a global play: %v", got)
 	}
-	for _, call := range calls {
-		if strings.Contains(call, "network:list") || strings.Contains(call, "plugin:list --format json") {
-			t.Errorf("SkipDependencies still read %q", call)
-		}
-	}
+	assertNoGlobalReads(t, calls, "SkipDependencies still read")
 }
 
 func TestExportAppWithoutDependenciesReadsNoGlobals(t *testing.T) {
@@ -178,10 +174,26 @@ func TestExportAppWithoutDependenciesReadsNoGlobals(t *testing.T) {
 	if got := globalAddresses(t, res); got != nil {
 		t.Errorf("an app with no dependencies exported a global play: %v", got)
 	}
+	assertNoGlobalReads(t, calls, "an app with no dependencies read")
+}
+
+// assertNoGlobalReads fails when calls show a global exporter ran. network:list
+// is dokku_network's read. plugin:list --format json is read once by the
+// installed-plugin check the app play makes before an exporter that needs a
+// plugin (#672), so a second read is dokku_plugin's exporter.
+func assertNoGlobalReads(t *testing.T, calls []string, prefix string) {
+	t.Helper()
+	pluginLists := 0
 	for _, call := range calls {
-		if strings.Contains(call, "network:list") || strings.Contains(call, "plugin:list --format json") {
-			t.Errorf("an app with no dependencies read %q", call)
+		if strings.Contains(call, "network:list") {
+			t.Errorf("%s %q", prefix, call)
 		}
+		if strings.Contains(call, "plugin:list --format json") {
+			pluginLists++
+		}
+	}
+	if pluginLists > 1 {
+		t.Errorf("%s plugin:list --format json %d times, want at most once for the installed-plugin check", prefix, pluginLists)
 	}
 }
 
