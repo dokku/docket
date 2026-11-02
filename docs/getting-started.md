@@ -38,7 +38,7 @@ code into it:
 
 ## Prerequisites
 
-The integration suite runs against **Dokku 0.38.31**. `plan`, `apply`, and `export` enforce the floor in each task's Requirements section: a task refuses when the server, or an installed plugin it needs, is older, and `--ignore-version` runs it anyway. A plugin that is not installed yet is left to the task's own probe, so a recipe can install it and then use it.
+The integration suite runs against **Dokku 0.38.32**. `plan`, `apply`, and `export` enforce the floor in each task's Requirements section: a task refuses when the server, or an installed plugin it needs, is older, and `--ignore-version` runs it anyway. A plugin that is not installed yet is left to the task's own probe, so a recipe can install it and then use it.
 
 Plugins the bundled tasks declare:
 

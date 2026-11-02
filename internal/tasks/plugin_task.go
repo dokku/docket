@@ -65,7 +65,7 @@ func (t PluginTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku this task's probe parses.
-// The floor is 0.38.31, the release the integration suite runs; the probe is `plugin:list --format json` (dokku 0.38.22+).
+// The floor is 0.38.31, the release the integration suite ran when this floor was recorded; the probe is `plugin:list --format json` (dokku 0.38.22+).
 // committish remains how a recipe pins the plugin this task installs.
 func (t PluginTask) MinimumVersions() VersionSupport {
 	return VersionSupport{Dokku: "0.38.31"}

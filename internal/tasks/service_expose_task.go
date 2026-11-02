@@ -60,7 +60,7 @@ func (t ServiceExposeTask) ProbeSupport() ProbeSupport {
 // 2.0.0 is the datastore generation whose `<service>:info --exposed-ports`
 // output this task parses. It is not the 2.3.1 fingerprint floor the info
 // readers use; expose does not read those keys. 0.38.31 is the Dokku the
-// integration suite runs.
+// integration suite ran when this floor was recorded.
 func (t ServiceExposeTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",

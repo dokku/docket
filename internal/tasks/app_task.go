@@ -45,7 +45,7 @@ func (t AppTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku this task's probe parses.
-// The floor is 0.38.31, the release the integration suite runs; the probe is `apps:exists`.
+// The floor is 0.38.31, the release the integration suite ran when this floor was recorded; the probe is `apps:exists`.
 func (t AppTask) MinimumVersions() VersionSupport {
 	return VersionSupport{Dokku: "0.38.31"}
 }

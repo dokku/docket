@@ -11,7 +11,7 @@ inputs:
   dokku-version:
     description: The dokku package version to install. Defaults to the release docket's integration suite runs against.
     required: false
-    default: '0.38.31'
+    default: '0.38.32'
   plugins:
     description: >-
       Plugins to install from docket's pinned set, separated by commas, spaces

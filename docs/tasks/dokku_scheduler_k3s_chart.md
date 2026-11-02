@@ -6,7 +6,7 @@ Manages helm chart value overrides for a dokku scheduler-k3s bundled chart
 
 ## Requirements
 
-- Dokku >= 0.38.31
+- Dokku >= 0.38.32
 
 ## Export support
 
@@ -30,7 +30,7 @@ Keyed by `chart`. Manages the whole `values` collection; entries are identified 
 | --- | --- | --- | --- | --- | --- |
 | `chart` | string | yes |  |  | Name of the helm chart whose values to set (validated by dokku against its bundled HelmCharts list). |
 | `values` | dict | no |  |  | Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \. so they reach Helm as a single annotation/label key. (required when state is present or absent) (must not be set when state is clear) |
-| `state` | string | no | present | present, absent, set, clear | Desired state of the chart values. 'set' and 'clear' write one value per command, so a failure partway through leaves the chart with a mixture of the old and new values. |
+| `state` | string | no | present | present, absent, set, clear | Desired state of the chart values. |
 
 ## Examples
 

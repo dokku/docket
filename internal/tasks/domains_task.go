@@ -52,7 +52,7 @@ func (t DomainsTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku this task's probe parses.
-// The floor is 0.38.31, the release the integration suite runs; the probe is `domains:report`.
+// The floor is 0.38.31, the release the integration suite ran when this floor was recorded; the probe is `domains:report`.
 func (t DomainsTask) MinimumVersions() VersionSupport {
 	return VersionSupport{Dokku: "0.38.31"}
 }

@@ -13,8 +13,9 @@ import (
 
 // SchedulerK3sChartTask manages helm chart value overrides for one of
 // dokku's bundled scheduler-k3s charts via the dokku
-// `scheduler-k3s:charts:set` / `:charts:report` subcommands. Chart values
-// are global by design in dokku, so the task carries no app/global toggle.
+// `scheduler-k3s:charts:set` / `:charts:clear` / `:charts:report`
+// subcommands. Chart values are global by design in dokku, so the task
+// carries no app/global toggle.
 type SchedulerK3sChartTask struct {
 	// Chart is the helm chart whose values to manage. Dokku validates the
 	// chart name against its known HelmCharts list at apply time.
@@ -29,10 +30,10 @@ type SchedulerK3sChartTask struct {
 	// strvals parser.
 	Values map[string]any `required:"false" required_when:"present,absent" forbidden_when:"clear" identity:"collection" yaml:"values,omitempty" description:"Helm-style values for the chart. Accepts a flat map of dotted property paths or a nested tree; both coalesce to the same key/value form before being applied. In nested form, literal dots in a key segment are escaped to \\. so they reach Helm as a single annotation/label key."`
 
-	// State is the desired state of the chart values. dokku writes chart
-	// values one key at a time, so set and clear issue one
-	// scheduler-k3s:charts:set per changed key and are not atomic.
-	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the chart values. 'set' and 'clear' write one value per command, so a failure partway through leaves the chart with a mixture of the old and new values."`
+	// State is the desired state of the chart values. set replaces the
+	// chart's whole override map with one scheduler-k3s:charts:set --replace
+	// and clear empties it with one scheduler-k3s:charts:clear.
+	State State `required:"false" yaml:"state,omitempty" default:"present" options:"present,absent,set,clear" description:"Desired state of the chart values."`
 }
 
 // SchedulerK3sChartTaskExample contains an example of a SchedulerK3sChartTask
@@ -65,9 +66,11 @@ func (t SchedulerK3sChartTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku this task's probe parses.
-// The floor is 0.38.31, the release the integration suite runs; the probe is `scheduler-k3s:chart`.
+// The floor is 0.38.32, the release that added `scheduler-k3s:charts:set
+// --replace` and `scheduler-k3s:charts:clear` (dokku/dokku#9151), which set
+// and clear run.
 func (t SchedulerK3sChartTask) MinimumVersions() VersionSupport {
-	return VersionSupport{Dokku: "0.38.31"}
+	return VersionSupport{Dokku: "0.38.32"}
 }
 
 // examples returns the examples for the scheduler-k3s chart task
@@ -168,9 +171,11 @@ func (t SchedulerK3sChartTask) Validate() error {
 	if err != nil {
 		return err
 	}
-	// dokku clears a chart value set to an empty string, so a present- or
-	// set-state empty value can never converge (issue #358); clearing uses
-	// state 'absent', or leaving the key out of a set.
+	// dokku clears a chart value set to an empty string, so a present-state
+	// empty value can never converge (issue #358). charts:set --replace would
+	// store one, but set rejects it too so the two states agree on what a
+	// value means; clearing uses state 'absent', or leaving the key out of a
+	// set.
 	if state == StatePresent || state == StateSet {
 		for _, key := range sortedPairKeys(flattened) {
 			if flattened[key] == "" {
@@ -229,16 +234,42 @@ func (t SchedulerK3sChartTask) Plan(ctx context.Context) (result PlanResult) {
 	return DispatchPlan(t.State, map[State]func() PlanResult{
 		StatePresent: func() PlanResult { return planPairsSet(ctx, t, observe, "chart value", desired, currentFn, commandFn) },
 		StateAbsent:  func() PlanResult { return planPairsUnset(ctx, t, observe, "chart value", desired, currentFn, commandFn) },
-		// dokku has no whole-chart write, so set and clear go one key at a
-		// time rather than through planPairsReplace and planPairsClear.
+		// An empty set plans as clear, since charts:set --replace needs a
+		// pair to write.
 		StateSet: func() PlanResult {
 			if len(desired) == 0 {
-				return planSetAsClear(planPairsClearPerKey(ctx, t, observe, "chart value", currentFn, commandFn))
+				return planSetAsClear(planPairsClear(ctx, t, observe, "chart value", currentFn, t.clearCommand))
 			}
-			return planPairsReplacePerKey(ctx, t, observe, "chart value", desired, currentFn, commandFn)
+			return planPairsReplace(ctx, t, observe, "chart value", desired, currentFn, func() subprocess.ExecCommandInput {
+				return t.replaceCommand(desired)
+			})
 		},
-		StateClear: func() PlanResult { return planPairsClearPerKey(ctx, t, observe, "chart value", currentFn, commandFn) },
+		StateClear: func() PlanResult { return planPairsClear(ctx, t, observe, "chart value", currentFn, t.clearCommand) },
 	})
+}
+
+// replaceCommand builds the single `dokku scheduler-k3s:charts:set --replace`
+// call that swaps the chart's whole override map for the flattened desired
+// one. dokku splits each pair on its first "=", so values may themselves
+// contain "=". The pairs are sorted so the rendered command does not change
+// between runs.
+func (t SchedulerK3sChartTask) replaceCommand(desired map[string]string) subprocess.ExecCommandInput {
+	args := []string{"--quiet", "scheduler-k3s:charts:set", "--replace", t.Chart}
+	for _, key := range sortedPairKeys(desired) {
+		args = append(args, key+"="+desired[key])
+	}
+	return subprocess.ExecCommandInput{Command: "dokku", Args: args}
+}
+
+// clearCommand builds the `dokku scheduler-k3s:charts:clear` call that
+// removes every override for the chart. charts:set --replace cannot express
+// this: dokku rejects an empty pair list rather than reading it as "remove
+// everything".
+func (t SchedulerK3sChartTask) clearCommand() subprocess.ExecCommandInput {
+	return subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "scheduler-k3s:charts:clear", t.Chart},
+	}
 }
 
 // getSchedulerK3sChartValues reads the helm value overrides currently

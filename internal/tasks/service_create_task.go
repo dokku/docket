@@ -131,7 +131,7 @@ func (t ServiceCreateTask) ProbeSupport() ProbeSupport {
 
 // MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
 // The plugin floor is the datastore release whose `<service>:info` reports
-// every key this task reads. 0.38.31 is the Dokku the integration suite runs;
+// every key this task reads. 0.38.31 is the Dokku the integration suite ran when this floor was recorded;
 // the probe is `<service>:info`.
 func (t ServiceCreateTask) MinimumVersions() VersionSupport {
 	return VersionSupport{

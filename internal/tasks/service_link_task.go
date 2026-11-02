@@ -63,7 +63,7 @@ func (t ServiceLinkTask) ProbeSupport() ProbeSupport {
 // 2.0.0 is the datastore generation whose `<service>:linked` exit status
 // this task parses. It is not the 2.3.1 fingerprint floor the info readers
 // use; link does not read those keys. 0.38.31 is the Dokku the integration
-// suite runs.
+// suite ran when this floor was recorded.
 func (t ServiceLinkTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",

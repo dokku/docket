@@ -34,6 +34,14 @@ setup() {
     fail "a task is missing minimum_dokku_version"
 }
 
+@test "docket schema publishes the chart floor that carries charts:set --replace" {
+  run "$(docket_bin)" schema
+  assert_success
+  echo "$output" |
+    jq -e '.tasks[] | select(.type == "dokku_scheduler_k3s_chart") | .minimum_dokku_version == "0.38.32"' >/dev/null ||
+    fail "dokku_scheduler_k3s_chart does not require dokku 0.38.32"
+}
+
 @test "docket schema lists tasks sorted by type" {
   run "$(docket_bin)" schema
   assert_success

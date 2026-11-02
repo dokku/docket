@@ -234,9 +234,9 @@ func TestIntegrationHttpAuthUserClear(t *testing.T) {
 	})
 }
 
-// TestIntegrationSchedulerK3sChartSetClear drives set, which unsets the values
-// it does not declare one key at a time, and clear against a real chart
-// (#619).
+// TestIntegrationSchedulerK3sChartSetClear drives set, which drops the values
+// it does not declare in the same charts:set --replace that writes the rest,
+// and clear, which runs charts:clear, against a real chart (#619, #625).
 func TestIntegrationSchedulerK3sChartSetClear(t *testing.T) {
 	skipUnlessSchedulerK3sT(t)
 

@@ -60,7 +60,7 @@ func (t SchedulerK3sLabelsTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku this task's probe parses.
-// The floor is 0.38.31, the release the integration suite runs; the probe is `scheduler-k3s:labels:report`.
+// The floor is 0.38.31, the release the integration suite ran when this floor was recorded; the probe is `scheduler-k3s:labels:report`.
 func (t SchedulerK3sLabelsTask) MinimumVersions() VersionSupport {
 	return VersionSupport{Dokku: "0.38.31"}
 }
