@@ -633,6 +633,76 @@ func TestExportCommandPartialMissingAppStillWrites(t *testing.T) {
 	}
 }
 
+// appDependencyFixture is exportCommandFixture with web linked to a redis
+// service and a second service web does not link, so an --app export has a
+// dependency to carry and one to leave behind (#671).
+func appDependencyFixture() map[string]string {
+	responses := exportCommandFixture()
+	responses["--quiet plugin:trigger service-list"] = "redis:cache\nredis:unlinked"
+	responses["--quiet redis:links cache"] = "web"
+	responses["--quiet redis:info cache --format json"] = `{"version":"redis:7"}`
+	responses["--quiet redis:info unlinked --format json"] = `{"version":"redis:7"}`
+	responses["--quiet plugin:list --format json"] = `[{"name":"redis","core":false,"source_url":"https://github.com/dokku/dokku-redis.git","committish":"c0ffee","branch":"master"}]`
+	return responses
+}
+
+func TestExportCommandAppCarriesItsDependencies(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	recipe := filepath.Join(dir, "tasks.yml")
+
+	c, ui := exportWithRunner(fakeExecRunner(appDependencyFixture()), dir)
+	if code := c.Run([]string{"--app", "web", "--output", recipe}); code != 0 {
+		t.Fatalf("Run exit = %d, want 0; stderr=%s", code, ui.ErrorWriter.String())
+	}
+	body, err := os.ReadFile(recipe)
+	if err != nil {
+		t.Fatalf("recipe not written: %v", err)
+	}
+	for _, want := range []string{"name: global", "dokku_plugin", "dokku_service_create", "name: cache", "dokku_service_link"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("recipe missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(string(body), "unlinked") {
+		t.Errorf("recipe carries a service web does not link:\n%s", body)
+	}
+	// The global play is not an app.
+	if out := ui.OutputWriter.String(); !strings.Contains(out, "(1 app)") {
+		t.Errorf("summary should report 1 app, got:\n%s", out)
+	}
+}
+
+func TestExportCommandSkipDependencies(t *testing.T) {
+	t.Parallel()
+	c, ui := exportWithRunner(fakeExecRunner(appDependencyFixture()))
+	var stdout strings.Builder
+	c.Stdout = &stdout
+	if code := c.Run([]string{"--app", "web", "--skip-dependencies", "--output", "-"}); code != 0 {
+		t.Fatalf("Run exit = %d, want 0; stderr=%s", code, ui.ErrorWriter.String())
+	}
+	out := stdout.String()
+	if strings.Contains(out, "name: global") || strings.Contains(out, "dokku_service_create") {
+		t.Errorf("--skip-dependencies still exported the global play:\n%s", out)
+	}
+	if !strings.Contains(out, "dokku_service_link") {
+		t.Errorf("the app's own link should still be exported:\n%s", out)
+	}
+}
+
+// TestExportCommandSkipDependenciesRequiresApp runs with no fake executor, so
+// the rejection has to come before the server is read.
+func TestExportCommandSkipDependenciesRequiresApp(t *testing.T) {
+	t.Parallel()
+	c, ui := newExportCommand()
+	if code := c.Run([]string{"--skip-dependencies", "--output", "-"}); code != 1 {
+		t.Fatalf("Run exit = %d, want 1", code)
+	}
+	if !strings.Contains(ui.ErrorWriter.String(), "--skip-dependencies requires --app") {
+		t.Errorf("expected a clear rejection; got %q", ui.ErrorWriter.String())
+	}
+}
+
 func TestExportCommandDeriveVarsOutput(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{

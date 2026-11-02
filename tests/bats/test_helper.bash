@@ -114,6 +114,17 @@ dokku_clean_storage_entry() {
   dokku --quiet storage:destroy --force "$entry" >/dev/null 2>&1 || true
 }
 
+# dokku_clean_network destroys a named docker network if it exists. Same
+# setup/teardown role as dokku_clean_app; network:destroy refuses a network an
+# app still attaches to, so destroy the app first.
+dokku_clean_network() {
+  local network="$1"
+  if ! command -v dokku >/dev/null 2>&1; then
+    return 0
+  fi
+  dokku --quiet network:destroy --force "$network" >/dev/null 2>&1 || true
+}
+
 # dokku_clean_scheduler_k3s_profile removes a named scheduler-k3s node profile
 # if it exists. Same setup/teardown role as dokku_clean_app. Profiles are stored
 # on disk, so this works without a k3s cluster; removal of a profile whose name

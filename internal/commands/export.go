@@ -76,6 +76,9 @@ type ExportCommand struct {
 	quiet      bool
 	apps       []string
 	resources  []string
+	// skipDependencies leaves out the global resources an --app export
+	// would otherwise carry for the apps it names.
+	skipDependencies bool
 
 	host              string
 	sudo              bool
@@ -105,7 +108,8 @@ func (c *ExportCommand) Examples() map[string]string {
 		"Stream a self-contained recipe to stdout":              fmt.Sprintf("%s %s --output -", appName, c.Name()),
 		"Stream a JSON5 recipe to stdout":                       fmt.Sprintf("%s %s --output - --format json5", appName, c.Name()),
 		"Redact secrets into a fill-in-the-blanks vars-file":    fmt.Sprintf("%s %s --redact", appName, c.Name()),
-		"Export only a single app":                              fmt.Sprintf("%s %s --app my-app", appName, c.Name()),
+		"Export one app and the global resources it needs":      fmt.Sprintf("%s %s --app my-app", appName, c.Name()),
+		"Export one app without its global resources":           fmt.Sprintf("%s %s --app my-app --skip-dependencies", appName, c.Name()),
 		"Export one resource":                                   fmt.Sprintf("%s %s --resource 'dokku_config[app=my-app]'", appName, c.Name()),
 		"Export every app's domains":                            fmt.Sprintf("%s %s --resource dokku_domains", appName, c.Name()),
 	}
@@ -132,7 +136,8 @@ func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f.BoolVar(&c.redact, "redact", false, "write placeholder values into the vars-file instead of real secrets")
 	f.BoolVar(&c.verbose, "verbose", false, "also print each task type as it is read from the server, under the app it belongs to")
 	f.BoolVar(&c.quiet, "quiet", false, "do not print progress while the server is read; warnings and errors still print")
-	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app (repeatable)")
+	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app and the global resources it depends on (repeatable)")
+	f.BoolVar(&c.skipDependencies, "skip-dependencies", false, "with --app, leave out the global resources the app depends on")
 	f.StringArrayVar(&c.resources, "resource", nil, "restrict the export to the named resource address, e.g. 'dokku_config[app=my-app]' (repeatable); a bare task type exports every resource of that type")
 	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
 	f.BoolVar(&c.sudo, "sudo", false, "run dokku as root via sudo -n, remotely with --host and locally without")
@@ -156,6 +161,7 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 			"--quiet":                complete.PredictNothing,
 			"--app":                  complete.PredictNothing,
 			"--resource":             complete.PredictNothing,
+			"--skip-dependencies":    complete.PredictNothing,
 			"--host":                 complete.PredictNothing,
 			"--sudo":                 complete.PredictNothing,
 			"--accept-new-host-keys": complete.PredictNothing,
@@ -170,7 +176,8 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 // Exit codes:
 //
 //	0 - export written (or streamed to stdout)
-//	1 - flag parse error, --verbose combined with --quiet, a file-only flag
+//	1 - flag parse error, --verbose combined with --quiet, --skip-dependencies
+//	    without --app, a file-only flag
 //	    combined with --output -, read
 //	    error, an output file exists without --overwrite (and the prompt was
 //	    declined or stdin is not interactive), or an IO error
@@ -198,6 +205,13 @@ func (c *ExportCommand) Run(args []string) int {
 	// filters can only express a contradiction or a redundancy.
 	if len(c.resources) > 0 && len(c.apps) > 0 {
 		c.Ui.Error("--resource and --app cannot be combined; a resource address already names its app")
+		return 1
+	}
+
+	// Only an --app export gathers dependencies, so the flag would be
+	// silently dropped anywhere else.
+	if c.skipDependencies && len(c.apps) == 0 {
+		c.Ui.Error("--skip-dependencies requires --app")
 		return 1
 	}
 
@@ -256,12 +270,13 @@ func (c *ExportCommand) Run(args []string) int {
 	toStdout := c.output == taskFileStdin
 
 	res, err := tasks.ExportRecipe(ctx, tasks.ExportOptions{
-		Apps:          c.apps,
-		Resources:     resources,
-		Redact:        c.redact,
-		Inline:        toStdout,
-		IgnoreVersion: c.ignoreVersion,
-		Progress:      c.progress(),
+		Apps:             c.apps,
+		SkipDependencies: c.skipDependencies,
+		Resources:        resources,
+		Redact:           c.redact,
+		Inline:           toStdout,
+		IgnoreVersion:    c.ignoreVersion,
+		Progress:         c.progress(),
 	})
 	// Export is the one server-reading command with no recipe to collect a
 	// sensitive set from before the run: the values it must mask are the ones

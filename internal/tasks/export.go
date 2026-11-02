@@ -217,7 +217,17 @@ var appExportOrder = []string{
 //sdk:export
 type ExportOptions struct {
 	// Apps restricts the export to these app names; empty means every app.
+	// The global play then carries only the global resources those apps
+	// depend on - the services they link to, the networks they or those
+	// services attach to, the storage entries they mount, and the plugins all
+	// of those need - so the recipe applies to a server that has none of them
+	// (#671). Server-wide defaults are left out.
 	Apps []string
+
+	// SkipDependencies leaves the global play out of an Apps export
+	// entirely, for a server the shared resources have already been moved
+	// to. It has no effect without Apps.
+	SkipDependencies bool
 
 	// Resources restricts the export to specific resource addresses. Empty
 	// means every resource. Mutually exclusive with Apps: an address already
@@ -475,8 +485,9 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	inApp, inGlobal := exportOrderSets()
 
 	// Global resources come first, in a leading "global" play. Skipped when
-	// the export is narrowed to specific apps with --app, and when every
-	// --resource address is app-scoped.
+	// the export is narrowed to specific apps with --app, whose dependencies
+	// are read after the apps instead, and when every --resource address is
+	// app-scoped.
 	//
 	// An explicit global address outranks --app (#518). `--app foo` on its own
 	// means "this app, not the server", but naming `dokku_plugin[name=redis]`
@@ -486,7 +497,7 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	if res.filter.wantsGlobalScope(inGlobal) && (len(opts.Apps) == 0 || res.filter.hasGlobalAddress(inGlobal)) {
 		scope := ExportProgress{Scope: "global"}
 		opts.progress(scope)
-		if global := res.exportGlobalPlay(ctx, scope, opts); global != nil {
+		if global := res.exportGlobalPlay(ctx, scope, opts, nil); global != nil {
 			res.plays = append(res.plays, *global)
 		}
 	}
@@ -541,6 +552,19 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 		}
 	}
 
+	// What the apps depend on is only known once they are read, so their
+	// global play is read last and put back in front, where it has to be
+	// applied - and where AppCount looks for it.
+	if len(opts.Apps) > 0 && len(opts.Resources) == 0 && !opts.SkipDependencies {
+		if deps := newExportDependencies(res.plays); !deps.empty() {
+			scope := ExportProgress{Scope: "global"}
+			opts.progress(scope)
+			if global := res.exportGlobalPlay(ctx, scope, opts, deps); global != nil {
+				res.plays = append([]ExportedPlay{*global}, res.plays...)
+			}
+		}
+	}
+
 	res.Report.MissingResources = res.filter.unmatchedAddresses()
 
 	return res, nil
@@ -549,12 +573,23 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 // exportGlobalPlay builds the leading global play by running every registered
 // GlobalExporter. Returns nil when there are no global resources. scope is the
 // progress event that opened the play; each exporter is reported under it.
-func (res *ExportResult) exportGlobalPlay(ctx context.Context, scope ExportProgress, opts ExportOptions) *ExportedPlay {
+//
+// deps, when not nil, narrows the play to what the exported apps depend on.
+// Every exporter is read before any body is kept then: a linked service names
+// networks and plugins of its own, and both are emitted ahead of it in
+// globalExportOrder.
+func (res *ExportResult) exportGlobalPlay(ctx context.Context, scope ExportProgress, opts ExportOptions, deps *exportDependencies) *ExportedPlay {
 	var taskList []ExportedTask
 	var inputs []map[string]interface{}
 
+	type globalRead struct {
+		typeKey string
+		bodies  []interface{}
+	}
+	var reads []globalRead
+
 	for _, typeKey := range globalExportOrder {
-		if !res.filter.wantsType(typeKey) {
+		if !res.filter.wantsType(typeKey) || !deps.wantsType(typeKey) {
 			continue
 		}
 		proto, ok := Lookup(typeKey)
@@ -585,9 +620,41 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, scope ExportProgr
 				fmt.Sprintf("global: %s: %v", typeKey, err))
 			continue
 		}
+		if deps != nil {
+			reads = append(reads, globalRead{typeKey: typeKey, bodies: bodies})
+			continue
+		}
 		exported, ins := res.appendBodies("global", typeKey, bodies, opts)
 		taskList = append(taskList, exported...)
 		inputs = append(inputs, ins...)
+	}
+
+	if deps != nil {
+		// The kept services add their own networks and plugins. Nothing a
+		// service depends on is another service, so one pass closes the set.
+		for _, read := range reads {
+			for _, body := range read.bodies {
+				if dependencyServiceTypes[read.typeKey] && deps.keeps(read.typeKey, body) {
+					deps.addTask(body)
+				}
+			}
+		}
+		for _, read := range reads {
+			var kept []interface{}
+			for _, body := range read.bodies {
+				if deps.keeps(read.typeKey, body) {
+					kept = append(kept, body)
+					continue
+				}
+				// A dropped body was still read off the server, and its
+				// exporter's warnings print with the rest, so its secrets
+				// are masked like an emitted body's (#488).
+				res.noteSensitive(sensitiveValuesFromTask(body)...)
+			}
+			exported, ins := res.appendBodies("global", read.typeKey, kept, opts)
+			taskList = append(taskList, exported...)
+			inputs = append(inputs, ins...)
+		}
 	}
 
 	if len(taskList) == 0 {

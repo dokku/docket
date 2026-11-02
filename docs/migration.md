@@ -166,6 +166,28 @@ The final steps are the network cutover, which docket does not touch:
   [`dokku_maintenance`](tasks/dokku_maintenance.md), do a final data sync, flip DNS, verify the new
   server serves traffic, then decommission the old one.
 
+## Migrating one app at a time
+
+The steps above move a whole server at once. To move it gradually instead, export one app at a
+time:
+
+```bash
+docket export --host deploy@old-server --app api
+docket plan  --host deploy@new-server --tasks tasks.yml --vars-file tasks.vars.yml
+docket apply --host deploy@new-server --tasks tasks.yml --vars-file tasks.vars.yml
+```
+
+The recipe holds the app and a global play with only what the app depends on: the services it
+links to, the networks it and those services attach to, the storage entries it mounts, and the
+plugins those need. Server-wide settings stay behind, so apply any you rely on separately. See
+[exporting one app](command-reference.md#exporting-one-app) for the full list. Then move that app's
+data, storage and DNS (steps 3 to 6) and repeat for the next app.
+
+A service shared by two apps lands in both apps' recipes, emitted the same way each time, so
+applying the second app's recipe finds it already in place and leaves it alone. Move the service's
+data with the first app that needs it. If the shared resources are already on the new server and you
+want only the app, pass `--skip-dependencies`.
+
 ## See also
 
 - [Getting started](getting-started.md) - prerequisites and your first recipe
