@@ -239,6 +239,49 @@ type ExportOptions struct {
 	// plugin it needs, is older than the exporter's task declares. It
 	// overrides a version gate already on the context.
 	IgnoreVersion bool
+
+	// Progress, when set, is called as the export reads the server: once as
+	// each scope (the global play, then each app) is opened, and once before
+	// each exporter in it is run. It is called synchronously on the reading
+	// goroutine, so a slow callback slows the export. Nil reports nothing.
+	Progress func(ExportProgress)
+}
+
+// progress reports ev to opts.Progress when one is set.
+func (opts ExportOptions) progress(ev ExportProgress) {
+	if opts.Progress != nil {
+		opts.Progress(ev)
+	}
+}
+
+// ExportProgress is one step of an export run, as reported to
+// ExportOptions.Progress. An event with an empty Type opens a scope; one with
+// a Type says that exporter is about to read the server.
+//
+// It carries only app names and registry type-keys, never a value a task body
+// read, so a caller can print it as it arrives - before the run is over and
+// SensitiveValues can say what to mask. The warnings cannot be printed that
+// way, which is why they are only reported once ExportRecipe returns (#488).
+//
+//sdk:export
+type ExportProgress struct {
+	// Scope is the app being read, or "global" for the leading play.
+	Scope string
+
+	// Index is the 1-based position of the app among those being read, and
+	// Total how many there are. Both are 0 for the global play.
+	Index int
+	Total int
+
+	// Type is the task type-key whose exporter is about to run, or empty
+	// when the event opens the scope.
+	Type string
+}
+
+// withType returns the event reporting typeKey's exporter within this scope.
+func (ev ExportProgress) withType(typeKey string) ExportProgress {
+	ev.Type = typeKey
+	return ev
 }
 
 // ExportReport carries non-fatal diagnostics from an export run.
@@ -441,7 +484,9 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	// only place it can come from - skipping it exported nothing and reported
 	// the address as missing from a server that had it.
 	if res.filter.wantsGlobalScope(inGlobal) && (len(opts.Apps) == 0 || res.filter.hasGlobalAddress(inGlobal)) {
-		if global := res.exportGlobalPlay(ctx, opts); global != nil {
+		scope := ExportProgress{Scope: "global"}
+		opts.progress(scope)
+		if global := res.exportGlobalPlay(ctx, scope, opts); global != nil {
 			res.plays = append(res.plays, *global)
 		}
 	}
@@ -464,8 +509,10 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 		// would only filter that list back down to these names. The narrowed
 		// exporters read each app anyway; see exportPinnedAppPlay for how a
 		// missing one is told apart without the listing (#567).
-		for _, app := range selectedApps {
-			play, err := res.exportPinnedAppPlay(ctx, app, opts)
+		for i, app := range selectedApps {
+			scope := ExportProgress{Scope: app, Index: i + 1, Total: len(selectedApps)}
+			opts.progress(scope)
+			play, err := res.exportPinnedAppPlay(ctx, scope, opts)
 			if err != nil {
 				return res, err
 			}
@@ -485,8 +532,10 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 	apps = filterApps(apps, opts.Apps)
 	sort.Strings(apps)
 
-	for _, app := range apps {
-		play, _ := res.exportAppPlay(ctx, app, opts)
+	for i, app := range apps {
+		scope := ExportProgress{Scope: app, Index: i + 1, Total: len(apps)}
+		opts.progress(scope)
+		play, _ := res.exportAppPlay(ctx, scope, opts)
 		if play != nil {
 			res.plays = append(res.plays, *play)
 		}
@@ -498,8 +547,9 @@ func ExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error
 }
 
 // exportGlobalPlay builds the leading global play by running every registered
-// GlobalExporter. Returns nil when there are no global resources.
-func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOptions) *ExportedPlay {
+// GlobalExporter. Returns nil when there are no global resources. scope is the
+// progress event that opened the play; each exporter is reported under it.
+func (res *ExportResult) exportGlobalPlay(ctx context.Context, scope ExportProgress, opts ExportOptions) *ExportedPlay {
 	var taskList []ExportedTask
 	var inputs []map[string]interface{}
 
@@ -515,6 +565,7 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 		if !ok {
 			continue
 		}
+		opts.progress(scope.withType(typeKey))
 		if err := CheckMinimumVersions(ctx, typeKey, proto); err != nil {
 			res.Report.addVersionWarning(fmt.Sprintf("global: %s: %v", typeKey, err), err)
 			continue
@@ -565,11 +616,12 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, opts ExportOption
 // they are reported as the user typed them rather than as an app name they
 // never wrote. Only the warnings and matches need rewinding. A missing app
 // yields no body but dokku_app's, which carries no vars or sensitive values.
-func (res *ExportResult) exportPinnedAppPlay(ctx context.Context, app string, opts ExportOptions) (*ExportedPlay, error) {
+func (res *ExportResult) exportPinnedAppPlay(ctx context.Context, scope ExportProgress, opts ExportOptions) (*ExportedPlay, error) {
+	app := scope.Scope
 	warnings := len(res.Report.Warnings)
 	matches := res.filter.matchState()
 
-	play, failed := res.exportAppPlay(ctx, app, opts)
+	play, failed := res.exportAppPlay(ctx, scope, opts)
 	if !failed && !playHasTask[AppTask](play) {
 		return play, nil
 	}
@@ -603,8 +655,10 @@ func playHasTask[T Task](play *ExportedPlay) bool {
 // exporter in appExportOrder. Returns nil when the app yields no tasks, and
 // reports whether any exporter failed. A failure is only an exporter's own
 // error; a warning it raised or a body the engine dropped does not count,
-// since neither suggests the app is missing.
-func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts ExportOptions) (*ExportedPlay, bool) {
+// since neither suggests the app is missing. scope is the progress event that
+// opened the play and names the app; each exporter is reported under it.
+func (res *ExportResult) exportAppPlay(ctx context.Context, scope ExportProgress, opts ExportOptions) (*ExportedPlay, bool) {
+	app := scope.Scope
 	var taskList []ExportedTask
 	var inputs []map[string]interface{}
 	failed := false
@@ -621,6 +675,7 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, app string, opts Exp
 		if !ok {
 			continue
 		}
+		opts.progress(scope.withType(typeKey))
 		if err := CheckMinimumVersions(ctx, typeKey, proto); err != nil {
 			res.Report.addVersionWarning(fmt.Sprintf("%s: %s: %v", app, typeKey, err), err)
 			failed = true

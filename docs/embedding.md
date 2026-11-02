@@ -207,6 +207,26 @@ res, err := sdk.ExportRecipe(ctx, sdk.ExportOptions{Resources: sel, Inline: true
 one back into its type and keys. To read one resource as a task rather than as a recipe, including
 one export cannot reconstruct, use [`sdk.ReadAddress`](#reading-from-an-address) instead.
 
+### Progress
+
+An export reads the server one task type at a time, app by app, so a large one can run for a while.
+`ExportOptions.Progress` is called as it goes: once as each scope opens - the global play, then each
+app with its `Index` and `Total` among the apps being read - and once, with `Type` set, before each
+task type is read in it. It runs synchronously on the reading goroutine.
+
+```go
+res, err := sdk.ExportRecipe(ctx, sdk.ExportOptions{
+    Progress: func(ev sdk.ExportProgress) {
+        if ev.Type == "" && ev.Total > 0 {
+            fmt.Fprintf(os.Stderr, "reading %s (%d/%d)\n", ev.Scope, ev.Index, ev.Total)
+        }
+    },
+})
+```
+
+An event carries only app names and task type names, never a value read off the server, so it is
+safe to print before the export returns. The warnings are not: they wait for `res`, as below.
+
 ### Secrets
 
 An export is the one read path with no recipe to collect a sensitive set from ahead of time: the

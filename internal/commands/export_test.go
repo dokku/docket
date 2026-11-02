@@ -46,10 +46,11 @@ func exportCommandFixture() map[string]string {
 // newExportCommand builds an ExportCommand writing into baseDir. Passing one
 // is what replaced chdir'ing the process: export's --output default is
 // relative, and several tests are precisely about what that default resolves
-// to.
+// to. Progress is discarded rather than left to reach the test binary's own
+// stderr; a test about progress swaps in a buffer.
 func newExportCommand(baseDir ...string) (*ExportCommand, *cli.MockUi) {
 	ui := cli.NewMockUi()
-	c := &ExportCommand{Meta: command.Meta{Ui: ui}}
+	c := &ExportCommand{Meta: command.Meta{Ui: ui}, Stderr: io.Discard}
 	if len(baseDir) > 0 {
 		c.BaseDir = baseDir[0]
 	}
