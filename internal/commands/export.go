@@ -433,6 +433,9 @@ func (c *ExportCommand) exitForMissingApps(res *tasks.ExportResult) int {
 // The lines are not masked: an event carries only app names and task
 // type-keys, and the values the masker would hide are not known until the
 // read is over (see tasks.ExportProgress).
+//
+// A failed write is ignored: progress is a courtesy, and an unwritable stderr
+// is no reason to abandon an export that is otherwise succeeding.
 func (c *ExportCommand) progress() func(tasks.ExportProgress) {
 	if c.quiet {
 		return nil
@@ -442,12 +445,12 @@ func (c *ExportCommand) progress() func(tasks.ExportProgress) {
 		switch {
 		case ev.Type != "":
 			if c.verbose {
-				fmt.Fprintf(w, "    %s\n", ev.Type)
+				_, _ = fmt.Fprintf(w, "    %s\n", ev.Type)
 			}
 		case ev.Total == 0:
-			fmt.Fprintf(w, "==> Reading %s resources\n", ev.Scope)
+			_, _ = fmt.Fprintf(w, "==> Reading %s resources\n", ev.Scope)
 		default:
-			fmt.Fprintf(w, "==> Reading app %s (%d/%d)\n", ev.Scope, ev.Index, ev.Total)
+			_, _ = fmt.Fprintf(w, "==> Reading app %s (%d/%d)\n", ev.Scope, ev.Index, ev.Total)
 		}
 	}
 }
