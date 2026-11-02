@@ -8,12 +8,16 @@ load test_helper
 setup() {
   docket_build
   dokku_clean_app docket-test-export
+  dokku_clean_network docket-test-export-attached
+  dokku_clean_network docket-test-export-unrelated
   dokku_clean_scheduler_k3s_profile docket-test-good
   dokku_clean_scheduler_k3s_profile DocketTestBad
 }
 
 teardown() {
   dokku_clean_app docket-test-export
+  dokku_clean_network docket-test-export-attached
+  dokku_clean_network docket-test-export-unrelated
   dokku_clean_scheduler_k3s_profile docket-test-good
   dokku_clean_scheduler_k3s_profile DocketTestBad
 }
@@ -111,6 +115,66 @@ teardown() {
   run "$(docket_bin)" export --app docket-test-export --output "$BATS_TEST_TMPDIR/tasks.yml"
   assert_success
   assert_output --partial "(1 app)"
+}
+
+@test "docket export --app carries the networks the app attaches to" {
+  require_dokku
+  bats_require_minimum_version 1.5.0
+  dokku apps:create docket-test-export
+  dokku network:create docket-test-export-attached
+  dokku network:create docket-test-export-unrelated
+  dokku network:set docket-test-export attach-post-deploy docket-test-export-attached
+  run --separate-stderr "$(docket_bin)" export --app docket-test-export --output -
+  assert_success
+  assert_output --partial "name: global"
+  assert_output --partial "docket-test-export-attached"
+  refute_output --partial "docket-test-export-unrelated"
+}
+
+@test "docket export --app --skip-dependencies leaves the global play out" {
+  require_dokku
+  bats_require_minimum_version 1.5.0
+  dokku apps:create docket-test-export
+  dokku network:create docket-test-export-attached
+  dokku network:set docket-test-export attach-post-deploy docket-test-export-attached
+  run --separate-stderr "$(docket_bin)" export --app docket-test-export --skip-dependencies --output -
+  assert_success
+  refute_output --partial "name: global"
+  refute_output --partial "dokku_network:"
+}
+
+@test "docket export --skip-dependencies requires --app" {
+  # Rejected before the server is read, which is why this needs no dokku.
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --skip-dependencies
+  assert_failure
+  assert_output --partial "--skip-dependencies requires --app"
+  assert [ ! -f tasks.yml ]
+}
+
+@test "docket export --global-only exports the server-wide resources and no app" {
+  require_dokku
+  bats_require_minimum_version 1.5.0
+  dokku apps:create docket-test-export
+  dokku network:create docket-test-export-unrelated
+  run --separate-stderr "$(docket_bin)" export --global-only --output -
+  assert_success
+  assert_output --partial "name: global"
+  assert_output --partial "docket-test-export-unrelated"
+  refute_line --regexp '^- name: docket-test-export$'
+  run --separate-stderr "$(docket_bin)" export --global-only --output "$BATS_TEST_TMPDIR/tasks.yml"
+  assert_success
+  assert_output --partial "(server-wide resources only)"
+}
+
+@test "docket export --global-only rejects --app and --resource" {
+  # Rejected before the server is read, which is why this needs no dokku.
+  run "$(docket_bin)" export --global-only --app docket-test-export --output -
+  assert_failure
+  assert_output --partial "--global-only cannot be combined"
+  run "$(docket_bin)" export --global-only --resource 'dokku_plugin[name=redis]' --output -
+  assert_failure
+  assert_output --partial "--global-only cannot be combined"
 }
 
 @test "docket export --verbose rejects --quiet" {

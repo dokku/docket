@@ -742,6 +742,65 @@ progress at all. Progress stays off stdout, so `--output -` still streams nothin
 The warnings are not printed as they happen: they are held until the whole server is read, because
 only then is every secret known that they need masked (see below).
 
+### Exporting one app
+
+`--app` exports the named app, and a leading global play holding only the global resources that app
+depends on, so the recipe applies to a server that has none of them yet. That is what lets a server
+be migrated one app at a time (see [migration](migration.md#migrating-one-app-at-a-time)):
+
+```bash
+docket export --app api
+```
+
+The global play carries:
+
+- every datastore service the app links to, in full: its `dokku_service_create`,
+  `dokku_service_property`, `dokku_service_expose`, `dokku_service_backup` and `dokku_acl_service`
+  tasks, exactly as an export of the whole server would emit them, even when another app links the
+  same service
+- every network the app attaches to through `dokku_network_property` (`attach-post-create`,
+  `attach-post-deploy`, `initial-network`), and every network those services attach to
+- every storage entry the app mounts through `dokku_storage_mount`
+- every git-installed plugin those tasks need, such as the datastore plugin behind a service or the
+  plugin behind `dokku_letsencrypt`
+
+Server-wide defaults are left out, since they are not any one app's to move: global properties, SSH
+keys, the global certificate, global registry logins, and scheduler-k3s profiles, charts, and global
+annotations, labels and autoscaling auth. [`--global-only`](#exporting-the-server-wide-resources)
+exports those on their own. An app that depends on none of the above gets no global play, and its
+progress shows no global line.
+
+The global resources are read after the app, because what to read depends on what the app's tasks
+name, so the progress lines list the app first:
+
+```text
+==> Reading app api (1/1)
+==> Reading global resources
+```
+
+The task types that cannot depend on the app are not read at all. The ones that can are read in
+full and then narrowed, so a warning raised while reading them can still name a resource of another
+app's; its secrets are masked like any other.
+
+`--skip-dependencies` leaves the global play out for a server the shared resources have already been
+moved to. It is only valid with `--app`.
+
+### Exporting the server-wide resources
+
+`--global-only` is the other half: it exports the global play alone, in full, and no app. That is
+every resource that is not app-scoped - plugins, networks, SSH keys, the global certificate and
+registry logins, storage entries, scheduler-k3s profiles and charts, global properties, and every
+datastore service - exactly as an export of the whole server would emit them. The server's apps are
+not listed or read.
+
+```bash
+docket export --global-only
+```
+
+A service or network that also lands in an `--app` export is emitted the same way in both, so
+applying the two recipes in either order converges on the same state. `--global-only` cannot be
+combined with `--app` or `--resource`.
+
 ### Exporting one resource
 
 `--resource` takes a [resource address](task-envelope.md#names-and-resource-addresses) - the same
@@ -780,7 +839,9 @@ same address, reads task types export cannot reconstruct, and says whether the r
 | `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in, and the template is still written `0600` because filling it in is what puts the secrets there. |
 | `--verbose` | Also print each task type to stderr as it is read, under the app it belongs to. Not valid with `--quiet`. |
 | `--quiet` | Print no progress while the server is read. Warnings and errors still print. Not valid with `--verbose`. |
-| `--app <name>` | Restrict the export to the named app. Repeatable. |
+| `--app <name>` | Restrict the export to the named app and the global resources it depends on. Repeatable. See [exporting one app](#exporting-one-app). |
+| `--skip-dependencies` | With `--app`, leave out the global resources the app depends on. Not valid without `--app`. |
+| `--global-only` | Export every server-wide resource and no app. Not valid with `--app` or `--resource`. See [exporting the server-wide resources](#exporting-the-server-wide-resources). |
 | `--resource <address>` | Restrict the export to a [resource address](task-envelope.md#names-and-resource-addresses), e.g. `dokku_config[app=api]`. A bare task type takes every resource of that type. Repeatable; not valid with `--app`. See [exporting one resource](#exporting-one-resource). |
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |
 | `--sudo` | Run `dokku` as root via `sudo -n`, remotely with `--host` and locally without. |

@@ -189,7 +189,9 @@ the value form of the type registered under `task.Type`, never a pointer, so
 
 | Field | Effect |
 | --- | --- |
-| `Apps` | Only these apps. The leading global play is skipped unless an address asks for it. |
+| `Apps` | Only these apps. The leading global play carries only the global resources they depend on - see [exporting one app](command-reference.md#exporting-one-app). With `Resources` as well, dependencies are not gathered and the global play is skipped unless an address asks for it. |
+| `SkipDependencies` | With `Apps`, leave the global play out entirely. The equivalent of `docket export --skip-dependencies`. |
+| `GlobalOnly` | Read the global play alone, in full, and no app - the app list is not read either. Combining it with `Apps` or `Resources` is an error. The equivalent of `docket export --global-only`. |
 | `Resources` | Only these addresses, parsed by `sdk.ParseResourceSelectors`. When every address names its app or is global, only those apps are read and the server's app list is not. |
 | `Inline` | Keep sensitive values in the bodies instead of lifting them into `Vars`. |
 | `Redact` | Replace sensitive values with a placeholder. |
@@ -212,7 +214,8 @@ one export cannot reconstruct, use [`sdk.ReadAddress`](#reading-from-an-address)
 An export reads the server one task type at a time, app by app, so a large one can run for a while.
 `ExportOptions.Progress` is called as it goes: once as each scope opens - the global play, then each
 app with its `Index` and `Total` among the apps being read - and once, with `Type` set, before each
-task type is read in it. It runs synchronously on the reading goroutine.
+task type is read in it. With `Apps`, the global play opens after the apps, since what it reads
+depends on them. It runs synchronously on the reading goroutine.
 
 ```go
 res, err := sdk.ExportRecipe(ctx, sdk.ExportOptions{
