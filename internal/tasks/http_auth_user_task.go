@@ -699,11 +699,9 @@ func getHttpAuthUsers(ctx context.Context, appName string) (map[string]bool, err
 // reproduces the users without anyone knowing the passwords behind them.
 //
 // http-auth:export-users reads the same htpasswd the report derives its `users`
-// key from, so it is the only probe needed here. A transport-level failure
-// (`*subprocess.SSHError`) is propagated; any other failure is treated as "no
-// users", matching the other readers in this package - that is what keeps a
-// server without the http-auth plugin from raising an export warning for every
-// app it has.
+// key from, so it is the only probe needed here. A failure is returned: the
+// export engine does not run this exporter on a server without the http-auth
+// plugin (#672), so a failed read is the installed plugin's own.
 //
 // State is set explicitly so the emitted body is directly plannable, rather
 // than depending on the decode-time default. It is `present`, not `set`, even
@@ -713,11 +711,7 @@ func getHttpAuthUsers(ctx context.Context, appName string) (map[string]bool, err
 func (t HttpAuthUserTask) ExportApp(ctx context.Context, app string) ([]interface{}, error) {
 	hashes, err := getHttpAuthUserHashes(ctx, app)
 	if err != nil {
-		var sshErr *subprocess.SSHError
-		if errors.As(err, &sshErr) {
-			return nil, err
-		}
-		return nil, nil
+		return nil, err
 	}
 	if len(hashes) == 0 {
 		return nil, nil

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -17,6 +18,32 @@ func fakeDokku(responses map[string]string) func(context.Context, subprocess.Exe
 	return func(_ context.Context, in subprocess.ExecCommandInput) (subprocess.ExecCommandResponse, error) {
 		return subprocess.ExecCommandResponse{Stdout: responses[strings.Join(in.Args, " ")]}, nil
 	}
+}
+
+// pluginListKey is the fakeDokku key for the installed-plugin read the export
+// engine makes before running an exporter whose task needs a plugin.
+const pluginListKey = "--quiet plugin:list --format json"
+
+// withInstalledPlugins returns responses with names added to its plugin:list
+// answer, so the export engine runs the exporters that need them. An unanswered
+// plugin:list reads as "nothing installed", which skips them (#672). Each added
+// entry has no source URL, which dokku_plugin's exporter leaves out, so adding
+// one changes no recipe. A plugin:list answer already in responses that is not
+// a JSON array is a broken fixture, and panics.
+func withInstalledPlugins(responses map[string]string, names ...string) map[string]string {
+	var entries []map[string]interface{}
+	if existing := responses[pluginListKey]; existing != "" {
+		if err := json.Unmarshal([]byte(existing), &entries); err != nil {
+			panic("parse plugin:list fixture: " + err.Error())
+		}
+	}
+	for _, name := range names {
+		entries = append(entries, map[string]interface{}{"name": name, "core": false, "source_url": "", "committish": "", "branch": ""})
+	}
+	body, _ := json.Marshal(entries)
+	out := mergeFixtures(responses)
+	out[pluginListKey] = string(body)
+	return out
 }
 
 func exportFixture() map[string]string {
@@ -212,11 +239,11 @@ const exportHttpAuthHash = "$6$Xm3kx1s9$Zq8mQ0zH1p"
 // named users. Both the report and export-users have to answer: the report
 // drives dokku_http_auth, export-users drives dokku_http_auth_user.
 func httpAuthExportFixture(users, entries string) map[string]string {
-	return map[string]string{
+	return withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                  "web",
 		"http-auth:report web --format json": `{"enabled":"true","users":"` + users + `","allowed-ips":"","domains":""}`,
 		"--quiet http-auth:export-users web": entries,
-	}
+	}, "http-auth")
 }
 
 // TestExportHttpAuthUserHashesBecomeVars is the payoff of #443: the users come
@@ -407,10 +434,10 @@ func TestExportHttpAuthDisabledWithConfigBecomesAbsentTask(t *testing.T) {
 		{"auth domains remain", `{"enabled":"false","users":"","allowed-ips":"","domains":"web.example.com"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 				"--quiet apps:list":                  "web",
 				"http-auth:report web --format json": tc.report,
-			}))
+			}, "http-auth")))
 
 			bodies, err := HttpAuthTask{}.ExportApp(ctx, "web")
 			if err != nil {
@@ -448,10 +475,10 @@ func TestExportHttpAuthDisabledWithConfigBecomesAbsentTask(t *testing.T) {
 // must not litter every play with a no-op disable task.
 func TestExportHttpAuthDisabledEmitsNoTask(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                  "web",
 		"http-auth:report web --format json": `{"enabled":"false","users":"","allowed-ips":"","domains":""}`,
-	}))
+	}, "http-auth")))
 
 	bodies, err := HttpAuthTask{}.ExportApp(ctx, "web")
 	if err != nil {
@@ -473,10 +500,10 @@ func TestExportHttpAuthDisabledEmitsNoTask(t *testing.T) {
 
 func TestExportMaintenanceCustomPageBecomesInput(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                    "web",
 		"maintenance:report web --format json": `{"enabled":"false","custom-page-sha256":"7b645f273842a941c68302a4022ed03e219bd8db318ef32a92dddb148a72ef05"}`,
-	}))
+	}, "maintenance")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
@@ -521,10 +548,10 @@ func TestExportMaintenanceCustomPageAbsentEmitsNothing(t *testing.T) {
 		{"key absent (old plugin)", `{"enabled":"false"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+			ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 				"--quiet apps:list":                    "web",
 				"maintenance:report web --format json": tc.report,
-			}))
+			}, "maintenance")))
 
 			res, err := ExportRecipe(ctx, ExportOptions{})
 			if err != nil {
@@ -601,12 +628,12 @@ func TestExportGlobalCertBecomesGlobalTask(t *testing.T) {
 	t.Parallel()
 	certPEM := "-----BEGIN CERTIFICATE-----\nMIIFAKECERT\n-----END CERTIFICATE-----"
 	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIIFAKEKEY\n-----END PRIVATE KEY-----"
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list": "",
 		"--quiet global-cert:report --global --global-cert-enabled": "true",
 		"--quiet global-cert:show crt":                              certPEM,
 		"--quiet global-cert:show key":                              keyPEM,
-	}))
+	}, "global-cert")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
@@ -650,12 +677,12 @@ func TestExportInlineRedactBlanksSensitiveScalar(t *testing.T) {
 	// (cert/key PEM here) in place, not fall back to the original unredacted body.
 	certPEM := "-----BEGIN CERTIFICATE-----\nMIIFAKECERT\n-----END CERTIFICATE-----"
 	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIIFAKEKEY\n-----END PRIVATE KEY-----"
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list": "",
 		"--quiet global-cert:report --global --global-cert-enabled": "true",
 		"--quiet global-cert:show crt":                              certPEM,
 		"--quiet global-cert:show key":                              keyPEM,
-	}))
+	}, "global-cert")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{Inline: true, Redact: true})
 	if err != nil {
@@ -679,13 +706,13 @@ func TestExportAppCertSkippedWhenLetsencryptActive(t *testing.T) {
 	// pinned as a static dokku_certs task.
 	certPEM := "-----BEGIN CERTIFICATE-----\nMIILEACERT\n-----END CERTIFICATE-----"
 	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIILEAKEY\n-----END PRIVATE KEY-----"
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                      "web",
 		"--quiet certs:report web --ssl-enabled": "true",
 		"--quiet letsencrypt:active web":         "true",
 		"--quiet certs:show web crt":             certPEM,
 		"--quiet certs:show web key":             keyPEM,
-	}))
+	}, "letsencrypt")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
@@ -709,13 +736,13 @@ func TestExportAppCertExportedWhenLetsencryptInactive(t *testing.T) {
 	// A manual (non-letsencrypt) cert is still exported as dokku_certs.
 	certPEM := "-----BEGIN CERTIFICATE-----\nMIIMANUAL\n-----END CERTIFICATE-----"
 	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIIMANUALKEY\n-----END PRIVATE KEY-----"
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                      "web",
 		"--quiet certs:report web --ssl-enabled": "true",
 		"--quiet letsencrypt:active web":         "false",
 		"--quiet certs:show web crt":             certPEM,
 		"--quiet certs:show web key":             keyPEM,
-	}))
+	}, "letsencrypt")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
@@ -741,11 +768,11 @@ func TestExportMaintenanceCustomPageInlinesContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildMaintenancePageTarball: %v", err)
 	}
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                          "web",
 		"maintenance:report web --format json":       `{"enabled":"false","custom-page-sha256":"abc123"}`,
 		"--quiet maintenance:custom-page-export web": string(tarBytes),
-	}))
+	}, "maintenance")))
 
 	// The task ExportApp yields a valid task carrying the real content.
 	bodies, err := MaintenanceCustomPageTask{}.ExportApp(ctx, "web")
@@ -993,10 +1020,10 @@ func TestExportGlobalLetsencryptDynamicProperties(t *testing.T) {
 // the operator for the credential.
 func TestExportGlobalLetsencryptCredentialLiftedAsSensitiveInput(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list": "",
 		"--quiet letsencrypt:report --global --format json": `{"global-email":"admin@example.com","global-dns-provider":"namecheap","global-dns-provider-NAMECHEAP_API_KEY":"s3cr3tkey"}`,
-	}))
+	}, "letsencrypt")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
@@ -1032,10 +1059,10 @@ func TestExportGlobalLetsencryptCredentialLiftedAsSensitiveInput(t *testing.T) {
 // required input the operator has to re-supply on every apply (#451).
 func TestExportLetsencryptBenignPropertyNotLifted(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                            "web",
 		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"tok3n"}`,
-	}))
+	}, "letsencrypt")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
@@ -1221,11 +1248,11 @@ func TestExportGlobalTraefikCredentialLiftedAsSensitiveInput(t *testing.T) {
 // both values survive.
 func TestExportGlobalDynamicCredentialsCollideDeterministically(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list": "",
 		"--quiet letsencrypt:report --global --format json": `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"le-token"}`,
 		"--quiet traefik:report --global --format json":     `{"global-dns-provider-CLOUDFLARE_API_TOKEN":"traefik-token"}`,
-	}))
+	}, "letsencrypt")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {
@@ -1251,10 +1278,10 @@ func TestExportGlobalDynamicCredentialsCollideDeterministically(t *testing.T) {
 
 func TestExportGlobalCertDisabledEmitsNoTask(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list": "",
 		"--quiet global-cert:report --global --global-cert-enabled": "false",
-	}))
+	}, "global-cert")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {

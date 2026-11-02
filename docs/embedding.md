@@ -475,6 +475,13 @@ the version could not be read or parsed, and is nil when the server is simply ol
 set `ExportOptions.IgnoreVersion` to read it anyway. That option wins over a gate already on the
 context.
 
+`sdk.ExportRecipe` also skips an exporter whose task needs a plugin the server does not have
+installed - `dokku_acl_app` without dokku-acl, the global `dokku_certs` without dokku-global-cert -
+whether or not the gate is on. It reads `plugin:list` once per run, sharing the gate's read when there
+is one, and a skipped exporter adds no warning and no progress event. When the plugin list cannot be
+read, every exporter runs. A task's own `ExportApp` or `ExportGlobal` makes no such check and runs
+the plugin's command regardless.
+
 ### Listing task types
 
 `sdk.TaskTypes()` returns every registered task type, sorted. `sdk.Lookup` reports whether a type is

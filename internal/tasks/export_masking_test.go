@@ -131,10 +131,10 @@ func TestExportRegistersHttpAuthHashes(t *testing.T) {
 // masks for the same task, and over-masking is the safe direction.
 func TestExportRegistersEveryLetsencryptPropertyValue(t *testing.T) {
 	t.Parallel()
-	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(withInstalledPlugins(map[string]string{
 		"--quiet apps:list":                            "web",
 		"--quiet letsencrypt:report web --format json": `{"email":"admin@example.com","dns-provider-CLOUDFLARE_API_TOKEN":"tok3n"}`,
-	}))
+	}, "letsencrypt")))
 
 	res, err := ExportRecipe(ctx, ExportOptions{})
 	if err != nil {

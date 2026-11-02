@@ -717,6 +717,13 @@ docket export --resource 'dokku_config[app=api]' --output -
 The correctness contract is idempotency: applying an exported pair back to the same server reports
 no drift (`plan` shows every task `[ok]`).
 
+Export only reads a task type when the server has the plugins it needs. A task that needs a
+third-party plugin - dokku-acl, dokku-http-auth, dokku-maintenance, dokku-letsencrypt, or
+dokku-global-cert for the global certificate - is skipped on a server that does not have that plugin
+installed: export reads `plugin:list` once, runs none of that plugin's commands, prints no warning
+for it, and `--verbose` prints no line for it. A plugin that is installed but fails is still warned
+about.
+
 The two halves are written with different modes, because they hold different things. The recipe
 carries interpolations rather than values, so it lands at `0644` like every other file docket
 writes. The vars-file holds the values themselves in the clear - every `config` value, the

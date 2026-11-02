@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/dokku/docket/internal/subprocess"
@@ -70,9 +69,9 @@ func (t AclServiceTask) MinimumVersions() VersionSupport {
 // service on the server. Discovery is via listServices; the members are read
 // from `acl:list-service <type> <name>` (reusing getAclServiceUsers). Note the
 // field inversion versus the other service tasks: Service holds the instance
-// name and Type the datastore type. Services with no ACL entries - and every
-// service when the dokku-acl plugin is absent - are skipped. state:set
-// replaces the whole list for an exact match.
+// name and Type the datastore type. Services with no ACL entries are skipped,
+// and a failed read is returned. state:set replaces the whole list for an
+// exact match.
 func (t AclServiceTask) ExportGlobal(ctx context.Context) ([]interface{}, error) {
 	services, err := listServices(ctx)
 	if err != nil {
@@ -80,16 +79,11 @@ func (t AclServiceTask) ExportGlobal(ctx context.Context) ([]interface{}, error)
 	}
 	var out []interface{}
 	for _, s := range services {
+		// The export engine does not run this exporter on a server without
+		// dokku-acl (#672), so a failure here is the installed plugin's own.
 		users, err := getAclServiceUsers(ctx, s.Type, s.Name)
 		if err != nil {
-			var sshErr *subprocess.SSHError
-			if errors.As(err, &sshErr) {
-				return nil, err
-			}
-			// acl:list-service fails when the dokku-acl plugin is not installed;
-			// treat that (and any other dokku-level failure) as "no ACL" so
-			// export stays quiet on servers without dokku-acl.
-			continue
+			return nil, err
 		}
 		if len(users) == 0 {
 			continue

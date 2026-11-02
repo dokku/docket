@@ -99,3 +99,26 @@ func TestExportProgressFollowsAResourceFilter(t *testing.T) {
 		t.Errorf("events = %+v, want %+v", events, want)
 	}
 }
+
+func TestExportProgressLeavesOutExportersForMissingPlugins(t *testing.T) {
+	t.Parallel()
+	events := recordProgress(t, withInstalledPlugins(exportFixture(), "acl"), ExportOptions{Inline: true, Apps: []string{"app-one"}})
+
+	var types []string
+	for _, ev := range events {
+		if ev.Type != "" {
+			types = append(types, ev.Type)
+		}
+	}
+	// dokku_acl_app's plugin is installed, so it is read and reported; the
+	// http-auth, maintenance and letsencrypt exporters are not run (#672), so
+	// nothing says they are about to read the server.
+	if !slices.Contains(types, "dokku_acl_app") {
+		t.Errorf("progress should report dokku_acl_app, got %v", types)
+	}
+	for _, skipped := range []string{"dokku_http_auth", "dokku_http_auth_user", "dokku_maintenance", "dokku_maintenance_custom_page", "dokku_letsencrypt", "dokku_letsencrypt_property"} {
+		if slices.Contains(types, skipped) {
+			t.Errorf("progress reported %s, whose plugin is not installed: %v", skipped, types)
+		}
+	}
+}

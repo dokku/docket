@@ -465,15 +465,31 @@ func (e *targetVersions) readDokku(ctx context.Context, cache *versionCache) (st
 
 func (e *targetVersions) readPlugins(ctx context.Context, cache *versionCache) (map[string]string, error) {
 	return loadVersion(ctx, cache, &e.plugins, func() (map[string]string, error) {
-		result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
-			Command: "dokku",
-			Args:    []string{"--quiet", "plugin:list", "--format", "json"},
-		})
-		if err != nil {
-			return nil, err
-		}
-		return parsePluginList(result.StdoutContents()), nil
+		return readInstalledPlugins(ctx)
 	})
+}
+
+// installedPlugins returns the plugins installed on the server ctx targets,
+// keyed by plugin:list name with the version each reports. A context carrying
+// a version gate shares the gate's cached read, so the gate and its caller ask
+// the server once between them; any other context reads the list itself.
+func installedPlugins(ctx context.Context) (map[string]string, error) {
+	if cache := versionCacheFrom(ctx); cache != nil {
+		return cache.entry(ctx).readPlugins(ctx, cache)
+	}
+	return readInstalledPlugins(ctx)
+}
+
+// readInstalledPlugins runs `plugin:list --format json` and parses it.
+func readInstalledPlugins(ctx context.Context) (map[string]string, error) {
+	result, err := subprocess.CallExecCommand(ctx, subprocess.ExecCommandInput{
+		Command: "dokku",
+		Args:    []string{"--quiet", "plugin:list", "--format", "json"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parsePluginList(result.StdoutContents()), nil
 }
 
 // loadVersion returns r's cached answer, or reads it. One caller reads at a

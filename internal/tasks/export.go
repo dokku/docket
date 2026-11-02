@@ -402,6 +402,88 @@ type ExportResult struct {
 	// filter narrows emission to the --resource addresses. nil for an
 	// unrestricted export, where every check it performs answers "keep".
 	filter *resourceFilter
+
+	// plugins is the server's installed plugin list, read the first time an
+	// exporter that needs a plugin is reached (see missingPlugin). pluginsRead
+	// says that read has happened, and pluginsKnown that it succeeded.
+	plugins      map[string]string
+	pluginsRead  bool
+	pluginsKnown bool
+}
+
+// missingPlugin reports whether the exporter of proto needs a plugin the
+// server does not have installed, in which case the export does not run it
+// (#672): its read would only fail, or come back empty, and say nothing the
+// user needs. global says whether the exporter reads the global play, where a
+// requirement gated on the task's Global field (dokku_certs and global-cert)
+// applies.
+//
+// Only a plugin a task names outright is checked. A requirement named by a
+// field (the datastore tasks' service type) has no name on a prototype, and
+// those exporters only find services through service-list, which lists the
+// installed datastore plugins' services alone.
+//
+// The plugin list is read once per run. When it cannot be read the exporter
+// runs as it would have without the check, and reports whatever its own read
+// returns.
+func (res *ExportResult) missingPlugin(ctx context.Context, proto Task, global bool) bool {
+	support, ok := TaskMinimumVersions(proto)
+	if !ok || len(support.Plugins) == 0 {
+		return false
+	}
+	scoped := exportScopePrototype(proto, global)
+	var needed []string
+	for _, plugin := range support.Plugins {
+		if !pluginApplies(scoped, plugin) {
+			continue
+		}
+		if name, ok := pluginListName(scoped, plugin); ok {
+			needed = append(needed, name)
+		}
+	}
+	if len(needed) == 0 {
+		return false
+	}
+	if !res.pluginsRead {
+		res.pluginsRead = true
+		plugins, err := installedPlugins(ctx)
+		res.plugins, res.pluginsKnown = plugins, err == nil
+	}
+	if !res.pluginsKnown {
+		return false
+	}
+	for _, name := range needed {
+		if _, installed := res.plugins[name]; !installed {
+			return true
+		}
+	}
+	return false
+}
+
+// exportScopePrototype returns a copy of proto for the scope an exporter
+// reads: with its Global field set for the global play, and left zero for an
+// app's. proto is the pointer Lookup returns; a task without a Global field
+// is returned as-is.
+func exportScopePrototype(proto Task, global bool) Task {
+	if !global {
+		return proto
+	}
+	value := reflect.ValueOf(proto)
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return proto
+	}
+	copied := reflect.New(value.Elem().Type())
+	copied.Elem().Set(value.Elem())
+	field, ok := walkStructField(copied.Elem(), "Global")
+	if !ok || field.Kind() != reflect.Bool || !field.CanSet() {
+		return proto
+	}
+	field.SetBool(true)
+	task, ok := copied.Interface().(Task)
+	if !ok {
+		return proto
+	}
+	return task
 }
 
 // noteSensitive records values this export has identified as credential
@@ -459,6 +541,12 @@ func (res *ExportResult) SensitiveValues() []string {
 // with a warning and listed in Report.VersionErrors. Set
 // ExportOptions.IgnoreVersion to read it anyway.
 //
+// An exporter whose task needs a plugin the server does not have installed -
+// dokku_acl_app without dokku-acl, the global dokku_certs without
+// dokku-global-cert - is not run at all, so it adds no warning and no
+// progress event. Calling a task's ExportApp or ExportGlobal directly does
+// not check; it runs the plugin's command regardless.
+//
 //sdk:export ExportRecipe
 func GatedExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, error) {
 	if !opts.IgnoreVersion {
@@ -469,7 +557,8 @@ func GatedExportRecipe(ctx context.Context, opts ExportOptions) (*ExportResult, 
 
 // ExportRecipe reads the live Dokku server (via the current subprocess host)
 // and assembles a recipe describing it. It enumerates apps, runs every
-// registered AppExporter for each, lifts sensitive values into a vars map
+// registered AppExporter whose plugins are installed (see missingPlugin) for
+// each, lifts sensitive values into a vars map
 // (unless opts.Inline), and returns the result for the caller to marshal.
 // A --resource run whose addresses all pin an app or are global does not
 // enumerate: it reads only the pinned apps (#567).
@@ -610,7 +699,7 @@ func (res *ExportResult) exportGlobalPlay(ctx context.Context, scope ExportProgr
 			continue
 		}
 		exporter, ok := proto.(GlobalExporter)
-		if !ok {
+		if !ok || res.missingPlugin(ctx, proto, true) {
 			continue
 		}
 		opts.progress(scope.withType(typeKey))
@@ -752,7 +841,7 @@ func (res *ExportResult) exportAppPlay(ctx context.Context, scope ExportProgress
 			continue
 		}
 		exporter, ok := proto.(AppExporter)
-		if !ok {
+		if !ok || res.missingPlugin(ctx, proto, false) {
 			continue
 		}
 		opts.progress(scope.withType(typeKey))
