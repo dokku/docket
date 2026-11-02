@@ -727,6 +727,21 @@ the real secrets into, and it covers a vars-file already on disk, whose mode is 
 write so a file an older docket left at `0644` is locked down the next time export writes it. On a
 filesystem that cannot hold the bits at all, export says so and finishes rather than failing.
 
+Reading a whole server takes a dokku call or more per task type per app, so export reports its
+progress on stderr as it goes - a line as it starts on the global resources, and one per app with
+its position among the apps being read:
+
+```text
+==> Reading global resources
+==> Reading app api (1/2)
+==> Reading app worker (2/2)
+```
+
+`--verbose` adds a line under each of those for every task type as it is read; `--quiet` prints no
+progress at all. Progress stays off stdout, so `--output -` still streams nothing but the recipe.
+The warnings are not printed as they happen: they are held until the whole server is read, because
+only then is every secret known that they need masked (see below).
+
 ### Exporting one resource
 
 `--resource` takes a [resource address](task-envelope.md#names-and-resource-addresses) - the same
@@ -763,6 +778,8 @@ same address, reads task types export cannot reconstruct, and says whether the r
 | `--vars-output <path>` | Where to write the companion vars-file (default `<output-base>.vars.<ext>`, e.g. `tasks.vars.yml`). Written `0600` wherever it lands. Not valid with `--output -`. When the server holds nothing sensitive there is no vars-file to write, and an explicit path is reported as unwritten rather than passed over. |
 | `--overwrite` | Overwrite existing output files without prompting. Without it, export prompts before replacing either file, and aborts writing nothing if declined (or if stdin is not interactive). Not valid with `--output -`. |
 | `--redact` | Write placeholder values into the vars-file instead of real secrets, producing a shareable recipe plus a fill-in-the-blanks vars template. The `required` inputs mean `apply` fails loudly until the vars-file is filled in, and the template is still written `0600` because filling it in is what puts the secrets there. |
+| `--verbose` | Also print each task type to stderr as it is read, under the app it belongs to. Not valid with `--quiet`. |
+| `--quiet` | Print no progress while the server is read. Warnings and errors still print. Not valid with `--verbose`. |
 | `--app <name>` | Restrict the export to the named app. Repeatable. |
 | `--resource <address>` | Restrict the export to a [resource address](task-envelope.md#names-and-resource-addresses), e.g. `dokku_config[app=api]`. A bare task type takes every resource of that type. Repeatable; not valid with `--app`. See [exporting one resource](#exporting-one-resource). |
 | `--host <user@host:port>` | Read a remote server over SSH. Overrides `DOKKU_HOST`. See [remote execution](remote-execution.md). |

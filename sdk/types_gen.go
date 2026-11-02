@@ -124,6 +124,9 @@ type ExecRunner = subprocess.ExecRunner
 // ExportOptions is tasks.ExportOptions.
 type ExportOptions = tasks.ExportOptions
 
+// ExportProgress is tasks.ExportProgress.
+type ExportProgress = tasks.ExportProgress
+
 // ExportReport is tasks.ExportReport.
 type ExportReport = tasks.ExportReport
 

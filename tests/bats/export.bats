@@ -113,6 +113,35 @@ teardown() {
   assert_output --partial "(1 app)"
 }
 
+@test "docket export --verbose rejects --quiet" {
+  # Rejected before the server is read, which is why this needs no dokku.
+  cd "$BATS_TEST_TMPDIR"
+  run "$(docket_bin)" export --verbose --quiet
+  assert_failure
+  assert_output --partial "--verbose and --quiet cannot be combined"
+  assert [ ! -f tasks.yml ]
+}
+
+@test "docket export --output - reports progress on stderr only" {
+  require_dokku
+  bats_require_minimum_version 1.5.0
+  dokku apps:create docket-test-export
+  run --separate-stderr "$(docket_bin)" export --app docket-test-export --output -
+  assert_success
+  assert_output --partial "docket-test-export"
+  refute_output --partial "==> Reading"
+  [[ "$stderr" == *"==> Reading app docket-test-export (1/1)"* ]]
+}
+
+@test "docket export --quiet reports no progress" {
+  require_dokku
+  bats_require_minimum_version 1.5.0
+  dokku apps:create docket-test-export
+  run --separate-stderr "$(docket_bin)" export --app docket-test-export --output - --quiet
+  assert_success
+  [[ "$stderr" != *"==> Reading"* ]]
+}
+
 @test "docket export --format json5 writes a tasks.json / tasks.vars.json pair" {
   require_dokku
   dokku apps:create docket-test-export

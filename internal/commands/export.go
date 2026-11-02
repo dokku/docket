@@ -48,6 +48,12 @@ type ExportCommand struct {
 	// asserts on them needs somewhere of its own to capture.
 	Stdout io.Writer
 
+	// Stderr is where progress is written while the server is read. Populated
+	// from main.go; nil writes to the process's standard error. It is kept off
+	// stdout so a recipe streamed with --output - stays the only thing a pipe
+	// reads, and off Ui so a progress line is not labelled as a warning.
+	Stderr io.Writer
+
 	// Ctx is the run context, populated from main.go with the process signal
 	// context. It carries cancellation down through every task's Plan and
 	// Execute. Nil when the command was constructed directly (tests do this),
@@ -66,6 +72,8 @@ type ExportCommand struct {
 	formatFlag string
 	overwrite  bool
 	redact     bool
+	verbose    bool
+	quiet      bool
 	apps       []string
 	resources  []string
 
@@ -122,6 +130,8 @@ func (c *ExportCommand) FlagSet() *flag.FlagSet {
 	f.StringVar(&c.varsOutput, "vars-output", "", "path to write the companion vars-file to (defaults to <output-base>.vars.<ext>; --format overrides its format)")
 	f.BoolVar(&c.overwrite, "overwrite", false, "overwrite existing output files without prompting")
 	f.BoolVar(&c.redact, "redact", false, "write placeholder values into the vars-file instead of real secrets")
+	f.BoolVar(&c.verbose, "verbose", false, "also print each task type as it is read from the server, under the app it belongs to")
+	f.BoolVar(&c.quiet, "quiet", false, "do not print progress while the server is read; warnings and errors still print")
 	f.StringArrayVar(&c.apps, "app", nil, "restrict the export to the named app (repeatable)")
 	f.StringArrayVar(&c.resources, "resource", nil, "restrict the export to the named resource address, e.g. 'dokku_config[app=my-app]' (repeatable); a bare task type exports every resource of that type")
 	f.StringVar(&c.host, "host", "", "remote [user@]host[:port] to read over SSH; overrides DOKKU_HOST")
@@ -142,6 +152,8 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 			"--vars-output":          taskFileAutocomplete(),
 			"--overwrite":            complete.PredictNothing,
 			"--redact":               complete.PredictNothing,
+			"--verbose":              complete.PredictNothing,
+			"--quiet":                complete.PredictNothing,
 			"--app":                  complete.PredictNothing,
 			"--resource":             complete.PredictNothing,
 			"--host":                 complete.PredictNothing,
@@ -158,7 +170,8 @@ func (c *ExportCommand) AutocompleteFlags() complete.Flags {
 // Exit codes:
 //
 //	0 - export written (or streamed to stdout)
-//	1 - flag parse error, a file-only flag combined with --output -, read
+//	1 - flag parse error, --verbose combined with --quiet, a file-only flag
+//	    combined with --output -, read
 //	    error, an output file exists without --overwrite (and the prompt was
 //	    declined or stdin is not interactive), or an IO error
 func (c *ExportCommand) Run(args []string) int {
@@ -173,6 +186,11 @@ func (c *ExportCommand) Run(args []string) int {
 	formatOverride, err := parseRecipeFormatFlag("--format", c.formatFlag)
 	if err != nil {
 		c.Ui.Error(err.Error())
+		return 1
+	}
+
+	if c.verbose && c.quiet {
+		c.Ui.Error("--verbose and --quiet cannot be combined")
 		return 1
 	}
 
@@ -243,6 +261,7 @@ func (c *ExportCommand) Run(args []string) int {
 		Redact:        c.redact,
 		Inline:        toStdout,
 		IgnoreVersion: c.ignoreVersion,
+		Progress:      c.progress(),
 	})
 	// Export is the one server-reading command with no recipe to collect a
 	// sensitive set from before the run: the values it must mask are the ones
@@ -406,6 +425,36 @@ func (c *ExportCommand) exitForMissingApps(res *tasks.ExportResult) int {
 	return 1
 }
 
+// progress returns the callback that reports the read to stderr, or nil under
+// --quiet. Reading a whole server is one dokku round trip per exporter per
+// app, so without it a large or remote export looks hung (#670). Each opened
+// scope gets a line; --verbose adds one per exporter beneath it.
+//
+// The lines are not masked: an event carries only app names and task
+// type-keys, and the values the masker would hide are not known until the
+// read is over (see tasks.ExportProgress).
+//
+// A failed write is ignored: progress is a courtesy, and an unwritable stderr
+// is no reason to abandon an export that is otherwise succeeding.
+func (c *ExportCommand) progress() func(tasks.ExportProgress) {
+	if c.quiet {
+		return nil
+	}
+	w := c.stderr()
+	return func(ev tasks.ExportProgress) {
+		switch {
+		case ev.Type != "":
+			if c.verbose {
+				_, _ = fmt.Fprintf(w, "    %s\n", ev.Type)
+			}
+		case ev.Total == 0:
+			_, _ = fmt.Fprintf(w, "==> Reading %s resources\n", ev.Scope)
+		default:
+			_, _ = fmt.Fprintf(w, "==> Reading app %s (%d/%d)\n", ev.Scope, ev.Index, ev.Total)
+		}
+	}
+}
+
 // confirmOverwrite prompts for permission to overwrite an existing file. When
 // stdin is not interactive (Ask returns an error, e.g. EOF), it returns an
 // error advising --overwrite rather than silently overwriting.
@@ -487,6 +536,14 @@ func pathExists(baseDir, path string) (bool, error) {
 
 // stdout returns the writer this command streams bytes to.
 func (c *ExportCommand) stdout() io.Writer { return commandStdout(c.Stdout) }
+
+// stderr returns the writer this command reports progress to.
+func (c *ExportCommand) stderr() io.Writer {
+	if c.Stderr != nil {
+		return c.Stderr
+	}
+	return os.Stderr
+}
 
 // baseDir returns the directory this command resolves relative paths against.
 func (c *ExportCommand) baseDir() string { return c.BaseDir }

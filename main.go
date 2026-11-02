@@ -55,7 +55,7 @@ func Commands(ctx context.Context, meta command.Meta) map[string]cli.CommandFact
 			return &commands.ApplyCommand{Meta: meta, Ctx: ctx, Argv: os.Args, Version: Version}, nil
 		},
 		"export": func() (cli.Command, error) {
-			return &commands.ExportCommand{Meta: meta, Ctx: ctx, Stdout: os.Stdout}, nil
+			return &commands.ExportCommand{Meta: meta, Ctx: ctx, Stdout: os.Stdout, Stderr: os.Stderr}, nil
 		},
 		"fmt": func() (cli.Command, error) {
 			return &commands.FmtCommand{Meta: meta, Stdout: os.Stdout}, nil
