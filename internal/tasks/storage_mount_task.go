@@ -152,7 +152,7 @@ func (t StorageMountTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku this task's probe parses.
-// The floor is 0.38.31, the release the integration suite runs; the probe is `storage:report`.
+// The floor is 0.38.31, the release the integration suite ran when this floor was recorded; the probe is `storage:report`.
 // The 0.38.29 note in the examples is a path-collision the server refuses, not the shape this probe parses.
 func (t StorageMountTask) MinimumVersions() VersionSupport {
 	return VersionSupport{Dokku: "0.38.31"}

@@ -77,7 +77,7 @@ func (t MaintenanceTask) ProbeSupport() ProbeSupport {
 // MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
 // The probe is `maintenance:report`. 0.10.2 is the plugin.toml version of the
 // maintenance release the integration suite installs; no older report shape
-// is recorded here. 0.38.31 is the Dokku that suite runs.
+// is recorded here. 0.38.31 is the Dokku that suite ran when this floor was recorded.
 func (t MaintenanceTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",

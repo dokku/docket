@@ -194,10 +194,10 @@ func TestServiceExposeClearUnexposes(t *testing.T) {
 	}
 }
 
-// TestSchedulerK3sChartSetWritesAndUnsetsPerKey pins the per-key form a chart
-// set takes, since dokku has no whole-chart write: one charts:set per changed
-// value, then one valueless charts:set per value the recipe does not declare.
-func TestSchedulerK3sChartSetWritesAndUnsetsPerKey(t *testing.T) {
+// TestSchedulerK3sChartSetReplacesInOneCall pins that a chart set writes the
+// whole declared map with a single charts:set --replace, so a value the recipe
+// does not declare is dropped in the same call that writes the rest (#625).
+func TestSchedulerK3sChartSetReplacesInOneCall(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:charts:report traefik --format json": `{"traefik.a":"1","traefik.b":"2","traefik.c":"3"}`,
@@ -206,13 +206,7 @@ func TestSchedulerK3sChartSetWritesAndUnsetsPerKey(t *testing.T) {
 	if plan.Error != nil || plan.InSync || plan.Status != PlanStatusModify {
 		t.Fatalf("plan = {Error %v, InSync %v, Status %q}, want a modify", plan.Error, plan.InSync, plan.Status)
 	}
-	commandSuffixes(t, plan,
-		"scheduler-k3s:charts:set traefik.b 9",
-		"scheduler-k3s:charts:set traefik.d 4",
-		// The unset passes an empty value, as state absent's does, which
-		// dokku reads as no value.
-		"scheduler-k3s:charts:set traefik.c ",
-	)
+	commandSuffixes(t, plan, "scheduler-k3s:charts:set --replace traefik a=1 b=9 d=4")
 	want := []string{`set b=9 (was "2")`, "set d=4 (new)", `unset c (was "3")`}
 	if !reflect.DeepEqual(plan.Mutations, want) {
 		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
@@ -220,6 +214,31 @@ func TestSchedulerK3sChartSetWritesAndUnsetsPerKey(t *testing.T) {
 	out := ExecutePlan(ctx, plan)
 	if out.Error != nil || out.State != StateSet {
 		t.Errorf("apply = {Error %v, State %q}, want set", out.Error, out.State)
+	}
+}
+
+// TestSchedulerK3sChartSetReplaceKeepsEscapedKeys pins that a nested key with
+// a literal dot reaches charts:set --replace in its escaped form, the same
+// key the report hands back, and that a value holding "=" is passed whole.
+func TestSchedulerK3sChartSetReplaceKeepsEscapedKeys(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet scheduler-k3s:charts:report traefik --format json": `{}`,
+	}))
+	values := map[string]any{
+		"service": map[string]any{"annotations": map[string]any{"example.com/kind": "a=b"}},
+	}
+	plan := SchedulerK3sChartTask{Chart: "traefik", Values: values, State: StateSet}.Plan(ctx)
+	if plan.Error != nil || plan.Status != PlanStatusCreate {
+		t.Fatalf("plan = {Error %v, Status %q}, want a create", plan.Error, plan.Status)
+	}
+	input := SchedulerK3sChartTask{Chart: "traefik"}.replaceCommand(map[string]string{`service.annotations.example\.com/kind`: "a=b"})
+	wantArgs := []string{"--quiet", "scheduler-k3s:charts:set", "--replace", "traefik", `service.annotations.example\.com/kind=a=b`}
+	if !reflect.DeepEqual(input.Args, wantArgs) {
+		t.Errorf("Args = %q, want %q", input.Args, wantArgs)
+	}
+	if len(plan.Commands) != 1 || !strings.Contains(plan.Commands[0], `example\.com/kind=a=b`) {
+		t.Errorf("Commands = %q, want one --replace carrying the escaped key", plan.Commands)
 	}
 }
 
@@ -234,7 +253,9 @@ func TestSchedulerK3sChartSetInSync(t *testing.T) {
 	}
 }
 
-func TestSchedulerK3sChartClearUnsetsEveryValue(t *testing.T) {
+// TestSchedulerK3sChartClearRemovesEveryValue pins that clear empties the
+// chart with one charts:clear rather than a charts:set per stored value.
+func TestSchedulerK3sChartClearRemovesEveryValue(t *testing.T) {
 	t.Parallel()
 	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
 		"--quiet scheduler-k3s:charts:report traefik --format json": `{"traefik.b":"2","traefik.a":"1","ingress-nginx.c":"3"}`,
@@ -243,11 +264,29 @@ func TestSchedulerK3sChartClearUnsetsEveryValue(t *testing.T) {
 	if plan.Error != nil || plan.InSync || plan.Status != PlanStatusDestroy {
 		t.Fatalf("plan = {Error %v, InSync %v, Status %q}, want a destroy", plan.Error, plan.InSync, plan.Status)
 	}
-	commandSuffixes(t, plan, "scheduler-k3s:charts:set traefik.a ", "scheduler-k3s:charts:set traefik.b ")
+	commandSuffixes(t, plan, "scheduler-k3s:charts:clear traefik")
+	want := []string{`unset a (was "1")`, `unset b (was "2")`}
+	if !reflect.DeepEqual(plan.Mutations, want) {
+		t.Errorf("Mutations = %v, want %v", plan.Mutations, want)
+	}
 	out := ExecutePlan(ctx, plan)
 	if out.Error != nil || out.State != StateClear {
 		t.Errorf("apply = {Error %v, State %q}, want clear", out.Error, out.State)
 	}
+}
+
+// TestSchedulerK3sChartEmptySetRunsClear pins that a set declaring no values
+// plans as charts:clear, since charts:set --replace rejects an empty pair list.
+func TestSchedulerK3sChartEmptySetRunsClear(t *testing.T) {
+	t.Parallel()
+	ctx := subprocess.ContextWithRunner(testCtx(), fakeDokku(map[string]string{
+		"--quiet scheduler-k3s:charts:report traefik --format json": `{"traefik.a":"1"}`,
+	}))
+	plan := SchedulerK3sChartTask{Chart: "traefik", State: StateSet}.Plan(ctx)
+	if plan.Error != nil || plan.InSync {
+		t.Fatalf("plan = {Error %v, InSync %v}, want drift", plan.Error, plan.InSync)
+	}
+	commandSuffixes(t, plan, "scheduler-k3s:charts:clear traefik")
 }
 
 func TestSchedulerK3sChartSetRejectsEmptyValue(t *testing.T) {

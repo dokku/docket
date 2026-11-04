@@ -48,7 +48,7 @@ func (t LetsencryptPropertyTask) ProbeSupport() ProbeSupport {
 // absent from letsencrypt:report and a state: absent task would read an unset
 // property as already gone. The floor is 0.25.2 because that is the first tag
 // whose plugin.toml version matches what plugin:list prints. Tag 0.25.0 still
-// reported 0.20.4. 0.38.31 is the Dokku the integration suite runs.
+// reported 0.20.4. 0.38.31 is the Dokku the integration suite ran when this floor was recorded.
 func (t LetsencryptPropertyTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",

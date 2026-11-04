@@ -59,7 +59,7 @@ func (t LetsencryptTask) ProbeSupport() ProbeSupport {
 // The probe is `letsencrypt:active`, not the property report. The floor is
 // 0.25.2, the plugin:list version of the release the integration suite
 // installs. Tag 0.25.0's plugin.toml still said 0.20.4. 0.38.31 is the Dokku
-// that suite runs.
+// that suite ran when this floor was recorded.
 func (t LetsencryptTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",

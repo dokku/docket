@@ -170,7 +170,7 @@ A few conventions to follow:
   task's own comment names that release, use it. A property table that works on an older report,
   with a few keys that need a newer patch, takes the report baseline and leaves those keys in the
   existing comments. When the introducing release cannot be established from the dokku or plugin
-  changelog, use `0.38.31` (the release the integration suite installs) and name the command in a
+  changelog, use `0.38.32` (the release the integration suite installs) and name the command in a
   comment. `Plugins` lists non-core plugins. `Name` is the `plugin:list` name (`letsencrypt`), and
   `Text` is the requirements line the page prints (`dokku-letsencrypt plugin >= 0.25.2`); the two
   are written out separately because they are not the same string. `NameField` is the Go field
@@ -699,16 +699,16 @@ survives every apply.
 
 Both states must route through a **single server-side whole-set command**, not a loop over the
 entries. `dokku_domains` uses `domains:set` and `domains:clear`, `dokku_ports` uses `ports:set` and
-`ports:clear`, the scheduler-k3s map tasks use `<plugin>:set --replace` and `<plugin>:clear`, and
-the dokku-acl tasks use `acl:set-users` and `acl:set-service-users`, called with no users to clear.
+`ports:clear`, the scheduler-k3s map tasks use `<plugin>:set --replace` and `<plugin>:clear`,
+`dokku_scheduler_k3s_chart` uses `scheduler-k3s:charts:set --replace` and
+`scheduler-k3s:charts:clear`, and the dokku-acl tasks use `acl:set-users` and
+`acl:set-service-users`, called with no users to clear.
 Emitting one command per entry would leave the collection carrying a mixture of the old and new sets
 when a run fails partway, which is the outcome these states exist to rule out.
 
 Where dokku has no whole-set command, the task still gets the states, but its reference page says
-the work is not atomic. There are three such cases today:
+the work is not atomic. There are two such cases today:
 
-- `dokku_scheduler_k3s_chart` writes one `scheduler-k3s:charts:set` per changed value, through
-  `planPairsReplacePerKey` and `planPairsClearPerKey`, until dokku grows a whole-chart form (#625).
 - `dokku_http_auth_user` clears with one `http-auth:remove-user` per user, since the plugin has
   no command that removes them all. Its `set` is one `http-auth:import-users --replace` only when
   every user is given by hash.

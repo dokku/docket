@@ -24,7 +24,7 @@ Inside docket, the jobs use the local copy with `uses: ./.github/actions/setup-d
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `dokku-version` | `0.38.31` | The dokku package version to install. The default is the release docket's integration suite runs against. |
+| `dokku-version` | `0.38.32` | The dokku package version to install. The default is the release docket's integration suite runs against. |
 | `plugins` | `redis postgres http-auth global-cert letsencrypt acl maintenance` | Plugins to install, by name from the table below, separated by commas, spaces or newlines. They install in the order given. An empty string (`plugins: ''`) installs none. An unknown name fails the step before anything is installed. |
 | `docker-legacy-links` | `true` | `true` sets `DOCKER_KEEP_DEPRECATED_LEGACY_LINKS_ENV_VARS=1` on the Docker daemon and restarts it before dokku is installed. |
 | `initialize-k3s` | `false` | `true` runs `dokku scheduler-k3s:initialize --server-ip 127.0.0.1` after the plugins are installed. |

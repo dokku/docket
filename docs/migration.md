@@ -33,7 +33,7 @@ once DNS points at it.
 ## Before you start
 
 Provision the new server first. The integration suite runs against
-[Dokku 0.38.31](getting-started.md#prerequisites). `plan` and `apply` enforce each task's own
+[Dokku 0.38.32](getting-started.md#prerequisites). `plan` and `apply` enforce each task's own
 Requirements floor, and `--ignore-version` runs a task whose floor the server is behind. Install
 dokku-letsencrypt >= 0.25.2 when the recipe
 uses it, plus any datastore plugins your services rely on (dokku-postgres, dokku-redis,

@@ -50,7 +50,7 @@ func (t AclAppTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
-// The probe is `acl:list`. 0.38.31 is the Dokku the integration suite runs.
+// The probe is `acl:list`. 0.38.31 is the Dokku the integration suite ran when this floor was recorded.
 func (t AclAppTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",

@@ -399,3 +399,22 @@ func schedulerK3sChartsCommandFor(t *testing.T, chart string) pairsCommandFunc {
 		}
 	}
 }
+
+// TestSchedulerK3sChartTaskRequiresReplaceRelease pins the floor at 0.38.32,
+// the release that added charts:set --replace and charts:clear: an older
+// server is refused rather than sent a flag it would not understand.
+func TestSchedulerK3sChartTaskRequiresReplaceRelease(t *testing.T) {
+	t.Parallel()
+	task := SchedulerK3sChartTask{Chart: "traefik", State: StateClear}
+
+	ctx := gatedRunner(t, versionRunner("0.38.31\n", ""))
+	err := CheckMinimumVersions(ctx, "dokku_scheduler_k3s_chart", task)
+	if err == nil || err.Error() != "dokku_scheduler_k3s_chart requires Dokku >= 0.38.32, server has 0.38.31" {
+		t.Fatalf("error on 0.38.31 = %v", err)
+	}
+
+	ctx = gatedRunner(t, versionRunner("0.38.32\n", ""))
+	if err := CheckMinimumVersions(ctx, "dokku_scheduler_k3s_chart", task); err != nil {
+		t.Fatalf("error on 0.38.32 = %v", err)
+	}
+}

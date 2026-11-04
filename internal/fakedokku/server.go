@@ -23,7 +23,7 @@ import (
 
 // DefaultVersion is the dokku version a new Server reports: the oldest one
 // docket's integration tests run against.
-const DefaultVersion = "0.38.31"
+const DefaultVersion = "0.38.32"
 
 // Call is one command a Server was sent.
 type Call struct {

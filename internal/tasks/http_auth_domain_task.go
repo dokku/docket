@@ -63,7 +63,7 @@ func (t HttpAuthDomainTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
-// The probe is `http-auth:report`. 0.38.31 is the Dokku the integration suite runs.
+// The probe is `http-auth:report`. 0.38.31 is the Dokku the integration suite ran when this floor was recorded.
 func (t HttpAuthDomainTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
 		Dokku: "0.38.31",

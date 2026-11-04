@@ -108,7 +108,7 @@ func (t HttpAuthUserTask) ProbeSupport() ProbeSupport {
 }
 
 // MinimumVersions reports the oldest Dokku, and any plugin, this task's probe parses.
-// The probe is `http-auth:export-users`. 0.38.31 is the Dokku the integration suite runs.
+// The probe is `http-auth:export-users`. 0.38.31 is the Dokku the integration suite ran when this floor was recorded.
 // export-users and a credential-free enable are older behaviours; the floor stays 0.14.0, the release this family declares.
 func (t HttpAuthUserTask) MinimumVersions() VersionSupport {
 	return VersionSupport{
