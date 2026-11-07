@@ -16,7 +16,7 @@ require (
 	github.com/mitchellh/cli v1.1.5
 	github.com/posener/complete v1.2.3
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/titanous/json5 v1.0.0
 	github.com/zclconf/go-cty v1.19.0
 	golang.org/x/crypto v0.58.0
