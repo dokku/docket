@@ -10,7 +10,7 @@ require (
 	github.com/gliderlabs/sigil v0.12.1
 	github.com/gobuffalo/flect v1.0.3
 	github.com/hashicorp/hcl/v2 v2.25.0
-	github.com/josegonzalez/cli-skeleton v0.25.0
+	github.com/josegonzalez/cli-skeleton v0.26.0
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/mitchellh/cli v1.1.5
@@ -45,7 +45,7 @@ require (
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-colorable v0.1.16 // indirect
 	github.com/mgood/go-posix v0.0.0-20150821180505-948c005421f5 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
