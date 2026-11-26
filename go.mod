@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/alexellis/go-execute/v2 v2.2.1
 	github.com/aymanbagabas/go-udiff v0.4.2
-	github.com/expr-lang/expr v1.18.0
+	github.com/expr-lang/expr v1.18.1
 	github.com/fatih/color v1.19.0
 	github.com/gliderlabs/sigil v0.12.1
 	github.com/gobuffalo/flect v1.0.3
